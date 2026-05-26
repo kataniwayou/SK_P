@@ -48,7 +48,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Connecting from the host with `psql` using the configured connection string succeeds and lists the default `postgres` database
   3. Running `docker compose down` (without `-v`) and then `docker compose up postgres` again preserves any rows previously inserted in the named volume
   4. The compose file declares `BaseApi.Service` with `depends_on: postgres: condition: service_healthy` so service startup will block until Postgres is reachable
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 02-01-PLAN.md — compose.yaml + .env + .gitignore + README + appsettings.Development.json port reconcile (CONTEXT.md D-01..D-13, closes Phase 1 D-14 carry-forward)
+- [ ] 02-02-PLAN.md — verification + smoke battery (SC#1 health, SC#2 psql connect, SC#3 named-volume persistence, SC#4 depends_on graph) + D-15 cleanup
 **UI hint**: no
 **Parallelizable**: no (linear setup)
 
