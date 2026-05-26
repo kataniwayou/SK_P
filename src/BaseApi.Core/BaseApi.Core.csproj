@@ -27,4 +27,20 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- ASP.NET Core surface (IHttpContextAccessor — Phase 3; HealthChecks, Middleware,
+         Controllers in later phases). FrameworkReference is the documented pattern for
+         ASP.NET-coupled class libraries (Phase 3 CONTEXT.md D-12). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- EF Core 8 + Npgsql + snake_case convention (Phase 3 CONTEXT.md D-12).
+         Versions resolve from Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="EFCore.NamingConventions" />
+  </ItemGroup>
+
 </Project>
