@@ -26,26 +26,26 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Persistence
 
 - [ ] **PERSIST-01**: Single `AppDbContext` in `BaseApi.Service/Persistence/` exposing `DbSet<T>` for all 5 concrete entities and 3 junction entities
-- [ ] **PERSIST-02**: `BaseDbContext` (abstract) in `BaseApi.Core/Persistence/` registers `AuditInterceptor`
-- [ ] **PERSIST-03**: `ISaveChangesInterceptor` implementation (`AuditInterceptor`) auto-stamps `CreatedAt`/`UpdatedAt` with `DateTime.UtcNow` (required by Npgsql `timestamptz`)
-- [ ] **PERSIST-04**: `AuditInterceptor` sets `CreatedBy`/`UpdatedBy` from `IHttpContextAccessor.HttpContext?.User?.Identity?.Name` when available, null otherwise
-- [ ] **PERSIST-05**: Snake_case naming via `EFCore.NamingConventions` (`UseSnakeCaseNamingConvention()`) applied BEFORE first migration (cannot be retrofitted)
-- [ ] **PERSIST-06**: All primary keys are `Guid` mapped to Postgres `uuid`
-- [ ] **PERSIST-07**: `BaseEntity.CreatedAt`/`UpdatedAt` map to `timestamptz` columns
+- [x] **PERSIST-02**: `BaseDbContext` (abstract) in `BaseApi.Core/Persistence/` registers `AuditInterceptor`
+- [x] **PERSIST-03**: `ISaveChangesInterceptor` implementation (`AuditInterceptor`) auto-stamps `CreatedAt`/`UpdatedAt` with `DateTime.UtcNow` (required by Npgsql `timestamptz`)
+- [x] **PERSIST-04**: `AuditInterceptor` sets `CreatedBy`/`UpdatedBy` from `IHttpContextAccessor.HttpContext?.User?.Identity?.Name` when available, null otherwise
+- [x] **PERSIST-05**: Snake_case naming via `EFCore.NamingConventions` (`UseSnakeCaseNamingConvention()`) applied BEFORE first migration (cannot be retrofitted)
+- [x] **PERSIST-06**: All primary keys are `Guid` mapped to Postgres `uuid`
+- [x] **PERSIST-07**: `BaseEntity.CreatedAt`/`UpdatedAt` map to `timestamptz` columns
 - [ ] **PERSIST-08**: `Schema.Definition` and `Assignment.Payload` map to `jsonb` columns
 - [ ] **PERSIST-09**: Migrations applied on startup by `BaseApi.Service` via `db.Database.MigrateAsync()` before readiness probe transitions to Healthy
 - [ ] **PERSIST-10**: Migration failure surfaces as failing readiness probe (process does not crash)
-- [ ] **PERSIST-11**: Generic `Repository<TEntity>` in `BaseApi.Core` (Get, List, Add, Update, Delete with `CancellationToken`)
+- [x] **PERSIST-11**: Generic `Repository<TEntity>` in `BaseApi.Core` (Get, List, Add, Update, Delete with `CancellationToken`)
 - [ ] **PERSIST-12**: Junction tables `StepNextSteps`, `WorkflowEntrySteps`, `WorkflowAssignments` configured as explicit join entities with composite PKs and FKs to both sides
 - [ ] **PERSIST-13**: All FK columns have DB-level FK constraints (enforced by Postgres)
 - [ ] **PERSIST-14**: Unique index on `Processor.SourceHash`
-- [ ] **PERSIST-15**: `DbContext` registered with Scoped lifetime in DI
-- [ ] **PERSIST-16**: `BaseEntity` rows carry a Postgres `xmin` shadow concurrency token mapped via `IsConcurrencyToken()` on every `BaseEntity` subclass (model-builder iteration in `BaseDbContext.OnModelCreating`). Phase 3 wires the shadow property; Phase 4 maps `DbUpdateConcurrencyException` -> HTTP 409 (D-03a / cross-phase impact from Phase 3 CONTEXT.md D-03)
+- [x] **PERSIST-15**: `DbContext` registered with Scoped lifetime in DI
+- [x] **PERSIST-16**: `BaseEntity` rows carry a Postgres `xmin` shadow concurrency token mapped via `IsConcurrencyToken()` on every `BaseEntity` subclass (model-builder iteration in `BaseDbContext.OnModelCreating`). Phase 3 wires the shadow property; Phase 4 maps `DbUpdateConcurrencyException` -> HTTP 409 (D-03a / cross-phase impact from Phase 3 CONTEXT.md D-03)
 
 ### Entity Model
 
-- [ ] **ENTITY-01**: `BaseEntity` (abstract) in `BaseApi.Core/Entities/BaseEntity.cs` with: `Id` Guid, `Name` string, `Version` string, `CreatedAt` DateTime, `UpdatedAt` DateTime, `CreatedBy` string?, `UpdatedBy` string?, `Description` string?
-- [ ] **ENTITY-02**: `BaseEntity` is abstract — no table; 5 concrete tables, no inheritance discriminator
+- [x] **ENTITY-01**: `BaseEntity` (abstract) in `BaseApi.Core/Entities/BaseEntity.cs` with: `Id` Guid, `Name` string, `Version` string, `CreatedAt` DateTime, `UpdatedAt` DateTime, `CreatedBy` string?, `UpdatedBy` string?, `Description` string?
+- [x] **ENTITY-02**: `BaseEntity` is abstract — no table; 5 concrete tables, no inheritance discriminator
 - [ ] **ENTITY-03**: `SchemaEntity : BaseEntity` adds `Definition` string (jsonb)
 - [ ] **ENTITY-04**: `ProcessorEntity : BaseEntity` adds `SourceHash` string (SHA-256 hex, unique), `InputSchemaId` Guid? (nullable FK→Schema), `OutputSchemaId` Guid? (nullable FK→Schema). Null permitted on both — supports source processors (no input) and sink processors (no output). DB columns are nullable; Postgres FK constraint still enforced when value is non-null.
 - [ ] **ENTITY-05**: `StepEntity : BaseEntity` adds `ProcessorId` Guid (FK→Processor), `NextStepIds` List<Guid>? (M2M self-ref via `StepNextSteps`), `EntryCondition` `StepEntryCondition` (default `PreviousCompleted`)
@@ -197,23 +197,23 @@ Which phases cover which requirements. Populated during roadmap creation.
 | INFRA-06 | Phase 2 | Complete |
 | INFRA-07 | Phase 2 | Complete |
 | PERSIST-01 | Phase 8 | Pending |
-| PERSIST-02 | Phase 3 | Pending |
-| PERSIST-03 | Phase 3 | Pending |
-| PERSIST-04 | Phase 3 | Pending |
-| PERSIST-05 | Phase 3 | Pending |
-| PERSIST-06 | Phase 3 | Pending |
-| PERSIST-07 | Phase 3 | Pending |
+| PERSIST-02 | Phase 3 | Complete |
+| PERSIST-03 | Phase 3 | Complete |
+| PERSIST-04 | Phase 3 | Complete |
+| PERSIST-05 | Phase 3 | Complete |
+| PERSIST-06 | Phase 3 | Complete |
+| PERSIST-07 | Phase 3 | Complete |
 | PERSIST-08 | Phase 8 | Pending |
 | PERSIST-09 | Phase 8 | Pending |
 | PERSIST-10 | Phase 8 | Pending |
-| PERSIST-11 | Phase 3 | Pending |
+| PERSIST-11 | Phase 3 | Complete |
 | PERSIST-12 | Phase 8 | Pending |
 | PERSIST-13 | Phase 8 | Pending |
 | PERSIST-14 | Phase 8 | Pending |
-| PERSIST-15 | Phase 3 | Pending |
-| PERSIST-16 | Phase 3 | Pending |
-| ENTITY-01 | Phase 3 | Pending |
-| ENTITY-02 | Phase 3 | Pending |
+| PERSIST-15 | Phase 3 | Complete |
+| PERSIST-16 | Phase 3 | Complete |
+| ENTITY-01 | Phase 3 | Complete |
+| ENTITY-02 | Phase 3 | Complete |
 | ENTITY-03 | Phase 8 | Pending |
 | ENTITY-04 | Phase 8 | Pending |
 | ENTITY-05 | Phase 8 | Pending |

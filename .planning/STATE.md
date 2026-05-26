@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 3 context gathered
-last_updated: "2026-05-26T21:09:50.631Z"
-last_activity: 2026-05-26
+status: executing
+stopped_at: Completed Plan 03-01 (build plan); 03-02 verification plan is next
+last_updated: "2026-05-26T21:28:48.385Z"
+last_activity: 2026-05-26 — Plan 03-01 completed (5 production C# files + 2 csproj + 1 props + 1 doc; both builds 0-warn 0-error)
 progress:
   total_phases: 8
   completed_phases: 2
   total_plans: 7
-  completed_plans: 5
-  percent: 71
+  completed_plans: 6
+  percent: 86
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 02 — postgres-docker-compose
+**Current focus:** Phase 03 — EF Core Persistence Base (Plan 03-01 shipped; Plan 03-02 next)
 
 ## Current Position
 
-Phase: 3
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-05-26
+Phase: 03 (EF Core Persistence Base) — EXECUTING
+Plan: 1 of 2 complete (next: 03-02 verification plan)
+Status: Plan 03-01 shipped (build set + zero-warning aggregate); Plan 03-02 awaits execution
+Last activity: 2026-05-26 — Plan 03-01 completed (5 production C# files + 2 csproj edits + 1 doc edit + 1 props edit)
 
-Progress: [██████████] 100%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 5
+- Total plans completed: 6
 - Average duration: —
 - Total execution time: —
 
@@ -46,6 +46,7 @@ Progress: [██████████] 100%
 |-------|-------|-------|----------|
 | 01 | 3 | - | - |
 | 02 | 2 | - | - |
+| 03 | 1 | 8min | 8min |
 
 **Recent Trend:**
 
@@ -58,6 +59,7 @@ Progress: [██████████] 100%
 | Phase 01 P03 | ~75min | 4 tasks (verification + 4 scaffold-fix cycles) | 1 SUMMARY + 3 amendments to earlier-plan files |
 | Phase 02 P02-01 | 3min | 3 tasks | 5 files |
 | Phase 02 P02-02 | 5min | 6 tasks | 1 files |
+| Phase 03 P03-01 | 8min | 9 tasks (8 commits + 1 verification gate) | 9 files (1 doc + 1 props + 2 csproj + 5 new C#) |
 
 ## Accumulated Context
 
@@ -86,6 +88,10 @@ Recent decisions affecting current work:
 - Plan 02-01: appsettings.Development.json patched Port=5432 -> Port=5433 (D-02 closes Phase 1 D-14 carry-forward); base appsettings.json explicitly NOT touched (D-07 — Host=postgres;Port=5432 is the Docker-internal path Phase 8 will consume). All other connection-string tokens preserved verbatim; file remains valid JSON with no comments (Pitfall 30)
 - Plan 02-02: SC#1-4 all GREEN — postgres:17-alpine healthy in ~13s; host psql via docker-run --network host on localhost:5433 lists stepsdb + postgres; smoke-table persists across docker compose down/up (no -v); resolved compose graph shows depends_on -> postgres -> condition: service_healthy under phase-8 profile; D-15 cleanup ran in full (sk_p_pgdata volume removed)
 - Plan 02-02 deviation (fix(02-01) 0acb0bc): Compose v5.1.1 strict validation refused baseapi-service block lacking image/build; fix-forward adds profiles: [phase-8] + placeholder image baseapi-service:phase-8-placeholder so default ops skip the service and explicit up still fails loudly (image-pull failure), preserving D-08 negative-assertion semantics; D-08 commented-build marker preserved verbatim for Phase 8 INFRA-05 handoff
+- Plan 03-01 deviation pattern: verify scripts as ephemeral .ps1 files at repo root (Bash eats PowerShell $ sigils when -Command is used inline); strip XML/// + // + /* */ comments before semantic regex checks; use [ \t]+ instead of \s+ in multiline regex to avoid greedy newline matching; allow Task[<\s] for generic return types
+- Plan 03-01: PERSIST-16 (xmin shadow concurrency token) landed in REQUIREMENTS.md as Task 0 BEFORE any implementation commits — D-03b doc-first traceability pattern; same approach should be used whenever a phase invents a new cross-phase requirement during planning
+- Plan 03-01: BaseApi.Core.csproj uses <FrameworkReference Include='Microsoft.AspNetCore.App' /> for IHttpContextAccessor + future controllers/middleware/healthchecks instead of per-package PackageReferences (D-12). Zero runtime weight (framework on host). BaseApi.Tests.csproj uses the same FrameworkReference for DefaultHttpContext + ClaimsPrincipal in StubHttpContextAccessor (D-13)
+- Plan 03-01: All 5 production C# files copied VERBATIM from 03-RESEARCH.md / 03-PATTERNS.md skeletons (BaseEntity, BaseDbContext, AuditInterceptor, IRepository, Repository). The xmin shadow concurrency token (Pitfall 6 verbatim — Property<uint>('xmin').HasColumnName('xmin').HasColumnType('xid').ValueGeneratedOnAddOrUpdate().IsConcurrencyToken()) wires in BaseDbContext.OnModelCreating via modelBuilder.Model.GetEntityTypes() iteration filtered by typeof(BaseEntity).IsAssignableFrom — junction entities (non-BaseEntity) excluded naturally
 
 ### Pending Todos
 
@@ -111,9 +117,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 3 context gathered
-Resume file: --resume-file
+Last session: 2026-05-26T21:28:48.378Z
+Stopped at: Completed Plan 03-01 (build plan); 03-02 verification plan is next
+Resume file: None
 
 **Planned Phase:** 3 (EF Core Persistence Base) — 2 plans — 2026-05-26T21:09:50.621Z
-**Next:** /gsd-plan-phase 2 (Postgres + Docker Compose)
+**Next:** /gsd-execute-plan 03-02 (verification + smoke; autonomous:false, D-18 checkpoint plan)
