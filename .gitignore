@@ -405,3 +405,8 @@ FodyWeavers.xsd
 # Build output (explicit lowercase reinforcement of [Bb]in/ and [Oo]bj/ above)
 bin/
 obj/
+
+# Local environment overrides (CONTEXT.md D-06) - Compose auto-loads .env but NOT .env.local;
+# developers wanting per-machine overrides use: docker compose --env-file .env.local up
+.env.local
+*.env.local

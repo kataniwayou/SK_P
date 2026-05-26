@@ -36,6 +36,36 @@ dotnet test
 dotnet run --project src/BaseApi.Service
 ```
 
+### Local Postgres (Docker)
+
+The repo ships a `compose.yaml` at the root that brings up a `postgres:17-alpine` container with a `pg_isready` healthcheck and persistent storage in the `pgdata` named volume. Dev defaults live in the committed `.env` file (`POSTGRES_DB=stepsdb`, `POSTGRES_USER=postgres`, `POSTGRES_PASSWORD=postgres`) — these are explicitly dev-only per [`.planning/PROJECT.md`](./.planning/PROJECT.md) "Out of Scope: Authentication / authorization".
+
+```powershell
+# Start Postgres (only; the baseapi-service block requires the Phase 8 Dockerfile to actually run)
+docker compose up -d postgres
+
+# Wait for the healthcheck to report `healthy`
+docker compose ps
+
+# Connect from the host (host port 5433 — chosen to avoid colliding with any
+# local Postgres install; the container still listens on 5432 internally)
+psql -h localhost -p 5433 -U postgres -d stepsdb
+
+# Stop without wiping data (named volume `pgdata` survives)
+docker compose down
+
+# Stop AND wipe the dev DB
+docker compose down -v
+```
+
+**Per-developer overrides** — Docker Compose auto-loads `.env` but does NOT auto-load `.env.local`. To override (e.g., to change the host port), copy `.env` to `.env.local`, edit, and run:
+
+```powershell
+docker compose --env-file .env.local up -d postgres
+```
+
+The `.env.local` filename is `.gitignore`d so per-machine overrides don't leak into commits.
+
 ## Project Layout
 
 ```
