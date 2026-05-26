@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-26T17:19:58.663Z"
-last_activity: 2026-05-26 — Roadmap created; 102 v1 requirements mapped across 8 phases
+status: executing
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-05-26T17:32:41.966Z"
+last_activity: 2026-05-26
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 33
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 1 — Repository Scaffold
+**Current focus:** Phase 01 — repository-scaffold
 
 ## Current Position
 
-Phase: 1 of 8 (Repository Scaffold)
-Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-05-26 — Roadmap created; 102 v1 requirements mapped across 8 phases
+Phase: 01 (repository-scaffold) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-05-26
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
@@ -52,6 +52,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01 P01 | 6min | 5 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,9 @@ Recent decisions affecting current work:
 - Init: Mapperly (source-gen) over AutoMapper; FluentValidation 12 (no `.AspNetCore`)
 - Init: OTLP -> external OTel Collector; `Logging:LogLevel` single source of truth via MEL pipeline
 - Init: RFC 7807 Problem Details with `correlationId` on every error; SQLSTATE 23503->422, 23505->409
+- Plan 01-01: Front-loaded all 23 NuGet pins in Directory.Packages.props (D-05); CPM property only in Packages.props (D-06); Mapperly MP-codes deferred to Phase 6 (D-04)
+- Plan 01-01: TreatWarningsAsErrors=true globally via Directory.Build.props (D-02) + EnforceCodeStyleInBuild=true + :warning severities in .editorconfig = build-fatal style/naming rules
+- Plan 01-01: SDK pin 8.0.421 with rollForward=latestFeature (allows 8.0.422+ but blocks float to .NET 9/10); verified dotnet --version returns 8.0.421
 
 ### Pending Todos
 
@@ -90,8 +94,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 1 context gathered
-Resume file: --resume-file
+Last session: 2026-05-26T17:32:41.955Z
+Stopped at: Completed 01-01-PLAN.md
+Resume file: None
 
 **Planned Phase:** 1 (Repository Scaffold) — 3 plans — 2026-05-26T17:19:58.656Z

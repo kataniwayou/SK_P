@@ -10,8 +10,10 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Infrastructure
 
 - [ ] **INFRA-01**: Solution structure is `src/BaseApi.Core/` (class library) + `src/BaseApi.Service/` (runnable webapi) + `tests/BaseApi.Tests/`
-- [ ] **INFRA-02**: `.NET 8.0` SDK pinned via `global.json` (current 8.0.x LTS patch)
-- [ ] **INFRA-03**: `Directory.Packages.props` centralizes NuGet versions across all projects
+- [x] **INFRA-02
+**: `.NET 8.0` SDK pinned via `global.json` (current 8.0.x LTS patch)
+- [x] **INFRA-03
+**: `Directory.Packages.props` centralizes NuGet versions across all projects
 - [ ] **INFRA-04**: `appsettings.json` contains `Logging`, `Service` (`Name="steps-api"`, `Version="3.2.0"`), `ConnectionStrings:Postgres`, `OpenTelemetry` sections
 - [ ] **INFRA-05**: Multistage `Dockerfile` using `mcr.microsoft.com/dotnet/sdk:8.0` for build and `mcr.microsoft.com/dotnet/aspnet:8.0` for runtime
 - [ ] **INFRA-06**: `docker-compose.yml` defines `postgres:17-alpine` with `pg_isready` healthcheck plus `BaseApi.Service` with `depends_on: postgres: condition: service_healthy`
