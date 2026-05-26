@@ -19,6 +19,13 @@
     <AssemblyName>BaseApi.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!--
+      xunit.v3 3.2.2 ships under Microsoft.Testing.Platform (MTP) which mandates
+      that test projects produce an executable host. Without <OutputType>Exe</OutputType>,
+      the build target emits: "test projects must be executable (set project property
+      <OutputType>Exe</OutputType>)". Required for xunit.v3 MTP integration.
+    -->
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
