@@ -26,6 +26,18 @@
       <OutputType>Exe</OutputType>)". Required for xunit.v3 MTP integration.
     -->
     <OutputType>Exe</OutputType>
+    <!--
+      xunit.v3 3.2.2 abandoned VSTest in favor of Microsoft.Testing.Platform (MTP).
+      Without this property, `dotnet test` routes the test run to the legacy VSTest
+      host, which then fails resolving xunit.v3 transitive dependencies (e.g., the
+      Newtonsoft.Json 13.0.1 referenced via the VSTest testhost manifest is not on
+      disk). Setting <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+      tells `dotnet test` to invoke the MTP runner (the executable produced via
+      <OutputType>Exe</OutputType> above) directly. Together with the xunit.runner.visualstudio
+      3.1.5 pin (Plan 01-01 deviation) and OutputType=Exe (Plan 01-02 deviation), this
+      is the third and final MTP scaffold setting required by the xunit.v3 3.2.2 stack.
+    -->
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
   </PropertyGroup>
 
   <ItemGroup>
