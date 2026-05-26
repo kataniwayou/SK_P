@@ -1,0 +1,32 @@
+# Docker Compose v2 declaration for the SK_P dev environment.
+# Phase 2 (INFRA-06, INFRA-07) — postgres + healthcheck + named volume + depends_on skeleton.
+# The baseapi-service block has its `build:` line COMMENTED OUT until Phase 8 lands the Dockerfile (INFRA-05).
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  baseapi-service:
+    # Phase 8 (INFRA-05) will set this to: build: { context: ., dockerfile: src/BaseApi.Service/Dockerfile }
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
