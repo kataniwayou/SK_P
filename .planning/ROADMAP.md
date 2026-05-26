@@ -57,13 +57,15 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 3: EF Core Persistence Base
 **Goal**: Build the persistence foundation in `BaseApi.Core` — `BaseEntity`, `BaseDbContext`, `AuditInterceptor`, snake_case convention, and the generic `Repository<T>` — before any migration is generated so the convention applies to the very first schema.
 **Depends on**: Phase 1
-**Requirements**: ENTITY-01, ENTITY-02, PERSIST-02, PERSIST-03, PERSIST-04, PERSIST-05, PERSIST-06, PERSIST-07, PERSIST-11, PERSIST-15
+**Requirements**: ENTITY-01, ENTITY-02, PERSIST-02, PERSIST-03, PERSIST-04, PERSIST-05, PERSIST-06, PERSIST-07, PERSIST-11, PERSIST-15, PERSIST-16
 **Success Criteria** (what must be TRUE):
   1. A unit test or scratch console can construct a `BaseDbContext` subclass with a trivial `DbSet<T>` and `EnsureCreated()` against the Phase 2 Postgres, producing tables with snake_case identifiers (e.g., `created_at`, not `CreatedAt`)
   2. Inserting a `BaseEntity` subclass through `Repository<T>` and calling `SaveChangesAsync()` on the context stamps `CreatedAt`/`UpdatedAt` with `DateTime.UtcNow` (`Kind == Utc`) and writes them to `timestamptz` columns without Npgsql throwing `InvalidCastException`
   3. With an `IHttpContextAccessor.HttpContext?.User?.Identity?.Name` of `"alice"`, the inserted row's `created_by` equals `"alice"`; with no HTTP context, `created_by` is null (no crash)
   4. Resolving `DbContext` twice from the same DI scope returns the same instance; resolving from a different scope returns a different instance (Scoped lifetime verified)
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 03-01-PLAN.md — Build plan: append PERSIST-16 to REQUIREMENTS.md (D-03b); pin Microsoft.Extensions.TimeProvider.Testing 8.10.0 in Directory.Packages.props (D-13); add EF Core + Npgsql + EFCore.NamingConventions PackageReferences + FrameworkReference Microsoft.AspNetCore.App to BaseApi.Core.csproj (D-12) and BaseApi.Tests.csproj (D-13); create BaseEntity.cs, BaseDbContext.cs, AuditInterceptor.cs, IRepository.cs, Repository.cs (verbatim skeletons from RESEARCH.md); aggregate `dotnet build` Release+Debug zero warnings per W-02 (D-17)
+- [ ] 03-02-PLAN.md — Verification + smoke (autonomous:false, D-18): create TestEntity/TestDbContext/PostgresFixture/StubHttpContextAccessor scaffold + 5 fact files (SchemaTests SC#1, AuditInterceptorTests SC#2+SC#3 as 2 facts, DiLifetimeTests SC#4, XminConcurrencyTokenTests Dim 6 PERSIST-16, RepositorySurfaceTests Dim 7 PERSIST-11); `dotnet test` against Phase 2 Postgres at localhost:5433 with per-class throwaway DBs; `psql \l` before/after for D-15 cleanup verification; 03-02-SUMMARY documenting SC#1-4 + Dim 6 + Dim 7 GREEN (D-14, D-15, D-18)
 **UI hint**: no
 **Parallelizable**: no (snake_case + AuditInterceptor + BaseEntity are tightly coupled and must land in a single commit before the first migration)
 
@@ -145,7 +147,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 |-------|----------------|--------|-----------|
 | 1. Repository Scaffold | 3/3 | Complete | 2026-05-26 |
 | 2. Postgres + Docker Compose | 2/2 | Complete | 2026-05-26 |
-| 3. EF Core Persistence Base | 0/TBD | Not started | - |
+| 3. EF Core Persistence Base | 0/2 | Not started | - |
 | 4. Cross-Cutting Middleware + Error Handling | 0/TBD | Not started | - |
 | 5. Observability + Health Probes | 0/TBD | Not started | - |
 | 6. Validation + Mapping Base | 0/TBD | Not started | - |
