@@ -18,8 +18,10 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **INFRA-04
 **: `appsettings.json` contains `Logging`, `Service` (`Name="steps-api"`, `Version="3.2.0"`), `ConnectionStrings:Postgres`, `OpenTelemetry` sections
 - [ ] **INFRA-05**: Multistage `Dockerfile` using `mcr.microsoft.com/dotnet/sdk:8.0` for build and `mcr.microsoft.com/dotnet/aspnet:8.0` for runtime
-- [ ] **INFRA-06**: `docker-compose.yml` defines `postgres:17-alpine` with `pg_isready` healthcheck plus `BaseApi.Service` with `depends_on: postgres: condition: service_healthy`
-- [ ] **INFRA-07**: Postgres data persisted in a named volume across `docker-compose down/up`
+- [x] **INFRA-06
+**: `docker-compose.yml` defines `postgres:17-alpine` with `pg_isready` healthcheck plus `BaseApi.Service` with `depends_on: postgres: condition: service_healthy`
+- [x] **INFRA-07
+**: Postgres data persisted in a named volume across `docker-compose down/up`
 
 ### Persistence
 
@@ -191,8 +193,8 @@ Which phases cover which requirements. Populated during roadmap creation.
 | INFRA-03 | Phase 1 | Complete |
 | INFRA-04 | Phase 1 | Complete |
 | INFRA-05 | Phase 8 | Pending |
-| INFRA-06 | Phase 2 | Pending |
-| INFRA-07 | Phase 2 | Pending |
+| INFRA-06 | Phase 2 | Complete |
+| INFRA-07 | Phase 2 | Complete |
 | PERSIST-01 | Phase 8 | Pending |
 | PERSIST-02 | Phase 3 | Pending |
 | PERSIST-03 | Phase 3 | Pending |

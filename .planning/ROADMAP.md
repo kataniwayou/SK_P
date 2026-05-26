@@ -49,7 +49,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Running `docker compose down` (without `-v`) and then `docker compose up postgres` again preserves any rows previously inserted in the named volume
   4. The compose file declares `BaseApi.Service` with `depends_on: postgres: condition: service_healthy` so service startup will block until Postgres is reachable
 **Plans**: 2 plans
-- [ ] 02-01-PLAN.md — compose.yaml + .env + .gitignore + README + appsettings.Development.json port reconcile (CONTEXT.md D-01..D-13, closes Phase 1 D-14 carry-forward)
+- [x] 02-01-PLAN.md — compose.yaml + .env + .gitignore + README + appsettings.Development.json port reconcile (CONTEXT.md D-01..D-13, closes Phase 1 D-14 carry-forward)
 - [ ] 02-02-PLAN.md — verification + smoke battery (SC#1 health, SC#2 psql connect, SC#3 named-volume persistence, SC#4 depends_on graph) + D-15 cleanup
 **UI hint**: no
 **Parallelizable**: no (linear setup)
@@ -143,8 +143,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Repository Scaffold | 1/3 | In progress | - |
-| 2. Postgres + Docker Compose | 0/TBD | Not started | - |
+| 1. Repository Scaffold | 3/3 | Complete | 2026-05-26 |
+| 2. Postgres + Docker Compose | 1/2 | In progress | - |
 | 3. EF Core Persistence Base | 0/TBD | Not started | - |
 | 4. Cross-Cutting Middleware + Error Handling | 0/TBD | Not started | - |
 | 5. Observability + Health Probes | 0/TBD | Not started | - |
