@@ -40,6 +40,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **PERSIST-13**: All FK columns have DB-level FK constraints (enforced by Postgres)
 - [ ] **PERSIST-14**: Unique index on `Processor.SourceHash`
 - [ ] **PERSIST-15**: `DbContext` registered with Scoped lifetime in DI
+- [ ] **PERSIST-16**: `BaseEntity` rows carry a Postgres `xmin` shadow concurrency token mapped via `IsConcurrencyToken()` on every `BaseEntity` subclass (model-builder iteration in `BaseDbContext.OnModelCreating`). Phase 3 wires the shadow property; Phase 4 maps `DbUpdateConcurrencyException` -> HTTP 409 (D-03a / cross-phase impact from Phase 3 CONTEXT.md D-03)
 
 ### Entity Model
 
@@ -210,6 +211,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PERSIST-13 | Phase 8 | Pending |
 | PERSIST-14 | Phase 8 | Pending |
 | PERSIST-15 | Phase 3 | Pending |
+| PERSIST-16 | Phase 3 | Pending |
 | ENTITY-01 | Phase 3 | Pending |
 | ENTITY-02 | Phase 3 | Pending |
 | ENTITY-03 | Phase 8 | Pending |
