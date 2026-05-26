@@ -40,7 +40,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **ENTITY-01**: `BaseEntity` (abstract) in `BaseApi.Core/Entities/BaseEntity.cs` with: `Id` Guid, `Name` string, `Version` string, `CreatedAt` DateTime, `UpdatedAt` DateTime, `CreatedBy` string?, `UpdatedBy` string?, `Description` string?
 - [ ] **ENTITY-02**: `BaseEntity` is abstract — no table; 5 concrete tables, no inheritance discriminator
 - [ ] **ENTITY-03**: `SchemaEntity : BaseEntity` adds `Definition` string (jsonb)
-- [ ] **ENTITY-04**: `ProcessorEntity : BaseEntity` adds `SourceHash` string (SHA-256 hex, unique), `InputSchemaId` Guid (FK→Schema), `OutputSchemaId` Guid (FK→Schema)
+- [ ] **ENTITY-04**: `ProcessorEntity : BaseEntity` adds `SourceHash` string (SHA-256 hex, unique), `InputSchemaId` Guid? (nullable FK→Schema), `OutputSchemaId` Guid? (nullable FK→Schema). Null permitted on both — supports source processors (no input) and sink processors (no output). DB columns are nullable; Postgres FK constraint still enforced when value is non-null.
 - [ ] **ENTITY-05**: `StepEntity : BaseEntity` adds `ProcessorId` Guid (FK→Processor), `NextStepIds` List<Guid>? (M2M self-ref via `StepNextSteps`), `EntryCondition` `StepEntryCondition` (default `PreviousCompleted`)
 - [ ] **ENTITY-06**: `StepEntryCondition` enum: `PreviousProcessing=0`, `PreviousCompleted=1`, `PreviousFailed=2`, `PreviousCancelled=3`, `Always=4`, `Never=5`
 - [ ] **ENTITY-07**: `AssignmentEntity : BaseEntity` adds `StepId` Guid (FK→Step), `SchemaId` Guid (FK→Schema), `Payload` string (jsonb)
@@ -79,7 +79,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **VALID-08**: `SchemaCreate/UpdateDto.Definition`: valid JSON syntax AND valid JSON Schema (draft 2020-12) via `JsonSchema.Net`
 - [ ] **VALID-09**: `JsonSchema.Net` remote `$ref` network access disabled (SSRF prevention)
 - [ ] **VALID-10**: `ProcessorCreate/UpdateDto.SourceHash`: regex `^[a-f0-9]{64}$` (lowercase SHA-256 hex)
-- [ ] **VALID-11**: `ProcessorCreate/UpdateDto.InputSchemaId`/`OutputSchemaId`: `NotEmpty` Guid
+- [ ] **VALID-11**: `ProcessorCreate/UpdateDto.InputSchemaId`/`OutputSchemaId`: no validation rule — fields are nullable `Guid?`. Null is valid (source/sink processor). FK existence is enforced by Postgres at persist time (SQLSTATE 23503 → HTTP 422 per ERROR-04 when non-null id references a missing Schema). Note: `Guid.Empty` (`00000000-0000-0000-0000-000000000000`) is NOT rejected by validation — Postgres FK constraint will reject it as a non-existent reference at persist time, returning HTTP 422.
 - [ ] **VALID-12**: `StepCreate/UpdateDto.ProcessorId`: `NotEmpty` Guid
 - [ ] **VALID-13**: `StepCreate/UpdateDto.NextStepIds`: each unique; on Update, none equal to the Step's own Id
 - [ ] **VALID-14**: `StepCreate/UpdateDto.EntryCondition`: `IsInEnum()`
@@ -302,4 +302,4 @@ Per-phase coverage:
 
 ---
 *Requirements defined: 2026-05-26*
-*Last updated: 2026-05-26 after roadmap creation (traceability populated, header count corrected from 103 to 102)*
+*Last updated: 2026-05-26 — ENTITY-04 and VALID-11 amended: ProcessorEntity InputSchemaId/OutputSchemaId are now nullable `Guid?`*

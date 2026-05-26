@@ -36,7 +36,7 @@ Grouped for readability; final REQ-IDs assigned in REQUIREMENTS.md.
 
 **Entity model (5 concrete entities)**
 - [ ] `SchemaEntity` — `Definition` (jsonb; validated JSON + valid JSON Schema)
-- [ ] `ProcessorEntity` — `SourceHash` (SHA-256 hex, unique), `InputSchemaId`, `OutputSchemaId`
+- [ ] `ProcessorEntity` — `SourceHash` (SHA-256 hex, unique), `InputSchemaId` (nullable, FK→Schema), `OutputSchemaId` (nullable, FK→Schema)
 - [ ] `StepEntity` — `ProcessorId`, `NextStepIds` (optional M2M self-ref), `EntryCondition` (enum, defaults to `PreviousCompleted`)
 - [ ] `AssignmentEntity` — `StepId`, `SchemaId`, `Payload` (jsonb; valid JSON syntactically; no dynamic schema conformance check)
 - [ ] `WorkflowEntity` — `EntryStepIds` (required M2M to Step), `AssignmentIds` (optional M2M to Assignment), `CronExpression` (optional; nullable → not scheduled)
@@ -139,6 +139,7 @@ Grouped for readability; final REQ-IDs assigned in REQUIREMENTS.md.
 | FK pre-validation: rely on Postgres constraint + clean error mapping (Option 1) | No upfront HTTP hop to verify FK existence | — Pending |
 | No dynamic Payload-vs-Schema conformance (N2 = No) | Explicit user decision; keeps validator scope bounded | — Pending |
 | `Processor.SourceHash` SHA-256, unique | User-specified algorithm + uniqueness constraint | — Pending |
+| `Processor.InputSchemaId` and `OutputSchemaId` are nullable (`Guid?`) | Supports source processors (no input) and sink processors (no output); FK still enforced by Postgres when non-null. Decided 2026-05-26 during Phase 1 discuss-phase. | — Pending |
 | `(Name, Version)` not unique | User-specified | — Pending |
 | Drop `WorkflowScheduleEntity`; rely on `Workflow.CronExpression` nullability for gating | Redundant given per-workflow control was sufficient | — Pending |
 | Migrations applied on startup by `BaseApi.Service` | Single owner of schema; no separate migration tool needed | — Pending |
@@ -163,4 +164,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-26 after initialization*
+*Last updated: 2026-05-26 — ProcessorEntity InputSchemaId/OutputSchemaId changed to nullable `Guid?`*
