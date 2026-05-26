@@ -62,6 +62,22 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Phase 3 additions: EF Core test fixture + FakeTimeProvider (CONTEXT.md D-13).
+         Versions resolve from Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="EFCore.NamingConventions" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Phase 3 addition: FrameworkReference for DefaultHttpContext / ClaimsPrincipal
+         in StubHttpContextAccessor (CONTEXT.md D-13 + Phase 3 RESEARCH.md A3). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\BaseApi.Core\BaseApi.Core.csproj" />
   </ItemGroup>
 
