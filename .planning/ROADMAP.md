@@ -32,7 +32,10 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. `dotnet --version` invoked at the repo root returns the SDK version pinned in `global.json` (8.0.421), not whatever is globally installed
   3. Adding a NuGet reference in any project resolves its version from `Directory.Packages.props` (no per-project `<Version>` attributes)
   4. `appsettings.json` in `BaseApi.Service` contains `Logging`, `Service` (`Name="steps-api"`, `Version="3.2.0"`), `ConnectionStrings:Postgres`, and `OpenTelemetry` sections (values may be placeholders) and is valid JSON with no comments
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 01-01-PLAN.md — Repo-root foundation files: global.json (SDK pin), Directory.Build.props (warnings-as-errors + strictness), Directory.Packages.props (22 NuGet pins via CPM), .editorconfig (Microsoft .NET style), .gitignore (dotnet flavor), .gitattributes (LF endings), README.md (prereqs + quickstart)
+- [ ] 01-02-PLAN.md — Solution + 3 projects: SK_P.sln, BaseApi.Core.csproj (class library), BaseApi.Service.csproj (webapi with Program.cs D-10 scaffold + appsettings REQ INFRA-04), BaseApi.Tests.csproj (xUnit v3 + MetaTest sanity), Core folder skeleton (11 .gitkeep folders), Service folder skeleton (3 .gitkeep folders)
+- [ ] 01-03-PLAN.md — Verification + smoke: dotnet --version=8.0.421, dotnet restore, dotnet build (Release+Debug, 0 warnings), dotnet test (Sanity passes), dotnet run smoke (host boots, GET / returns 404), SUMMARY documenting Phase 1 SC#1-4 met
 **UI hint**: no
 **Parallelizable**: no (single foundation step)
 
@@ -138,7 +141,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Repository Scaffold | 0/TBD | Not started | - |
+| 1. Repository Scaffold | 0/3 | Planned | - |
 | 2. Postgres + Docker Compose | 0/TBD | Not started | - |
 | 3. EF Core Persistence Base | 0/TBD | Not started | - |
 | 4. Cross-Cutting Middleware + Error Handling | 0/TBD | Not started | - |
