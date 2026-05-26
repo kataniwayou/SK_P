@@ -16,13 +16,15 @@ A .NET 8 Web API platform that exposes CRUD over a workflow-engine data model �
 - [x] Service runs on .NET 8 Web API (scaffold boots; `dotnet --version` returns pinned 8.0.421; `GET /` returns HTTP 404 with no controllers registered)
 - [x] Service configuration is in `appsettings.json` with environment overrides (`appsettings.json` + `appsettings.Development.json` with localhost dev defaults; 4 sections per INFRA-04)
 
+**Phase 2 (Postgres + Docker Compose) — 2026-05-26**
+- [x] PostgreSQL (official Docker image) is the only data store (`postgres:17-alpine` pinned in `compose.yaml`)
+- [x] `compose.yaml` orchestrates Postgres + the service for local dev (`baseapi-service` block deferred behind `phase-8` profile per D-08 until Phase 8 lands the Dockerfile)
+
 ### Active
 
 Grouped for readability; final REQ-IDs assigned in REQUIREMENTS.md.
 
 **Runtime & deployment**
-- [ ] PostgreSQL (official Docker image) is the only data store
-- [ ] `docker-compose.yml` orchestrates Postgres + the service for local dev
 
 **Persistence**
 - [ ] EF Core 8 + Npgsql for all data access
@@ -164,4 +166,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-26 — Phase 1 (Repository Scaffold) complete: solution structure + SDK pin + CPM + appsettings validated.*
+*Last updated: 2026-05-26 — Phase 2 (Postgres + Docker Compose) complete: postgres:17-alpine compose stack with pg_isready healthcheck + pgdata named volume + host port 5433; baseapi-service skeleton deferred behind `phase-8` profile until INFRA-05 lands.*
