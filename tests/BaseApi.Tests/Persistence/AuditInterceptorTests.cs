@@ -14,6 +14,7 @@ public sealed class AuditInterceptorTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task Test_AuditInterceptor_StampsUtcTimestamps_OnInsert()
     {
+        var ct = TestContext.Current.CancellationToken;
         var clock = new FakeTimeProvider();
         clock.SetUtcNow(new DateTimeOffset(2026, 1, 15, 12, 30, 0, TimeSpan.Zero));
 
@@ -29,11 +30,11 @@ public sealed class AuditInterceptorTests : IClassFixture<PostgresFixture>
             .Options;
 
         await using var db = new TestDbContext(options);
-        await db.Database.EnsureCreatedAsync();
+        await db.Database.EnsureCreatedAsync(ct);
 
         var entity = new TestEntity();
-        await db.TestEntities.AddAsync(entity);
-        await db.SaveChangesAsync();
+        await db.TestEntities.AddAsync(entity, ct);
+        await db.SaveChangesAsync(ct);
 
         Assert.Equal(new DateTime(2026, 1, 15, 12, 30, 0, DateTimeKind.Utc), entity.CreatedAt);
         Assert.Equal(DateTimeKind.Utc, entity.CreatedAt.Kind);
@@ -43,6 +44,7 @@ public sealed class AuditInterceptorTests : IClassFixture<PostgresFixture>
     [Fact]
     public async Task Test_AuditInterceptor_StampsCreatedBy_FromHttpContext_NullFallback()
     {
+        var ct = TestContext.Current.CancellationToken;
         var clock = new FakeTimeProvider();
         clock.SetUtcNow(new DateTimeOffset(2026, 1, 15, 12, 30, 0, TimeSpan.Zero));
 
@@ -56,11 +58,11 @@ public sealed class AuditInterceptorTests : IClassFixture<PostgresFixture>
             .Options;
 
         await using var db = new TestDbContext(options);
-        await db.Database.EnsureCreatedAsync();
+        await db.Database.EnsureCreatedAsync(ct);
 
         var entity = new TestEntity();
-        await db.TestEntities.AddAsync(entity);
-        await db.SaveChangesAsync();  // must NOT throw
+        await db.TestEntities.AddAsync(entity, ct);
+        await db.SaveChangesAsync(ct);  // must NOT throw
 
         Assert.Null(entity.CreatedBy);
     }

@@ -18,18 +18,19 @@ public sealed class SchemaTests : IClassFixture<PostgresFixture>
             .UseSnakeCaseNamingConvention()
             .Options;
 
+        var ct = TestContext.Current.CancellationToken;
         await using var db = new TestDbContext(options);
-        await db.Database.EnsureCreatedAsync();
+        await db.Database.EnsureCreatedAsync(ct);
 
         await using var conn = new NpgsqlConnection(_fixture.ConnectionString);
-        await conn.OpenAsync();
+        await conn.OpenAsync(ct);
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = @"
             SELECT column_name FROM information_schema.columns
             WHERE table_name = 'test_entities' ORDER BY column_name";
         var columns = new List<string>();
-        await using var reader = await cmd.ExecuteReaderAsync();
-        while (await reader.ReadAsync()) columns.Add(reader.GetString(0));
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) columns.Add(reader.GetString(0));
 
         Assert.Contains("created_at", columns);
         Assert.Contains("updated_at", columns);
