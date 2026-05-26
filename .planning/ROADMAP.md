@@ -13,7 +13,7 @@ This roadmap delivers the Steps API as a .NET 8 modular monolith in 8 dependency
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Repository Scaffold** - Solution structure, SDK pin, central package management, and config skeleton compile cleanly
-- [ ] **Phase 2: Postgres + Docker Compose** - Local Postgres 17 container is reachable from the host with persistent storage and a healthcheck
+- [x] **Phase 2: Postgres + Docker Compose** - Local Postgres 17 container is reachable from the host with persistent storage and a healthcheck
 - [ ] **Phase 3: EF Core Persistence Base** - `BaseEntity`, `BaseDbContext`, `AuditInterceptor`, snake_case convention, and generic `Repository<T>` exist before any migration is generated
 - [ ] **Phase 4: Cross-Cutting Middleware + Error Handling** - Correlation IDs flow end-to-end and every error returns RFC 7807 Problem Details with the correlation ID
 - [ ] **Phase 5: Observability + Health Probes** - OTel logs, metrics, and traces reach the Collector; three distinct health probes (live/ready/startup) respond correctly
@@ -50,7 +50,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. The compose file declares `BaseApi.Service` with `depends_on: postgres: condition: service_healthy` so service startup will block until Postgres is reachable
 **Plans**: 2 plans
 - [x] 02-01-PLAN.md — compose.yaml + .env + .gitignore + README + appsettings.Development.json port reconcile (CONTEXT.md D-01..D-13, closes Phase 1 D-14 carry-forward)
-- [ ] 02-02-PLAN.md — verification + smoke battery (SC#1 health, SC#2 psql connect, SC#3 named-volume persistence, SC#4 depends_on graph) + D-15 cleanup
+- [x] 02-02-PLAN.md — verification + smoke battery (SC#1 health, SC#2 psql connect, SC#3 named-volume persistence, SC#4 depends_on graph) + D-15 cleanup
 **UI hint**: no
 **Parallelizable**: no (linear setup)
 
@@ -144,7 +144,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Repository Scaffold | 3/3 | Complete | 2026-05-26 |
-| 2. Postgres + Docker Compose | 1/2 | In progress | - |
+| 2. Postgres + Docker Compose | 2/2 | Complete | 2026-05-26 |
 | 3. EF Core Persistence Base | 0/TBD | Not started | - |
 | 4. Cross-Cutting Middleware + Error Handling | 0/TBD | Not started | - |
 | 5. Observability + Health Probes | 0/TBD | Not started | - |
