@@ -1,0 +1,88 @@
+<Project>
+
+  <!--
+    Central Package Management (CPM) for the SK_P solution.
+
+    Every NuGet package version used across BaseApi.Core, BaseApi.Service, and BaseApi.Tests
+    is pinned HERE. Per-project csproj files declare <PackageReference Include="..." /> with
+    NO Version attribute — CPM resolves the version from this table.
+
+    Per Phase 1 CONTEXT.md decisions:
+      D-05: Front-load ALL 22 STACK-verified pins in Phase 1. Each subsequent phase only
+            adds <PackageReference> entries; the version is already pinned here.
+      D-06: <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally> belongs
+            ONLY in this file. Do NOT duplicate it in Directory.Build.props.
+      D-07: Source-generator packages require asset-control attributes in CONSUMER csproj
+            (not here). See conventions below.
+
+    ── SOURCE-GENERATOR / DESIGN-TIME PACKAGE CONVENTIONS ─────────────────────────────────
+    When a csproj references one of the packages below, it MUST add the listed attributes
+    to its <PackageReference> entry (CPM does not control these attributes — they live in
+    the consumer csproj). Forgetting them is a frequent footgun:
+
+      Riok.Mapperly:
+        <PackageReference Include="Riok.Mapperly"
+                          PrivateAssets="all"
+                          ExcludeAssets="runtime" />
+        Why: source generator runs at build time only. PrivateAssets="all" prevents the
+        analyzer from leaking to downstream consumers. ExcludeAssets="runtime" prevents a
+        runtime DLL load that's never used.
+
+      Microsoft.EntityFrameworkCore.Design:
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Design"
+                          PrivateAssets="all" />
+        Why: this is `dotnet ef` tooling — it should never flow as a transitive dependency.
+
+    Versions are aligned with .NET 8.0.421 runtime (8.0.27) where applicable. EF Core and
+    Microsoft.AspNetCore.Mvc.Testing patches are kept in lockstep with the runtime patch.
+    See .planning/research/STACK.md for the full provenance and verification table.
+    ────────────────────────────────────────────────────────────────────────────────────────
+  -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- EF Core 8 — keep .NET runtime + EF Core in lockstep -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.27" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.27" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.27" />
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.10" />
+    <PackageVersion Include="EFCore.NamingConventions" Version="8.0.3" />
+
+    <!-- Mapping (source-gen) — PrivateAssets/ExcludeAssets go in CONSUMER csproj -->
+    <PackageVersion Include="Riok.Mapperly" Version="4.3.1" />
+
+    <!-- Validation -->
+    <PackageVersion Include="FluentValidation" Version="12.1.1" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+
+    <!-- Observability — core + hosting + OTLP exporter pinned together -->
+    <PackageVersion Include="OpenTelemetry" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.3" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.3" />
+    <!-- Instrumentation packages version on their own cadence (currently 1.15.0) -->
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
+
+    <!-- Domain validators -->
+    <PackageVersion Include="JsonSchema.Net" Version="9.2.1" />
+    <PackageVersion Include="Cronos" Version="0.13.0" />
+
+    <!-- Health checks -->
+    <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
+
+    <!-- HTTP — API versioning + Swagger (REQ HTTP-15, HTTP-16) -->
+    <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+
+    <!-- Tests -->
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.27" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="xunit.v3.assert" Version="3.2.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.7" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
+  </ItemGroup>
+
+</Project>
