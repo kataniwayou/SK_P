@@ -38,6 +38,18 @@
       is the third and final MTP scaffold setting required by the xunit.v3 3.2.2 stack.
     -->
     <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
+    <!--
+      On SDK 8/9 `dotnet test` defaults to invoking the legacy VSTest host even when
+      <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner> is set —
+      the runner property only affects what the executable does once started, not how
+      `dotnet test` routes the invocation. Setting
+      <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport> enables the
+      SDK-level routing that makes `dotnet test` invoke the MTP entry-point directly.
+      Companion to UseMicrosoftTestingPlatformRunner; together they constitute the canonical
+      xunit.v3 + SDK 8 MTP setup per the xunit.net authoritative documentation. This is the
+      fourth scaffold gap surfaced by Plan 01-03's verification gate.
+    -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
   </PropertyGroup>
 
   <ItemGroup>
