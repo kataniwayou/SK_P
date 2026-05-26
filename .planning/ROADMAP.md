@@ -12,7 +12,7 @@ This roadmap delivers the Steps API as a .NET 8 modular monolith in 8 dependency
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Repository Scaffold** - Solution structure, SDK pin, central package management, and config skeleton compile cleanly
+- [x] **Phase 1: Repository Scaffold** - Solution structure, SDK pin, central package management, and config skeleton compile cleanly
 - [ ] **Phase 2: Postgres + Docker Compose** - Local Postgres 17 container is reachable from the host with persistent storage and a healthcheck
 - [ ] **Phase 3: EF Core Persistence Base** - `BaseEntity`, `BaseDbContext`, `AuditInterceptor`, snake_case convention, and generic `Repository<T>` exist before any migration is generated
 - [ ] **Phase 4: Cross-Cutting Middleware + Error Handling** - Correlation IDs flow end-to-end and every error returns RFC 7807 Problem Details with the correlation ID
@@ -35,7 +35,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 - [x] 01-01-PLAN.md — Repo-root foundation files: global.json (SDK pin), Directory.Build.props (warnings-as-errors + strictness), Directory.Packages.props (22 NuGet pins via CPM), .editorconfig (Microsoft .NET style), .gitignore (dotnet flavor), .gitattributes (LF endings), README.md (prereqs + quickstart)
 - [x] 01-02-PLAN.md — Solution + 3 projects: SK_P.sln, BaseApi.Core.csproj (class library), BaseApi.Service.csproj (webapi with Program.cs D-10 scaffold + appsettings REQ INFRA-04), BaseApi.Tests.csproj (xUnit v3 + MetaTest sanity), Core folder skeleton (11 .gitkeep folders), Service folder skeleton (3 .gitkeep folders)
-- [ ] 01-03-PLAN.md — Verification + smoke: dotnet --version=8.0.421, dotnet restore, dotnet build (Release+Debug, 0 warnings), dotnet test (Sanity passes), dotnet run smoke (host boots, GET / returns 404), SUMMARY documenting Phase 1 SC#1-4 met
+- [x] 01-03-PLAN.md — Verification + smoke: dotnet --version=8.0.421, dotnet restore, dotnet build (Release+Debug, 0 warnings), dotnet test (Sanity passes), dotnet run smoke (host boots, GET / returns 404), SUMMARY documenting Phase 1 SC#1-4 met
 **UI hint**: no
 **Parallelizable**: no (single foundation step)
 

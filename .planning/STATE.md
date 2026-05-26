@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-02-PLAN.md (resumed after mid-Task-5 socket crash)
-last_updated: "2026-05-26T17:52:52.835Z"
+stopped_at: Completed 01-03-PLAN.md — Phase 1 closed
+last_updated: "2026-05-26T18:33:53Z"
 last_activity: 2026-05-26
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 67
+  completed_plans: 3
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 01 (repository-scaffold) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
+Phase: 01 (repository-scaffold) — COMPLETE
+Plan: 3 of 3 — DONE
+Status: Phase 1 closed; Phase 2 (Postgres + Docker Compose) is the next planning target
 Last activity: 2026-05-26
 
-Progress: [███████░░░] 67%
+Progress: [██████████] 100% (Phase 1)
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [███████░░░] 67%
 *Updated after each plan completion*
 | Phase 01 P01 | 6min | 5 tasks | 7 files |
 | Phase 01 P02 | 24min | 6 tasks | 23 files |
+| Phase 01 P03 | ~75min | 4 tasks (verification + 4 scaffold-fix cycles) | 1 SUMMARY + 3 amendments to earlier-plan files |
 
 ## Accumulated Context
 
@@ -72,6 +73,11 @@ Recent decisions affecting current work:
 - Plan 01-01: SDK pin 8.0.421 with rollForward=latestFeature (allows 8.0.422+ but blocks float to .NET 9/10); verified dotnet --version returns 8.0.421
 - Plan 01-02: Solution + 3 projects shipped; BaseApi.Service.csproj W-04-clean (no UserSecretsId, deferral comment); all 15 .gitkeep files share canonical W-01 body; appsettings has all 4 REQ INFRA-04 sections with Service.Name=steps-api Version=3.2.0
 - Plan 01-02: csproj inheritance pattern proven by absence — none redeclare TargetFramework/Nullable/ImplicitUsings/LangVersion/AnalysisMode/EnforceCodeStyleInBuild/TreatWarningsAsErrors; no Version= attributes on PackageReference (CPM via Directory.Packages.props)
+- Plan 01-03 deviation #1 (attributed Plan 01-01): xunit.runner.visualstudio pin corrected from non-existent 3.1.7 to 3.1.5 in Directory.Packages.props (commit d106972) — surfaced by `dotnet restore` NU1101 failure during Plan 03 Task 2
+- Plan 01-03 deviation #2 (attributed Plan 01-02): added `<OutputType>Exe</OutputType>` to BaseApi.Tests.csproj (commit 630b6ee) — xunit.v3 3.2.2's Microsoft.Testing.Platform integration requires test projects to be executable hosts, not libraries
+- Plan 01-03 deviation #3 (attributed Plan 01-02): added `<UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>` to BaseApi.Tests.csproj (commit e60d001) — opts the test executable into invoking the MTP runner rather than legacy VSTest
+- Plan 01-03 deviation #4 (attributed Plan 01-02): added `<TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>` to BaseApi.Tests.csproj (commit ea02ad9) — SDK 8/9 `dotnet test` requires this companion to UseMicrosoftTestingPlatformRunner to route to MTP entry-point instead of VSTest; user-approved at checkpoint after deviation framework's 3-attempts guard
+- Plan 01-03: SC#1 (zero-warning build both configs), SC#2 (SDK 8.0.421 literal), SC#3 (CPM resolution via dotnet list package), SC#4 (appsettings.json all 4 sections + locked Service values) — all four ROADMAP success criteria verified GREEN; INFRA-01/02/03/04 closed; Phase 1 shipped
 
 ### Pending Todos
 
@@ -97,8 +103,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-26T17:52:52.828Z
-Stopped at: Completed 01-02-PLAN.md (resumed after mid-Task-5 socket crash)
+Last session: 2026-05-26T18:33:53Z
+Stopped at: Completed 01-03-PLAN.md — Phase 1 closed (all 4 ROADMAP success criteria GREEN; INFRA-01/02/03/04 closed)
 Resume file: None
 
-**Planned Phase:** 1 (Repository Scaffold) — 3 plans — 2026-05-26T17:19:58.656Z
+**Planned Phase:** 1 (Repository Scaffold) — 3 plans — 2026-05-26T17:19:58.656Z (COMPLETED 2026-05-26T18:33:53Z)
+**Next:** /gsd-plan-phase 2 (Postgres + Docker Compose)
