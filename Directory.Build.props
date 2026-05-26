@@ -1,0 +1,36 @@
+<Project>
+
+  <!--
+    Repo-wide MSBuild defaults for the SK_P solution.
+
+    Every csproj under this directory automatically inherits these properties via MSBuild's
+    Directory.Build.props convention. Per-project csproj files should NOT redeclare any of
+    these — that defeats the single-source-of-truth purpose.
+
+    Per Phase 1 CONTEXT.md decisions:
+      D-01: Shared MSBuild settings live ONLY in this file at repo root.
+      D-02: TreatWarningsAsErrors=true globally — Phase 1 SC#1 "zero warnings" is enforced
+            at compile time, not via post-hoc review.
+      D-03: Strictness bundle (Nullable, ImplicitUsings, LangVersion, AnalysisMode,
+            EnforceCodeStyleInBuild) — surface compiler/analyzer/style issues as errors.
+      D-04: Mapperly MP-codes (MP0001/MP0011/MP0020/MP0021) are NOT promoted to errors
+            here. That moves to Phase 6 (Validation + Mapping Base) where Mapperly is
+            actually referenced. Phase 6 will add a <WarningsAsErrors>...</WarningsAsErrors>
+            entry to the BaseApi.Service csproj.
+
+    Central NuGet package management is configured in Directory.Packages.props (sibling
+    file). Do NOT duplicate the central-package-management property here (per D-06) —
+    it belongs only in Directory.Packages.props.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AnalysisMode>latest</AnalysisMode>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+</Project>
