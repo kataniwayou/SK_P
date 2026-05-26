@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-01-PLAN.md
-last_updated: "2026-05-26T17:32:41.966Z"
+stopped_at: Completed 01-02-PLAN.md (resumed after mid-Task-5 socket crash)
+last_updated: "2026-05-26T17:52:52.835Z"
 last_activity: 2026-05-26
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 3
-  completed_plans: 1
-  percent: 33
+  completed_plans: 2
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 ## Current Position
 
 Phase: 01 (repository-scaffold) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-26
 
-Progress: [███░░░░░░░] 33%
+Progress: [███████░░░] 67%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [███░░░░░░░] 33%
 
 *Updated after each plan completion*
 | Phase 01 P01 | 6min | 5 tasks | 7 files |
+| Phase 01 P02 | 24min | 6 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Recent decisions affecting current work:
 - Plan 01-01: Front-loaded all 23 NuGet pins in Directory.Packages.props (D-05); CPM property only in Packages.props (D-06); Mapperly MP-codes deferred to Phase 6 (D-04)
 - Plan 01-01: TreatWarningsAsErrors=true globally via Directory.Build.props (D-02) + EnforceCodeStyleInBuild=true + :warning severities in .editorconfig = build-fatal style/naming rules
 - Plan 01-01: SDK pin 8.0.421 with rollForward=latestFeature (allows 8.0.422+ but blocks float to .NET 9/10); verified dotnet --version returns 8.0.421
+- Plan 01-02: Solution + 3 projects shipped; BaseApi.Service.csproj W-04-clean (no UserSecretsId, deferral comment); all 15 .gitkeep files share canonical W-01 body; appsettings has all 4 REQ INFRA-04 sections with Service.Name=steps-api Version=3.2.0
+- Plan 01-02: csproj inheritance pattern proven by absence — none redeclare TargetFramework/Nullable/ImplicitUsings/LangVersion/AnalysisMode/EnforceCodeStyleInBuild/TreatWarningsAsErrors; no Version= attributes on PackageReference (CPM via Directory.Packages.props)
 
 ### Pending Todos
 
@@ -94,8 +97,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-26T17:32:41.955Z
-Stopped at: Completed 01-01-PLAN.md
+Last session: 2026-05-26T17:52:52.828Z
+Stopped at: Completed 01-02-PLAN.md (resumed after mid-Task-5 socket crash)
 Resume file: None
 
 **Planned Phase:** 1 (Repository Scaffold) — 3 plans — 2026-05-26T17:19:58.656Z

@@ -34,7 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. `appsettings.json` in `BaseApi.Service` contains `Logging`, `Service` (`Name="steps-api"`, `Version="3.2.0"`), `ConnectionStrings:Postgres`, and `OpenTelemetry` sections (values may be placeholders) and is valid JSON with no comments
 **Plans**: 3 plans
 - [x] 01-01-PLAN.md — Repo-root foundation files: global.json (SDK pin), Directory.Build.props (warnings-as-errors + strictness), Directory.Packages.props (22 NuGet pins via CPM), .editorconfig (Microsoft .NET style), .gitignore (dotnet flavor), .gitattributes (LF endings), README.md (prereqs + quickstart)
-- [ ] 01-02-PLAN.md — Solution + 3 projects: SK_P.sln, BaseApi.Core.csproj (class library), BaseApi.Service.csproj (webapi with Program.cs D-10 scaffold + appsettings REQ INFRA-04), BaseApi.Tests.csproj (xUnit v3 + MetaTest sanity), Core folder skeleton (11 .gitkeep folders), Service folder skeleton (3 .gitkeep folders)
+- [x] 01-02-PLAN.md — Solution + 3 projects: SK_P.sln, BaseApi.Core.csproj (class library), BaseApi.Service.csproj (webapi with Program.cs D-10 scaffold + appsettings REQ INFRA-04), BaseApi.Tests.csproj (xUnit v3 + MetaTest sanity), Core folder skeleton (11 .gitkeep folders), Service folder skeleton (3 .gitkeep folders)
 - [ ] 01-03-PLAN.md — Verification + smoke: dotnet --version=8.0.421, dotnet restore, dotnet build (Release+Debug, 0 warnings), dotnet test (Sanity passes), dotnet run smoke (host boots, GET / returns 404), SUMMARY documenting Phase 1 SC#1-4 met
 **UI hint**: no
 **Parallelizable**: no (single foundation step)
