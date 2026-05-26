@@ -12,17 +12,17 @@ A .NET 8 Web API platform that exposes CRUD over a workflow-engine data model �
 
 ### Validated
 
-(None yet — ship to validate)
+**Phase 1 (Repository Scaffold) — 2026-05-26**
+- [x] Service runs on .NET 8 Web API (scaffold boots; `dotnet --version` returns pinned 8.0.421; `GET /` returns HTTP 404 with no controllers registered)
+- [x] Service configuration is in `appsettings.json` with environment overrides (`appsettings.json` + `appsettings.Development.json` with localhost dev defaults; 4 sections per INFRA-04)
 
 ### Active
 
 Grouped for readability; final REQ-IDs assigned in REQUIREMENTS.md.
 
 **Runtime & deployment**
-- [ ] Service runs on .NET 8 Web API
 - [ ] PostgreSQL (official Docker image) is the only data store
 - [ ] `docker-compose.yml` orchestrates Postgres + the service for local dev
-- [ ] Service configuration is in `appsettings.json` with environment overrides
 
 **Persistence**
 - [ ] EF Core 8 + Npgsql for all data access
@@ -164,4 +164,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-26 — ProcessorEntity InputSchemaId/OutputSchemaId changed to nullable `Guid?`*
+*Last updated: 2026-05-26 — Phase 1 (Repository Scaffold) complete: solution structure + SDK pin + CPM + appsettings validated.*
