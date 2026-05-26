@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Repository Scaffold** - Solution structure, SDK pin, central package management, and config skeleton compile cleanly
 - [x] **Phase 2: Postgres + Docker Compose** - Local Postgres 17 container is reachable from the host with persistent storage and a healthcheck
-- [ ] **Phase 3: EF Core Persistence Base** - `BaseEntity`, `BaseDbContext`, `AuditInterceptor`, snake_case convention, and generic `Repository<T>` exist before any migration is generated
+- [x] **Phase 3: EF Core Persistence Base** - `BaseEntity`, `BaseDbContext`, `AuditInterceptor`, snake_case convention, and generic `Repository<T>` exist before any migration is generated
 - [ ] **Phase 4: Cross-Cutting Middleware + Error Handling** - Correlation IDs flow end-to-end and every error returns RFC 7807 Problem Details with the correlation ID
 - [ ] **Phase 5: Observability + Health Probes** - OTel logs, metrics, and traces reach the Collector; three distinct health probes (live/ready/startup) respond correctly
 - [ ] **Phase 6: Validation + Mapping Base** - Base DTO validator + Mapperly + `IEntityMapper<,,,>` seam are wired so any future entity slots in without rewriting base rules
@@ -65,7 +65,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Resolving `DbContext` twice from the same DI scope returns the same instance; resolving from a different scope returns a different instance (Scoped lifetime verified)
 **Plans**: 2 plans
 - [x] 03-01-PLAN.md — Build plan: append PERSIST-16 to REQUIREMENTS.md (D-03b); pin Microsoft.Extensions.TimeProvider.Testing 8.10.0 in Directory.Packages.props (D-13); add EF Core + Npgsql + EFCore.NamingConventions PackageReferences + FrameworkReference Microsoft.AspNetCore.App to BaseApi.Core.csproj (D-12) and BaseApi.Tests.csproj (D-13); create BaseEntity.cs, BaseDbContext.cs, AuditInterceptor.cs, IRepository.cs, Repository.cs (verbatim skeletons from RESEARCH.md); aggregate `dotnet build` Release+Debug zero warnings per W-02 (D-17)
-- [ ] 03-02-PLAN.md — Verification + smoke (autonomous:false, D-18): create TestEntity/TestDbContext/PostgresFixture/StubHttpContextAccessor scaffold + 5 fact files (SchemaTests SC#1, AuditInterceptorTests SC#2+SC#3 as 2 facts, DiLifetimeTests SC#4, XminConcurrencyTokenTests Dim 6 PERSIST-16, RepositorySurfaceTests Dim 7 PERSIST-11); `dotnet test` against Phase 2 Postgres at localhost:5433 with per-class throwaway DBs; `psql \l` before/after for D-15 cleanup verification; 03-02-SUMMARY documenting SC#1-4 + Dim 6 + Dim 7 GREEN (D-14, D-15, D-18)
+- [x] 03-02-PLAN.md — Verification + smoke (autonomous:false, D-18) — SHIPPED 2026-05-27: created 9 test files (TestEntity/TestDbContext/PostgresFixture/StubHttpContextAccessor scaffold + 5 facts: SchemaTests SC#1, AuditInterceptorTests SC#2+SC#3 as 2 facts, DiLifetimeTests SC#4, XminConcurrencyTokenTests Dim 6 PERSIST-16, RepositorySurfaceTests Dim 7 PERSIST-11); `dotnet test` exit 0 with Passed: 7 Failed: 0 against Phase 2 Postgres at localhost:5433; byte-identical `psql \l` BEFORE/AFTER snapshots (4 baseline DBs each, zero leaks) confirm D-15 cleanup; 03-02-SUMMARY documents SC#1-4 + Dim 6 + Dim 7 ALL GREEN (D-14, D-15, D-18 honored)
 **UI hint**: no
 **Parallelizable**: no (snake_case + AuditInterceptor + BaseEntity are tightly coupled and must land in a single commit before the first migration)
 
@@ -147,7 +147,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 |-------|----------------|--------|-----------|
 | 1. Repository Scaffold | 3/3 | Complete | 2026-05-26 |
 | 2. Postgres + Docker Compose | 2/2 | Complete | 2026-05-26 |
-| 3. EF Core Persistence Base | 1/2 | In Progress | - |
+| 3. EF Core Persistence Base | 2/2 | Complete | 2026-05-27 |
 | 4. Cross-Cutting Middleware + Error Handling | 0/TBD | Not started | - |
 | 5. Observability + Health Probes | 0/TBD | Not started | - |
 | 6. Validation + Mapping Base | 0/TBD | Not started | - |

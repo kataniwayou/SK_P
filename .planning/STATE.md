@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed Plan 03-01 (build plan); 03-02 verification plan is next
-last_updated: "2026-05-26T21:28:48.385Z"
-last_activity: 2026-05-26 — Plan 03-01 completed (5 production C# files + 2 csproj + 1 props + 1 doc; both builds 0-warn 0-error)
+stopped_at: "Phase 3 complete (Plans 03-01 + 03-02 shipped); next: Phase 4 cross-cutting middleware + error handling"
+last_updated: "2026-05-26T22:57:04.436Z"
+last_activity: 2026-05-27 — Plan 03-02 verification complete (SC#1-4 + Dim 6/7 GREEN; 7/7 tests pass; D-15 cleanup proven; Phase 3 shipped)
 progress:
   total_phases: 8
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
-  completed_plans: 6
-  percent: 86
+  completed_plans: 7
+  percent: 100
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 03 — EF Core Persistence Base (Plan 03-01 shipped; Plan 03-02 next)
+**Current focus:** Phase 04 — Cross-Cutting Middleware + Error Handling (next; Phase 03 complete)
 
 ## Current Position
 
-Phase: 03 (EF Core Persistence Base) — EXECUTING
-Plan: 1 of 2 complete (next: 03-02 verification plan)
-Status: Plan 03-01 shipped (build set + zero-warning aggregate); Plan 03-02 awaits execution
-Last activity: 2026-05-26 — Plan 03-01 completed (5 production C# files + 2 csproj edits + 1 doc edit + 1 props edit)
+Phase: 03 (EF Core Persistence Base) — COMPLETE
+Plan: 2 of 2 complete (Plan 03-01 build + Plan 03-02 verification both shipped GREEN)
+Status: Phase 3 complete; ready for Phase 4 planning
+Last activity: 2026-05-27 — Plan 03-02 acceptance battery GREEN (4 SCs + 2 dimension guards; 7/7 tests pass; D-15 cleanup proven)
 
-Progress: [█████████░] 86%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 7
 - Average duration: —
 - Total execution time: —
 
@@ -46,7 +46,7 @@ Progress: [█████████░] 86%
 |-------|-------|-------|----------|
 | 01 | 3 | - | - |
 | 02 | 2 | - | - |
-| 03 | 1 | 8min | 8min |
+| 03 | 2 | ~11min | ~5min |
 
 **Recent Trend:**
 
@@ -60,6 +60,7 @@ Progress: [█████████░] 86%
 | Phase 02 P02-01 | 3min | 3 tasks | 5 files |
 | Phase 02 P02-02 | 5min | 6 tasks | 1 files |
 | Phase 03 P03-01 | 8min | 9 tasks (8 commits + 1 verification gate) | 9 files (1 doc + 1 props + 2 csproj + 5 new C#) |
+| Phase 03 P03-02 | 3min | 7 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -92,6 +93,8 @@ Recent decisions affecting current work:
 - Plan 03-01: PERSIST-16 (xmin shadow concurrency token) landed in REQUIREMENTS.md as Task 0 BEFORE any implementation commits — D-03b doc-first traceability pattern; same approach should be used whenever a phase invents a new cross-phase requirement during planning
 - Plan 03-01: BaseApi.Core.csproj uses <FrameworkReference Include='Microsoft.AspNetCore.App' /> for IHttpContextAccessor + future controllers/middleware/healthchecks instead of per-package PackageReferences (D-12). Zero runtime weight (framework on host). BaseApi.Tests.csproj uses the same FrameworkReference for DefaultHttpContext + ClaimsPrincipal in StubHttpContextAccessor (D-13)
 - Plan 03-01: All 5 production C# files copied VERBATIM from 03-RESEARCH.md / 03-PATTERNS.md skeletons (BaseEntity, BaseDbContext, AuditInterceptor, IRepository, Repository). The xmin shadow concurrency token (Pitfall 6 verbatim — Property<uint>('xmin').HasColumnName('xmin').HasColumnType('xid').ValueGeneratedOnAddOrUpdate().IsConcurrencyToken()) wires in BaseDbContext.OnModelCreating via modelBuilder.Model.GetEntityTypes() iteration filtered by typeof(BaseEntity).IsAssignableFrom — junction entities (non-BaseEntity) excluded naturally
+- Plan 03-02 deviation: xUnit v3 3.2.2 xUnit1051 analyzer escalation under TreatWarningsAsErrors=true required threading TestContext.Current.CancellationToken through 10 async call sites in SchemaTests.cs (4) + AuditInterceptorTests.cs (6). Classified as fix(03-02) test-side, not fix(03-01) — production code unchanged. Commit 7636429.
+- Plan 03-02: Phase 3 ROADMAP SC#1-4 + Dim 6 (PERSIST-16) + Dim 7 (PERSIST-11) all GREEN. dotnet test exit 0, Passed: 7, Failed: 0. D-15 cleanup proven via byte-identical psql \l snapshots before/after (4 baseline DBs each, zero stepsdb_test_* leaks). Phase 3 complete; ready for Phase 4 (cross-cutting middleware + error handling).
 
 ### Pending Todos
 
@@ -117,9 +120,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-26T21:28:48.378Z
-Stopped at: Completed Plan 03-01 (build plan); 03-02 verification plan is next
+Last session: 2026-05-26T22:57:04.428Z
+Stopped at: Phase 3 complete (Plans 03-01 + 03-02 shipped); next: Phase 4 cross-cutting middleware + error handling
 Resume file: None
 
-**Planned Phase:** 3 (EF Core Persistence Base) — 2 plans — 2026-05-26T21:09:50.621Z
-**Next:** /gsd-execute-plan 03-02 (verification + smoke; autonomous:false, D-18 checkpoint plan)
+**Planned Phase:** 3 (EF Core Persistence Base) — 2 plans — 2026-05-26T21:09:50.621Z (COMPLETE 2026-05-27)
+**Next:** /gsd-plan-phase 4 (Cross-Cutting Middleware + Error Handling — RFC 7807 ProblemDetails + correlation-ID middleware + SQLSTATE 23503/23505 + DbUpdateConcurrencyException→409 mapping; covers ERROR-01..11 + OBSERV-09..11)
