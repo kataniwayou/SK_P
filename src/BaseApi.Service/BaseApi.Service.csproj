@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    BaseApi.Service — the runnable webapi.
+
+    Inherits TargetFramework, Nullable, ImplicitUsings, LangVersion, AnalysisMode,
+    EnforceCodeStyleInBuild, TreatWarningsAsErrors from Directory.Build.props.
+
+    Microsoft.NET.Sdk.Web automatically includes Microsoft.AspNetCore.App as a
+    framework reference, so we get controllers, hosting, health checks, etc.,
+    in-box — no PackageReference needed for those.
+
+    Phase 1 scope: ProjectReference to BaseApi.Core only. No PackageReferences.
+    The Program.cs scaffold uses only in-box ASP.NET Core APIs.
+
+    Phases 6-8 will add:
+      - Riok.Mapperly             (PrivateAssets="all" ExcludeAssets="runtime")
+      - JsonSchema.Net
+      - Cronos
+      - Microsoft.EntityFrameworkCore.Design  (PrivateAssets="all")
+      - Asp.Versioning.Http
+      - Swashbuckle.AspNetCore
+    All versions pinned in Directory.Packages.props.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>BaseApi.Service</RootNamespace>
+    <AssemblyName>BaseApi.Service</AssemblyName>
+    <!-- UserSecretsId deferred to v2 when auth/secrets boundary is defined (see PROJECT.md Out of Scope). -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BaseApi.Core\BaseApi.Core.csproj" />
+  </ItemGroup>
+
+</Project>

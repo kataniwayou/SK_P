@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    BaseApi.Core — reusable infrastructure class library.
+
+    Per Phase 1 CONTEXT.md decisions:
+      D-01: TargetFramework, Nullable, ImplicitUsings, LangVersion, AnalysisMode,
+            EnforceCodeStyleInBuild, TreatWarningsAsErrors are inherited from
+            Directory.Build.props at the repo root. DO NOT re-declare them here.
+      D-05: NuGet versions are pinned in Directory.Packages.props. Any future
+            <PackageReference Include="..." /> entries in this file MUST NOT
+            include a Version= attribute (CPM forbids it).
+
+    Phase 1 scope: this file has NO PackageReferences and NO ProjectReferences.
+    The csproj exists to make `dotnet build` produce an empty assembly that
+    Phase 1 SC#1 ("zero warnings") can be verified against.
+
+    Phases 3-7 will add PackageReferences for EF Core, FluentValidation, OTel,
+    AspNetCore.HealthChecks.NpgSql, etc. — all already pinned in
+    Directory.Packages.props by Phase 1 Plan 01 Task 3.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>BaseApi.Core</RootNamespace>
+    <AssemblyName>BaseApi.Core</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>

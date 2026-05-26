@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    BaseApi.Tests — xUnit v3 unit + integration test project.
+
+    Per Phase 1 CONTEXT.md decision D-11:
+      Ships with xunit.v3 + xunit.v3.assert + xunit.runner.visualstudio
+      and ONE sanity test (MetaTest.cs) to prove the test stack wires correctly.
+
+    All NuGet versions resolved from Directory.Packages.props (CPM).
+    No Version= attributes on PackageReference entries.
+
+    Phase 8 will add Microsoft.AspNetCore.Mvc.Testing + Testcontainers.PostgreSql
+    for integration tests; both already pinned in Directory.Packages.props.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>BaseApi.Tests</RootNamespace>
+    <AssemblyName>BaseApi.Tests</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.v3.assert" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\BaseApi.Core\BaseApi.Core.csproj" />
+  </ItemGroup>
+
+</Project>
