@@ -83,6 +83,9 @@
     <PackageVersion Include="xunit.v3.assert" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
+
+    <!-- Microsoft.Extensions.* family — versions on own cadence (Phase 3: FakeTimeProvider) -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.10.0" />
   </ItemGroup>
 
 </Project>
