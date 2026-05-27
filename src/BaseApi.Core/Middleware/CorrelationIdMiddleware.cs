@@ -9,9 +9,11 @@ namespace BaseApi.Core.Middleware;
 /// <c>X-Correlation-Id</c> header, and pushes it onto the MEL log scope.
 ///
 /// <para>
-/// <b>Pipeline placement (D-01):</b> registered AFTER <c>UseExceptionHandler</c>
-/// so the IExceptionHandler chain (NotFound / Validation / DbUpdate / Fallback)
-/// can read <c>HttpContext.Items["CorrelationId"]</c> when shaping ProblemDetails.
+/// <b>Pipeline placement (D-01):</b> registered as the second middleware (after
+/// <c>UseExceptionHandler</c>), so it runs INSIDE the exception handler's try-catch.
+/// When an endpoint throws, <c>CorrelationIdMiddleware</c> has already populated
+/// <c>HttpContext.Items["CorrelationId"]</c> — the IExceptionHandler chain reads
+/// it directly from <c>HttpContext.Items</c> via the ProblemDetails customizer (D-04).
 /// </para>
 ///
 /// <para>
