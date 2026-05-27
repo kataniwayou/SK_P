@@ -184,8 +184,6 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **TEST-01**: Test project `tests/BaseApi.Tests/` using `xUnit` v3
 - [ ] **TEST-02**: `Microsoft.AspNetCore.Mvc.Testing` + `WebApplicationFactory<Program>` for integration tests
-- [ ] **TEST-03**: `Testcontainers.PostgreSql` for real Postgres in tests (no `InMemory`, no `SQLite` — they don't enforce FK or emit SQLSTATE that error-mapping depends on)
-- [ ] **TEST-04**: `Respawn` (or equivalent) used to reset DB between tests (faster than tearing down container per test)
 - [ ] **TEST-05**: At least one happy-path integration test per CRUD verb per entity (5 entities × 5 verbs = 25 smoke tests, minimum)
 - [ ] **TEST-06**: At least one negative-path integration test per error mapping (400 validation, 404 not found, 409 unique violation, 422 FK violation)
 
@@ -198,6 +196,8 @@ Deferred to future release. Tracked but not in current roadmap.
 - **VALID-21**: Dynamic schema conformance — `Assignment.Payload` validated against `Schema.Definition` referenced by `Assignment.SchemaId` (cross-entity dynamic validation). *Deferred per N2 decision.*
 - **INFRA-08**: Multi-instance startup migration with Postgres advisory lock to prevent concurrent migration corruption. *v1 ships single-replica.*
 - **INFRA-09**: Separate Postgres roles for migration vs runtime (least-privilege). *v1 uses a single role.*
+- **TEST-03**: `Testcontainers.PostgreSql` for real Postgres in tests. *Deferred to v2 per Phase 8 D-05: PostgresFixture pattern (per-class throwaway DB on the Phase 2 compose-running Postgres at localhost:5433) is proven across 98 facts spanning Phases 3-7; Testcontainers cold-start adds ~3-5s/fixture on Windows Docker Desktop with no behavioral gain at v1 scale. Migration when CI requires self-contained test runs (no Docker compose prereq).*
+- **TEST-04**: `Respawn` (or equivalent) used to reset DB between tests. *Deferred to v2 per Phase 8 D-06: per-class throwaway DBs preserve the Phase 3 D-15 byte-identical `psql \l` BEFORE/AFTER no-leak proof; Respawn would invalidate that proof. Revisit if per-fact reset cost becomes noticeable at higher fact counts.*
 
 ### Querying
 
@@ -334,14 +334,14 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ERROR-11 | Phase 4 | Pending |
 | TEST-01 | Phase 8 | Pending |
 | TEST-02 | Phase 8 | Pending |
-| TEST-03 | Phase 8 | Pending |
-| TEST-04 | Phase 8 | Pending |
+| TEST-03 | v2 | Deferred |
+| TEST-04 | v2 | Deferred |
 | TEST-05 | Phase 8 | Pending |
 | TEST-06 | Phase 8 | Pending |
 
 **Coverage:**
 - v1 requirements: 102 total (7 INFRA + 15 PERSIST + 10 ENTITY + 16 HTTP + 20 VALID + 12 OBSERV + 5 HEALTH + 11 ERROR + 6 TEST). Note: previous header line summed to 103 by counting ERROR-11 twice; corrected here.
-- Mapped to phases: 102 (100%)
+- Mapped to phases: 100 v1 + 2 v2 (TEST-03, TEST-04) = 102 (100%)
 - Unmapped: 0
 
 Per-phase coverage:
@@ -352,7 +352,7 @@ Per-phase coverage:
 - Phase 5 (Observability + Health Probes): 14 requirements (OBSERV-01..08, OBSERV-12, HEALTH-01..05)
 - Phase 6 (Validation + Mapping Base): 8 requirements (VALID-01..07, HTTP-10)
 - Phase 7 (Generic HTTP Base + Composition Root): 9 requirements (HTTP-01..03, HTTP-08..09, HTTP-13..16)
-- Phase 8 (Entity Build-Out + Migrations + Docker Runtime + Tests): 41 requirements (PERSIST-01, PERSIST-08..10, PERSIST-12..14, ENTITY-03..10, HTTP-04..07, HTTP-11..12, VALID-08..20, INFRA-05, TEST-01..06)
+- Phase 8 (Entity Build-Out + Migrations + Docker Runtime + Tests): 39 requirements (PERSIST-01, PERSIST-08..10, PERSIST-12..14, ENTITY-03..10, HTTP-04..07, HTTP-11..12, VALID-08..20, INFRA-05, TEST-01, TEST-02, TEST-05, TEST-06) — TEST-03 + TEST-04 deferred to v2 per Phase 8 CONTEXT.md D-05 / D-06
 
 ---
 *Requirements defined: 2026-05-26*
