@@ -36,11 +36,22 @@
 
   <ItemGroup>
     <!-- EF Core 8 + Npgsql + snake_case convention (Phase 3 CONTEXT.md D-12).
-         Versions resolve from Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+         Phase 4 D-10 adds explicit Npgsql pin (PostgresExceptionMapper consumes
+         Npgsql.PostgresException directly — making the contract visible resists
+         Phase 7/8 csproj refactors). Versions resolve from Directory.Packages.props
+         (CPM — no Version= per Phase 1 D-05/D-06). -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Npgsql" />
     <PackageReference Include="EFCore.NamingConventions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- FluentValidation 12 — Phase 4 ships ValidationException → 400 mapping defensively
+         (D-10); Phase 6 wires validators via AddValidatorsFromAssembly. Version pinned in
+         Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+    <PackageReference Include="FluentValidation" />
   </ItemGroup>
 
 </Project>
