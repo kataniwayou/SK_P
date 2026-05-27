@@ -9,10 +9,14 @@ using Microsoft.EntityFrameworkCore;
 namespace BaseApi.Tests.Endpoints;
 
 /// <summary>
-/// Test-only controller hosting one endpoint per handler path. Discovered by
+/// Deliberately-throwing endpoints used ONLY by Phase 4 verification
+/// (<see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/> integration tests).
+/// NOT FOR PRODUCTION USE — parameters are unbounded and inputs are unvalidated.
+///
+/// <para>Test-only controller hosting one endpoint per handler path. Discovered by
 /// <see cref="BaseApi.Tests.Middleware.WebAppFactory"/> via
 /// <c>AddApplicationPart(typeof(WebAppFactory).Assembly)</c> — does NOT exist in
-/// <c>src/BaseApi.Service/</c>, which has zero controllers in Phase 4.
+/// <c>src/BaseApi.Service/</c>, which has zero controllers in Phase 4.</para>
 ///
 /// <para>
 /// <b>Endpoint coverage map:</b>
