@@ -98,8 +98,13 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
         var response = await client.GetAsync("/api/v1/assignments", ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // Phase8WebAppFactory uses IClassFixture (shared per class) — sibling facts may
+        // have created rows by the time this fact runs. Assert the response is a
+        // well-formed JSON array (the list-endpoint contract), not strictly-zero rows.
         var body = await response.Content.ReadAsStringAsync(ct);
-        Assert.Equal("[]", body);
+        Assert.NotNull(body);
+        Assert.StartsWith("[", body);
+        Assert.EndsWith("]", body);
     }
 
     [Fact]
@@ -114,14 +119,19 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
 
         Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
         Assert.NotNull(resp.Headers.Location);
-        Assert.Matches(@"^/api/v1/assignments/[a-f0-9\-]{36}$", resp.Headers.Location!.ToString());
+        // Location header is absolute (Kestrel composes it with scheme+host); the
+        // [controller] route token preserves the C# class-name casing — "Assignments"
+        // not "assignments". Regex tolerates both.
+        Assert.Matches(@"(?i)/api/v1/assignments/[a-f0-9\-]{36}$", resp.Headers.Location!.ToString());
 
         var read = await resp.Content.ReadFromJsonAsync<AssignmentReadDto>(cancellationToken: ct);
         Assert.NotNull(read);
         Assert.NotEqual(Guid.Empty, read!.Id);
         Assert.Equal(stepId, read.StepId);
         Assert.Equal(schemaId, read.SchemaId);
-        Assert.Equal("{\"key\":\"value\"}", read.Payload);
+        // Postgres jsonb normalizes whitespace (adds " " after colons) and may reorder keys.
+        // Compare semantically rather than via literal string equality.
+        Assert.Equal(NormalizeJson("{\"key\":\"value\"}"), NormalizeJson(read.Payload));
         Assert.NotEqual(default, read.CreatedAt);            // HTTP-07: audit populated
         Assert.NotEqual(default, read.UpdatedAt);
     }
@@ -141,7 +151,8 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
         Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         var read = await resp.Content.ReadFromJsonAsync<AssignmentReadDto>(cancellationToken: ct);
         Assert.Equal(created.Id, read!.Id);
-        Assert.Equal(created.Payload, read.Payload);
+        // jsonb-storage normalizes whitespace + may reorder keys; compare semantically.
+        Assert.Equal(NormalizeJson(created.Payload), NormalizeJson(read.Payload));
     }
 
     [Fact]
@@ -168,7 +179,54 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
         var getResp = await client.GetAsync($"/api/v1/assignments/{created.Id}", ct);
         var read = await getResp.Content.ReadFromJsonAsync<AssignmentReadDto>(cancellationToken: ct);
         Assert.Equal("1.0.1", read!.Version);
-        Assert.Equal("{\"updated\":true}", read.Payload);
+        // jsonb-storage normalizes whitespace + may reorder keys; compare semantically.
+        Assert.Equal(NormalizeJson("{\"updated\":true}"), NormalizeJson(read.Payload));
+    }
+
+    /// <summary>
+    /// Semantic JSON equality helper: parse, then re-serialize with sorted keys + compact
+    /// whitespace. Two semantically equivalent JSON documents always produce the same
+    /// normalized string. Used to compare Assignment.Payload across Postgres jsonb storage
+    /// (which reorders keys + adds whitespace).
+    /// </summary>
+    private static string NormalizeJson(string json)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(json);
+        return SerializeSorted(node);
+    }
+
+    private static string SerializeSorted(System.Text.Json.Nodes.JsonNode? node)
+    {
+        if (node is null) return "null";
+        if (node is System.Text.Json.Nodes.JsonObject obj)
+        {
+            var sb = new System.Text.StringBuilder("{");
+            var first = true;
+            foreach (var kvp in obj.OrderBy(p => p.Key, StringComparer.Ordinal))
+            {
+                if (!first) sb.Append(',');
+                sb.Append(System.Text.Json.JsonSerializer.Serialize(kvp.Key));
+                sb.Append(':');
+                sb.Append(SerializeSorted(kvp.Value));
+                first = false;
+            }
+            sb.Append('}');
+            return sb.ToString();
+        }
+        if (node is System.Text.Json.Nodes.JsonArray arr)
+        {
+            var sb = new System.Text.StringBuilder("[");
+            var first = true;
+            foreach (var item in arr)
+            {
+                if (!first) sb.Append(',');
+                sb.Append(SerializeSorted(item));
+                first = false;
+            }
+            sb.Append(']');
+            return sb.ToString();
+        }
+        return node.ToJsonString();
     }
 
     [Fact]
