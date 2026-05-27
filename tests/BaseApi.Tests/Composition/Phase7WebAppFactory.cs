@@ -21,7 +21,8 @@ namespace BaseApi.Tests.Composition;
 
 /// <summary>
 /// WebAppFactory subclass for Phase 7 facts. Adds:
-/// (a) <c>AddApplicationPart(typeof(Phase7WebAppFactory).Assembly)</c> so TestsController is discovered;
+/// (a) (removed IN-07 — base WebAppFactory.ConfigureWebHost already registers this assembly's
+///     application part, so TestsController is discovered without an additional call here);
 /// (b) <c>AddBaseApiValidation</c> + <c>AddBaseApiMapping</c> scanning the Tests assembly so
 ///     TestDtoValidator (TestUpdateDto), TestCreateDtoValidator (Blocker 2 fix), and TestEntityMapper
 ///     are visible to AddBaseApi's production scan (Phase 6 D-16 multi-assembly pattern — RESEARCH Pitfall 8);
@@ -99,7 +100,9 @@ public class Phase7WebAppFactory : WebAppFactory, IAsyncLifetime
         base.ConfigureWebHost(builder);
         builder.ConfigureTestServices(services =>
         {
-            services.AddControllers().AddApplicationPart(typeof(Phase7WebAppFactory).Assembly);
+            // IN-07: the base WebAppFactory.ConfigureWebHost already registers this assembly
+            // via AddApplicationPart; ApplicationPartManager dedupes by reference equality so
+            // a duplicate call is a no-op. Removed to avoid misleading future readers.
             services.AddBaseApiValidation(typeof(Phase7WebAppFactory).Assembly);
             services.AddBaseApiMapping(typeof(Phase7WebAppFactory).Assembly);
 
