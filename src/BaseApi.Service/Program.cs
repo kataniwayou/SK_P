@@ -1,9 +1,11 @@
 using BaseApi.Core.DependencyInjection;
 using BaseApi.Service;
+using BaseApi.Service.Composition;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.AddBaseApiObservability(builder.Configuration);
 builder.Services.AddBaseApi<AppDbContext>(builder.Configuration);
+builder.Services.AddAppFeatures();
 
 var app = builder.Build();
 app.UseBaseApi();
