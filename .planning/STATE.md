@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 08-03-PLAN.md (Processor feature folder + smoke tests)
-last_updated: "2026-05-27T19:37:42.078Z"
+stopped_at: Completed 08-04-PLAN.md (Step feature folder + junction sync + smoke tests)
+last_updated: "2026-05-27T19:55:08.063Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 23
-  completed_plans: 18
-  percent: 78
+  completed_plans: 19
+  percent: 83
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 08 (entity-build-out-migrations-docker-runtime-tests) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [████████░░] 78%
+Progress: [████████░░] 83%
 
 ## Performance Metrics
 
@@ -76,6 +76,7 @@ Progress: [████████░░] 78%
 | Phase 08 P01 | 7min | 5 tasks tasks | 7 files files |
 | Phase 08 P02 | 5min | 2 tasks tasks | 9 files files |
 | Phase 08 P03 | 5min | 2 tasks tasks | 9 files files |
+| Phase 08 P04 | 12min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -160,6 +161,10 @@ Recent decisions affecting current work:
 - Plan 08-03: DeleteBehavior.SetNull on both nullable FKs per RESEARCH §Cascade behaviors (line 582) — schema deletion sets dependent processor FK columns to null, NOT cascade-delete the processor; Plan 08-04 Step.ProcessorId is non-nullable and will use Restrict
 - Plan 08-03: Lambda-less HasOne<SchemaEntity>().WithMany() form per RESEARCH Pitfall 4 — creates Postgres FK constraint without generating nav properties (ENTITY-09 'no nav props between entities' satisfied); canonical pattern for all Phase 8 entity FK references
 - Plan 08-03: Per-fact-unique SourceHash via RandomSha256Hex() — reserves duplicate-hash collision path exclusively for Plan 08-08 error-mapping fact; two Guid byte arrays (32 bytes → 64 hex chars) satisfies both VALID-10 regex AND parallel-class uniqueness
+- Plan 08-04: First SyncJunctionsAsync override in Phase 8 — StepService reads DbContext.Set<StepNextSteps>(), on Update RemoveRange existing rows filtered by entity.Id then AddRangeAsync new rows; runs between repo.Add and SaveChanges in Phase 7 D-11 locked 6-step verb order; commits atomically with parent entity in same transaction; Plan 08-06 Workflow will mirror this pattern with 2 junctions
+- Plan 08-04: [MapValue(target-prop, null)] replaces [MapperIgnoreTarget(target-prop)] when the target is a positional record's required constructor parameter — Mapperly RMG013 fires because [MapperIgnoreTarget] cannot skip ctor params (suppresses property-level diagnostic only). [MapValue] supplies a compile-time constant directly to the ctor param. Net Step mapper coverage: 10 [MapperIgnoreTarget] + 2 [MapperIgnoreSource] + 1 [MapValue] (instead of plan-as-written 11+2). Plan 08-06 Workflow will reuse this pattern for its 2 M2M collections (EntryStepIds, AssignmentIds)
+- Plan 08-04: StepEntity.ProcessorId is non-nullable + OnDelete(Restrict); StepNextSteps both self-ref FKs Restrict — differs from Processor's nullable+SetNull. Establishes Step as the principal side that Plan 08-06 Workflow's FK Restrict attaches to (SC#5 deleting a Step referenced by a Workflow → 422). Postgres rejects SET NULL on non-nullable column so Restrict is the only correct cascade.
+- Plan 08-04: Junction-row direct-DB assertion via CountJunctionsForStepAsync (NpgsqlConnection + SELECT count(*) FROM step_next_steps WHERE step_id = @id) bypasses v1 StepReadDto.NextStepIds=null limitation. Post-ToRead enrichment deferred to a future phase when BaseService.GetAsync/ListAsync become virtual or a dedicated enrichment hook is added. Plan 08-06 Workflow will mirror with workflow_entry_steps + workflow_assignments count helpers.
 
 ### Pending Todos
 
@@ -185,8 +190,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T19:37:26.176Z
-Stopped at: Completed 08-03-PLAN.md (Processor feature folder + smoke tests)
+Last session: 2026-05-27T19:55:08.056Z
+Stopped at: Completed 08-04-PLAN.md (Step feature folder + junction sync + smoke tests)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)

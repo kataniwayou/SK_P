@@ -38,7 +38,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **PERSIST-09**: Migrations applied on startup by `BaseApi.Service` via `db.Database.MigrateAsync()` before readiness probe transitions to Healthy
 - [ ] **PERSIST-10**: Migration failure surfaces as failing readiness probe (process does not crash)
 - [x] **PERSIST-11**: Generic `Repository<TEntity>` in `BaseApi.Core` (Get, List, Add, Update, Delete with `CancellationToken`)
-- [ ] **PERSIST-12**: Junction tables `StepNextSteps`, `WorkflowEntrySteps`, `WorkflowAssignments` configured as explicit join entities with composite PKs and FKs to both sides
+- [x] **PERSIST-12
+**: Junction tables `StepNextSteps`, `WorkflowEntrySteps`, `WorkflowAssignments` configured as explicit join entities with composite PKs and FKs to both sides
 - [x] **PERSIST-13
 **: All FK columns have DB-level FK constraints (enforced by Postgres)
 - [x] **PERSIST-14
@@ -54,8 +55,10 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `SchemaEntity : BaseEntity` adds `Definition` string (jsonb)
 - [x] **ENTITY-04
 **: `ProcessorEntity : BaseEntity` adds `SourceHash` string (SHA-256 hex, unique), `InputSchemaId` Guid? (nullable FK→Schema), `OutputSchemaId` Guid? (nullable FK→Schema). Null permitted on both — supports source processors (no input) and sink processors (no output). DB columns are nullable; Postgres FK constraint still enforced when value is non-null.
-- [ ] **ENTITY-05**: `StepEntity : BaseEntity` adds `ProcessorId` Guid (FK→Processor), `NextStepIds` List<Guid>? (M2M self-ref via `StepNextSteps`), `EntryCondition` `StepEntryCondition` (default `PreviousCompleted`)
-- [ ] **ENTITY-06**: `StepEntryCondition` enum: `PreviousProcessing=0`, `PreviousCompleted=1`, `PreviousFailed=2`, `PreviousCancelled=3`, `Always=4`, `Never=5`
+- [x] **ENTITY-05
+**: `StepEntity : BaseEntity` adds `ProcessorId` Guid (FK→Processor), `NextStepIds` List<Guid>? (M2M self-ref via `StepNextSteps`), `EntryCondition` `StepEntryCondition` (default `PreviousCompleted`)
+- [x] **ENTITY-06
+**: `StepEntryCondition` enum: `PreviousProcessing=0`, `PreviousCompleted=1`, `PreviousFailed=2`, `PreviousCancelled=3`, `Always=4`, `Never=5`
 - [ ] **ENTITY-07**: `AssignmentEntity : BaseEntity` adds `StepId` Guid (FK→Step), `SchemaId` Guid (FK→Schema), `Payload` string (jsonb)
 - [ ] **ENTITY-08**: `WorkflowEntity : BaseEntity` adds `EntryStepIds` List<Guid> (M2M to Step via `WorkflowEntrySteps`, required non-empty), `AssignmentIds` List<Guid>? (M2M to Assignment via `WorkflowAssignments`), `CronExpression` string? (nullable)
 - [x] **ENTITY-09
@@ -122,9 +125,12 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `ProcessorCreate/UpdateDto.SourceHash`: regex `^[a-f0-9]{64}$` (lowercase SHA-256 hex)
 - [x] **VALID-11**: `ProcessorCreate/UpdateDto.InputSchemaId`/`OutputSchemaId`: nullable `Guid?` — null is valid (source/sink processor). When present, must not equal `Guid.Empty`. FluentValidation pattern: `When(x => x.InputSchemaId.HasValue, () => RuleFor(x => x.InputSchemaId!.Value).NotEqual(Guid.Empty));` (same for `OutputSchemaId`). `Guid.Empty` (`00000000-0000-0000-0000-000000000000`) is rejected at HTTP 400 by the validator, NOT at the DB layer. FK existence for non-empty Guids is still enforced by Postgres at persist time (SQLSTATE 23503 → HTTP 422 per ERROR-04
 ).
-- [ ] **VALID-12**: `StepCreate/UpdateDto.ProcessorId`: `NotEmpty` Guid
-- [ ] **VALID-13**: `StepCreate/UpdateDto.NextStepIds`: each unique; on Update, none equal to the Step's own Id
-- [ ] **VALID-14**: `StepCreate/UpdateDto.EntryCondition`: `IsInEnum()`
+- [x] **VALID-12
+**: `StepCreate/UpdateDto.ProcessorId`: `NotEmpty` Guid
+- [x] **VALID-13
+**: `StepCreate/UpdateDto.NextStepIds`: each unique; on Update, none equal to the Step's own Id
+- [x] **VALID-14
+**: `StepCreate/UpdateDto.EntryCondition`: `IsInEnum()`
 - [ ] **VALID-15**: `AssignmentCreate/UpdateDto.StepId`/`SchemaId`: `NotEmpty` Guid
 - [ ] **VALID-16**: `AssignmentCreate/UpdateDto.Payload`: valid JSON syntax (parsed by `System.Text.Json`), MaxLength 1,048,576 chars (~1 MB)
 - [ ] **VALID-17**: `WorkflowCreate/UpdateDto.EntryStepIds`: `NotEmpty`, each unique
