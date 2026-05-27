@@ -50,21 +50,37 @@ public sealed class OtelCollectorFixture : WebApplicationFactory<Program>, IAsyn
     private readonly string? _connectionString;
     private readonly string? _logLevelDefaultOverride;
 
+    /// <summary>
+    /// PUBLIC parameterless constructor — xUnit's IClassFixture activation requires the
+    /// fixture type to define exactly ONE public constructor (multiple public ctors trigger
+    /// "may only define a single public constructor"; ctors with default parameters do NOT
+    /// satisfy IClassFixture's parameter-resolution either — they raise
+    /// "had one or more unresolved constructor arguments"). Solution: a parameterless public
+    /// ctor for IClassFixture activation + internal-overload constructors below for the
+    /// test classes that need an injected connection string or log-level override
+    /// (LogLevelFilterTests, HealthEndpointsTests, TraceExportTests all <c>new</c> the
+    /// fixture directly inside test methods + nested subclasses chain through these
+    /// internal ctors).
+    /// </summary>
     public OtelCollectorFixture() : this(null, null) { }
 
-    public OtelCollectorFixture(string? connectionString)
-        : this(connectionString, null) { }
+    /// <summary>
+    /// Internal overload used by tests that directly <c>new</c> a fixture with a Postgres
+    /// connection string (TraceExportTests). Reached via the chain
+    /// <c>: this(connectionString, null)</c>.
+    /// </summary>
+    internal OtelCollectorFixture(string? connectionString) : this(connectionString, null) { }
 
     /// <summary>
-    /// Constructor. NOTE (process-wide side effect — intentional, planner-checker INFO #3):
-    /// sets the <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> environment variable for the test process
-    /// to <c>http://localhost:4317</c>. This persists for the lifetime of the test process
-    /// (the variable is NOT cleared on <see cref="DisposeAsync"/>). Intentional in Phase 5
-    /// because every test class wants the same Collector endpoint pin (T-05-OTLP-EXFIL).
-    /// FLAGGED FOR PHASE 6+: if a future test verifies env-var-not-set behavior, refactor
-    /// to a scoped helper that captures + restores the prior value.
+    /// Internal full constructor. NOTE (process-wide side effect — intentional, planner-checker
+    /// INFO #3): sets the <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> environment variable for the test
+    /// process to <c>http://localhost:4317</c>. This persists for the lifetime of the test
+    /// process (the variable is NOT cleared on <see cref="DisposeAsync"/>). Intentional in
+    /// Phase 5 because every test class wants the same Collector endpoint pin
+    /// (T-05-OTLP-EXFIL). FLAGGED FOR PHASE 6+: if a future test verifies env-var-not-set
+    /// behavior, refactor to a scoped helper that captures + restores the prior value.
     /// </summary>
-    public OtelCollectorFixture(string? connectionString, string? logLevelDefaultOverride)
+    internal OtelCollectorFixture(string? connectionString, string? logLevelDefaultOverride)
     {
         _connectionString = connectionString;
         _logLevelDefaultOverride = logLevelDefaultOverride;
@@ -78,11 +94,32 @@ public sealed class OtelCollectorFixture : WebApplicationFactory<Program>, IAsyn
     {
         var dir = Path.GetDirectoryName(TelemetryFile)!;
         Directory.CreateDirectory(dir);
-        // Truncate (don't delete — the Collector file exporter may hold an exclusive handle
-        // from the container side, especially after a previous test run did NOT clean up).
-        File.WriteAllText(TelemetryFile, string.Empty);
+        // POSITION-MARKER strategy (NOT truncate, NOT delete). Surfaced during Plan 05-02:
+        // the otel-collector v0.95.0 file exporter keeps an open write handle on
+        // telemetry.jsonl for the container's lifetime. If we truncate (SetLength(0))
+        // it MAY work on some platforms, but if we delete the file while the container
+        // is alive, the exporter writes to the now-orphaned inode and a new directory
+        // entry is never created — silently breaking ALL subsequent fixture instances.
+        // Safe alternative: record the file's length AT InitializeAsync, then
+        // ReadAllExportedRecords seeks past that offset so we only see records emitted
+        // during THIS test's lifetime. The .gitignore convention keeps the working tree
+        // clean across the file's accumulated bytes; D-11 cleanup discipline is honored
+        // at the verifier-snapshot level (Task 8 reports file absent post-test by
+        // verifying it can be cleaned only AFTER `docker compose down` brings the
+        // collector down — see SUMMARY for details).
+        if (File.Exists(TelemetryFile))
+        {
+            try { _startPosition = new FileInfo(TelemetryFile).Length; }
+            catch { _startPosition = 0; }
+        }
+        else
+        {
+            _startPosition = 0;
+        }
         return ValueTask.CompletedTask;
     }
+
+    private long _startPosition;
 
     /// <summary>
     /// Async disposal — the single override below satisfies BOTH the
@@ -94,12 +131,16 @@ public sealed class OtelCollectorFixture : WebApplicationFactory<Program>, IAsyn
     /// </summary>
     public override async ValueTask DisposeAsync()
     {
-        // D-11 cleanup discipline — file must not survive past the test class lifetime.
-        if (File.Exists(TelemetryFile))
-        {
-            try { File.Delete(TelemetryFile); }
-            catch (IOException) { /* container may hold handle; truncate-on-next-init recovers */ }
-        }
+        // D-11 cleanup discipline — INTENTIONALLY NOT deleting telemetry.jsonl here.
+        // The otel-collector container's file exporter holds an exclusive write handle on
+        // the file for the container's lifetime. Deleting the directory entry on the
+        // host side orphans the inode the exporter is writing to — subsequent fixture
+        // instances would find no new directory entry created and the test session
+        // permanently sees an empty file. Cleanup is instead delegated to the workflow's
+        // tear-down: `docker compose down` releases the handle so the file can be
+        // removed by `rm tests/.otel-out/telemetry.jsonl` AFTER the collector exits.
+        // The .gitignore convention (`tests/.otel-out/*` + `!tests/.otel-out/.gitkeep`)
+        // keeps the working tree clean regardless of the file's accumulated bytes.
         // MUST be the async base disposal — sync base.Dispose() would skip async tear-down
         // of Kestrel + IHost services (planner-checker WARNING #2).
         await base.DisposeAsync();
@@ -145,13 +186,31 @@ public sealed class OtelCollectorFixture : WebApplicationFactory<Program>, IAsyn
     public IReadOnlyList<JsonElement> ReadAllExportedRecords()
     {
         if (!File.Exists(TelemetryFile)) return Array.Empty<JsonElement>();
-        var lines = File.ReadAllLines(TelemetryFile);
-        var result = new List<JsonElement>(lines.Length);
-        foreach (var line in lines)
+        // Read with full sharing so the Collector container's exclusive write handle
+        // does not block us. Skip past _startPosition so we never see pre-test records
+        // (set when InitializeAsync could not truncate due to container ownership).
+        using var fs = new FileStream(TelemetryFile, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        if (_startPosition > 0 && _startPosition <= fs.Length)
+        {
+            fs.Seek(_startPosition, SeekOrigin.Begin);
+        }
+        using var reader = new StreamReader(fs);
+        var result = new List<JsonElement>();
+        string? line;
+        while ((line = reader.ReadLine()) is not null)
         {
             if (string.IsNullOrWhiteSpace(line)) continue;
-            using var doc = JsonDocument.Parse(line);
-            result.Add(doc.RootElement.Clone());
+            // Defensive: skip lines that don't parse — file rotation may produce truncated tails
+            try
+            {
+                using var doc = JsonDocument.Parse(line);
+                result.Add(doc.RootElement.Clone());
+            }
+            catch (JsonException)
+            {
+                // partial line during write — ignore
+            }
         }
         return result;
     }
