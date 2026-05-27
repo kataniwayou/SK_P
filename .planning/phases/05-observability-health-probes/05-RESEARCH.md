@@ -1528,7 +1528,7 @@ public async Task ForceFlushTelemetryAsync(CancellationToken ct = default)
 | A9 | The OTel batch processor's default 5-second timeout is enough that calling `ForceFlush(timeoutMilliseconds: 5_000)` followed by `Task.Delay(500)` reliably gets records to the file on disk | "ForceFlush helper" | If unreliable, increase delay to 1000ms or poll the file with retries up to 5s |
 | A10 | `MapHealthChecks` registered BEFORE `MapControllers` does not shadow controller routes (because route templates are precise: `/health/live` etc. never overlap with `/api/v1/...`) | "Pattern 8 — Three-Probe Tag Discipline" | Phase 7 controllers use `/api/v1/[controller]` prefix; no overlap risk |
 
-## Open Questions / Risks
+## Open Questions / Risks (RESOLVED in planning iteration 1)
 
 ### Open Question 1: CONTEXT D-05 Npgsql tracing options lambda DOES NOT COMPILE
 
@@ -1548,6 +1548,8 @@ public async Task ForceFlushTelemetryAsync(CancellationToken ct = default)
 
 **Risk if wrong:** Build break under `TreatWarningsAsErrors=true` (Phase 1 D-02) at Plan 05-01 Task 7 (Program.cs edit). Plan 05-01 catches this in Task 8 (full Release+Debug build verification) and fix-forwards in the same task.
 
+**RESOLVED:** 05-01-PLAN.md Reconciliation 1 + Task 5 (Program.cs OTel wiring) — bare `.AddNpgsql()` (no callback); package default already does NOT capture parameter values, so T-05-PII is satisfied without the non-compiling lambda. Pitfall 5-E (this RESEARCH.md, lines 871-889) documents the build-break trap and grep guards.
+
 ### Open Question 2: OTLP endpoint resolution — env var vs appsettings
 
 **What we know:**
@@ -1564,6 +1566,8 @@ public async Task ForceFlushTelemetryAsync(CancellationToken ct = default)
 
 **Recommendation:** Simpler approach. Phase 5 does not need to read appsettings for OTel endpoint — the env-var-or-default works fine in dev and prod. If a future operator wants to configure via appsettings without env var, they can add a single `var endpoint = cfg["OpenTelemetry:Endpoint"]; if (endpoint is not null) Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", endpoint);` line before the OTel wiring — but that's a YAGNI follow-up.
 
+**RESOLVED:** 05-01-PLAN.md Task 5 (Program.cs OTel wiring) — relies on `OTEL_EXPORTER_OTLP_ENDPOINT` env var auto-honored by `.AddOtlpExporter()` with no options block (SDK default fallback `http://localhost:4317`). The appsettings.json `OpenTelemetry:Endpoint` keys are NOT consumed by the OTel SDK (kept as documentation). Plan 05-02 OtelCollectorFixture sets the env var explicitly in its constructor (also pins via `OtlpExporterOptions.Endpoint`).
+
 ### Open Question 3: launchSettings.json — commit or gitignore?
 
 **What we know:**
@@ -1578,6 +1582,8 @@ public async Task ForceFlushTelemetryAsync(CancellationToken ct = default)
 - COMMIT a minimal `launchSettings.json` with the dev env var. Override Phase 4's untracked default. This makes the dev-onboarding story coherent: `dotnet run` works without manual env setup. The VS-generated port numbers are usually ephemeral; commit a stable choice (e.g., 8080 or 5000).
 - Plan 05-01 includes this as a deliberate file commit + docs the choice in 05-01-SUMMARY.
 
+**RESOLVED:** 05-01-PLAN.md revision notes iteration 1 INFO #1 (option a) — NO launchSettings.json committed by Phase 5. Phase 4 left the file untracked (developer-specific ports); Phase 5 preserves that policy. The `OTEL_EXPORTER_OTLP_ENDPOINT` env var is set by `OtelCollectorFixture` for tests (Plan 05-02 Task 2) and by `compose.yaml` baseapi-service block for production (Plan 05-01 Task 4). A comment in Program.cs documents that the SDK default `http://localhost:4317` is used when the env var is unset (sufficient for `dotnet run` against a locally-running otel-collector).
+
 ### Open Question 4: Should logs include `service.namespace` resource attribute?
 
 **What we know:**
@@ -1590,6 +1596,8 @@ public async Task ForceFlushTelemetryAsync(CancellationToken ct = default)
 
 **Recommendation for planner:**
 - DO NOT add additional resource attributes in Phase 5. OBSERV-05 locks the contract to `service.name` + `service.version` only. Adding `deployment.environment` is a useful future enhancement but out of scope for v1 — flag as a Phase Y followup if ops needs it.
+
+**RESOLVED:** NOT added in Phase 5 — OBSERV-05 locks the resource attribute contract to `service.name` + `service.version` only. 05-01-PLAN.md Task 5 (Program.cs OTel wiring) sets exactly those two attributes on BOTH the LoggerProvider (via `SetResourceBuilder`) AND the MeterProvider/TracerProvider (via `ConfigureResource`). `deployment.environment` / `service.namespace` / `service.instance.id` are intentionally omitted; flagged as a Phase Y followup if ops needs them.
 
 ### Open Question 5: Test for "/health/* not in OTLP logs" — how to assert specifically?
 
@@ -1605,9 +1613,13 @@ public async Task ForceFlushTelemetryAsync(CancellationToken ct = default)
 **Recommendation for planner:**
 - Assert the **loose** interpretation in `HealthEndpointsTests.Test_HealthPaths_NotInOTelExports`: after hitting `/health/*` N times + an app endpoint once, the export file's log records contain ZERO occurrences of `/health/`. The app endpoint record (if generated by your stub via explicit `ILogger.LogInformation`) should appear if you want to prove the filter is path-specific, not absolute. Document that this is the coarse-filter version of SC#4 and per-path log filtering is deferred.
 
+**RESOLVED:** 05-02-PLAN.md Task 5 `Test_HealthEndpoints_Absent_From_OTLP_Logs` — implements the **loose** interpretation. Test issues 10 GET requests to each of `/health/live`, `/health/ready`, `/health/startup`, calls `factory.FlushAsync()`, reads the OTLP-exported log records via `factory.ReadExportedLogs()`, and asserts none of the three path strings appear in any log record's raw JSON. Per iteration-2 revision: assertion is path-string-only — status codes are intentionally ignored, no Postgres reachability dependency.
+
 ### Risk 1: Phase 8 forward-compat for `MigrationRunner` order
 
 Phase 5 ships `IStartupGate` with immediate `MarkReady()` after `Build()`. Phase 8 must (a) remove that line, (b) register `MigrationRunner : IHostedService` as the FIRST hosted service so it runs before any other background work. If Phase 8 incorrectly leaves the immediate `MarkReady()` line in place, the gate flips to true BEFORE migrations complete and `/health/startup` reports Healthy prematurely. **Mitigation:** Phase 8 plan checker should grep for `app.Services.GetRequiredService<IStartupGate>().MarkReady()` and FAIL if present after Phase 8 lands.
+
+**RESOLVED:** 05-01-PLAN.md ships the Phase 5 contract (immediate `MarkReady()` after `Build()` per CONTEXT D-13). The Phase 8 grep-guard is deferred to Phase 8's planner-checker — flagged as a Phase 8 verification requirement in 05-01-SUMMARY hand-off note + 05-RESEARCH.md Phase 5 / Phase 8 contract table (Pattern 7 lines 561-571). Risk acknowledged, mitigation owned by Phase 8.
 
 ### Risk 2: OtelCollectorFixture cross-class state pollution
 
@@ -1620,11 +1632,15 @@ Phase 5 ships `IStartupGate` with immediate `MarkReady()` after `Build()`. Phase
 
 **Recommendation:** Option 1 — `[CollectionDefinition("Observability", DisableParallelization = true)]` + `[Collection("Observability")]` on each test class. Trade-off: ~5-10s slower full suite vs deterministic assertions. Plan 05-02 documents.
 
+**RESOLVED:** 05-02-PLAN.md Task 2 ships `tests/BaseApi.Tests/Observability/CollectionDefinitions.cs` with `[CollectionDefinition("Observability", DisableParallelization = true)]`, and every Phase 5 test class declares `[Collection("Observability")]` (LogExportTests, LogLevelFilterTests, HealthEndpointsTests, MetricsExportTests, TraceExportTests). xUnit v3 serializes execution within the collection, eliminating the shared-file interleave hazard.
+
 ### Risk 3: Compose service order — otel-collector starts AFTER baseapi-service in Phase 8
 
 In Phase 8 (out of scope for Phase 5 but planner should be aware), `compose up` brings up postgres + otel-collector + baseapi-service. If `baseapi-service` boots BEFORE otel-collector is ready, its initial OTLP exports fail silently (per Pattern 9 failure mode — retries + drop). Not a functional bug but ops will see "first few seconds of logs missing" complaints.
 
 **Mitigation:** Phase 8 adds `depends_on: otel-collector: condition: service_healthy` to baseapi-service. The Collector's healthcheck (port 13133) is the gate. Phase 5 ships the healthcheck — Phase 8 wires the dependency.
+
+**RESOLVED:** Phase 5 ships the Collector healthcheck (compose.yaml otel-collector block, Plan 05-01 Task 4 — healthcheck shells `wget -qO- http://localhost:13133/` with 5s interval, 5 retries). Phase 8 will wire `depends_on: otel-collector: condition: service_healthy` on the baseapi-service block. Risk owned by Phase 8; Phase 5 prerequisite (healthcheck endpoint) is in place.
 
 ## Metadata
 
