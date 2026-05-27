@@ -76,7 +76,17 @@ public sealed class BaseServiceOrderingFacts : IAsyncLifetime
             .ValidateAsync(Arg.Any<IValidationContext>(), Arg.Any<CancellationToken>())
             .Returns(call => { validateTime = DateTime.UtcNow; return Task.FromResult(new ValidationResult()); });
 
-        var mappedEntity = new TestEntity { Id = Guid.NewGuid(), Name = "x", Version = "1.0.0", Note = "" };
+        // Pre-stamp CreatedAt/UpdatedAt with Kind=Utc so Npgsql 8's timestamptz writes in Step 5
+        // (DbContext.SaveChangesAsync) don't fail with InvalidCastException. This isolates the
+        // SC#2 ordering proof from the AuditInterceptor contract (Phase 3 owns that test) —
+        // WR-02 from REVIEW.md Option A.
+        var now = DateTime.UtcNow;
+        var mappedEntity = new TestEntity
+        {
+            Id = Guid.NewGuid(),
+            Name = "x", Version = "1.0.0", Note = "",
+            CreatedAt = now, UpdatedAt = now,
+        };
         mapper.ToEntity(Arg.Any<TestCreateDto>())
             .Returns(call => { mapTime = DateTime.UtcNow; return mappedEntity; });
 
