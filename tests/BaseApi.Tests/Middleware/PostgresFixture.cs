@@ -46,6 +46,16 @@ public sealed class PostgresFixture : IAsyncLifetime
 
         ConnectionString =
             $"Host=localhost;Port=5433;Database={DatabaseName};Username=postgres;Password=postgres";
+
+        // Pre-create the schema once here so per-request EnsureCreatedAsync calls in
+        // TestController are no-ops and cannot race under xUnit v3 class parallelism
+        // (WR-02: concurrent EnsureCreatedAsync on a fresh DB can produce spurious errors).
+        var opts = new DbContextOptionsBuilder<TestErrorDbContext>()
+            .UseNpgsql(ConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .Options;
+        await using var db = new TestErrorDbContext(opts);
+        await db.Database.EnsureCreatedAsync();
     }
 
     public async ValueTask DisposeAsync()

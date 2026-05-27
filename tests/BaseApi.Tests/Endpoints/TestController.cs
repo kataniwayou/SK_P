@@ -68,7 +68,6 @@ public sealed class TestController : ControllerBase
         [FromServices] TestErrorDbContext db,
         CancellationToken ct)
     {
-        await db.Database.EnsureCreatedAsync(ct);
         var child = new TestChildEntity
         {
             Name = $"child-{Guid.NewGuid():N}",
@@ -87,7 +86,6 @@ public sealed class TestController : ControllerBase
         [FromQuery] Guid parentId,
         CancellationToken ct)
     {
-        await db.Database.EnsureCreatedAsync(ct);
         // Caller seeded a parent with `parentId` + a first child with `name` out-of-band
         // (via separate TestErrorDbContext); this insert duplicates the unique Name → 23505.
         var dup = new TestChildEntity
@@ -107,7 +105,6 @@ public sealed class TestController : ControllerBase
         [FromQuery] Guid id,
         CancellationToken ct)
     {
-        await db.Database.EnsureCreatedAsync(ct);
         var entity = await db.Parents.FirstOrDefaultAsync(p => p.Id == id, ct);
         if (entity is null) return NotFound();
         // Mutate after the test caller has ALREADY updated this row from a separate
