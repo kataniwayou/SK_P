@@ -5,7 +5,6 @@ using BaseApi.Core.Persistence;
 using BaseApi.Core.Persistence.Repositories;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace BaseApi.Core.Services;
 
@@ -30,7 +29,6 @@ public abstract class BaseService<TEntity, TCreate, TUpdate, TRead>
     private readonly IValidator<TUpdate> _updateValidator;
     private readonly IEntityMapper<TEntity, TCreate, TUpdate, TRead> _mapper;
     private readonly IRepository<TEntity> _repo;
-    private readonly ILogger _logger;
 
     /// <summary>
     /// Exposed as a property (not field) so derived services in Phase 8 can read the
@@ -41,18 +39,18 @@ public abstract class BaseService<TEntity, TCreate, TUpdate, TRead>
 
     /// <summary>
     /// Concrete services (Phase 7 RecordingTestService; Phase 8 SchemaService/ProcessorService/...)
-    /// pass the 6 injectees to base. ASP.NET Core DI resolves all 6 from the AddBaseApi chain
+    /// pass the 5 injectees to base. ASP.NET Core DI resolves all 5 from the AddBaseApi chain
     /// (validators from Phase 6 AddBaseApiValidation, mapper from Phase 6 AddBaseApiMapping,
-    /// repo from Phase 7 AddBaseApiPersistence, DbContext from Phase 7 AddBaseApiPersistence,
-    /// logger from the framework).
+    /// repo from Phase 7 AddBaseApiPersistence, DbContext from Phase 7 AddBaseApiPersistence).
+    /// Concrete services that need logging can take their own typed
+    /// <c>ILogger&lt;TConcreteService&gt;</c> in their own ctor.
     /// </summary>
     protected BaseService(
         IValidator<TCreate> createValidator,
         IValidator<TUpdate> updateValidator,
         IEntityMapper<TEntity, TCreate, TUpdate, TRead> mapper,
         IRepository<TEntity> repo,
-        BaseDbContext dbContext,
-        ILogger<BaseService<TEntity, TCreate, TUpdate, TRead>> logger)
+        BaseDbContext dbContext)
     {
         _createValidator = createValidator
             ?? throw new InvalidOperationException(
@@ -67,7 +65,6 @@ public abstract class BaseService<TEntity, TCreate, TUpdate, TRead>
         _mapper    = mapper    ?? throw new ArgumentNullException(nameof(mapper));
         _repo      = repo      ?? throw new ArgumentNullException(nameof(repo));
         DbContext  = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _logger    = logger    ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>GET /api/v1/{entity} — full list mapped to TRead.</summary>

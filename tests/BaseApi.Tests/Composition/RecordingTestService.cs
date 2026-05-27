@@ -5,7 +5,6 @@ using BaseApi.Core.Services;
 using BaseApi.Tests.Validation;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace BaseApi.Tests.Composition;
 
@@ -25,9 +24,8 @@ public sealed class RecordingTestService
         IValidator<TestUpdateDto> updateValidator,
         IEntityMapper<TestEntity, TestCreateDto, TestUpdateDto, TestReadDto> mapper,
         IRepository<TestEntity> repo,
-        BaseDbContext dbContext,
-        ILogger<BaseService<TestEntity, TestCreateDto, TestUpdateDto, TestReadDto>> logger)
-        : base(createValidator, updateValidator, mapper, repo, dbContext, logger) { }
+        BaseDbContext dbContext)
+        : base(createValidator, updateValidator, mapper, repo, dbContext) { }
 
     protected override Task SyncJunctionsAsync(
         TestEntity entity, TestCreateDto? createDto, TestUpdateDto? updateDto, CancellationToken ct)

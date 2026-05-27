@@ -1,13 +1,11 @@
 using BaseApi.Core.Mapping;
 using BaseApi.Core.Persistence.Repositories;
-using BaseApi.Core.Services;
 using BaseApi.Tests.Composition;
 using BaseApi.Tests.Persistence;
 using BaseApi.Tests.Validation;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Xunit;
 
@@ -99,8 +97,7 @@ public sealed class BaseServiceOrderingFacts : IAsyncLifetime
 
         var service = new RecordingTestService(
             createValidator, updateValidator, mapper, repo,
-            _dbContext,
-            NullLogger<BaseService<TestEntity, TestCreateDto, TestUpdateDto, TestReadDto>>.Instance);
+            _dbContext);
 
         // Act
         var dto = new TestCreateDto("x", "1.0.0", null, "note");
