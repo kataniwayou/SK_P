@@ -29,6 +29,14 @@ services:
     container_name: sk-otel-collector
     restart: unless-stopped
     command: ["--config=/etc/otel-collector-config.yaml"]
+    # Override the default non-root user (UID 10001) so the file exporter can write to the
+    # Windows + Docker Desktop bind-mount target ./tests/.otel-out — on Windows the host
+    # directory permissions don't map cleanly to UID 10001 inside the container, and the
+    # file exporter SILENTLY drops writes when it cannot create /var/otel-out/telemetry.jsonl.
+    # Surfaced during Plan 05-02 Task 3 (LogExportTests first run). Acceptable for dev-only
+    # observability scaffolding (compose.yaml is local-only — Phase 8 production stack will
+    # ship a separate image with a dedicated otel user matching the host).
+    user: "0:0"
     volumes:
       - ./compose/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
       - ./tests/.otel-out:/var/otel-out
