@@ -10,14 +10,17 @@ namespace BaseApi.Tests.Observability;
 /// <c>process.runtime.dotnet.*</c> metric appears in the exported metric stream.
 ///
 /// <para>
-/// <b>Known Plan 05-01 deviation (Rule 1 API-mismatch):</b> the metrics-side
-/// AddAspNetCoreInstrumentation in OpenTelemetry.Instrumentation.AspNetCore 1.15.0
-/// is parameterless — the Filter callback that excludes /health/* exists only on the
-/// TracerProviderBuilder overload. /health/* metric noise was deferred to backend
-/// query-time filtering by http.route. The
-/// <see cref="Test_HealthPath_Absent_From_HttpServerMetrics"/> assertion is therefore
-/// EXPECTED to fail or to surface /health/* in data-point http.route tags. This test
-/// is included here to make that gap explicit and detectable during verification.
+/// <b>Plan 05-02 fix-forward to Plan 05-01 (SC#4 metrics-half gap closed):</b>
+/// Plan 05-01 Deviation #2 deferred metrics-side <c>/health/*</c> filtering because
+/// OpenTelemetry.Instrumentation.AspNetCore 1.15.0's
+/// <c>MeterProviderBuilder.AddAspNetCoreInstrumentation</c> is parameterless (no Filter
+/// callback). The closing fix-forward is a Collector-side <c>filter/health_metrics</c>
+/// processor in <c>compose/otel-collector-config.yaml</c> that drops data points whose
+/// <c>metric.name == "http.server.request.duration"</c> AND whose <c>http.route</c>
+/// attribute starts with <c>/health/</c>. SDK still emits, Collector drops before the
+/// file exporter — observable behaviour is zero health-route data points in
+/// telemetry.jsonl. <see cref="Test_HealthPath_Absent_From_HttpServerMetrics"/> now
+/// asserts STRICT empty (was SOFT-PASS in Wave-2 task 6 commit).
 /// </para>
 /// </summary>
 [Collection("Observability")]
@@ -49,25 +52,13 @@ public sealed class MetricsExportTests : IClassFixture<OtelCollectorFixture>
     [Fact]
     public async Task Test_HealthPath_Absent_From_HttpServerMetrics()
     {
-        // KNOWN GAP — Plan 05-01 deviation (Rule 1): metrics-side AddAspNetCoreInstrumentation
-        // is parameterless in OpenTelemetry.Instrumentation.AspNetCore 1.15.0. The traces-side
-        // Filter callback excludes /health/* from spans, but the metrics-side has no equivalent
-        // knob — http.server.request.duration data points carry http.route="/health/{*}" tags
-        // that are visible in the OTLP metrics stream. This test enforces that we KNOW about
-        // the gap; if metrics-side filtering is fixed in a Phase 5.1 follow-up plan (e.g., via
-        // MeterProviderBuilder.AddView to drop instruments by tag), this test will become a
-        // positive assertion. Until then, the test asserts the CURRENT (deferred-to-backend-
-        // filtering) state by checking the metric tag presence is logged in the SUMMARY.
-        //
-        // For now we mark this as a soft assertion: assert the EXPORTED metrics do contain
-        // /health/* tags (proving the gap is real), so the test PASSES (positively asserting
-        // the documented current state) — when the gap is closed in a future plan, this test
-        // will FLIP to assert ABSENCE and the implementation must be updated.
-
+        // SC#4 metrics-half — /health/* filtered from metrics via Collector-side
+        // filter/health_metrics processor (Plan 05-02 fix-forward to Plan 05-01).
         var ct = TestContext.Current.CancellationToken;
         using var client = _fixture.CreateClient();
 
-        // 10 probe hits — generate data points with http.route="/health/{*}" tags
+        // 10 probe hits — would generate data points with http.route="/health/{*}" tags
+        // if SDK-side filtering existed; instead, the Collector drops them before file write.
         for (int i = 0; i < 10; i++)
             _ = await client.GetAsync("/health/live", ct);
 
@@ -80,7 +71,7 @@ public sealed class MetricsExportTests : IClassFixture<OtelCollectorFixture>
             .SelectMany(GetAllDataPointAttributes)
             .ToList();
 
-        // Inventory http.route tags across all data points
+        // Inventory http.route + url.path tags across all data points — expect ZERO health routes
         var healthRoutes = new List<string>();
         foreach (var attrs in serverDurationDataPoints)
         {
@@ -95,15 +86,12 @@ public sealed class MetricsExportTests : IClassFixture<OtelCollectorFixture>
             }
         }
 
-        // SOFT positive assertion — documents the current gap. When fixed, flip to:
-        //   Assert.Empty(healthRoutes);
-        // Right now we use a tolerant check: warn-via-Skip-equivalent. Since xUnit v3
-        // doesn't expose dynamic skip in Facts without Conditional/Theory tricks, we
-        // simply assert the documented current state — /health/* tags DO appear under
-        // the OTel 1.15.0 metrics-side limitation. If the SDK is upgraded and the tags
-        // disappear, this assertion will fail and we'll know to remove the gap.
-        // RESULT IS DOCUMENTED IN SUMMARY.md.
-        Assert.NotEmpty(healthRoutes);
+        // STRICT empty — Collector-side filter/health_metrics processor drops these
+        // data points before file write. Failure here means either: (a) the filter
+        // processor was removed from compose/otel-collector-config.yaml, (b) the
+        // processor wiring in the metrics pipeline was dropped, or (c) the collector
+        // image was downgraded below 0.95.0.
+        Assert.Empty(healthRoutes);
     }
 
     [Fact]
