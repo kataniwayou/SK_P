@@ -42,13 +42,16 @@ public sealed record WorkflowUpdateDto(
 /// <summary>
 /// Read-side DTO returned to clients. Carries <c>Id</c> + 4 audit fields per HTTP-07.
 /// <para>
-/// <b>v1 limitation:</b> <c>EntryStepIds</c> and <c>AssignmentIds</c> are NOT
-/// populated by the Mapperly <c>ToRead</c> method (the source entity lacks both
-/// properties by design). Phase 8 v1 ships the DTO with both collections set to
-/// <c>null</c> on GET / List paths; the junction rows persisted by
-/// <c>SyncJunctionsAsync</c> are the source of truth and can be asserted via
-/// direct DB queries in tests. Post-ToRead enrichment is deferred to a future
-/// phase (same pattern as <c>StepReadDto.NextStepIds</c> in Plan 08-04).
+/// <b>v1 limitation:</b> both <c>EntryStepIds</c> and <c>AssignmentIds</c> are
+/// declared <b>nullable</b> here (deviation from the requirement's verbatim wording
+/// for the read path) because the Mapperly <c>ToRead</c> method does not populate
+/// them — the source entity lacks both properties by design. Phase 8 v1 ships the
+/// DTO with both collections set to <c>null</c> on GET / List paths; the junction
+/// rows persisted by <c>SyncJunctionsAsync</c> are the source of truth and can be
+/// asserted via direct DB queries in tests. Post-ToRead enrichment is deferred to
+/// a future phase (same pattern as <c>StepReadDto.NextStepIds</c> in Plan 08-04 —
+/// <c>EntryStepIds</c> made nullable here for the same RMG076 "cannot assign null
+/// to non-nullable" mitigation as Plan 08-04's <c>NextStepIds?</c>).
 /// </para>
 /// </summary>
 public sealed record WorkflowReadDto(
@@ -56,7 +59,7 @@ public sealed record WorkflowReadDto(
     string Name,
     string Version,
     string? Description,
-    List<Guid> EntryStepIds,
+    List<Guid>? EntryStepIds,
     List<Guid>? AssignmentIds,
     string? CronExpression,
     DateTime CreatedAt,
