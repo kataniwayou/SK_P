@@ -92,6 +92,7 @@
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.v3.assert" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <!-- Reserved for Phase 8 integration tests (TEST-01..06); currently unreferenced. -->
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
 
     <!-- Microsoft.Extensions.* family — versions on own cadence (Phase 3: FakeTimeProvider) -->
