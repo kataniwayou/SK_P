@@ -92,6 +92,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Phase 7 RESEARCH Pitfall 9: NSubstitute (post-Moq SponsorLink). Used by Plan
+         07-02 BaseServiceOrderingFacts for SC#2 6-step ordering proof via
+         Received.InOrder. Runtime test library (NOT a source generator) — no
+         PrivateAssets/ExcludeAssets attributes per Phase 6 D-13 convention.
+         Version pinned in Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+    <PackageReference Include="NSubstitute" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Phase 3 addition: FrameworkReference for DefaultHttpContext / ClaimsPrincipal
          in StubHttpContextAccessor (CONTEXT.md D-13 + Phase 3 RESEARCH.md A3). -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />

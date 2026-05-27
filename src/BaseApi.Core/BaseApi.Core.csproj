@@ -78,4 +78,14 @@
     <PackageReference Include="AspNetCore.HealthChecks.UI.Client" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Phase 7 HTTP — API versioning (controllers-correct package per RESEARCH A-01)
+         + ApiExplorer (Swashbuckle integration: GroupNameFormat + SubstituteApiVersionInUrl)
+         + Swashbuckle.AspNetCore (OpenAPI 3 doc generation + Swagger UI). Versions resolve
+         from Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+    <PackageReference Include="Asp.Versioning.Mvc" />
+    <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+
 </Project>

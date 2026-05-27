@@ -93,9 +93,20 @@
     <!-- HTTP — API versioning + Swagger (REQ HTTP-15, HTTP-16) -->
     <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="6.9.0" />
+    <!-- Phase 7 RESEARCH A-01: Asp.Versioning.Mvc is the controllers-correct package
+         (CONTEXT D-17's "Asp.Versioning.Http" is the brand-name reference; the actual
+         NuGet for [ApiController]+[ApiVersion] attribute resolution is Asp.Versioning.Mvc,
+         which transitively pulls Asp.Versioning.Http). ApiExplorer is required for
+         SubstituteApiVersionInUrl + GroupNameFormat. The existing Asp.Versioning.Http 8.1.0
+         pin is RETAINED for CPM explicit-pin auditability (RESEARCH Open Q4). -->
+    <PackageVersion Include="Asp.Versioning.Mvc" Version="8.1.0" />
+    <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="8.1.0" />
 
     <!-- Tests -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.27" />
+    <!-- Phase 7 RESEARCH Pitfall 9: NSubstitute (post-Moq SponsorLink). Used by
+         tests/BaseApi.Tests for SC#2 6-step ordering proof via Received.InOrder. -->
+    <PackageVersion Include="NSubstitute" Version="5.3.0" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.v3.assert" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
