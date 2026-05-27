@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Postgres + Docker Compose** - Local Postgres 17 container is reachable from the host with persistent storage and a healthcheck
 - [x] **Phase 3: EF Core Persistence Base** - `BaseEntity`, `BaseDbContext`, `AuditInterceptor`, snake_case convention, and generic `Repository<T>` exist before any migration is generated
 - [x] **Phase 4: Cross-Cutting Middleware + Error Handling** - Correlation IDs flow end-to-end and every error returns RFC 7807 Problem Details with the correlation ID
-- [ ] **Phase 5: Observability + Health Probes** - OTel logs, metrics, and traces reach the Collector; three distinct health probes (live/ready/startup) respond correctly
+- [x] **Phase 5: Observability + Health Probes** - OTel logs, metrics, and traces reach the Collector; three distinct health probes (live/ready/startup) respond correctly
 - [ ] **Phase 6: Validation + Mapping Base** - Base DTO validator + Mapperly + `IEntityMapper<,,,>` seam are wired so any future entity slots in without rewriting base rules
 - [ ] **Phase 7: Generic HTTP Base + Composition Root** - `BaseController`/`BaseService` + `AddBaseApi`/`UseBaseApi` compose the runnable service with versioned routes and Swagger
 - [ ] **Phase 8: Entity Build-Out + Migrations + Docker Runtime + Tests** - All 5 entities CRUD over real Postgres with smoke + error-mapping integration tests passing
@@ -96,8 +96,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. HTTP server metrics for application endpoints appear at the Collector (e.g., `http.server.request.duration`) but requests to `/health/*` do not produce metrics or appear in OTLP logs (filtered out)
   5. A Postgres query issued during a request produces a child span under the ASP.NET Core request span in the trace export (Npgsql instrumentation active)
 **Plans**: 2 plans
-- [ ] 05-01-PLAN.md â€” Wave 1 build: 3 new CPM pins (OpenTelemetry.Instrumentation.Runtime 1.15.0, Npgsql.OpenTelemetry 8.0.4, AspNetCore.HealthChecks.UI.Client 9.0.0) + BaseApi.Core/Health/ types (IStartupGate + StartupHealthCheck + StartupCompletionService, all public sealed per Reconciliation 3) + Program.cs additive OTel logs via MEL bridge + metrics + traces (bare .AddNpgsql() per RESEARCH D-05 correction / Reconciliation 1) + AddHostedService<StartupCompletionService> (Reconciliation 2) + 3 MapHealthChecks + compose.yaml otel-collector service + compose/otel-collector-config.yaml + .gitignore tests/.otel-out/ + 0/0 Release+Debug builds
-- [ ] 05-02-PLAN.md â€” Wave 2 verification (autonomous:false, Phase 3 D-18 cadence): OtelCollectorFixture (fused WebApplicationFactory<Program> + IAsyncLifetime + ExportProcessorType.Simple + endpoint pinned localhost:4317) + CollectionDefinitions (DisableParallelization) + TestObservabilityController + 5 fact-test files (LogExportTests SC#1 + T-05-LOG-INJECT delegate, LogLevelFilterTests SC#2, HealthEndpointsTests SC#3 + SC#4 logs-half + T-05-READY-DB-EXPOSE, MetricsExportTests SC#4 metrics-half + D-16, TraceExportTests SC#5 + T-05-PII) + 3 consecutive dotnet test runs green + BEFORE/AFTER psql \l byte-identical (Phase 3 D-15) + tests/.otel-out/telemetry.jsonl absent post-test (D-11)
+- [x] 05-01-PLAN.md â€” Wave 1 build: 3 new CPM pins (OpenTelemetry.Instrumentation.Runtime 1.15.0, Npgsql.OpenTelemetry 8.0.4, AspNetCore.HealthChecks.UI.Client 9.0.0) + BaseApi.Core/Health/ types (IStartupGate + StartupHealthCheck + StartupCompletionService, all public sealed per Reconciliation 3) + Program.cs additive OTel logs via MEL bridge + metrics + traces (bare .AddNpgsql() per RESEARCH D-05 correction / Reconciliation 1) + AddHostedService<StartupCompletionService> (Reconciliation 2) + 3 MapHealthChecks + compose.yaml otel-collector service + compose/otel-collector-config.yaml + .gitignore tests/.otel-out/ + 0/0 Release+Debug builds — SHIPPED 2026-05-27
+- [x] 05-02-PLAN.md â€” Wave 2 verification (autonomous:false, Phase 3 D-18 cadence) — SHIPPED 2026-05-27: created 9 test files (OtelCollectorFixture + CollectionDefinitions + TestObservabilityController + 5 fact-test classes [LogExportTests 2 + LogLevelFilterTests 2 + HealthEndpointsTests 7 + MetricsExportTests 3 + TraceExportTests 2 = 16 facts] + OtelEndOfSuiteCleanup assembly fixture); `dotnet test SK_P.sln --no-restore` exit 0 with Passed: 47 Failed: 0 across 3 consecutive runs (17.67/17.71/18.09s); BEFORE/AFTER `psql \l` byte-identical (D-15 cleanup proven); tests/.otel-out/telemetry.jsonl absent post-test (D-11 cleanup automated via xUnit v3 [assembly: AssemblyFixture]); 14 phase REQ-IDs runtime-verified (OBSERV-01..08 + OBSERV-12 + HEALTH-01..05); 2 prior-plan gaps closed in continuation block — SC#4 metrics-half via Collector-side filterprocessor (Plan 05-01 fix-forward `2f3ae45`), telemetry.jsonl deferred-cleanup via xUnit v3 [assembly: AssemblyFixture] (`598c016`)
 **UI hint**: no
 **Parallelizable**: yes (OTel wiring and health probes can be split into separate plans executed concurrently â€” they share `Program.cs` registration but no runtime state)
 
@@ -152,8 +152,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 1. Repository Scaffold | 3/3 | Complete | 2026-05-26 |
 | 2. Postgres + Docker Compose | 2/2 | Complete | 2026-05-26 |
 | 3. EF Core Persistence Base | 2/2 | Complete | 2026-05-27 |
-| 4. Cross-Cutting Middleware + Error Handling | 0/TBD | Not started | - |
-| 5. Observability + Health Probes | 0/TBD | Not started | - |
+| 4. Cross-Cutting Middleware + Error Handling | 2/2 | Complete | 2026-05-27 |
+| 5. Observability + Health Probes | 2/2 | Complete | 2026-05-27 |
 | 6. Validation + Mapping Base | 0/TBD | Not started | - |
 | 7. Generic HTTP Base + Composition Root | 0/TBD | Not started | - |
 | 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 0/TBD | Not started | - |

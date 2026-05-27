@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-05-27T09:08:00.176Z"
+stopped_at: Completed 05-02-PLAN.md
+last_updated: "2026-05-27T10:25:00.000Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 11
-  completed_plans: 10
-  percent: 91
+  completed_plans: 11
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 ## Current Position
 
-Phase: 5 (Observability + Health Probes) — EXECUTING
-Plan: 2 of 2
-Status: Ready to execute
+Phase: 5 (Observability + Health Probes) — COMPLETE
+Plan: 2 of 2 — Complete (verification battery shipped 16 facts; 47/47 × 3 consecutive runs)
+Status: Ready for Phase 6 planning
 Last activity: 2026-05-27
 
-Progress: [█████████░] 91%
+Progress: [██████████] 100% (planned plans complete; Phase 6-8 plans TBD)
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Progress: [█████████░] 91%
 | Phase 04 P01 | 25min | 8 tasks tasks | 10 files files |
 | Phase 04 P02 | ~40min | 7 tasks tasks | 14 files files |
 | Phase 05 P01 | 10min | 7 tasks | 9 files |
+| Phase 05 P02 | ~60min | 8 tasks + continuation (Gap 1 + Gap 2 closures) | 13 files (9 new test files + 1 new assembly fixture + 2 modified Plan 05-01 files + 1 modified test file) |
 
 ## Accumulated Context
 
@@ -109,6 +110,14 @@ Recent decisions affecting current work:
 - Plan 05-01: public sealed on Health/ concrete types (Reconciliation 3 — CONTEXT D-01/D-02 internal sealed wording requires InternalsVisibleTo; consistency with Phase 3/4 public sealed conventions wins)
 - Plan 05-01 deviation (Rule 1 API mismatch): metrics-side .AddAspNetCoreInstrumentation is parameterless in OTel 1.15.0 — Filter callback only on TracerProviderBuilder overload; /health metric noise deferred to backend query filtering
 - Plan 05-01: Open Q3 resolved (a) — no launchSettings.json committed (collides with untracked Properties/ scaffold); rely on OTel SDK default fallback http://localhost:4317
+- Plan 05-02: Position-marker file-handle strategy over truncate/delete (Pattern B) — otel-collector v0.95.0 file exporter holds exclusive write handle; truncate may succeed but delete orphans the inode. Record File.Length at InitializeAsync; ReadAllExportedRecords seeks past offset
+- Plan 05-02: Env-var-in-ctor pattern for ConnectionStrings:Postgres overrides (Pattern C) — ConfigureAppConfiguration arrives AFTER Program.cs has captured the connection string by value into AddNpgSql; Environment.SetEnvironmentVariable in fixture ctor (BEFORE base ctor) DOES propagate via env-var configuration source. Capture+restore prior value on Dispose
+- Plan 05-02: MEL category filter override pattern for SC#4 logs-half (Pattern D) — WebApplicationFactory<Program> defaults to ASPNETCORE_ENVIRONMENT=Development raising Microsoft.AspNetCore to Information; HealthFilterEnabledFixture overrides via ConfigureAppConfiguration + AddInMemoryCollection setting 3 categories to Warning
+- Plan 05-02: xUnit v3 [assembly: AssemblyFixture] for end-of-suite cleanup (Pattern E) — closes D-11 cleanup discipline; runs once after all assembly tests; shells out to docker compose stop/delete/start otel-collector; post-restart double-delete guard against external-process residuals
+- Plan 05-02: Collector-side filterprocessor over SDK-side filtering (Pattern F) — closes Plan 05-01 Deviation #2 (SC#4 metrics-half gap) via OTTL `IsMatch(attributes["http.route"], "^/health/.*")` in `compose/otel-collector-config.yaml`; SDK emits all, Collector applies ops-policy filtering. Idiomatic OTel layered architecture
+- Plan 05-02: Un-sealing OtelCollectorFixture for nested inheritance (Pattern G) — HealthEndpointsTests needs 4 nested subclasses overriding ConfigureWebHost; sealing would have forced awkward composition
+- Plan 05-02: Three-ctor IClassFixture activation strategy (Pattern A details) — public parameterless ctor for IClassFixture + internal overloads for direct `new`; default parameters do NOT satisfy IClassFixture parameter resolution
+- Plan 05-02: ROADMAP Phase 5 SC#1-5 + D-16 + T-05-PII/LOG-INJECT/OTLP-EXFIL/READY-DB-EXPOSE all GREEN via 16 new + 31 carryover = 47 facts; 3 consecutive dotnet test runs (17.67/17.71/18.09s); byte-identical psql \l BEFORE/AFTER; tests/.otel-out/telemetry.jsonl absent post-suite (D-11)
 
 ### Pending Todos
 
@@ -134,9 +143,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T09:08:00.168Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-05-27T10:25:00.000Z
+Stopped at: Completed 05-02-PLAN.md (verification battery shipped — Phase 5 closed)
 Resume file: None
 
-**Planned Phase:** 5 (Observability + Health Probes) — 2 plans — 2026-05-27T08:44:50.415Z
-**Next:** /gsd-plan-phase 4 (Cross-Cutting Middleware + Error Handling — RFC 7807 ProblemDetails + correlation-ID middleware + SQLSTATE 23503/23505 + DbUpdateConcurrencyException→409 mapping; covers ERROR-01..11 + OBSERV-09..11)
+**Planned Phase:** 5 (Observability + Health Probes) — 2 plans — COMPLETE 2026-05-27
+**Next:** /gsd-plan-phase 6 (Validation + Mapping Base — BaseDtoValidator + FluentValidation DI + Mapperly IEntityMapper seam; covers VALID-01..07 + HTTP-10)
