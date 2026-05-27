@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 08-01-PLAN.md (Wave A foundation)
-last_updated: "2026-05-27T19:16:51.852Z"
+stopped_at: Completed 08-02-PLAN.md (Schema feature folder + smoke tests)
+last_updated: "2026-05-27T19:27:45.938Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 23
-  completed_plans: 16
-  percent: 70
+  completed_plans: 17
+  percent: 74
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 08 (entity-build-out-migrations-docker-runtime-tests) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [███████░░░] 70%
+Progress: [███████░░░] 74%
 
 ## Performance Metrics
 
@@ -74,6 +74,7 @@ Progress: [███████░░░] 70%
 | Phase 07 P07-01 | 11min | 4 tasks tasks | 18 files files |
 | Phase 07 P02 | ~35min | 4 tasks (3 auto + 1 human-verify resolved by automated coverage) tasks | 14 files (13 new test files + 1 SUMMARY) files |
 | Phase 08 P01 | 7min | 5 tasks tasks | 7 files files |
+| Phase 08 P02 | 5min | 2 tasks tasks | 9 files files |
 
 ## Accumulated Context
 
@@ -148,6 +149,11 @@ Recent decisions affecting current work:
 - Plan 08-01: Phase8WebAppFactory public-class-not-sealed inheriting WebAppFactory + IAsyncLifetime; encapsulates PostgresFixture internally; protected ctor accepting connectionStringOverride for Plan 08-08 MigrationFailureWebAppFactory subclass; AddInMemoryCollection ConnectionStrings:Postgres (Plan 05-02 Pattern C); no service-side rewiring (Wave C 08-07 populates AppDbContext); does NOT pre-create schema (migration runs at first boot via D-15 swap)
 - Plan 08-01: TEST-03 (Testcontainers.PostgreSql) + TEST-04 (Respawn) deferred to v2 Hardening per D-05/D-06 — PostgresFixture pattern proven across 98 facts (Phases 3-7); Testcontainers cold-start 3-5s/fixture with no behavioral gain at v1 scale; Respawn would invalidate Phase 3 D-15 byte-identical psql l no-leak proof; REQUIREMENTS.md Phase 8 coverage drops 41 -> 39 active REQ-IDs; total-mapped becomes 100 v1 + 2 v2 = 102
 - Plan 08-01 deviation (Rule 1 fix-forward attributed in Task 4): Phase8WebAppFactory.cs plan body verbatim omitted using Xunit; for IAsyncLifetime (CS0246) and PostgresFixture type alias for Middleware/Persistence ambiguity (CS0104) — both build-blocking; mirror Phase7WebAppFactory.cs verbatim solution. Educational comment containing literal 'EnsureCreatedAsync' rephrased to 'pre-create the schema / model-shortcut create-from-model API' to satisfy plan verify grep-empty assertion (Plan 06-01 MP-code rephrase precedent)
+- Plan 08-02: ReadDto-with-audit-symmetric pattern — when ReadDto carries Id + 4 audit fields per HTTP-07, Mapperly ToRead needs ZERO [MapperIgnoreSource] (10 [MapperIgnoreTarget] on ToEntity+Update sufficient); Phase 8 entity mappers replicate this exact pattern when their ReadDto matches
+- Plan 08-02: Per-entity DI module pattern — internal static class XxxServiceCollectionExtensions with single AddXxxFeature() registering concrete + abstract-base BaseService alias; Wave C 08-07 AddAppFeatures() aggregator composes 5 such modules into Program.cs after AddBaseApi<AppDbContext>
+- Plan 08-02: JsonSchema.Net static-ctor pattern — Dialect.Default = Dialect.Draft202012 (VALID-08) + SchemaRegistry.Global.Fetch = (_,_) => null (VALID-09 SSRF defense-in-depth) live on SchemaCreateDtoValidator.static ctor only (per-AppDomain assignments; first-touch of either validator fires it via DI assembly scan)
+- Plan 08-02: Wave B isolation contract — 5 SchemasIntegrationTests fail at HTTP 500 (DI activation InvalidOperationException) because Wave C 08-07 has not yet wired AddSchemaFeature() into Program.cs; documented design per plan Task 2 note; GREEN-state verified by 08-08 cross-entity regression; [Trait('Phase8Wave','B')] enables developer filter/skip
+- Plan 08-02 deviation (Rule 1 - build error): SchemaEntityConfiguration.cs XML <see cref='BaseDbContext'> changed to <c>BaseDbContext</c> markup to satisfy CS1574 without adding an unused using BaseApi.Core.Persistence directive (would trip unused-import warning under TreatWarningsAsErrors=true). Preserves doc-comment educational intent.
 
 ### Pending Todos
 
@@ -173,8 +179,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T19:16:51.842Z
-Stopped at: Completed 08-01-PLAN.md (Wave A foundation)
+Last session: 2026-05-27T19:27:45.928Z
+Stopped at: Completed 08-02-PLAN.md (Schema feature folder + smoke tests)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)

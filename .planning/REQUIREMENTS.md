@@ -33,12 +33,14 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **PERSIST-05**: Snake_case naming via `EFCore.NamingConventions` (`UseSnakeCaseNamingConvention()`) applied BEFORE first migration (cannot be retrofitted)
 - [x] **PERSIST-06**: All primary keys are `Guid` mapped to Postgres `uuid`
 - [x] **PERSIST-07**: `BaseEntity.CreatedAt`/`UpdatedAt` map to `timestamptz` columns
-- [ ] **PERSIST-08**: `Schema.Definition` and `Assignment.Payload` map to `jsonb` columns
+- [x] **PERSIST-08
+**: `Schema.Definition` and `Assignment.Payload` map to `jsonb` columns
 - [ ] **PERSIST-09**: Migrations applied on startup by `BaseApi.Service` via `db.Database.MigrateAsync()` before readiness probe transitions to Healthy
 - [ ] **PERSIST-10**: Migration failure surfaces as failing readiness probe (process does not crash)
 - [x] **PERSIST-11**: Generic `Repository<TEntity>` in `BaseApi.Core` (Get, List, Add, Update, Delete with `CancellationToken`)
 - [ ] **PERSIST-12**: Junction tables `StepNextSteps`, `WorkflowEntrySteps`, `WorkflowAssignments` configured as explicit join entities with composite PKs and FKs to both sides
-- [ ] **PERSIST-13**: All FK columns have DB-level FK constraints (enforced by Postgres)
+- [x] **PERSIST-13
+**: All FK columns have DB-level FK constraints (enforced by Postgres)
 - [ ] **PERSIST-14**: Unique index on `Processor.SourceHash`
 - [x] **PERSIST-15**: `DbContext` registered with Scoped lifetime in DI
 - [x] **PERSIST-16**: `BaseEntity` rows carry a Postgres `xmin` shadow concurrency token mapped via `IsConcurrencyToken()` on every `BaseEntity` subclass (model-builder iteration in `BaseDbContext.OnModelCreating`). Phase 3 wires the shadow property; Phase 4 maps `DbUpdateConcurrencyException` -> HTTP 409 (D-03a / cross-phase impact from Phase 3 CONTEXT.md D-03)
@@ -47,14 +49,17 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **ENTITY-01**: `BaseEntity` (abstract) in `BaseApi.Core/Entities/BaseEntity.cs` with: `Id` Guid, `Name` string, `Version` string, `CreatedAt` DateTime, `UpdatedAt` DateTime, `CreatedBy` string?, `UpdatedBy` string?, `Description` string?
 - [x] **ENTITY-02**: `BaseEntity` is abstract — no table; 5 concrete tables, no inheritance discriminator
-- [ ] **ENTITY-03**: `SchemaEntity : BaseEntity` adds `Definition` string (jsonb)
+- [x] **ENTITY-03
+**: `SchemaEntity : BaseEntity` adds `Definition` string (jsonb)
 - [ ] **ENTITY-04**: `ProcessorEntity : BaseEntity` adds `SourceHash` string (SHA-256 hex, unique), `InputSchemaId` Guid? (nullable FK→Schema), `OutputSchemaId` Guid? (nullable FK→Schema). Null permitted on both — supports source processors (no input) and sink processors (no output). DB columns are nullable; Postgres FK constraint still enforced when value is non-null.
 - [ ] **ENTITY-05**: `StepEntity : BaseEntity` adds `ProcessorId` Guid (FK→Processor), `NextStepIds` List<Guid>? (M2M self-ref via `StepNextSteps`), `EntryCondition` `StepEntryCondition` (default `PreviousCompleted`)
 - [ ] **ENTITY-06**: `StepEntryCondition` enum: `PreviousProcessing=0`, `PreviousCompleted=1`, `PreviousFailed=2`, `PreviousCancelled=3`, `Always=4`, `Never=5`
 - [ ] **ENTITY-07**: `AssignmentEntity : BaseEntity` adds `StepId` Guid (FK→Step), `SchemaId` Guid (FK→Schema), `Payload` string (jsonb)
 - [ ] **ENTITY-08**: `WorkflowEntity : BaseEntity` adds `EntryStepIds` List<Guid> (M2M to Step via `WorkflowEntrySteps`, required non-empty), `AssignmentIds` List<Guid>? (M2M to Assignment via `WorkflowAssignments`), `CronExpression` string? (nullable)
-- [ ] **ENTITY-09**: No navigation properties between entities — only `Guid` FK columns + explicit junction entities
-- [ ] **ENTITY-10**: `(Name, Version)` is NOT unique on any entity
+- [x] **ENTITY-09
+**: No navigation properties between entities — only `Guid` FK columns + explicit junction entities
+- [x] **ENTITY-10
+**: `(Name, Version)` is NOT unique on any entity
 
 ### HTTP Surface
 
@@ -64,18 +69,24 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `BaseController<TEntity, TCreate, TUpdate, TRead>` abstract generic in `BaseApi.Core/Controllers/`, decorated with `[ApiController]` and `[Route("api/v1/[controller]")]`
 - [x] **HTTP-03
 **: Standard CRUD verbs on every concrete controller: `GET /api/v1/{entity}` (list), `GET /api/v1/{entity}/{id}`, `POST /api/v1/{entity}`, `PUT /api/v1/{entity}/{id}`, `DELETE /api/v1/{entity}/{id}`
-- [ ] **HTTP-04**: Each entity has 3 DTOs (Create, Update, Read) under `BaseApi.Service/{Entity}/Dtos/`
-- [ ] **HTTP-05**: `CreateDto` excludes server-controlled fields (`Id`, `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`)
-- [ ] **HTTP-06**: `UpdateDto` excludes `Id`, `CreatedAt`, `CreatedBy` (everything else mutable)
-- [ ] **HTTP-07**: `ReadDto` includes every entity field
+- [x] **HTTP-04
+**: Each entity has 3 DTOs (Create, Update, Read) under `BaseApi.Service/{Entity}/Dtos/`
+- [x] **HTTP-05
+**: `CreateDto` excludes server-controlled fields (`Id`, `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`)
+- [x] **HTTP-06
+**: `UpdateDto` excludes `Id`, `CreatedAt`, `CreatedBy` (everything else mutable)
+- [x] **HTTP-07
+**: `ReadDto` includes every entity field
 - [x] **HTTP-08
 **: Layering enforced: Controller → Service → Repository (no Controller-to-Repository shortcut)
 - [x] **HTTP-09
 **: `BaseService<TEntity, TCreate, TUpdate, TRead>` in `BaseApi.Core` provides generic CRUD plus virtual `SyncJunctionsAsync` hook for M2M sync
 - [x] **HTTP-10
 **: `IEntityMapper<TEntity, TCreate, TUpdate, TRead>` interface in `BaseApi.Core` defines mapping signatures consumed by `BaseService`
-- [ ] **HTTP-11**: Each entity has a Mapperly `[Mapper] partial class` in `BaseApi.Service/{Entity}/Mapping/` implementing `IEntityMapper`
-- [ ] **HTTP-12**: Concrete controllers are empty derived classes (e.g., `public class SchemasController : BaseController<SchemaEntity, SchemaCreateDto, SchemaUpdateDto, SchemaReadDto>`)
+- [x] **HTTP-11
+**: Each entity has a Mapperly `[Mapper] partial class` in `BaseApi.Service/{Entity}/Mapping/` implementing `IEntityMapper`
+- [x] **HTTP-12
+**: Concrete controllers are empty derived classes (e.g., `public class SchemasController : BaseController<SchemaEntity, SchemaCreateDto, SchemaUpdateDto, SchemaReadDto>`)
 - [x] **HTTP-13
 **: `AddBaseApi<TDbContext>(IConfiguration)` extension in `BaseApi.Core/Extensions/` registers DI for: DbContext + naming convention + interceptors, generic repositories, generic services, mappers, validators, OTel, correlation, error middleware, health checks
 - [x] **HTTP-14
@@ -101,8 +112,10 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `Version`: NotEmpty, regex `^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$` (strict SemVer numeric triple, no leading zeros)
 - [x] **VALID-07
 **: `Description`: MaxLength(2000)
-- [ ] **VALID-08**: `SchemaCreate/UpdateDto.Definition`: valid JSON syntax AND valid JSON Schema (draft 2020-12) via `JsonSchema.Net`
-- [ ] **VALID-09**: `JsonSchema.Net` remote `$ref` network access disabled (SSRF prevention)
+- [x] **VALID-08
+**: `SchemaCreate/UpdateDto.Definition`: valid JSON syntax AND valid JSON Schema (draft 2020-12) via `JsonSchema.Net`
+- [x] **VALID-09
+**: `JsonSchema.Net` remote `$ref` network access disabled (SSRF prevention)
 - [ ] **VALID-10**: `ProcessorCreate/UpdateDto.SourceHash`: regex `^[a-f0-9]{64}$` (lowercase SHA-256 hex)
 - [x] **VALID-11**: `ProcessorCreate/UpdateDto.InputSchemaId`/`OutputSchemaId`: nullable `Guid?` — null is valid (source/sink processor). When present, must not equal `Guid.Empty`. FluentValidation pattern: `When(x => x.InputSchemaId.HasValue, () => RuleFor(x => x.InputSchemaId!.Value).NotEqual(Guid.Empty));` (same for `OutputSchemaId`). `Guid.Empty` (`00000000-0000-0000-0000-000000000000`) is rejected at HTTP 400 by the validator, NOT at the DB layer. FK existence for non-empty Guids is still enforced by Postgres at persist time (SQLSTATE 23503 → HTTP 422 per ERROR-04
 ).
@@ -114,7 +127,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **VALID-17**: `WorkflowCreate/UpdateDto.EntryStepIds`: `NotEmpty`, each unique
 - [ ] **VALID-18**: `WorkflowCreate/UpdateDto.AssignmentIds`: each unique when present
 - [ ] **VALID-19**: `WorkflowCreate/UpdateDto.CronExpression`: when present, parses as valid 5-field expression via `Cronos`
-- [ ] **VALID-20**: Concrete entity validators inherit base rules via `Include(new BaseDtoValidator<...>())`
+- [x] **VALID-20
+**: Concrete entity validators inherit base rules via `Include(new BaseDtoValidator<...>())`
 
 ### Observability
 
@@ -187,7 +201,8 @@ Requirements for initial release. Each maps to roadmap phases.
 **: Test project `tests/BaseApi.Tests/` using `xUnit` v3
 - [x] **TEST-02
 **: `Microsoft.AspNetCore.Mvc.Testing` + `WebApplicationFactory<Program>` for integration tests
-- [ ] **TEST-05**: At least one happy-path integration test per CRUD verb per entity (5 entities × 5 verbs = 25 smoke tests, minimum)
+- [x] **TEST-05
+**: At least one happy-path integration test per CRUD verb per entity (5 entities × 5 verbs = 25 smoke tests, minimum)
 - [ ] **TEST-06**: At least one negative-path integration test per error mapping (400 validation, 404 not found, 409 unique violation, 422 FK violation)
 
 ## v2 Requirements
