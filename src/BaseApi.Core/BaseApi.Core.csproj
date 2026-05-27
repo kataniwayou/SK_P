@@ -49,9 +49,12 @@
 
   <ItemGroup>
     <!-- FluentValidation 12 — Phase 4 ships ValidationException → 400 mapping defensively
-         (D-10); Phase 6 wires validators via AddValidatorsFromAssembly. Version pinned in
-         Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+         (D-10); Phase 6 wires validators via AddValidatorsFromAssembly (which lives in the
+         DependencyInjectionExtensions companion package, pinned at 12.1.1 in
+         Directory.Packages.props line 69 since Phase 1 D-05). Both pins resolve from CPM
+         (no Version= per Phase 1 D-05/D-06). -->
     <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
   </ItemGroup>
 
   <ItemGroup>
