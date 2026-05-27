@@ -22,6 +22,8 @@ namespace BaseApi.Core.Controllers;
 [Route("api/v{version:apiVersion}/[controller]")]
 public abstract class BaseController<TEntity, TCreate, TUpdate, TRead> : ControllerBase
     where TEntity : BaseEntity
+    where TCreate : class
+    where TUpdate : class
     where TRead   : IHasId
 {
     private readonly BaseService<TEntity, TCreate, TUpdate, TRead> _service;

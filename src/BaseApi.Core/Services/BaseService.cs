@@ -24,6 +24,8 @@ namespace BaseApi.Core.Services;
 /// </summary>
 public abstract class BaseService<TEntity, TCreate, TUpdate, TRead>
     where TEntity : BaseEntity
+    where TCreate : class
+    where TUpdate : class
 {
     private readonly IValidator<TCreate> _createValidator;
     private readonly IValidator<TUpdate> _updateValidator;
