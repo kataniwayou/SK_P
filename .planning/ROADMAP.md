@@ -109,7 +109,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. A concrete DTO validator that calls `Include(new BaseDtoValidator<MyDto>())` automatically gets the `Name` (NotEmpty + MaxLength 200), `Version` (strict SemVer regex `^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`), and `Description` (MaxLength 2000) rules without restating them
   2. Validators are discovered automatically via `AddValidatorsFromAssembly` â€” no manual `services.AddScoped<IValidator<T>>` calls; no `FluentValidation.AspNetCore` package referenced anywhere in the solution
   3. A test DTO that calls `IValidator<TestDto>.ValidateAsync(badDto)` from a service-layer call (not from MVC auto-validation) returns a `ValidationResult` with the expected field-level errors; the same call inside a controller action surfaces as the Phase 4 HTTP 400 Problem Details response
-  4. A trivial Mapperly `[Mapper] partial class` that implements `IEntityMapper<TestEntity, TestCreateDto, TestUpdateDto, TestReadDto>` compiles with Mapperly diagnostics MP0001/MP0011/MP0020/MP0021 promoted to errors in the project file
+  4. A trivial Mapperly `[Mapper] partial class` that implements `IEntityMapper<TestEntity, TestCreateDto, TestUpdateDto, TestReadDto>` compiles with Mapperly diagnostics RMG007/RMG012/RMG020/RMG089 promoted to errors in the project file (codes corrected from original MP0001/MP0011/MP0020/MP0021 per Phase 6 RESEARCH A-01 — Mapperly uses RMG-prefix exclusively; MP codes do not exist)
 **Plans**: TBD
 **UI hint**: no
 **Parallelizable**: yes (BaseDtoValidator + Mapperly setup + IEntityMapper interface are independent and can be split across plans)
