@@ -22,8 +22,15 @@ public sealed class Repository<TEntity> : IRepository<TEntity> where TEntity : B
     public async Task<IReadOnlyList<TEntity>> ListAsync(CancellationToken cancellationToken)
         => await _set.ToListAsync(cancellationToken);
 
-    public async Task AddAsync(TEntity entity, CancellationToken cancellationToken)
-        => await _set.AddAsync(entity, cancellationToken);
+    // IN-02: EF Core's DbSet<T>.AddAsync is only truly async for HiLo/sequence value generators;
+    // for our Guid-keyed entities it completes synchronously and the async wrapper allocates a
+    // state machine per call. The CREATE path is per-request hot path, so we use the sync
+    // variant and return Task.CompletedTask to keep IRepository.AddAsync's signature stable.
+    public Task AddAsync(TEntity entity, CancellationToken cancellationToken)
+    {
+        _set.Add(entity);
+        return Task.CompletedTask;
+    }
 
     public void Update(TEntity entity) => _set.Update(entity);
 
