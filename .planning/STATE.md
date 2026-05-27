@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 8 context gathered
-last_updated: "2026-05-27T17:45:38.280Z"
+status: executing
+stopped_at: Completed 08-01-PLAN.md (Wave A foundation)
+last_updated: "2026-05-27T19:16:51.852Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
+  total_plans: 23
+  completed_plans: 16
+  percent: 70
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-27)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 8 — entity-build-out + migrations + docker-runtime + tests
+**Current focus:** Phase 08 — entity-build-out-migrations-docker-runtime-tests
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Status: Ready to plan
+Phase: 08 (entity-build-out-migrations-docker-runtime-tests) — EXECUTING
+Plan: 2 of 8
+Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
@@ -73,6 +73,7 @@ Progress: [██████████] 100%
 | Phase 06 P02 | ~20min | 3 tasks | 13 files |
 | Phase 07 P07-01 | 11min | 4 tasks tasks | 18 files files |
 | Phase 07 P02 | ~35min | 4 tasks (3 auto + 1 human-verify resolved by automated coverage) tasks | 14 files (13 new test files + 1 SUMMARY) files |
+| Phase 08 P01 | 7min | 5 tasks tasks | 7 files files |
 
 ## Accumulated Context
 
@@ -141,6 +142,12 @@ Recent decisions affecting current work:
 - Plan 07-02 Warning 7 option b: TestsController ctor injects ABSTRACT BaseService<TestEntity,TestCreateDto,TestUpdateDto,TestReadDto> (not concrete RecordingTestService) — makes Phase7WebAppFactory's AddScoped<BaseService<...>>(sp => sp.GetRequiredService<RecordingTestService>()) alias load-bearing and matches the Phase 8 expected pattern where concrete controllers inject the abstract base for DI-friendly reuse.
 - Plan 07-02 RESEARCH A6 falsified: Asp.Versioning URL-segment versioning returns 404 (route no-match) NOT 400 for unsupported versions like /api/v99/tests. VersioningFacts assertion broadened to accept either 400 or 404 while still verifying correlationId propagation through the response path. Phase 8 may want to revisit if richer version-mismatch semantics are needed.
 - Plan 07-02 Task 2 Rule 3 fix-forward: Phase7WebAppFactory extended beyond plan-as-written with per-class throwaway Postgres DB + Phase7TestDbContext registration + BaseDbContext alias remapping so Repository<TestEntity> resolves at integration-test time. AppDbContext placeholder has no DbSets so the abstract repository cannot bind without this Phase7-only re-wiring. Plan-gap classification.
+- Plan 08-01: Multistage Dockerfile at repo root (sdk:8.0-bookworm-slim -> aspnet:8.0-bookworm-slim) with USER app (uid 1654) + /p:UseAppHost=false + ENTRYPOINT dotnet BaseApi.Service.dll; .dockerignore excludes tests/, .git, .planning/, .env*, *.md, compose.yaml — minimizes T-08-01-SECRET-LEAK-IMAGE attack surface (D-13)
+- Plan 08-01: compose.yaml mutation — drop phase-8 profile + placeholder image; add build:./Dockerfile, env block (ASPNETCORE_ENVIRONMENT, ConnectionStrings__Postgres with double-underscore convention, OTEL_EXPORTER_OTLP_ENDPOINT), ports 8080:8080, wget healthcheck against /health/ready (start_period 30s for migration window), depends_on otel-collector service_started (no healthcheck declared) + postgres service_healthy preserved
+- Plan 08-01: 4 PackageReferences on BaseApi.Service.csproj (Riok.Mapperly PrivateAssets=all ExcludeAssets=runtime; Microsoft.EntityFrameworkCore.Design PrivateAssets=all; JsonSchema.Net; Cronos) — all CPM-resolved (zero Version= leaks); .config/dotnet-tools.json pins dotnet-ef 8.0.27 matching CPM EF Core pin (deterministic byte content; not via dotnet new tool-manifest)
+- Plan 08-01: Phase8WebAppFactory public-class-not-sealed inheriting WebAppFactory + IAsyncLifetime; encapsulates PostgresFixture internally; protected ctor accepting connectionStringOverride for Plan 08-08 MigrationFailureWebAppFactory subclass; AddInMemoryCollection ConnectionStrings:Postgres (Plan 05-02 Pattern C); no service-side rewiring (Wave C 08-07 populates AppDbContext); does NOT pre-create schema (migration runs at first boot via D-15 swap)
+- Plan 08-01: TEST-03 (Testcontainers.PostgreSql) + TEST-04 (Respawn) deferred to v2 Hardening per D-05/D-06 — PostgresFixture pattern proven across 98 facts (Phases 3-7); Testcontainers cold-start 3-5s/fixture with no behavioral gain at v1 scale; Respawn would invalidate Phase 3 D-15 byte-identical psql l no-leak proof; REQUIREMENTS.md Phase 8 coverage drops 41 -> 39 active REQ-IDs; total-mapped becomes 100 v1 + 2 v2 = 102
+- Plan 08-01 deviation (Rule 1 fix-forward attributed in Task 4): Phase8WebAppFactory.cs plan body verbatim omitted using Xunit; for IAsyncLifetime (CS0246) and PostgresFixture type alias for Middleware/Persistence ambiguity (CS0104) — both build-blocking; mirror Phase7WebAppFactory.cs verbatim solution. Educational comment containing literal 'EnsureCreatedAsync' rephrased to 'pre-create the schema / model-shortcut create-from-model API' to satisfy plan verify grep-empty assertion (Plan 06-01 MP-code rephrase precedent)
 
 ### Pending Todos
 
@@ -166,9 +173,11 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 8 context gathered
-Resume file: --resume-file
+Last session: 2026-05-27T19:16:51.842Z
+Stopped at: Completed 08-01-PLAN.md (Wave A foundation)
+Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
 **Next:** /gsd-discuss-phase 8 (Entity Build-Out + Migrations + Docker Runtime + Tests — 5 concrete entities into the base, InitialCreate migration, runtime Docker image, smoke + error-mapping integration tests against real Postgres)
+
+**Planned Phase:** 08 (entity-build-out-migrations-docker-runtime-tests) — 8 plans — 2026-05-27T19:03:44.612Z

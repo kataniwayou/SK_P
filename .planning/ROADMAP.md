@@ -160,7 +160,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 5. Observability + Health Probes | 2/2 | Complete    | 2026-05-27 |
 | 6. Validation + Mapping Base | 0/2 | Planned | - |
 | 7. Generic HTTP Base + Composition Root | 1/2 | In Progress | - |
-| 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 0/TBD | Not started | - |
+| 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 1/8 | In Progress | - |
 
 ## Coverage Summary
 

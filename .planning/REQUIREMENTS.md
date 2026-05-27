@@ -17,7 +17,8 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `Directory.Packages.props` centralizes NuGet versions across all projects
 - [x] **INFRA-04
 **: `appsettings.json` contains `Logging`, `Service` (`Name="sk-api"`, `Version="3.2.0"`), `ConnectionStrings:Postgres`, `OpenTelemetry` sections
-- [ ] **INFRA-05**: Multistage `Dockerfile` using `mcr.microsoft.com/dotnet/sdk:8.0` for build and `mcr.microsoft.com/dotnet/aspnet:8.0` for runtime
+- [x] **INFRA-05
+**: Multistage `Dockerfile` using `mcr.microsoft.com/dotnet/sdk:8.0` for build and `mcr.microsoft.com/dotnet/aspnet:8.0` for runtime
 - [x] **INFRA-06
 **: `docker-compose.yml` defines `postgres:17-alpine` with `pg_isready` healthcheck plus `BaseApi.Service` with `depends_on: postgres: condition: service_healthy`
 - [x] **INFRA-07
@@ -182,8 +183,10 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Testing
 
-- [ ] **TEST-01**: Test project `tests/BaseApi.Tests/` using `xUnit` v3
-- [ ] **TEST-02**: `Microsoft.AspNetCore.Mvc.Testing` + `WebApplicationFactory<Program>` for integration tests
+- [x] **TEST-01
+**: Test project `tests/BaseApi.Tests/` using `xUnit` v3
+- [x] **TEST-02
+**: `Microsoft.AspNetCore.Mvc.Testing` + `WebApplicationFactory<Program>` for integration tests
 - [ ] **TEST-05**: At least one happy-path integration test per CRUD verb per entity (5 entities × 5 verbs = 25 smoke tests, minimum)
 - [ ] **TEST-06**: At least one negative-path integration test per error mapping (400 validation, 404 not found, 409 unique violation, 422 FK violation)
 
