@@ -153,7 +153,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 2. Postgres + Docker Compose | 2/2 | Complete | 2026-05-26 |
 | 3. EF Core Persistence Base | 2/2 | Complete | 2026-05-27 |
 | 4. Cross-Cutting Middleware + Error Handling | 2/2 | Complete | 2026-05-27 |
-| 5. Observability + Health Probes | 2/2 | Complete | 2026-05-27 |
+| 5. Observability + Health Probes | 2/2 | Complete    | 2026-05-27 |
 | 6. Validation + Mapping Base | 0/TBD | Not started | - |
 | 7. Generic HTTP Base + Composition Root | 0/TBD | Not started | - |
 | 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 0/TBD | Not started | - |
