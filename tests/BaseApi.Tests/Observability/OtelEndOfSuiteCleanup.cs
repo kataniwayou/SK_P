@@ -99,6 +99,26 @@ public sealed class OtelEndOfSuiteCleanup : IAsyncLifetime
             await Console.Error.WriteLineAsync(
                 "[OtelEndOfSuiteCleanup] WARN — docker compose start otel-collector did not " +
                 "complete cleanly; next `dotnet test` may need a manual `docker compose up -d`.");
+            return;
+        }
+
+        // Step 4: post-restart guard. The just-started Collector takes a brief moment to
+        // accept connections; if any external process on the same host has an OTLP client
+        // pointed at localhost:4317 (e.g., a sibling test runner, an instrumented IDE,
+        // MCP-style agents), it may flush a small batch into a freshly-created
+        // telemetry.jsonl during the window between our start command and the test process
+        // exit. Delete one more time after the Collector has had a moment to open its
+        // exporter; subsequent writes from external processes are not within this fixture's
+        // scope (and the deferred .gitignore rule keeps the working tree clean regardless).
+        await Task.Delay(TimeSpan.FromMilliseconds(750));
+        try
+        {
+            if (File.Exists(TelemetryFile)) File.Delete(TelemetryFile);
+        }
+        catch (IOException)
+        {
+            // Container reopened the handle in our race window — give up; the file
+            // will be cleaned by the next test session's end-of-suite cleanup.
         }
     }
 
