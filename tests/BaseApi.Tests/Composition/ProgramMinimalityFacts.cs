@@ -6,12 +6,30 @@ namespace BaseApi.Tests.Composition;
 /// + AddBaseApiObservability (D-13 amendment) and no per-concern wiring.</summary>
 public sealed class ProgramMinimalityFacts
 {
+    /// <summary>
+    /// WR-04 fix: anchor on the solution root by walking up from <see cref="AppContext.BaseDirectory"/>
+    /// looking for the marker file <c>SK_P.sln</c>. This replaces the brittle
+    /// <c>".." x 5</c> traversal that assumed
+    /// <c>tests/BaseApi.Tests/bin/{Configuration}/net8.0/</c> as the exact output layout
+    /// (broken by multi-targeting, <c>AppendTargetFrameworkToOutputPath=false</c>,
+    /// CI-overridden output paths, or self-contained publish).
+    /// </summary>
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "SK_P.sln")))
+            dir = dir.Parent;
+        return dir?.FullName
+            ?? throw new InvalidOperationException(
+                "Could not locate SK_P.sln walking up from " + AppContext.BaseDirectory);
+    }
+
+    private static string ProgramCsPath()
+        => Path.Combine(FindRepoRoot(), "src", "BaseApi.Service", "Program.cs");
+
     private static string ProgramCsContent()
     {
-        // tests/BaseApi.Tests/bin/{Configuration}/net8.0/ -> repo root requires 5 parent traversals.
-        var path = Path.GetFullPath(Path.Combine(
-            AppContext.BaseDirectory, "..", "..", "..", "..", "..",
-            "src", "BaseApi.Service", "Program.cs"));
+        var path = ProgramCsPath();
         Assert.True(File.Exists(path), $"Program.cs not found at {path}");
         return File.ReadAllText(path);
     }
@@ -61,9 +79,7 @@ public sealed class ProgramMinimalityFacts
     [Fact]
     public void ProgramCs_BodyLines_LessThan_OrEqualTo_Ten()
     {
-        var nonTrivialLines = File.ReadAllLines(Path.GetFullPath(Path.Combine(
-                AppContext.BaseDirectory, "..", "..", "..", "..", "..",
-                "src", "BaseApi.Service", "Program.cs")))
+        var nonTrivialLines = File.ReadAllLines(ProgramCsPath())
             .Where(line => !string.IsNullOrWhiteSpace(line))
             .Where(line => !line.TrimStart().StartsWith("//"))
             .Where(line => !line.TrimStart().StartsWith("using "))
