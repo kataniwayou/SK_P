@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-05-27T06:11:51.692Z"
+status: verifying
+stopped_at: Completed 04-02-PLAN.md
+last_updated: "2026-05-27T06:36:30.047Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
-  percent: 89
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 Phase: 04 (Cross-Cutting Middleware + Error Handling) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-27
 
-Progress: [█████████░] 89%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [█████████░] 89%
 | Phase 03 P03-01 | 8min | 9 tasks (8 commits + 1 verification gate) | 9 files (1 doc + 1 props + 2 csproj + 5 new C#) |
 | Phase 03 P03-02 | 3min | 7 tasks | 10 files |
 | Phase 04 P01 | 25min | 8 tasks tasks | 10 files files |
+| Phase 04 P02 | ~40min | 7 tasks tasks | 14 files files |
 
 ## Accumulated Context
 
@@ -99,6 +100,8 @@ Recent decisions affecting current work:
 - Plan 04-01: Option A FK regex (preserves _id suffix per RESEARCH lines 1059-1072) — explicitly authorized deviation from D-08 verbatim via Claude's Discretion at CONTEXT.md line 193
 - Plan 04-01 fix-forward: Npgsql pin corrected from 8.0.10 to 9.0.0 — Npgsql 8.0.10 does not exist on nuget.org and Npgsql.EFCore.PostgreSQL 8.0.10 transitively brings Npgsql 9.0.0. RESEARCH A2 pre-authorized this fix-forward path.
 - Plan 04-01: Phase 4 takes ownership of AddHttpContextAccessor (Phase 3 D-11 had deferred to Phase 7) — Pitfall 1 mitigation, idempotent so Phase 7 won't conflict
+- Plan 04-02: Phase 4 ROADMAP SC#1-5 + D-03a + ERROR-08/09 regression + T-04-LEAK/XMIN/INJECT mitigations all GREEN via 24 new + 7 Phase 3 carry-over facts. dotnet test exit 0 Passed: 31 Failed: 0 across 3 consecutive runs (~1.5-2.9s each). 14 phase REQ-IDs (OBSERV-09/10/11 + ERROR-01..11) closed. D-15 cleanup proven via byte-identical psql l snapshots.
+- Plan 04-02 fix-forward (ad3f1a1): Corrected Npgsql pin 9.0.0 to 8.0.9 in Directory.Packages.props. EFCore.PostgreSQL 8.0.10 binary-references Npgsql 8.0.9 internal types removed in Npgsql 9.x rewrite. TypeLoadException on Npgsql.Internal.HackyEnumTypeMapping surfaced at test runtime under WebApplicationFactory boot. Classified as fix(04-01) per Phase 3 D-18 (production dependency mis-pin in file owned by Plan 04-01). Anticipated by Plan 04-01 RESEARCH A2 trivial-to-fix envelope.
 
 ### Pending Todos
 
@@ -124,8 +127,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T06:11:41.664Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-05-27T06:36:30.038Z
+Stopped at: Completed 04-02-PLAN.md
 Resume file: None
 
 **Planned Phase:** 04 (Cross-Cutting Middleware + Error Handling) — 2 plans — 2026-05-27T05:40:21.551Z
