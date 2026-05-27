@@ -48,6 +48,16 @@ public static class PostgresExceptionMapper
 {
     // ERROR-11 constraint name conventions per REQUIREMENTS.md.
     // Option A (preserves _id suffix) per RESEARCH lines 1059-1072 recommendation.
+    //
+    // INVARIANT: the table segment of every constraint name MUST be a single word
+    // with NO underscores (e.g., "testchild", NOT "test_child"). The regex captures
+    // [a-z0-9]+ (no underscore) for the table segment, so the first underscore after
+    // the prefix is the table/column boundary. A table name that itself contains an
+    // underscore (e.g., "test_child" → "fk_test_child_parent_id") would cause the
+    // parser to treat "test" as the table and "child_parent_id" as the column, silently
+    // returning a wrong column name. Phase 8 entity table names are enforced to comply
+    // with this invariant via the EFCore.NamingConventions snake_case mapping.
+    // See: WR-03 review finding and ERROR-11 in REQUIREMENTS.md.
     private static readonly Regex FkRegex = new(
         @"^fk_[a-z0-9]+_(?<col>[a-z0-9_]+)$",
         RegexOptions.Compiled);
@@ -56,6 +66,25 @@ public static class PostgresExceptionMapper
         @"^uq_[a-z0-9]+_(?<col>[a-z0-9_]+)$",
         RegexOptions.Compiled);
 
+    /// <summary>
+    /// Attempts to map a <see cref="DbUpdateException"/> containing a
+    /// <see cref="PostgresException"/> to an HTTP status code, detail string,
+    /// and extracted column name.
+    ///
+    /// <para>
+    /// <b>Constraint-name format invariant (ERROR-11 / WR-03):</b>
+    /// Constraint names MUST follow the ERROR-11 convention
+    /// <c>fk_&lt;table&gt;_&lt;column&gt;</c> and <c>uq_&lt;table&gt;_&lt;column&gt;</c>
+    /// where <c>&lt;table&gt;</c> is a snake_case table name <b>CONTAINING NO UNDERSCORES</b>
+    /// (e.g., <c>testchild</c>, not <c>test_child</c>). The regex uses
+    /// <c>[a-z0-9]+</c> (no underscores) for the table segment so the first
+    /// underscore after the prefix is unambiguously the table/column boundary.
+    /// Phase 8 entity table names will be enforced to comply with this invariant
+    /// via the EFCore.NamingConventions snake_case mapping ahead of the convention.
+    /// Violating this invariant causes the regex to silently extract a wrong
+    /// "column" value and return a misleading detail string to the client.
+    /// </para>
+    /// </summary>
     public static bool TryMap(
         DbUpdateException ex,
         out int httpStatus,
