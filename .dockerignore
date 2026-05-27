@@ -1,0 +1,27 @@
+# Test / build artifacts
+**/bin
+**/obj
+**/.vs
+**/.idea
+**/*.user
+
+# Tests (not needed for runtime image)
+tests/
+
+# Git + planning
+.git
+.gitignore
+.gitattributes
+.planning/
+
+# Docs (not needed for runtime image)
+*.md
+README.md
+
+# Compose runtime config (not needed inside the service container)
+compose/
+compose.yaml
+.env*
+
+# IDE
+.vscode/
