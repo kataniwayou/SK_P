@@ -18,17 +18,19 @@ public sealed class AddBaseApiFacts
 {
     private static IServiceCollection BuildServices()
     {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+        // IN-03: skip the throwaway BuildServiceProvider() round-trip — the IConfiguration
+        // instance we just constructed IS the one DI would have handed back.
+        var cfg = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Postgres"] = "Host=localhost;Port=5433;Database=stepsdb_addbaseapi;Username=postgres;Password=postgres",
                 ["Service:Name"]               = "sk-api-test",
                 ["Service:Version"]            = "0.0.0-test",
-            }).Build());
+            }).Build();
 
-        var cfg = services.BuildServiceProvider().GetRequiredService<IConfiguration>();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IConfiguration>(cfg);
 
         // Adding to a fresh assembly scan; AppDbContext.Assembly is BaseApi.Service.dll.
         services.AddBaseApi<AppDbContext>(cfg);
