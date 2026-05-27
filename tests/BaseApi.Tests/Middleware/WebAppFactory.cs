@@ -26,7 +26,7 @@ namespace BaseApi.Tests.Middleware;
 /// <c>src/BaseApi.Service/Program.cs</c> line 72 — load-bearing dependency.
 /// </para>
 /// </summary>
-public sealed class WebAppFactory : WebApplicationFactory<Program>
+public class WebAppFactory : WebApplicationFactory<Program>
 {
     private readonly string? _connectionString;
 

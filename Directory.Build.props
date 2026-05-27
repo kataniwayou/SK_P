@@ -13,10 +13,12 @@
             at compile time, not via post-hoc review.
       D-03: Strictness bundle (Nullable, ImplicitUsings, LangVersion, AnalysisMode,
             EnforceCodeStyleInBuild) — surface compiler/analyzer/style issues as errors.
-      D-04: Mapperly MP-codes (MP0001/MP0011/MP0020/MP0021) are NOT promoted to errors
-            here. That moves to Phase 6 (Validation + Mapping Base) where Mapperly is
-            actually referenced. Phase 6 will add a <WarningsAsErrors>...</WarningsAsErrors>
-            entry to the BaseApi.Service csproj.
+      D-04 (Phase 1 deferral, AMENDED by Phase 6 D-11): Mapperly diagnostic codes are
+            promoted to errors SOLUTION-WIDE via the <WarningsAsErrors> entry below — NOT
+            per-csproj as the original Phase 1 D-04 anticipated. The codes are RMG-prefixed
+            (RMG007/RMG012/RMG020/RMG089), NOT MP-prefixed. Mapperly's actual analyzer uses
+            RMG codes exclusively; the original CONTEXT documentation used a non-existent
+            MP-prefix that was corrected via Phase 6 RESEARCH A-01 amendment.
 
     Central NuGet package management is configured in Directory.Packages.props (sibling
     file). Do NOT duplicate the central-package-management property here (per D-06) —
@@ -31,6 +33,12 @@
     <AnalysisMode>latest</AnalysisMode>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- Phase 6 D-11/D-12 (codes corrected MP→RMG per RESEARCH A-01).
+         RMG089 (Info) is the ONLY load-bearing entry here — TreatWarningsAsErrors=true
+         above only catches Warning/Error severities, so RMG089 needs the explicit list.
+         RMG007 (Error default), RMG012/RMG020 (Warning default) are listed for
+         defense-in-depth + auditability per D-12. -->
+    <WarningsAsErrors>$(WarningsAsErrors);RMG007;RMG012;RMG020;RMG089</WarningsAsErrors>
   </PropertyGroup>
 
 </Project>

@@ -25,6 +25,7 @@
 //   app.MapControllers();
 // (See .planning/research/ARCHITECTURE.md Pattern 1 — Composition Root.)
 
+using BaseApi.Core.DependencyInjection;
 using BaseApi.Core.Exceptions.Handlers;
 using BaseApi.Core.Health;
 using BaseApi.Core.Middleware;
@@ -66,6 +67,16 @@ builder.Services.AddProblemDetails(options =>
         ctx.ProblemDetails.Instance = ctx.HttpContext.Request.Path;
     };
 });
+
+// ============================================================================
+// Phase 6 D-18: validation + mapping seam. Phase 7's AddBaseApi composition root
+// will absorb both calls — Phase 6 places them at the precise location Phase 7
+// composes from, so the migration is a mechanical cut-paste with zero behavior
+// change. The `params Assembly[]` signature (D-16) lets tests scan additional
+// assemblies (BaseApi.Tests.dll) — Phase 6 verification uses that override.
+// ============================================================================
+builder.Services.AddBaseApiValidation(typeof(Program).Assembly);
+builder.Services.AddBaseApiMapping(typeof(Program).Assembly);
 
 // IExceptionHandler chain — REGISTRATION ORDER IS LOAD-BEARING (D-06).
 // Walked top-to-bottom; first to return true claims. FallbackExceptionHandler

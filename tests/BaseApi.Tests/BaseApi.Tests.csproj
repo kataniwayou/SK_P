@@ -80,6 +80,18 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Phase 6 D-19 (Phase 1 D-07 source-gen convention): Mapperly source generator
+         for SC#4 TestEntityMapper [Mapper] partial class scaffold (Plan 06-02).
+         PrivateAssets="all" prevents the analyzer leaking; ExcludeAssets="runtime"
+         prevents the runtime DLL being copied to bin/ (Mapperly is source-gen only —
+         RESEARCH Pitfall 6). Version pinned in Directory.Packages.props line 65
+         (Phase 1 D-05). No Version= attribute (CPM contract). -->
+    <PackageReference Include="Riok.Mapperly"
+                      PrivateAssets="all"
+                      ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Phase 3 addition: FrameworkReference for DefaultHttpContext / ClaimsPrincipal
          in StubHttpContextAccessor (CONTEXT.md D-13 + Phase 3 RESEARCH.md A3). -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
