@@ -61,7 +61,8 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `StepEntryCondition` enum: `PreviousProcessing=0`, `PreviousCompleted=1`, `PreviousFailed=2`, `PreviousCancelled=3`, `Always=4`, `Never=5`
 - [x] **ENTITY-07
 **: `AssignmentEntity : BaseEntity` adds `StepId` Guid (FK→Step), `SchemaId` Guid (FK→Schema), `Payload` string (jsonb)
-- [ ] **ENTITY-08**: `WorkflowEntity : BaseEntity` adds `EntryStepIds` List<Guid> (M2M to Step via `WorkflowEntrySteps`, required non-empty), `AssignmentIds` List<Guid>? (M2M to Assignment via `WorkflowAssignments`), `CronExpression` string? (nullable)
+- [x] **ENTITY-08
+**: `WorkflowEntity : BaseEntity` adds `EntryStepIds` List<Guid> (M2M to Step via `WorkflowEntrySteps`, required non-empty), `AssignmentIds` List<Guid>? (M2M to Assignment via `WorkflowAssignments`), `CronExpression` string? (nullable)
 - [x] **ENTITY-09
 **: No navigation properties between entities — only `Guid` FK columns + explicit junction entities
 - [x] **ENTITY-10
@@ -136,9 +137,12 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `AssignmentCreate/UpdateDto.StepId`/`SchemaId`: `NotEmpty` Guid
 - [x] **VALID-16
 **: `AssignmentCreate/UpdateDto.Payload`: valid JSON syntax (parsed by `System.Text.Json`), MaxLength 1,048,576 chars (~1 MB)
-- [ ] **VALID-17**: `WorkflowCreate/UpdateDto.EntryStepIds`: `NotEmpty`, each unique
-- [ ] **VALID-18**: `WorkflowCreate/UpdateDto.AssignmentIds`: each unique when present
-- [ ] **VALID-19**: `WorkflowCreate/UpdateDto.CronExpression`: when present, parses as valid 5-field expression via `Cronos`
+- [x] **VALID-17
+**: `WorkflowCreate/UpdateDto.EntryStepIds`: `NotEmpty`, each unique
+- [x] **VALID-18
+**: `WorkflowCreate/UpdateDto.AssignmentIds`: each unique when present
+- [x] **VALID-19
+**: `WorkflowCreate/UpdateDto.CronExpression`: when present, parses as valid 5-field expression via `Cronos`
 - [x] **VALID-20
 **: Concrete entity validators inherit base rules via `Include(new BaseDtoValidator<...>())`
 

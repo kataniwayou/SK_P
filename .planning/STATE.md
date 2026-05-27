@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 08-05-PLAN.md (Assignment feature folder + multi-FK Restrict + smoke tests)
-last_updated: "2026-05-27T20:04:46.416Z"
+stopped_at: Completed 08-06-PLAN.md (Workflow feature folder + dual-junction sync + Cronos validator + smoke tests)
+last_updated: "2026-05-27T20:19:58.678Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 23
-  completed_plans: 20
-  percent: 87
+  completed_plans: 21
+  percent: 91
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 08 (entity-build-out-migrations-docker-runtime-tests) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [█████████░] 87%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -78,6 +78,7 @@ Progress: [█████████░] 87%
 | Phase 08 P03 | 5min | 2 tasks tasks | 9 files files |
 | Phase 08 P04 | 12min | 3 tasks | 12 files |
 | Phase 08 P05 | 4min | 2 tasks tasks | 9 files files |
+| Phase 08 P06 | 10min | 3 tasks tasks | 13 files files |
 
 ## Accumulated Context
 
@@ -170,6 +171,10 @@ Recent decisions affecting current work:
 - Plan 08-05: VALID-16 MaxLength-then-Parse rule ordering — FluentValidation chains .NotEmpty().MaximumLength(1_048_576) BEFORE the .Custom(JsonDocument.Parse) rule, so payloads exceeding 1 MB never reach the parser (DoS protection). Pattern reusable for v2 features accepting unbounded user payloads (e.g., Workflow.CronExpression).
 - Plan 08-05: VALID-21 (semantic Payload-vs-Schema conformance) explicitly NOT implemented in v1 validator per N2 + 08-CONTEXT line 23. Would require DB roundtrip from validator (incompatible with stateless FluentValidation architecture). Deferred to v2.
 - Plan 08-05: CreatePrereqAsync FK-chain helper (Schema → Processor → Step → Assignment) — when an integration test needs N FK references, build the prereq chain via the public HTTP API inline. Avoids direct-DB INSERTs (which would bypass HTTP-layer validation + Mapperly) and validates the full request pipeline for every FK target.
+- Plan 08-06: Second SyncJunctionsAsync override in Phase 8 — handles BOTH WorkflowEntrySteps + WorkflowAssignments junctions in a single method (extends Plan 08-04's single-junction pattern to dual-junction). Each junction is independently wiped+rebuilt on Update, inserted on Create; all changes commit atomically in the same SaveChangesAsync transaction.
+- Plan 08-06: WorkflowReadDto.EntryStepIds + .AssignmentIds BOTH declared nullable (List<Guid>?) — Rule 1 fix-forward for RMG076 (cannot assign null to non-nullable). [MapValue(..., null)] on ToRead supplies the positional record ctor params (RMG013 mitigation) but only works with nullable target types. Same pattern as Plan 08-04 StepReadDto.NextStepIds?. v1 ships both collections null on read paths; tests assert via direct-DB CountEntryStepJunctionsAsync.
+- Plan 08-06: Asymmetric Cascade/Restrict on both junctions — Cascade-on-Workflow (parent owns junction lifecycle; DELETE Workflow auto-removes junction rows) + Restrict-on-referenced-entity (Step/Assignment). The fk_workflow_entry_steps_step_id Restrict FK is SC#5 LOAD-BEARING — Plan 08-08 fact 3 sequence requires exactly this FK shape to return 422.
+- Plan 08-06: Wave B COMPLETE — 5/5 entities, 25 smoke facts authored across Plans 08-02..08-06 (TEST-05 floor satisfied). Wave C 08-07 fully unblocked at file-availability level for AppDbContext composition + InitialCreate migration + AddAppFeatures aggregator.
 
 ### Pending Todos
 
@@ -195,8 +200,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T20:04:46.404Z
-Stopped at: Completed 08-05-PLAN.md (Assignment feature folder + multi-FK Restrict + smoke tests)
+Last session: 2026-05-27T20:19:58.670Z
+Stopped at: Completed 08-06-PLAN.md (Workflow feature folder + dual-junction sync + Cronos validator + smoke tests)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
