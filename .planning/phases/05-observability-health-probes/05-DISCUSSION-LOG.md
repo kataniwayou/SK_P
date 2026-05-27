@@ -118,6 +118,24 @@ Build verified green Release + Debug 0 warnings 0 errors after rename.
 
 ---
 
+## Follow-up: Runtime metrics instrumentation (post-CONTEXT edit)
+
+User asked: "does runtime, http instrumentation metrics are documented here?"
+
+Answer: HTTP server + HTTP client metrics were already documented (D-08 / OBSERV-03). Runtime metrics were NOT — `OpenTelemetry.Instrumentation.Runtime` is not in OBSERV-01's required package list and was only shown as illustrative future scope in ARCHITECTURE.md.
+
+### Question: Add OpenTelemetry.Instrumentation.Runtime to Phase 5?
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Yes — add as D-16 (Recommended) | Pin OpenTelemetry.Instrumentation.Runtime 1.15.0, add PackageReference to BaseApi.Core, add `.AddRuntimeInstrumentation()` to the metrics chain. Adds 12+ runtime metrics (GC, threadpool, exceptions, monitor lock contention). Pitfall 10 health-filter doesn't apply (runtime metrics aren't per-request). | ✓ |
+| No — stay strictly within REQUIREMENTS | OBSERV-01/-03 explicitly only list AspNetCore + HttpClient. Keep Phase 5 scope tight; ops can add in a follow-up phase. | |
+
+**User's choice:** Yes — add as D-16 (Recommended)
+**Notes:** CONTEXT.md updated: D-16 added, D-08 code example updated to show `.AddRuntimeInstrumentation()` in the metrics chain, D-12 Plan 05-01 package list updated to include the new pin. Plan 05-02 MetricsExportTests will assert at least one `process.runtime.dotnet.*` metric in the exported stream.
+
+---
+
 ## Claude's Discretion
 
 - Exact Npgsql.OpenTelemetry options API surface for "names only, no values" — RESEARCH will validate the actual property name against Npgsql.OpenTelemetry 8.0.4 docs (one of `IncludeFormattedMessage`, `EnableSensitiveDataLogging`, `IncludeParameterValues`).

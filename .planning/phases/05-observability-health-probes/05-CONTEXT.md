@@ -143,6 +143,7 @@ Phase 5 lands `Program.cs` registrations + DI wiring + the `IStartupGate`/`Start
       .WithMetrics(m => m
           .AddAspNetCoreInstrumentation(opts => opts.Filter = ctx => !ctx.Request.Path.StartsWithSegments("/health"))  // OBSERV-08 + HEALTH-05
           .AddHttpClientInstrumentation()
+          .AddRuntimeInstrumentation()   // D-16: process.runtime.dotnet.* (GC, threadpool, exceptions)
           .AddOtlpExporter())
       .WithTracing(t => t
           .SetSampler(new AlwaysOnSampler())   // D-04
@@ -250,7 +251,7 @@ Phase 5 lands `Program.cs` registrations + DI wiring + the `IStartupGate`/`Start
 
 - **D-12:** Plans split per ROADMAP "Parallelizable: yes" hint. Three plans:
   - **05-01-PLAN.md** (autonomous: true) — OTel + Health build + wire:
-    - Add 4 PackageVersions to Directory.Packages.props (or confirm existing pins): OpenTelemetry 1.15.3, OpenTelemetry.Exporter.OpenTelemetryProtocol 1.15.3, OpenTelemetry.Instrumentation.AspNetCore 1.15.0, OpenTelemetry.Instrumentation.Http 1.15.0, OpenTelemetry.Extensions.Hosting 1.15.3, **Npgsql.OpenTelemetry** (new pin — 8.0.4, matches Npgsql 8.x), AspNetCore.HealthChecks.NpgSql 9.0.0 (existing), **AspNetCore.HealthChecks.UI.Client 9.0.0** (new pin)
+    - Confirm/add PackageVersions in Directory.Packages.props: OpenTelemetry 1.15.3 (existing), OpenTelemetry.Exporter.OpenTelemetryProtocol 1.15.3 (existing), OpenTelemetry.Instrumentation.AspNetCore 1.15.0 (existing), OpenTelemetry.Instrumentation.Http 1.15.0 (existing), OpenTelemetry.Extensions.Hosting 1.15.3 (existing), **OpenTelemetry.Instrumentation.Runtime 1.15.0** (new pin — D-16), **Npgsql.OpenTelemetry 8.0.4** (new pin — matches Npgsql 8.x), AspNetCore.HealthChecks.NpgSql 9.0.0 (existing), **AspNetCore.HealthChecks.UI.Client 9.0.0** (new pin)
     - Add `<PackageReference>` (no Version=) for all of the above to `src/BaseApi.Core/BaseApi.Core.csproj`
     - Create `src/BaseApi.Core/Health/IStartupGate.cs` (D-01)
     - Create `src/BaseApi.Core/Health/StartupHealthCheck.cs` (D-02)
@@ -277,6 +278,31 @@ Phase 5 lands `Program.cs` registrations + DI wiring + the `IStartupGate`/`Start
 - **D-14:** Phase 5 does NOT change `appsettings.Development.json`. The Phase 4-vintage OTel endpoint at `http://localhost:4317` already routes to the new `otel-collector` compose service (port mapping `4317:4317`). The Phase 2 Postgres on `localhost:5433` is unaffected.
 
 - **D-15:** Phase 5 does NOT add any new ActivitySource. ROADMAP / FEATURES mention a custom `ActivitySource("sk-api")` for future feature use; Phase 5 ships only auto-instrumentation (AspNetCore + HttpClient + Npgsql). The custom source can be added by any future phase that needs custom span boundaries — Phase 5 doesn't pre-empt that.
+
+- **D-16:** Phase 5 ADDS runtime metrics instrumentation (additive to REQUIREMENTS OBSERV-01/-03 — runtime instrumentation not explicitly listed but unanimously high-value for ops). Concretely:
+  - Pin `<PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />` in `Directory.Packages.props`
+  - Add `<PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />` (no Version=, CPM contract) to `src/BaseApi.Core/BaseApi.Core.csproj`
+  - Add `.AddRuntimeInstrumentation()` to the `.WithMetrics(...)` chain in Program.cs (D-08), AFTER `.AddHttpClientInstrumentation()` and BEFORE `.AddOtlpExporter()`:
+    ```csharp
+    .WithMetrics(m => m
+        .AddAspNetCoreInstrumentation(opts => opts.Filter = ctx => !ctx.Request.Path.StartsWithSegments("/health"))
+        .AddHttpClientInstrumentation()
+        .AddRuntimeInstrumentation()   // D-16: process.runtime.dotnet.* metrics — GC, threadpool, exceptions
+        .AddOtlpExporter())
+    ```
+  
+  Runtime metrics exported (sample, not exhaustive — see https://github.com/open-telemetry/opentelemetry-dotnet-contrib/tree/main/src/OpenTelemetry.Instrumentation.Runtime):
+  - `process.runtime.dotnet.gc.collections.count` (gen0 / gen1 / gen2)
+  - `process.runtime.dotnet.gc.heap.size`
+  - `process.runtime.dotnet.gc.pause.time`
+  - `process.runtime.dotnet.thread_pool.threads.count`
+  - `process.runtime.dotnet.thread_pool.queue.length`
+  - `process.runtime.dotnet.exceptions.count`
+  - `process.runtime.dotnet.monitor.lock_contention.count`
+  
+  These are process-level (not per-request), so Pitfall 10's `/health/*` filter (the `AspNetCoreInstrumentation.Filter` callback in D-08) does NOT apply — runtime metrics fire regardless of any HTTP path. No additional filter logic needed.
+  
+  Verification: Plan 05-02's `MetricsExportTests.cs` adds one assertion that the exported metric stream contains at least one `process.runtime.dotnet.*` metric after letting the process run for a few seconds (e.g., after issuing a few HTTP requests through `WebApplicationFactory<Program>`). Force-flush via `ExportProcessorType.Simple` keeps the assertion deterministic (D-11).
 
 ### Claude's Discretion (small choices deferred to research / planning)
 
