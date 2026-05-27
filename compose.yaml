@@ -57,18 +57,27 @@ services:
     # via `curl http://localhost:13133/` instead of the in-container healthcheck.
 
   baseapi-service:
-    # Phase 8 (INFRA-05) will set this to: build: { context: ., dockerfile: src/BaseApi.Service/Dockerfile }
-    # Until then, this placeholder image lets Compose v2.20+/v5.x resolve the service block (which now
-    # requires every declared service to have either `image:` or `build:` — even for `docker compose config`).
-    # The placeholder tag is non-existent on any registry, so `docker compose up baseapi-service` still
-    # fails loudly (image-pull failure) — preserving D-08's negative-assertion intent. Also gated behind
-    # the `phase-8` profile so default `up`/`down` operations skip the service entirely.
-    image: baseapi-service:phase-8-placeholder
-    profiles: ["phase-8"]
+    build:
+      context: .
+      dockerfile: Dockerfile
     restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
     depends_on:
       postgres:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
 
 volumes:
   pgdata:
