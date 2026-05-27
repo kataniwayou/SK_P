@@ -6,7 +6,9 @@
 
 ## Goal
 
-Add one new endpoint to `ProcessorsController` (`GetBySourceHash`) and one new `OrchestrationController` with two endpoints (`StartOrchestration`, `StopOrchestration`) — all three following the existing `BaseController.GetById` response semantics (200 on hit, 404 on miss via `NotFoundException`). The Orchestration endpoints accept `List<Guid> WorkflowIds` and, for v1, return the matching `WorkflowReadDto` list without any actual orchestration side-effects.
+Add one new endpoint to `ProcessorsController` (`GetBySourceHash`) and one new `OrchestrationController` with two endpoints (`StartOrchestration`, `StopOrchestration`). `GetBySourceHash` follows the existing `BaseController.GetById` response semantics (200 + ProcessorReadDto on hit, 404 on miss via `NotFoundException`). The Orchestration endpoints accept `List<Guid> WorkflowIds` and, for v1, **only validate the list** (duplicates + non-empty + non-`Guid.Empty` + existence of every Workflow id) — on success they return **204 No Content** with no body and no orchestration side-effects.
+
+> **Amended 2026-05-28 (discuss-phase Area 4):** Requirements 3 + 4 originally locked `200 OK + List<WorkflowReadDto>`; revised to `204 No Content`. v1 endpoint behavior is validation-only (no entity projection, no response payload). Future phases will add real orchestration logic and response bodies as needed.
 
 ## Background
 
@@ -32,15 +34,15 @@ Add one new endpoint to `ProcessorsController` (`GetBySourceHash`) and one new `
    - Target: `src/BaseApi.Service/Features/Orchestration/` contains `OrchestrationController.cs`, `OrchestrationService.cs`, `OrchestrationServiceCollectionExtensions.cs` (with `AddOrchestrationFeature()`). The `OrchestrationService` composes over `WorkflowService` (or the abstract `BaseService<WorkflowEntity, …>`) — no entity, no DTOs of its own (request is bare `List<Guid>`, response is `List<WorkflowReadDto>` from the existing Workflow feature). `AddOrchestrationFeature()` is wired into `Program.cs` alongside the other `AddXxxFeature()` calls.
    - Acceptance: `dotnet build` is zero-warning. `Program.cs` calls `AddOrchestrationFeature()`. Folder layout matches the established Phase 8 feature-folder pattern.
 
-3. **StartOrchestration endpoint**: New endpoint on `OrchestrationController` accepting `List<Guid> WorkflowIds` and returning the corresponding Workflows.
+3. **StartOrchestration endpoint** *(amended 2026-05-28)*: New endpoint on `OrchestrationController` accepting `List<Guid> WorkflowIds` and validating the list — no side-effects, no response body in v1.
    - Current: No such endpoint exists.
-   - Target: `POST /api/v1/orchestration/start` with request body = bare JSON array of guids (e.g., `["g1","g2"]`); returns `200 OK + List<WorkflowReadDto>` on success. **No actual orchestration side-effects in v1** — endpoint only fetches the Workflow entities by id.
-   - Acceptance: Integration test asserts 200 + correct `List<WorkflowReadDto>` array (order preserved or stably defined) for a body of valid, existing, distinct guids.
+   - Target: `POST /api/v1/orchestration/start` with request body = bare JSON array of guids (e.g., `["g1","g2"]`); returns **`204 No Content`** on success. The endpoint runs the validator (Requirement 5) + the existence check (Requirement 6) and returns `204 No Content` once both pass. **No entity projection, no response payload, no actual orchestration side-effects in v1.**
+   - Acceptance: Integration test asserts `204 No Content` with empty body for a body of valid, existing, distinct guids.
 
-4. **StopOrchestration endpoint**: New endpoint on `OrchestrationController`, behaviorally identical to `StartOrchestration` in v1, only the route segment differs.
+4. **StopOrchestration endpoint** *(amended 2026-05-28)*: New endpoint on `OrchestrationController`, behaviorally identical to `StartOrchestration` in v1, only the route segment differs.
    - Current: No such endpoint exists.
-   - Target: `POST /api/v1/orchestration/stop` — same body shape, same response shape, same validation, same error semantics as Start. The only difference is the URL segment `/stop`. Both endpoints delegate to the same `OrchestrationService` method in v1; future divergence is out of scope for Phase 9.
-   - Acceptance: Integration test mirrors the Start test: 200 + correct `List<WorkflowReadDto>` for a valid body.
+   - Target: `POST /api/v1/orchestration/stop` — same body shape, same response (204 No Content), same validation, same error semantics as Start. The only difference is the URL segment `/stop`. Both endpoints delegate to the same `OrchestrationService` method in v1; future divergence is out of scope for Phase 9.
+   - Acceptance: Integration test mirrors the Start test: `204 No Content` with empty body for a valid body.
 
 5. **Duplicate-id validation on Orchestration endpoints**: A `List<Guid>` body containing duplicate guids is rejected.
    - Current: No such endpoints exist, so no validation.
@@ -72,14 +74,14 @@ Add one new endpoint to `ProcessorsController` (`GetBySourceHash`) and one new `
 - **Route-layer validation of sourceHash format** (no `:regex(...)` constraint, no request-DTO + FluentValidation) — off-format strings simply 404 on row-miss
 - **A request DTO around the Orchestration `List<Guid>` body** — body is the bare list; no envelope object in v1
 - **Diverging Start vs Stop behavior in v1** — they are functionally identical (same body, same validation, same response, same delegation); only the URL differs
-- **A new `OrchestrationReadDto`** — response is `List<WorkflowReadDto>` from the existing Workflow feature
+- **A response body of any kind on Orchestration endpoints** — v1 returns `204 No Content`. No `OrchestrationReadDto`, no echoed `List<WorkflowReadDto>`. Response shape is deferred to future phases when real orchestration logic exists.
 
 ## Constraints
 
 - `GetBySourceHash` must live on the **concrete** `ProcessorsController`, not on `BaseController<>` — `SourceHash` is processor-specific (not on `BaseEntity`).
 - The route literal for `GetBySourceHash` must be `by-source-hash/{sourceHash}` (literal prefix) — a bare `{sourceHash}` would conflict with `BaseController.GetById`'s `{id:guid}` at route matching.
 - All error responses MUST use the existing Phase 4 exception-handler pipeline (`NotFoundException → 404 ProblemDetails`, `ValidationException → 400 ValidationProblemDetails`). No new error shapes, no new exception types.
-- Orchestration response body MUST be `List<WorkflowReadDto>` (existing type) — no new response DTO.
+- Orchestration endpoints MUST return `204 No Content` on success — no response body, no DTO. Existence check is satisfied via a lightweight `SELECT id WHERE id IN (…)` projection; full entity hydration is NOT required.
 - Orchestration request body MUST be a bare JSON array of guids (`List<Guid>`) — no envelope DTO.
 - Zero-warning `dotnet build` (Debug + Release) per project-wide `TreatWarningsAsErrors=true`.
 - Existing Phase 1–8 test suite (128 facts) MUST remain GREEN — no regressions.
@@ -88,8 +90,8 @@ Add one new endpoint to `ProcessorsController` (`GetBySourceHash`) and one new `
 
 - [ ] `GET /api/v1/processors/by-source-hash/{sourceHash}` returns `200 OK + ProcessorReadDto` for an existing row
 - [ ] `GET /api/v1/processors/by-source-hash/{sourceHash}` returns `404 ProblemDetails` for a non-existent or malformed hash
-- [ ] `POST /api/v1/orchestration/start` with a valid `List<Guid>` body returns `200 OK + List<WorkflowReadDto>`
-- [ ] `POST /api/v1/orchestration/stop` with a valid `List<Guid>` body returns `200 OK + List<WorkflowReadDto>` (same shape as Start)
+- [ ] `POST /api/v1/orchestration/start` with a valid `List<Guid>` body returns `204 No Content` (empty body)
+- [ ] `POST /api/v1/orchestration/stop` with a valid `List<Guid>` body returns `204 No Content` (empty body, same shape as Start)
 - [ ] `POST /api/v1/orchestration/start` (and `/stop`) with duplicate guids in the body returns `400 ValidationProblemDetails` via the Phase 4 `ValidationExceptionHandler`
 - [ ] `POST /api/v1/orchestration/start` (and `/stop`) with any guid not matching a Workflow row returns `404 ProblemDetails` via the Phase 4 `NotFoundExceptionHandler`, identifying the missing id(s)
 - [ ] `src/BaseApi.Service/Features/Orchestration/` contains `OrchestrationController.cs + OrchestrationService.cs + OrchestrationServiceCollectionExtensions.cs` (mirrors existing feature-folder layout)

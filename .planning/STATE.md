@@ -221,6 +221,7 @@ Stopped at: Completed 08-08-PLAN.md (Phase 8 final plan: ErrorMappingFacts + Mig
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
-**Next:** /gsd-discuss-phase 8 (Entity Build-Out + Migrations + Docker Runtime + Tests — 5 concrete entities into the base, InitialCreate migration, runtime Docker image, smoke + error-mapping integration tests against real Postgres)
+**Next:** /gsd-plan-phase 9 (Processor.GetBySourceHash + Orchestration Start/Stop — SPEC.md locked + amended 2026-05-28 for 204 No Content; CONTEXT.md captured 20 implementation decisions across 4 areas; ready for planning)
 
 **Planned Phase:** 08 (entity-build-out-migrations-docker-runtime-tests) — 8 plans — 2026-05-27T19:03:44.612Z
+**Phase 9 context:** captured 2026-05-28 — SPEC.md (6 reqs, amended) + CONTEXT.md (20 decisions) + DISCUSSION-LOG.md committed; SPEC.md response amended from 200+List<WorkflowReadDto> → 204 No Content; OrchestrationService injects BaseDbContext + all 5 entity mappers up front for v2 readiness
