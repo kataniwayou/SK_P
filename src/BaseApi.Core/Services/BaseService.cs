@@ -54,15 +54,17 @@ public abstract class BaseService<TEntity, TCreate, TUpdate, TRead>
         IRepository<TEntity> repo,
         BaseDbContext dbContext)
     {
+        // IN-08: use FullName (namespace-qualified) rather than the simple name so consumers
+        // who have multiple types with the same Name across namespaces don't grep for the wrong type.
         _createValidator = createValidator
             ?? throw new InvalidOperationException(
-                $"No IValidator<{typeof(TCreate).Name}> registered. Concrete validator must " +
-                $"inherit AbstractValidator<{typeof(TCreate).Name}> and be discoverable by " +
+                $"No IValidator<{typeof(TCreate).FullName}> registered. Concrete validator must " +
+                $"inherit AbstractValidator<{typeof(TCreate).FullName}> and be discoverable by " +
                 "AddBaseApiValidation's AddValidatorsFromAssembly scan (Phase 6 / VALID-02).");
         _updateValidator = updateValidator
             ?? throw new InvalidOperationException(
-                $"No IValidator<{typeof(TUpdate).Name}> registered. Concrete validator must " +
-                $"inherit AbstractValidator<{typeof(TUpdate).Name}> and be discoverable by " +
+                $"No IValidator<{typeof(TUpdate).FullName}> registered. Concrete validator must " +
+                $"inherit AbstractValidator<{typeof(TUpdate).FullName}> and be discoverable by " +
                 "AddBaseApiValidation's AddValidatorsFromAssembly scan (Phase 6 / VALID-02).");
         _mapper    = mapper    ?? throw new ArgumentNullException(nameof(mapper));
         _repo      = repo      ?? throw new ArgumentNullException(nameof(repo));
