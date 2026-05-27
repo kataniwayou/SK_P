@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 08-02-PLAN.md (Schema feature folder + smoke tests)
-last_updated: "2026-05-27T19:27:45.938Z"
+stopped_at: Completed 08-03-PLAN.md (Processor feature folder + smoke tests)
+last_updated: "2026-05-27T19:37:42.078Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 23
-  completed_plans: 17
-  percent: 74
+  completed_plans: 18
+  percent: 78
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 08 (entity-build-out-migrations-docker-runtime-tests) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [███████░░░] 74%
+Progress: [████████░░] 78%
 
 ## Performance Metrics
 
@@ -75,6 +75,7 @@ Progress: [███████░░░] 74%
 | Phase 07 P02 | ~35min | 4 tasks (3 auto + 1 human-verify resolved by automated coverage) tasks | 14 files (13 new test files + 1 SUMMARY) files |
 | Phase 08 P01 | 7min | 5 tasks tasks | 7 files files |
 | Phase 08 P02 | 5min | 2 tasks tasks | 9 files files |
+| Phase 08 P03 | 5min | 2 tasks tasks | 9 files files |
 
 ## Accumulated Context
 
@@ -154,6 +155,11 @@ Recent decisions affecting current work:
 - Plan 08-02: JsonSchema.Net static-ctor pattern — Dialect.Default = Dialect.Draft202012 (VALID-08) + SchemaRegistry.Global.Fetch = (_,_) => null (VALID-09 SSRF defense-in-depth) live on SchemaCreateDtoValidator.static ctor only (per-AppDomain assignments; first-touch of either validator fires it via DI assembly scan)
 - Plan 08-02: Wave B isolation contract — 5 SchemasIntegrationTests fail at HTTP 500 (DI activation InvalidOperationException) because Wave C 08-07 has not yet wired AddSchemaFeature() into Program.cs; documented design per plan Task 2 note; GREEN-state verified by 08-08 cross-entity regression; [Trait('Phase8Wave','B')] enables developer filter/skip
 - Plan 08-02 deviation (Rule 1 - build error): SchemaEntityConfiguration.cs XML <see cref='BaseDbContext'> changed to <c>BaseDbContext</c> markup to satisfy CS1574 without adding an unused using BaseApi.Core.Persistence directive (would trip unused-import warning under TreatWarningsAsErrors=true). Preserves doc-comment educational intent.
+- Plan 08-03: Explicit constraint naming (uq_processor_source_hash + fk_processor_input_schema_id + fk_processor_output_schema_id) is load-bearing for Plan 08-08 SC#2 — Phase 4 PostgresExceptionMapper Option A regex expects uq_{table}_{column} + fk_{table}_{column}_id; EF auto-naming (ix_, fk_<table>_<principal>_<column>) would break the 23505/23503 → field-name mapping path
+- Plan 08-03: VALID-11 nullable-Guid pattern uses When(x => x.Field.HasValue, () => RuleFor(x => x.Field!.Value).NotEqual(Guid.Empty)) — null is valid (source/sink processors per ENTITY-04); only Guid.Empty rejected at HTTP 400; non-existent (but well-formed) FK Guids deliberately pass validation and surface as 23503 → 422 via Phase 4 mapper (PROJECT.md Option 1)
+- Plan 08-03: DeleteBehavior.SetNull on both nullable FKs per RESEARCH §Cascade behaviors (line 582) — schema deletion sets dependent processor FK columns to null, NOT cascade-delete the processor; Plan 08-04 Step.ProcessorId is non-nullable and will use Restrict
+- Plan 08-03: Lambda-less HasOne<SchemaEntity>().WithMany() form per RESEARCH Pitfall 4 — creates Postgres FK constraint without generating nav properties (ENTITY-09 'no nav props between entities' satisfied); canonical pattern for all Phase 8 entity FK references
+- Plan 08-03: Per-fact-unique SourceHash via RandomSha256Hex() — reserves duplicate-hash collision path exclusively for Plan 08-08 error-mapping fact; two Guid byte arrays (32 bytes → 64 hex chars) satisfies both VALID-10 regex AND parallel-class uniqueness
 
 ### Pending Todos
 
@@ -179,8 +185,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T19:27:45.928Z
-Stopped at: Completed 08-02-PLAN.md (Schema feature folder + smoke tests)
+Last session: 2026-05-27T19:37:26.176Z
+Stopped at: Completed 08-03-PLAN.md (Processor feature folder + smoke tests)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
