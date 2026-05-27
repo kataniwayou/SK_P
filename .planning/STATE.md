@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 08-04-PLAN.md (Step feature folder + junction sync + smoke tests)
-last_updated: "2026-05-27T19:55:08.063Z"
+stopped_at: Completed 08-05-PLAN.md (Assignment feature folder + multi-FK Restrict + smoke tests)
+last_updated: "2026-05-27T20:04:46.416Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 23
-  completed_plans: 19
-  percent: 83
+  completed_plans: 20
+  percent: 87
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 08 (entity-build-out-migrations-docker-runtime-tests) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 87%
 
 ## Performance Metrics
 
@@ -77,6 +77,7 @@ Progress: [████████░░] 83%
 | Phase 08 P02 | 5min | 2 tasks tasks | 9 files files |
 | Phase 08 P03 | 5min | 2 tasks tasks | 9 files files |
 | Phase 08 P04 | 12min | 3 tasks | 12 files |
+| Phase 08 P05 | 4min | 2 tasks tasks | 9 files files |
 
 ## Accumulated Context
 
@@ -165,6 +166,10 @@ Recent decisions affecting current work:
 - Plan 08-04: [MapValue(target-prop, null)] replaces [MapperIgnoreTarget(target-prop)] when the target is a positional record's required constructor parameter — Mapperly RMG013 fires because [MapperIgnoreTarget] cannot skip ctor params (suppresses property-level diagnostic only). [MapValue] supplies a compile-time constant directly to the ctor param. Net Step mapper coverage: 10 [MapperIgnoreTarget] + 2 [MapperIgnoreSource] + 1 [MapValue] (instead of plan-as-written 11+2). Plan 08-06 Workflow will reuse this pattern for its 2 M2M collections (EntryStepIds, AssignmentIds)
 - Plan 08-04: StepEntity.ProcessorId is non-nullable + OnDelete(Restrict); StepNextSteps both self-ref FKs Restrict — differs from Processor's nullable+SetNull. Establishes Step as the principal side that Plan 08-06 Workflow's FK Restrict attaches to (SC#5 deleting a Step referenced by a Workflow → 422). Postgres rejects SET NULL on non-nullable column so Restrict is the only correct cascade.
 - Plan 08-04: Junction-row direct-DB assertion via CountJunctionsForStepAsync (NpgsqlConnection + SELECT count(*) FROM step_next_steps WHERE step_id = @id) bypasses v1 StepReadDto.NextStepIds=null limitation. Post-ToRead enrichment deferred to a future phase when BaseService.GetAsync/ListAsync become virtual or a dedicated enrichment hook is added. Plan 08-06 Workflow will mirror with workflow_entry_steps + workflow_assignments count helpers.
+- Plan 08-05: Multi-FK Restrict pattern for leaf entity — AssignmentEntity has 2 non-nullable FKs (StepId, SchemaId) BOTH with OnDelete(Restrict) and explicit constraint names (fk_assignment_step_id, fk_assignment_schema_id). Differs from Processor's nullable+SetNull pattern. Load-bearing for Plan 08-08 SC#5 (delete Step with referenced Assignment → 422).
+- Plan 08-05: VALID-16 MaxLength-then-Parse rule ordering — FluentValidation chains .NotEmpty().MaximumLength(1_048_576) BEFORE the .Custom(JsonDocument.Parse) rule, so payloads exceeding 1 MB never reach the parser (DoS protection). Pattern reusable for v2 features accepting unbounded user payloads (e.g., Workflow.CronExpression).
+- Plan 08-05: VALID-21 (semantic Payload-vs-Schema conformance) explicitly NOT implemented in v1 validator per N2 + 08-CONTEXT line 23. Would require DB roundtrip from validator (incompatible with stateless FluentValidation architecture). Deferred to v2.
+- Plan 08-05: CreatePrereqAsync FK-chain helper (Schema → Processor → Step → Assignment) — when an integration test needs N FK references, build the prereq chain via the public HTTP API inline. Avoids direct-DB INSERTs (which would bypass HTTP-layer validation + Mapperly) and validates the full request pipeline for every FK target.
 
 ### Pending Todos
 
@@ -190,8 +195,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T19:55:08.056Z
-Stopped at: Completed 08-04-PLAN.md (Step feature folder + junction sync + smoke tests)
+Last session: 2026-05-27T20:04:46.404Z
+Stopped at: Completed 08-05-PLAN.md (Assignment feature folder + multi-FK Restrict + smoke tests)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
