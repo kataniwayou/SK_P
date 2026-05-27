@@ -8,6 +8,7 @@ using BaseApi.Tests.Validation;
 using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Xunit;
 
 namespace BaseApi.Tests.Composition;
@@ -16,6 +17,19 @@ namespace BaseApi.Tests.Composition;
 /// type below resolves from a scope without throwing.</summary>
 public sealed class AddBaseApiFacts
 {
+    // IN-04: build the test connection string from NpgsqlConnectionStringBuilder + env vars
+    // (with the compose.yaml dev defaults as fallback) so credentials are not literal strings
+    // in source control. No test in this file actually opens a DB connection; the string is
+    // exercised only by DI-graph shape assertions.
+    private static string TestConnectionString { get; } = new NpgsqlConnectionStringBuilder
+    {
+        Host     = "localhost",
+        Port     = 5433,
+        Database = "stepsdb_addbaseapi",
+        Username = Environment.GetEnvironmentVariable("POSTGRES_USER")     ?? "postgres",
+        Password = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD") ?? "postgres",
+    }.ConnectionString;
+
     private static IServiceCollection BuildServices()
     {
         // IN-03: skip the throwaway BuildServiceProvider() round-trip — the IConfiguration
@@ -23,7 +37,7 @@ public sealed class AddBaseApiFacts
         var cfg = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:Postgres"] = "Host=localhost;Port=5433;Database=stepsdb_addbaseapi;Username=postgres;Password=postgres",
+                ["ConnectionStrings:Postgres"] = TestConnectionString,
                 ["Service:Name"]               = "sk-api-test",
                 ["Service:Version"]            = "0.0.0-test",
             }).Build();
