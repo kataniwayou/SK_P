@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 using Xunit;
 
 // Two PostgresFixture classes coexist (BaseApi.Tests.Middleware vs BaseApi.Tests.Persistence).
@@ -69,6 +70,12 @@ public class Phase7WebAppFactory : WebAppFactory, IAsyncLifetime
         await base.DisposeAsync();
         if (_fixture is not null)
         {
+            // WR-05: clear only THIS factory's connection pool, not every Npgsql pool in-process,
+            // so parallel xUnit v3 test classes don't lose their pooled connections to
+            // NpgsqlConnection.ClearAllPools() (which is process-global). The connection here
+            // is created only to identify the pool — it's never opened.
+            await using (var conn = new NpgsqlConnection(_fixture.ConnectionString))
+                NpgsqlConnection.ClearPool(conn);
             await _fixture.DisposeAsync();
         }
     }
