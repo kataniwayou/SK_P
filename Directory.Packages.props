@@ -49,6 +49,7 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.27" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.27" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.10" />
+    <PackageVersion Include="Npgsql" Version="8.0.10" />
     <PackageVersion Include="EFCore.NamingConventions" Version="8.0.3" />
 
     <!-- Mapping (source-gen) — PrivateAssets/ExcludeAssets go in CONSUMER csproj -->
