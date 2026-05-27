@@ -16,7 +16,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **INFRA-03
 **: `Directory.Packages.props` centralizes NuGet versions across all projects
 - [x] **INFRA-04
-**: `appsettings.json` contains `Logging`, `Service` (`Name="steps-api"`, `Version="3.2.0"`), `ConnectionStrings:Postgres`, `OpenTelemetry` sections
+**: `appsettings.json` contains `Logging`, `Service` (`Name="sk-api"`, `Version="3.2.0"`), `ConnectionStrings:Postgres`, `OpenTelemetry` sections
 - [ ] **INFRA-05**: Multistage `Dockerfile` using `mcr.microsoft.com/dotnet/sdk:8.0` for build and `mcr.microsoft.com/dotnet/aspnet:8.0` for runtime
 - [x] **INFRA-06
 **: `docker-compose.yml` defines `postgres:17-alpine` with `pg_isready` healthcheck plus `BaseApi.Service` with `depends_on: postgres: condition: service_healthy`

@@ -70,7 +70,7 @@ Grouped for readability; final REQ-IDs assigned in REQUIREMENTS.md.
 - [ ] OpenTelemetry SDK wired for logs + HTTP server metrics
 - [ ] OTLP exporter to an external OTel Collector (`OTEL_EXPORTER_OTLP_ENDPOINT` honored)
 - [ ] `Logging:LogLevel` from `appsettings.json` filters both console and OTel sinks identically (single source of truth)
-- [ ] `Service:Name` (`steps-api`) and `Service:Version` (`3.2.0`) populate the OTel `service.name` / `service.version` resource attributes
+- [ ] `Service:Name` (`sk-api`) and `Service:Version` (`3.2.0`) populate the OTel `service.name` / `service.version` resource attributes
 - [ ] `X-Correlation-Id` middleware: read header if present, generate UUID if missing; attach to log scope and to every response (incl. error responses)
 
 **Health probes**

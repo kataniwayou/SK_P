@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. `dotnet build` from the repo root succeeds with zero warnings against the empty `BaseApi.Core` class library, `BaseApi.Service` webapi, and `BaseApi.Tests` test project
   2. `dotnet --version` invoked at the repo root returns the SDK version pinned in `global.json` (8.0.421), not whatever is globally installed
   3. Adding a NuGet reference in any project resolves its version from `Directory.Packages.props` (no per-project `<Version>` attributes)
-  4. `appsettings.json` in `BaseApi.Service` contains `Logging`, `Service` (`Name="steps-api"`, `Version="3.2.0"`), `ConnectionStrings:Postgres`, and `OpenTelemetry` sections (values may be placeholders) and is valid JSON with no comments
+  4. `appsettings.json` in `BaseApi.Service` contains `Logging`, `Service` (`Name="sk-api"`, `Version="3.2.0"`), `ConnectionStrings:Postgres`, and `OpenTelemetry` sections (values may be placeholders) and is valid JSON with no comments
 **Plans**: 3 plans
 - [x] 01-01-PLAN.md — Repo-root foundation files: global.json (SDK pin), Directory.Build.props (warnings-as-errors + strictness), Directory.Packages.props (22 NuGet pins via CPM), .editorconfig (Microsoft .NET style), .gitignore (dotnet flavor), .gitattributes (LF endings), README.md (prereqs + quickstart)
 - [x] 01-02-PLAN.md — Solution + 3 projects: SK_P.sln, BaseApi.Core.csproj (class library), BaseApi.Service.csproj (webapi with Program.cs D-10 scaffold + appsettings REQ INFRA-04), BaseApi.Tests.csproj (xUnit v3 + MetaTest sanity), Core folder skeleton (11 .gitkeep folders), Service folder skeleton (3 .gitkeep folders)
@@ -90,7 +90,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Depends on**: Phase 4 (correlation IDs must already be in the log scope so they propagate into OTel exports)
 **Requirements**: OBSERV-01, OBSERV-02, OBSERV-03, OBSERV-04, OBSERV-05, OBSERV-06, OBSERV-07, OBSERV-08, OBSERV-12, HEALTH-01, HEALTH-02, HEALTH-03, HEALTH-04, HEALTH-05
 **Success Criteria** (what must be TRUE):
-  1. With the OTLP endpoint pointed at a local OTel Collector (or `otel-tui`), an `ILogger<T>.LogInformation` call emitted during a request appears in the Collector's log export with `service.name=steps-api`, `service.version=3.2.0`, and the request's correlation ID as a log attribute
+  1. With the OTLP endpoint pointed at a local OTel Collector (or `otel-tui`), an `ILogger<T>.LogInformation` call emitted during a request appears in the Collector's log export with `service.name=sk-api`, `service.version=3.2.0`, and the request's correlation ID as a log attribute
   2. Setting `Logging:LogLevel:Default` to `Warning` in appsettings suppresses `Information` logs from BOTH the console sink AND the OTLP export — confirming the single MEL filter path (not `WithLogging()`)
   3. `GET /health/live` returns 200 even when Postgres is stopped; `GET /health/ready` returns 503 when Postgres is unreachable and 200 when reachable; `GET /health/startup` returns 503 until the migration runner flips the flag and 200 thereafter
   4. HTTP server metrics for application endpoints appear at the Collector (e.g., `http.server.request.duration`) but requests to `/health/*` do not produce metrics or appear in OTLP logs (filtered out)

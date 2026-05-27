@@ -140,7 +140,7 @@ SK_P/                                            # repo root, no Visual Studio c
 │   │   │   └── HealthCheckExtensions.cs         # MapBaseHealthChecks → /health/live, /health/ready, /health/startup
 │   │   ├── Telemetry/
 │   │   │   ├── TelemetryExtensions.cs           # AddBaseTelemetry<TDbContext>
-│   │   │   └── ActivitySources.cs               # static ActivitySource("steps-api")
+│   │   │   └── ActivitySources.cs               # static ActivitySource("sk-api")
 │   │   └── DependencyInjection/
 │   │       ├── BaseApiOptions.cs                # bound from "BaseApi" config section
 │   │       └── BaseApiServiceCollectionExtensions.cs  # AddBaseApi<TDbContext>(this IServiceCollection, IConfiguration)
@@ -619,7 +619,7 @@ On response
     └──► OTLP exporter pushes:
          ├── logs   (server-side filtered by Logging:LogLevel — single source)
          ├── metrics
-         └── traces (in v1 traces are auto; custom ActivitySource("steps-api") declared but
+         └── traces (in v1 traces are auto; custom ActivitySource("sk-api") declared but
                      not used until a feature needs it)
     Target: OTEL_EXPORTER_OTLP_ENDPOINT (gRPC :4317) → external OTel Collector
 ```
@@ -655,7 +655,7 @@ This is the well-known pattern: outermost exception handler, second correlation 
 ```csharp
 public static IServiceCollection AddBaseTelemetry(this IServiceCollection services, IConfiguration cfg)
 {
-    var serviceName    = cfg["Service:Name"]    ?? "base-api";       // "steps-api"
+    var serviceName    = cfg["Service:Name"]    ?? "base-api";       // "sk-api"
     var serviceVersion = cfg["Service:Version"] ?? "0.0.0";          // "3.2.0"
 
     var resource = ResourceBuilder.CreateDefault()
@@ -669,7 +669,7 @@ public static IServiceCollection AddBaseTelemetry(this IServiceCollection servic
             .AddRuntimeInstrumentation()
             .AddOtlpExporter())
         .WithTracing(t => t
-            .AddSource("steps-api")                      // custom ActivitySource for future use
+            .AddSource("sk-api")                         // custom ActivitySource for future use
             .AddAspNetCoreInstrumentation()
             .AddHttpClientInstrumentation()
             .AddOtlpExporter());
@@ -695,7 +695,7 @@ public static IServiceCollection AddBaseTelemetry(this IServiceCollection servic
 - `Service:Name`/`Service:Version` from appsettings → `service.name`/`service.version` resource attrs (REQ).
 - `Logging:LogLevel` single source: both Console and OTel sinks register on the MEL `ILoggingBuilder`, so the filter applies before either sink writes (REQ).
 - OTLP target via `OTEL_EXPORTER_OTLP_ENDPOINT`: `AddOtlpExporter()` with no options uses env vars (REQ).
-- Custom `ActivitySource("steps-api")` declared in `ActivitySources.cs` and registered via `AddSource("steps-api")` — ready to use the moment any feature wants custom spans.
+- Custom `ActivitySource("sk-api")` declared in `ActivitySources.cs` and registered via `AddSource("sk-api")` — ready to use the moment any feature wants custom spans.
 
 ## Persistence Layer Specifics
 
@@ -773,7 +773,7 @@ services:
       retries: 10
       start_period: 10s
 
-  steps-api:
+  sk-api:
     build:
       context: .
       dockerfile: src/BaseApi.Service/Dockerfile
@@ -781,7 +781,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__Postgres: Host=postgres;Database=baseapi;Username=baseapi;Password=baseapi
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
-      Service__Name: steps-api
+      Service__Name: sk-api
       Service__Version: 3.2.0
     ports:
       - "8080:8080"

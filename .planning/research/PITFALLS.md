@@ -245,12 +245,12 @@ The naming is genuinely confusing (see open-telemetry/opentelemetry-dotnet#4653)
       o.IncludeScopes = true;
       o.ParseStateValues = true;
       o.SetResourceBuilder(ResourceBuilder.CreateDefault()
-          .AddService(serviceName: "steps-api", serviceVersion: "3.2.0"));
+          .AddService(serviceName: "sk-api", serviceVersion: "3.2.0"));
       o.AddOtlpExporter();
   });
 
   builder.Services.AddOpenTelemetry()
-      .ConfigureResource(r => r.AddService("steps-api", serviceVersion: "3.2.0"))
+      .ConfigureResource(r => r.AddService("sk-api", serviceVersion: "3.2.0"))
       .WithMetrics(m => m.AddAspNetCoreInstrumentation().AddOtlpExporter());
       // NOTE: NOT calling .WithLogging() here — MEL path above handles it.
   ```
