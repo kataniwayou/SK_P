@@ -75,6 +75,11 @@
     <!-- Instrumentation packages version on their own cadence (currently 1.15.0) -->
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.0" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.15.0" />
+    <!-- Phase 5 (CONTEXT.md D-16): process.runtime.dotnet.* metrics (GC/threadpool/exceptions) -->
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
+    <!-- Phase 5 (CONTEXT.md D-05 corrected to bare .AddNpgsql()): Npgsql DB tracing.
+         Declares dep `Npgsql >= 8.0.4` — satisfied by Phase 4 fix-forward pin 8.0.9. -->
+    <PackageVersion Include="Npgsql.OpenTelemetry" Version="8.0.4" />
 
     <!-- Domain validators -->
     <PackageVersion Include="JsonSchema.Net" Version="9.2.1" />
@@ -82,6 +87,8 @@
 
     <!-- Health checks -->
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
+    <!-- Phase 5 (CONTEXT.md D-07): UIResponseWriter.WriteHealthCheckUIResponse JSON body writer -->
+    <PackageVersion Include="AspNetCore.HealthChecks.UI.Client" Version="9.0.0" />
 
     <!-- HTTP — API versioning + Swagger (REQ HTTP-15, HTTP-16) -->
     <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
