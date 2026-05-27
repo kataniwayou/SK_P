@@ -86,7 +86,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **VALID-08**: `SchemaCreate/UpdateDto.Definition`: valid JSON syntax AND valid JSON Schema (draft 2020-12) via `JsonSchema.Net`
 - [ ] **VALID-09**: `JsonSchema.Net` remote `$ref` network access disabled (SSRF prevention)
 - [ ] **VALID-10**: `ProcessorCreate/UpdateDto.SourceHash`: regex `^[a-f0-9]{64}$` (lowercase SHA-256 hex)
-- [ ] **VALID-11**: `ProcessorCreate/UpdateDto.InputSchemaId`/`OutputSchemaId`: nullable `Guid?` — null is valid (source/sink processor). When present, must not equal `Guid.Empty`. FluentValidation pattern: `When(x => x.InputSchemaId.HasValue, () => RuleFor(x => x.InputSchemaId!.Value).NotEqual(Guid.Empty));` (same for `OutputSchemaId`). `Guid.Empty` (`00000000-0000-0000-0000-000000000000`) is rejected at HTTP 400 by the validator, NOT at the DB layer. FK existence for non-empty Guids is still enforced by Postgres at persist time (SQLSTATE 23503 → HTTP 422 per ERROR-04).
+- [x] **VALID-11**: `ProcessorCreate/UpdateDto.InputSchemaId`/`OutputSchemaId`: nullable `Guid?` — null is valid (source/sink processor). When present, must not equal `Guid.Empty`. FluentValidation pattern: `When(x => x.InputSchemaId.HasValue, () => RuleFor(x => x.InputSchemaId!.Value).NotEqual(Guid.Empty));` (same for `OutputSchemaId`). `Guid.Empty` (`00000000-0000-0000-0000-000000000000`) is rejected at HTTP 400 by the validator, NOT at the DB layer. FK existence for non-empty Guids is still enforced by Postgres at persist time (SQLSTATE 23503 → HTTP 422 per ERROR-04
+).
 - [ ] **VALID-12**: `StepCreate/UpdateDto.ProcessorId`: `NotEmpty` Guid
 - [ ] **VALID-13**: `StepCreate/UpdateDto.NextStepIds`: each unique; on Update, none equal to the Step's own Id
 - [ ] **VALID-14**: `StepCreate/UpdateDto.EntryCondition`: `IsInEnum()`
@@ -107,9 +108,12 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **OBSERV-06**: `Logging:LogLevel` from appsettings filters BOTH console and OTel sinks identically (single source of truth — MEL pipeline filters before either sink runs)
 - [ ] **OBSERV-07**: OTel logger options: `IncludeFormattedMessage=true`, `IncludeScopes=true`, `ParseStateValues=true`
 - [ ] **OBSERV-08**: Health endpoints excluded from metrics (filter via `AspNetCoreInstrumentationOptions.Filter`)
-- [ ] **OBSERV-09**: `CorrelationIdMiddleware` in `BaseApi.Core/Middleware/`: reads `X-Correlation-Id` header if present, generates a new UUID if missing
-- [ ] **OBSERV-10**: Correlation ID written to `HttpContext.Items["CorrelationId"]` and attached to log scope via `ILogger.BeginScope`
-- [ ] **OBSERV-11**: Correlation ID echoed in `X-Correlation-Id` response header on every response (including error responses)
+- [x] **OBSERV-09
+**: `CorrelationIdMiddleware` in `BaseApi.Core/Middleware/`: reads `X-Correlation-Id` header if present, generates a new UUID if missing
+- [x] **OBSERV-10
+**: Correlation ID written to `HttpContext.Items["CorrelationId"]` and attached to log scope via `ILogger.BeginScope`
+- [x] **OBSERV-11
+**: Correlation ID echoed in `X-Correlation-Id` response header on every response (including error responses)
 - [ ] **OBSERV-12**: OTel tracing enabled (logs + metrics + traces) with `AddAspNetCoreInstrumentation`, `AddHttpClientInstrumentation`, `AddNpgsql` for DB spans
 
 ### Health Probes
@@ -122,17 +126,28 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Error Responses
 
-- [ ] **ERROR-01**: RFC 7807 `ProblemDetails` JSON body returned on every non-2xx response
-- [ ] **ERROR-02**: `IExceptionHandler` implementation in `BaseApi.Core` registered via `services.AddExceptionHandler<...>()` + `services.AddProblemDetails()` (.NET 8 modern pattern)
-- [ ] **ERROR-03**: `FluentValidation.ValidationException` → HTTP 400 with field-level `errors` map (`{ "Version": ["Version must be SemVer..."], "SourceHash": ["..."] }`)
-- [ ] **ERROR-04**: Postgres SQLSTATE `23503` (FK violation) → HTTP 422 with offending FK field name in detail
-- [ ] **ERROR-05**: Postgres SQLSTATE `23505` (unique violation) → HTTP 409 with offending field name in detail
-- [ ] **ERROR-06**: `NotFoundException` (custom exception thrown by Service when entity by id is missing) → HTTP 404 with resource type + id
-- [ ] **ERROR-07**: Any other unhandled exception → HTTP 500 with generic message; full stack trace logged only (never leaked to client)
-- [ ] **ERROR-08**: Every Problem Details body includes a `correlationId` field
-- [ ] **ERROR-09**: Every Problem Details body includes an `instance` field (request path)
-- [ ] **ERROR-10**: `[ApiController]`'s default `InvalidModelStateResponseFactory` aligned to emit the same Problem Details shape used elsewhere (no divergent error formats)
-- [ ] **ERROR-11**: Postgres constraint names follow convention (e.g., `fk_processor_input_schema_id`, `uq_processor_source_hash`) so middleware can extract friendly field names
+- [x] **ERROR-01
+**: RFC 7807 `ProblemDetails` JSON body returned on every non-2xx response
+- [x] **ERROR-02
+**: `IExceptionHandler` implementation in `BaseApi.Core` registered via `services.AddExceptionHandler<...>()` + `services.AddProblemDetails()` (.NET 8 modern pattern)
+- [x] **ERROR-03
+**: `FluentValidation.ValidationException` → HTTP 400 with field-level `errors` map (`{ "Version": ["Version must be SemVer..."], "SourceHash": ["..."] }`)
+- [x] **ERROR-04
+**: Postgres SQLSTATE `23503` (FK violation) → HTTP 422 with offending FK field name in detail
+- [x] **ERROR-05
+**: Postgres SQLSTATE `23505` (unique violation) → HTTP 409 with offending field name in detail
+- [x] **ERROR-06
+**: `NotFoundException` (custom exception thrown by Service when entity by id is missing) → HTTP 404 with resource type + id
+- [x] **ERROR-07
+**: Any other unhandled exception → HTTP 500 with generic message; full stack trace logged only (never leaked to client)
+- [x] **ERROR-08
+**: Every Problem Details body includes a `correlationId` field
+- [x] **ERROR-09
+**: Every Problem Details body includes an `instance` field (request path)
+- [x] **ERROR-10
+**: `[ApiController]`'s default `InvalidModelStateResponseFactory` aligned to emit the same Problem Details shape used elsewhere (no divergent error formats)
+- [x] **ERROR-11
+**: Postgres constraint names follow convention (e.g., `fk_processor_input_schema_id`, `uq_processor_source_hash`) so middleware can extract friendly field names
 
 ### Testing
 
