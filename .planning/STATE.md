@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 08-06-PLAN.md (Workflow feature folder + dual-junction sync + Cronos validator + smoke tests)
-last_updated: "2026-05-27T20:19:58.678Z"
+stopped_at: Completed 08-07-PLAN.md (AppDbContext + AppFeatures + StartupCompletionService swap + InitialCreate migration)
+last_updated: "2026-05-27T20:43:45.193Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 23
-  completed_plans: 21
-  percent: 91
+  completed_plans: 22
+  percent: 96
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 08 (entity-build-out-migrations-docker-runtime-tests) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [█████████░] 91%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
@@ -79,6 +79,7 @@ Progress: [█████████░] 91%
 | Phase 08 P04 | 12min | 3 tasks | 12 files |
 | Phase 08 P05 | 4min | 2 tasks tasks | 9 files files |
 | Phase 08 P06 | 10min | 3 tasks tasks | 13 files files |
+| Phase 08 P07 | 17min | 4 tasks tasks | 12 files files |
 
 ## Accumulated Context
 
@@ -175,6 +176,11 @@ Recent decisions affecting current work:
 - Plan 08-06: WorkflowReadDto.EntryStepIds + .AssignmentIds BOTH declared nullable (List<Guid>?) — Rule 1 fix-forward for RMG076 (cannot assign null to non-nullable). [MapValue(..., null)] on ToRead supplies the positional record ctor params (RMG013 mitigation) but only works with nullable target types. Same pattern as Plan 08-04 StepReadDto.NextStepIds?. v1 ships both collections null on read paths; tests assert via direct-DB CountEntryStepJunctionsAsync.
 - Plan 08-06: Asymmetric Cascade/Restrict on both junctions — Cascade-on-Workflow (parent owns junction lifecycle; DELETE Workflow auto-removes junction rows) + Restrict-on-referenced-entity (Step/Assignment). The fk_workflow_entry_steps_step_id Restrict FK is SC#5 LOAD-BEARING — Plan 08-08 fact 3 sequence requires exactly this FK shape to return 422.
 - Plan 08-06: Wave B COMPLETE — 5/5 entities, 25 smoke facts authored across Plans 08-02..08-06 (TEST-05 floor satisfied). Wave C 08-07 fully unblocked at file-availability level for AppDbContext composition + InitialCreate migration + AddAppFeatures aggregator.
+- Plan 08-07: AppDbContext OnModelCreating ordering load-bearing — ApplyConfigurationsFromAssembly FIRST -> base.OnModelCreating LAST so Phase 3 xmin iteration sees fully-configured BaseEntity subclasses. Reversing the order would silently drop xmin on all 5 entities (PERSIST-16 broken)
+- Plan 08-07: D-15 swap implemented as Option 3a' — StartupCompletionService resolves BaseDbContext (Phase 7 D-14 Scoped alias) rather than concrete AppDbContext, keeping BaseApi.Core free of Service-side references while still applying the production migration set
+- Plan 08-07: StartupCompletionService failure contract — broad catch (Exception ex) + LogCritical + NO rethrow + NO MarkReady on failure (PERSIST-10 + HEALTH-01). MarkReady INSIDE try BEFORE catch so it's never reached if MigrateAsync throws
+- Plan 08-07: 9 Wave B smoke test design issues auto-fixed (Rule 1) - 3 Location-header regex tolerance (Kestrel absolute URL + [controller] case-preserving), 3 List_OnEmptyDb shape relaxation (IClassFixture class-shared DB), 3 jsonb semantic-JSON helpers (Postgres jsonb normalizes whitespace + key order). 25/25 Wave B facts GREEN; Phase 1-7 regression 98/98 GREEN
+- Plan 08-07: InitialCreate migration generated with exact constraint naming — 8 CreateTable + 11 explicit FK names + uq_processor_source_hash + 2 jsonb + 5 xid + 7 Restrict + 2 Cascade + 2 SetNull. Load-bearing for Plan 08-08 SC#2 (duplicate sourceHash -> 409 via PostgresExceptionMapper Option A regex) and SC#5 (delete-Step-with-Workflow-ref -> 422 via fk_workflow_entry_steps_step_id Restrict)
 
 ### Pending Todos
 
@@ -200,8 +206,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T20:19:58.670Z
-Stopped at: Completed 08-06-PLAN.md (Workflow feature folder + dual-junction sync + Cronos validator + smoke tests)
+Last session: 2026-05-27T20:43:45.184Z
+Stopped at: Completed 08-07-PLAN.md (AppDbContext + AppFeatures + StartupCompletionService swap + InitialCreate migration)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)

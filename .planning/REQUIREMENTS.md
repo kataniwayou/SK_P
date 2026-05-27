@@ -26,7 +26,8 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Persistence
 
-- [ ] **PERSIST-01**: Single `AppDbContext` in `BaseApi.Service/Persistence/` exposing `DbSet<T>` for all 5 concrete entities and 3 junction entities
+- [x] **PERSIST-01
+**: Single `AppDbContext` in `BaseApi.Service/Persistence/` exposing `DbSet<T>` for all 5 concrete entities and 3 junction entities
 - [x] **PERSIST-02**: `BaseDbContext` (abstract) in `BaseApi.Core/Persistence/` registers `AuditInterceptor`
 - [x] **PERSIST-03**: `ISaveChangesInterceptor` implementation (`AuditInterceptor`) auto-stamps `CreatedAt`/`UpdatedAt` with `DateTime.UtcNow` (required by Npgsql `timestamptz`)
 - [x] **PERSIST-04**: `AuditInterceptor` sets `CreatedBy`/`UpdatedBy` from `IHttpContextAccessor.HttpContext?.User?.Identity?.Name` when available, null otherwise
@@ -35,8 +36,10 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **PERSIST-07**: `BaseEntity.CreatedAt`/`UpdatedAt` map to `timestamptz` columns
 - [x] **PERSIST-08
 **: `Schema.Definition` and `Assignment.Payload` map to `jsonb` columns
-- [ ] **PERSIST-09**: Migrations applied on startup by `BaseApi.Service` via `db.Database.MigrateAsync()` before readiness probe transitions to Healthy
-- [ ] **PERSIST-10**: Migration failure surfaces as failing readiness probe (process does not crash)
+- [x] **PERSIST-09
+**: Migrations applied on startup by `BaseApi.Service` via `db.Database.MigrateAsync()` before readiness probe transitions to Healthy
+- [x] **PERSIST-10
+**: Migration failure surfaces as failing readiness probe (process does not crash)
 - [x] **PERSIST-11**: Generic `Repository<TEntity>` in `BaseApi.Core` (Get, List, Add, Update, Delete with `CancellationToken`)
 - [x] **PERSIST-12
 **: Junction tables `StepNextSteps`, `WorkflowEntrySteps`, `WorkflowAssignments` configured as explicit join entities with composite PKs and FKs to both sides
