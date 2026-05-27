@@ -21,6 +21,26 @@ services:
       retries: 10
       start_period: 5s
 
+  otel-collector:
+    # Phase 5 (CONTEXT.md D-10) — receives OTLP from BaseApi.Service, writes JSON-lines
+    # to ./tests/.otel-out/ (host bind-mount; tests/.otel-out/ is gitignored). Contrib
+    # image required for the `file` exporter that Plan 05-02 verification reads.
+    image: otel/opentelemetry-collector-contrib:0.95.0
+    container_name: sk-otel-collector
+    restart: unless-stopped
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./compose/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+      - ./tests/.otel-out:/var/otel-out
+    ports:
+      - "4317:4317"   # OTLP gRPC (default exporter target)
+      - "4318:4318"   # OTLP HTTP (optional — curl-from-laptop debugging)
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:13133/"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   baseapi-service:
     # Phase 8 (INFRA-05) will set this to: build: { context: ., dockerfile: src/BaseApi.Service/Dockerfile }
     # Until then, this placeholder image lets Compose v2.20+/v5.x resolve the service block (which now

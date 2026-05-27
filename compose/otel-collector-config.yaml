@@ -1,0 +1,39 @@
+# OTel Collector Contrib config — sourced verbatim from CONTEXT.md D-10.
+# Receivers accept OTLP gRPC (4317) + HTTP (4318); exporters write to a
+# host-mounted JSON-lines file (read by tests/BaseApi.Tests/Observability/*Tests.cs)
+# AND stream to container stdout (live tailing via `docker logs sk-otel-collector`).
+# health_check extension on :13133 backs the compose-level service healthcheck.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+exporters:
+  file:
+    path: /var/otel-out/telemetry.jsonl
+    rotation:
+      max_megabytes: 10
+      max_days: 1
+  logging:
+    verbosity: detailed
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    logs:
+      receivers: [otlp]
+      exporters: [file, logging]
+    metrics:
+      receivers: [otlp]
+      exporters: [file, logging]
+    traces:
+      receivers: [otlp]
+      exporters: [file, logging]
