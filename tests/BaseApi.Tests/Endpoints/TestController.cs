@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using BaseApi.Core.Exceptions;
 using BaseApi.Tests.Middleware;
+using BaseApi.Tests.Validation;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
@@ -29,6 +30,7 @@ namespace BaseApi.Tests.Endpoints;
 ///   <item><c>POST   /test/fk-violation</c>                     → EF SaveChanges with non-existent ParentId → 23503 → 422 (SC#3 / ERROR-04)</item>
 ///   <item><c>POST   /test/unique-violation</c>                 → EF SaveChanges with duplicate Name → 23505 → 409 (SC#3 / ERROR-05)</item>
 ///   <item><c>POST   /test/concurrency</c>                      → two SaveChanges racing on same row → DbUpdateConcurrencyException → 409 (D-03a / T-04-XMIN)</item>
+///   <item><c>POST   /test/validate</c>                        → 400 ProblemDetails (SC#3 / VALID-03 — Service-layer FluentValidation explicit ValidateAsync)</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -116,6 +118,16 @@ public sealed class TestController : ControllerBase
         // raises DbUpdateConcurrencyException.
         entity.Name = $"updated-{Guid.NewGuid():N}";
         await db.SaveChangesAsync(ct);
+        return Ok();
+    }
+
+    [HttpPost("validate")]
+    public async Task<IActionResult> Validate(
+        [FromServices] TestValidationService svc,
+        [FromBody] TestUpdateDto dto,
+        CancellationToken ct)
+    {
+        await svc.ValidateAsync(dto, ct);  // throws FluentValidation.ValidationException on invalid
         return Ok();
     }
 }
