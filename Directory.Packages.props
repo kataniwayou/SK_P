@@ -49,7 +49,16 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.27" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.27" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.10" />
-    <PackageVersion Include="Npgsql" Version="9.0.0" />
+    <!-- Npgsql 8.0.9 is the latest 8.x release (Npgsql skipped 8.0.10; the 9.x line followed).
+         Npgsql.EntityFrameworkCore.PostgreSQL 8.0.10's nuspec declares Npgsql >= 8.0.5; pinning
+         8.0.9 satisfies that constraint AND preserves runtime binary compatibility with the
+         8.x provider. Pinning Npgsql 9.0.0 (the original Plan 04-01 Task 1 fix-forward) was
+         WRONG: the EFCore provider 8.0.10 was built against Npgsql 8.x internals
+         (e.g., Npgsql.Internal.HackyEnumTypeMapping) that 9.0.0 removed, causing
+         TypeLoadException at runtime when the EF provider tries to bootstrap the type
+         mapping. Surfaced by Plan 04-02 verification battery; documented as fix(04-01)
+         per Phase 1/2/3 deviation convention. -->
+    <PackageVersion Include="Npgsql" Version="8.0.9" />
     <PackageVersion Include="EFCore.NamingConventions" Version="8.0.3" />
 
     <!-- Mapping (source-gen) — PrivateAssets/ExcludeAssets go in CONSUMER csproj -->
