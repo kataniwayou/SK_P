@@ -5,16 +5,24 @@ using Xunit;
 
 namespace BaseApi.Tests.Versioning;
 
-/// <summary>HTTP-15 — URL-segment versioning + RESEARCH Pitfall 7 mitigation.</summary>
-public sealed class VersioningFacts
+/// <summary>HTTP-15 — URL-segment versioning + RESEARCH Pitfall 7 mitigation.
+///
+/// <para>
+/// IN-05: hoists Phase7WebAppFactory to a class fixture (one throwaway Postgres DB shared
+/// across both facts in this class).
+/// </para>
+/// </summary>
+public sealed class VersioningFacts : IClassFixture<Phase7WebAppFactory>
 {
+    private readonly Phase7WebAppFactory _factory;
+
+    public VersioningFacts(Phase7WebAppFactory factory) => _factory = factory;
+
     [Fact]
     public async Task SupportedVersion_V1_ReturnsSuccess()
     {
         var ct = TestContext.Current.CancellationToken;
-        await using var factory = new Phase7WebAppFactory();
-        await factory.InitializeAsync();
-        using var client  = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var response = await client.GetAsync("/api/v1/tests", ct);
 
@@ -25,9 +33,7 @@ public sealed class VersioningFacts
     public async Task UnsupportedVersion_V99_Returns_ErrorStatus_With_CorrelationId()
     {
         var ct = TestContext.Current.CancellationToken;
-        await using var factory = new Phase7WebAppFactory();
-        await factory.InitializeAsync();
-        using var client  = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var response = await client.GetAsync("/api/v99/tests", ct);
 

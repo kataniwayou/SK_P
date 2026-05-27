@@ -4,16 +4,26 @@ using Xunit;
 
 namespace BaseApi.Tests.Swagger;
 
-/// <summary>HTTP-16 + SC#4 — Swagger UI accessible in Development, 404 in Production.</summary>
-public sealed class SwaggerEnvironmentFacts
+/// <summary>HTTP-16 + SC#4 — Swagger UI accessible in Development, 404 in Production.
+///
+/// <para>
+/// IN-05: hoists Phase7WebAppFactory (the throwaway-DB-creating one) to a class fixture
+/// so the two Development facts share a single Postgres DB. The two Production facts keep
+/// per-fact ProductionWebAppFactory because that class is internal sealed (no DB lifecycle)
+/// and IClassFixture requires a public type.
+/// </para>
+/// </summary>
+public sealed class SwaggerEnvironmentFacts : IClassFixture<Phase7WebAppFactory>
 {
+    private readonly Phase7WebAppFactory _devFactory;
+
+    public SwaggerEnvironmentFacts(Phase7WebAppFactory devFactory) => _devFactory = devFactory;
+
     [Fact]
     public async Task SwaggerDocV1_Returns_200_In_Development()
     {
         var ct = TestContext.Current.CancellationToken;
-        await using var factory = new Phase7WebAppFactory();  // default env is Development
-        await factory.InitializeAsync();
-        using var client  = factory.CreateClient();
+        using var client = _devFactory.CreateClient();  // default env is Development
 
         var response = await client.GetAsync("/swagger/v1/swagger.json", ct);
 
@@ -24,9 +34,7 @@ public sealed class SwaggerEnvironmentFacts
     public async Task SwaggerUi_Returns_200_In_Development()
     {
         var ct = TestContext.Current.CancellationToken;
-        await using var factory = new Phase7WebAppFactory();
-        await factory.InitializeAsync();
-        using var client  = factory.CreateClient();
+        using var client = _devFactory.CreateClient();
 
         var response = await client.GetAsync("/swagger", ct);
 
@@ -46,7 +54,9 @@ public sealed class SwaggerEnvironmentFacts
         // ProductionWebAppFactory does NOT inherit Phase7WebAppFactory; it only flips the env to
         // Production for the /swagger 404 contract. No Postgres throwaway DB needed because the
         // /swagger probe never reaches a controller (it returns 404 from routing in Prod).
-        using var client  = factory.CreateClient();
+        // Kept per-fact: ProductionWebAppFactory is internal sealed, which is incompatible with
+        // IClassFixture<T>'s public-type requirement (IN-05 only hoists the public Phase7WebAppFactory).
+        using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/swagger", ct);
 
@@ -58,10 +68,7 @@ public sealed class SwaggerEnvironmentFacts
     {
         var ct = TestContext.Current.CancellationToken;
         await using var factory = new ProductionWebAppFactory();
-        // ProductionWebAppFactory does NOT inherit Phase7WebAppFactory; it only flips the env to
-        // Production for the /swagger 404 contract. No Postgres throwaway DB needed because the
-        // /swagger probe never reaches a controller (it returns 404 from routing in Prod).
-        using var client  = factory.CreateClient();
+        using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/swagger/v1/swagger.json", ct);
 

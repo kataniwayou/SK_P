@@ -7,16 +7,24 @@ namespace BaseApi.Tests.Services;
 
 /// <summary>HTTP-09 + ERROR-06 regression — BaseService.GetByIdAsync throws NotFoundException
 /// when the id is missing; Phase 4 NotFoundExceptionHandler maps to 404 ProblemDetails with
-/// correlationId + resourceType + resourceId.</summary>
-public sealed class NotFoundFacts
+/// correlationId + resourceType + resourceId.
+///
+/// <para>
+/// IN-05: hoists Phase7WebAppFactory to a class fixture (single throwaway Postgres DB
+/// for this class instead of per-fact).
+/// </para>
+/// </summary>
+public sealed class NotFoundFacts : IClassFixture<Phase7WebAppFactory>
 {
+    private readonly Phase7WebAppFactory _factory;
+
+    public NotFoundFacts(Phase7WebAppFactory factory) => _factory = factory;
+
     [Fact]
     public async Task Get_NonexistentTest_Returns_404_ProblemDetails_With_ResourceType_TestEntity()
     {
         var ct = TestContext.Current.CancellationToken;
-        await using var factory = new Phase7WebAppFactory();
-        await factory.InitializeAsync();
-        using var client  = factory.CreateClient();
+        using var client = _factory.CreateClient();
 
         var response = await client.GetAsync($"/api/v1/tests/{Guid.NewGuid()}", ct);
 
