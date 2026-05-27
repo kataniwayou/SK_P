@@ -47,11 +47,16 @@ public sealed class FallbackExceptionHandler : IExceptionHandler
             Detail = "An unexpected error occurred.",
         };
 
-        return await _pdSvc.TryWriteAsync(new ProblemDetailsContext
+        // Attempt to write; ignore the result — we have claimed this exception regardless.
+        // If response has already started (headers committed), TryWriteAsync returns false
+        // but we still return true so the chain does not re-throw.
+        _ = await _pdSvc.TryWriteAsync(new ProblemDetailsContext
         {
             HttpContext = httpContext,
             ProblemDetails = problem,
             Exception = exception,
         });
+
+        return true;  // catch-all: always claimed
     }
 }
