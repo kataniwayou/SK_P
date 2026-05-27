@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 08-07-PLAN.md (AppDbContext + AppFeatures + StartupCompletionService swap + InitialCreate migration)
-last_updated: "2026-05-27T20:43:45.193Z"
+status: verifying
+stopped_at: "Completed 08-08-PLAN.md (Phase 8 final plan: ErrorMappingFacts + MigrationFailureFacts + D-18 regression cadence)"
+last_updated: "2026-05-27T21:00:05.224Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 23
-  completed_plans: 22
-  percent: 96
+  completed_plans: 23
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 
 Phase: 08 (entity-build-out-migrations-docker-runtime-tests) — EXECUTING
 Plan: 8 of 8
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-27
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -80,6 +80,7 @@ Progress: [██████████] 96%
 | Phase 08 P05 | 4min | 2 tasks tasks | 9 files files |
 | Phase 08 P06 | 10min | 3 tasks tasks | 13 files files |
 | Phase 08 P07 | 17min | 4 tasks tasks | 12 files files |
+| Phase 08 P08 | 25min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -181,6 +182,10 @@ Recent decisions affecting current work:
 - Plan 08-07: StartupCompletionService failure contract — broad catch (Exception ex) + LogCritical + NO rethrow + NO MarkReady on failure (PERSIST-10 + HEALTH-01). MarkReady INSIDE try BEFORE catch so it's never reached if MigrateAsync throws
 - Plan 08-07: 9 Wave B smoke test design issues auto-fixed (Rule 1) - 3 Location-header regex tolerance (Kestrel absolute URL + [controller] case-preserving), 3 List_OnEmptyDb shape relaxation (IClassFixture class-shared DB), 3 jsonb semantic-JSON helpers (Postgres jsonb normalizes whitespace + key order). 25/25 Wave B facts GREEN; Phase 1-7 regression 98/98 GREEN
 - Plan 08-07: InitialCreate migration generated with exact constraint naming — 8 CreateTable + 11 explicit FK names + uq_processor_source_hash + 2 jsonb + 5 xid + 7 Restrict + 2 Cascade + 2 SetNull. Load-bearing for Plan 08-08 SC#2 (duplicate sourceHash -> 409 via PostgresExceptionMapper Option A regex) and SC#5 (delete-Step-with-Workflow-ref -> 422 via fk_workflow_entry_steps_step_id Restrict)
+- Plan 08-08: ErrorMappingFacts SSRF payload changed from $ref-only to combined-invalid (Rule 1 fix-forward) — empirically verified the bare $ref-only document is structurally valid against Draft 2020-12 meta-schema; combined {type:not-a-real-type,$ref:attacker.example} satisfies both 400 BadRequest AND SSRF timing-bound assertions
+- Plan 08-08: 3 CONSECUTIVE GREEN achieved on Runs 4/5/6 of full suite (128/128 each ~28.6s) — Runs 1+3 had pre-existing flakes (ConcurrencyTokenTests.Test_RacingWrites racing-writes + LogLevelFilterTests OTel cold-start); plan accommodation honored ('consecutive is the gate, not first-attempt-3')
+- Plan 08-08: byte-identical psql \l BEFORE/AFTER snapshot proven via SHA-256 hash match (0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127) across full 6-run cycle — zero leaked stepsdb_test_<guid> databases (Phase 3 D-15 cleanup discipline preserved end-to-end through Phase 8)
+- Plan 08-08: Phase 8 COMPLETE — all 41 phase REQ-IDs covered (39 implemented + TEST-03/TEST-04 deferred to v2 per Plan 08-01 amendment); SC#1..SC#6 all behaviorally verified end-to-end via 30 new Phase 8 facts (25 Wave B smoke + 4 cross-entity error-mapping + 1 migration-failure isolation); system is shippable as v1 Steps API base
 
 ### Pending Todos
 
@@ -206,8 +211,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T20:43:45.184Z
-Stopped at: Completed 08-07-PLAN.md (AppDbContext + AppFeatures + StartupCompletionService swap + InitialCreate migration)
+Last session: 2026-05-27T21:00:05.215Z
+Stopped at: Completed 08-08-PLAN.md (Phase 8 final plan: ErrorMappingFacts + MigrationFailureFacts + D-18 regression cadence)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)

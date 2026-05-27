@@ -222,7 +222,8 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `Microsoft.AspNetCore.Mvc.Testing` + `WebApplicationFactory<Program>` for integration tests
 - [x] **TEST-05
 **: At least one happy-path integration test per CRUD verb per entity (5 entities × 5 verbs = 25 smoke tests, minimum)
-- [ ] **TEST-06**: At least one negative-path integration test per error mapping (400 validation, 404 not found, 409 unique violation, 422 FK violation)
+- [x] **TEST-06
+**: At least one negative-path integration test per error mapping (400 validation, 404 not found, 409 unique violation, 422 FK violation)
 
 ## v2 Requirements
 

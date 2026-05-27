@@ -19,7 +19,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Observability + Health Probes** - OTel logs, metrics, and traces reach the Collector; three distinct health probes (live/ready/startup) respond correctly
 - [ ] **Phase 6: Validation + Mapping Base** - Base DTO validator + Mapperly + `IEntityMapper<,,,>` seam are wired so any future entity slots in without rewriting base rules
 - [x] **Phase 7: Generic HTTP Base + Composition Root** - `BaseController`/`BaseService` + `AddBaseApi`/`UseBaseApi` compose the runnable service with versioned routes and Swagger
-- [ ] **Phase 8: Entity Build-Out + Migrations + Docker Runtime + Tests** - All 5 entities CRUD over real Postgres with smoke + error-mapping integration tests passing
+- [x] **Phase 8: Entity Build-Out + Migrations + Docker Runtime + Tests** - All 5 entities CRUD over real Postgres with smoke + error-mapping integration tests passing
 
 ## Phase Details
 
@@ -160,7 +160,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 5. Observability + Health Probes | 2/2 | Complete    | 2026-05-27 |
 | 6. Validation + Mapping Base | 0/2 | Planned | - |
 | 7. Generic HTTP Base + Composition Root | 1/2 | In Progress | - |
-| 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 7/8 | In Progress | - |
+| 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 8/8 | Complete | 2026-05-28 |
 
 ## Coverage Summary
 
