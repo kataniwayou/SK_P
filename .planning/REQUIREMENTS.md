@@ -81,7 +81,8 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `FluentValidation` 12.x + `FluentValidation.DependencyInjectionExtensions` only (no `FluentValidation.AspNetCore` — deprecated)
 - [x] **VALID-02
 **: Validators discovered via `services.AddValidatorsFromAssembly(...)`
-- [ ] **VALID-03**: `IValidator<TDto>` invoked explicitly in the Service layer via `ValidateAsync`; no MVC auto-validation
+- [x] **VALID-03
+**: `IValidator<TDto>` invoked explicitly in the Service layer via `ValidateAsync`; no MVC auto-validation
 - [x] **VALID-04
 **: `BaseDtoValidator<T>` in `BaseApi.Core/Validators/` provides shared rules for `Name`, `Version`, `Description`; concrete validators inherit via `Include(...)`
 - [x] **VALID-05

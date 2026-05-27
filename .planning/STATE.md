@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 06-01-PLAN.md
-last_updated: "2026-05-27T12:04:01.845Z"
+status: verifying
+stopped_at: Completed 06-02-PLAN.md (verification gate auto-checked all 4 conditions; awaiting user approval)
+last_updated: "2026-05-27T12:17:51.315Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 13
-  completed_plans: 12
-  percent: 92
+  completed_plans: 13
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 Phase: 06 (validation-mapping-base) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-27
 
-Progress: [█████████░] 92%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -68,6 +68,7 @@ Progress: [█████████░] 92%
 | Phase 05 P01 | 10min | 7 tasks | 9 files |
 | Phase 05 P02 | ~60min | 8 tasks + continuation (Gap 1 + Gap 2 closures) | 13 files (9 new test files + 1 new assembly fixture + 2 modified Plan 05-01 files + 1 modified test file) |
 | Phase 06 P01 | 9min | 3 tasks tasks | 9 files (5 new + 4 modified) files |
+| Phase 06 P02 | ~20min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -122,6 +123,9 @@ Recent decisions affecting current work:
 - Plan 05-02: ROADMAP Phase 5 SC#1-5 + D-16 + T-05-PII/LOG-INJECT/OTLP-EXFIL/READY-DB-EXPOSE all GREEN via 16 new + 31 carryover = 47 facts; 3 consecutive dotnet test runs (17.67/17.71/18.09s); byte-identical psql \l BEFORE/AFTER; tests/.otel-out/telemetry.jsonl absent post-suite (D-11)
 - Plan 06-01: 5 BaseApi.Core seam files (IBaseDto, BaseDtoValidator<T>, IEntityMapper<,,,>, AddBaseApiValidation, AddBaseApiMapping) landed verbatim from RESEARCH Code Examples 1-5; Program.cs D-18 wiring inserted at Phase-7 cut-paste slot; Directory.Build.props promotes RMG007/RMG012/RMG020/RMG089 (RMG089 Info-severity is load-bearing — TreatWarningsAsErrors only catches Warning+); Mapperly PackageReference added to BaseApi.Tests.csproj with PrivateAssets=all ExcludeAssets=runtime; WebAppFactory unsealed (sealed→public class) per path A precedent set by Phase 5 OtelCollectorFixture; 47/47 Phase 1-5 regression suite passed unchanged.
 - Plan 06-01 deviation (Rule 1 - plan internal inconsistency): Directory.Build.props sub-edit 1 verbatim text contained MP0001/MP0011/MP0020/MP0021 codes but Plan verification line 734 required those codes be grep-empty across Directory.Build.props/src/tests. Resolved by rephrasing amended D-04 comment to convey the same correction history without naming the specific MP codes — preserves educational content (RESEARCH A-01 reference) and satisfies the grep-empty assertion. Build still 0-warning Release+Debug after rephrase.
+- Plan 06-02: TestEntityMapper attribute coverage extended to all 3 methods (ToEntity/Update/ToRead) — plan-as-written only specified Update; Mapperly RequiredMappingStrategy=Both fires RMG012 on ToEntity (5 errors: target Id+audit on TestCreateDto source) and RMG020 on ToRead (4 errors: source audit on TestReadDto target). Rule 3 plan-gap fix-forward. Phase 8's 5 entity mappers MUST replicate the 3-method pattern: 5 [MapperIgnoreTarget] each on ToEntity+Update, 4 [MapperIgnoreSource] on ToRead (or omit if Read DTO carries audit fields per HTTP-07)
+- Plan 06-02: Drift-detection probe (Check 4) confirms RMG012+RMG020 promotion is LIVE across all 3 mapper methods — adding an unmapped Drift property to TestEntity fires errors on ToEntity (RMG012), Update (RMG012), AND ToRead (RMG020). Phase 8 mappers inherit this safety net.
+- Plan 06-02: Run 1 of 3 had 7 Phase 5 Observability test failures (LogExport/LogLevelFilter/MetricsExport/TraceExport — all asserted Collection was empty) — OTel Collector had been up only 28s when Run 1 started, telemetry hadn't fully batched/scraped. Runs 2/3/4 all 76/76 GREEN. Matches Phase 5 SUMMARY's documented fixture-lifecycle robustness items. No Phase 6 code change needed; plan resume-signal explicitly accommodated this re-run path.
 
 ### Pending Todos
 
@@ -147,8 +151,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T12:04:01.837Z
-Stopped at: Completed 06-01-PLAN.md
+Last session: 2026-05-27T12:17:51.306Z
+Stopped at: Completed 06-02-PLAN.md (verification gate auto-checked all 4 conditions; awaiting user approval)
 Resume file: None
 
 **Planned Phase:** 6 (Validation + Mapping Base) — 2 plans — 2026-05-27T11:52:23.650Z
