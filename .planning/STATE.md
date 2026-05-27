@@ -188,6 +188,10 @@ Recent decisions affecting current work:
 - Plan 08-08: byte-identical psql \l BEFORE/AFTER snapshot proven via SHA-256 hash match (0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127) across full 6-run cycle — zero leaked stepsdb_test_<guid> databases (Phase 3 D-15 cleanup discipline preserved end-to-end through Phase 8)
 - Plan 08-08: Phase 8 COMPLETE — all 41 phase REQ-IDs covered (39 implemented + TEST-03/TEST-04 deferred to v2 per Plan 08-01 amendment); SC#1..SC#6 all behaviorally verified end-to-end via 30 new Phase 8 facts (25 Wave B smoke + 4 cross-entity error-mapping + 1 migration-failure isolation); system is shippable as v1 Steps API base
 
+### Roadmap Evolution
+
+- Phase 9 added: Add GetBySourceHash to Processor controller and new Orchestration controller with Start/Stop endpoints accepting List<guid> WorkflowIds, following the existing GetById design pattern
+
 ### Pending Todos
 
 [From .planning/todos/pending/ — ideas captured during sessions]

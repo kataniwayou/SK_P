@@ -180,5 +180,15 @@ Per-category coverage:
 - ERROR (11): Phase 4 (all)
 - TEST (6): Phase 8 (all)
 
+### Phase 9: Add GetBySourceHash to Processor controller and new Orchestration controller with Start/Stop endpoints accepting List<guid> WorkflowIds, following the existing GetById design pattern
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 8
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 9 to break down)
+
 ---
 *Roadmap created: 2026-05-26*
