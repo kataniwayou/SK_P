@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: .planning/phases/05-observability-health-probes/05-CONTEXT.md
-last_updated: "2026-05-27T08:44:50.425Z"
+status: executing
+stopped_at: Completed 05-01-PLAN.md
+last_updated: "2026-05-27T09:08:00.176Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 4
   total_plans: 11
-  completed_plans: 9
-  percent: 82
+  completed_plans: 10
+  percent: 91
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 04 — Cross-Cutting Middleware + Error Handling
+**Current focus:** Phase 5 — Observability + Health Probes
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Ready to plan
+Phase: 5 (Observability + Health Probes) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [██████████] 100%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [██████████] 100%
 | Phase 03 P03-02 | 3min | 7 tasks | 10 files |
 | Phase 04 P01 | 25min | 8 tasks tasks | 10 files files |
 | Phase 04 P02 | ~40min | 7 tasks tasks | 14 files files |
+| Phase 05 P01 | 10min | 7 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -103,6 +104,11 @@ Recent decisions affecting current work:
 - Plan 04-01: Phase 4 takes ownership of AddHttpContextAccessor (Phase 3 D-11 had deferred to Phase 7) — Pitfall 1 mitigation, idempotent so Phase 7 won't conflict
 - Plan 04-02: Phase 4 ROADMAP SC#1-5 + D-03a + ERROR-08/09 regression + T-04-LEAK/XMIN/INJECT mitigations all GREEN via 24 new + 7 Phase 3 carry-over facts. dotnet test exit 0 Passed: 31 Failed: 0 across 3 consecutive runs (~1.5-2.9s each). 14 phase REQ-IDs (OBSERV-09/10/11 + ERROR-01..11) closed. D-15 cleanup proven via byte-identical psql l snapshots.
 - Plan 04-02 fix-forward (ad3f1a1): Corrected Npgsql pin 9.0.0 to 8.0.9 in Directory.Packages.props. EFCore.PostgreSQL 8.0.10 binary-references Npgsql 8.0.9 internal types removed in Npgsql 9.x rewrite. TypeLoadException on Npgsql.Internal.HackyEnumTypeMapping surfaced at test runtime under WebApplicationFactory boot. Classified as fix(04-01) per Phase 3 D-18 (production dependency mis-pin in file owned by Plan 04-01). Anticipated by Plan 04-01 RESEARCH A2 trivial-to-fix envelope.
+- Plan 05-01: bare .AddNpgsql() (CONTEXT D-05 corrected — NpgsqlTracingOptions 8.0.4 has no EnableEntityFrameworkCoreInstrumentation property; default already secure per T-05-PII)
+- Plan 05-01: AddHostedService<StartupCompletionService> route (NOT inline app.Services.GetRequiredService<IStartupGate>().MarkReady) — Reconciliation 2; Phase 8 substitution becomes clean 1-line swap
+- Plan 05-01: public sealed on Health/ concrete types (Reconciliation 3 — CONTEXT D-01/D-02 internal sealed wording requires InternalsVisibleTo; consistency with Phase 3/4 public sealed conventions wins)
+- Plan 05-01 deviation (Rule 1 API mismatch): metrics-side .AddAspNetCoreInstrumentation is parameterless in OTel 1.15.0 — Filter callback only on TracerProviderBuilder overload; /health metric noise deferred to backend query filtering
+- Plan 05-01: Open Q3 resolved (a) — no launchSettings.json committed (collides with untracked Properties/ scaffold); rely on OTel SDK default fallback http://localhost:4317
 
 ### Pending Todos
 
@@ -128,8 +134,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: Phase 5 context gathered
-Stopped at: .planning/phases/05-observability-health-probes/05-CONTEXT.md
+Last session: 2026-05-27T09:08:00.168Z
+Stopped at: Completed 05-01-PLAN.md
 Resume file: None
 
 **Planned Phase:** 5 (Observability + Health Probes) — 2 plans — 2026-05-27T08:44:50.415Z

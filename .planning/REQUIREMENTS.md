@@ -100,29 +100,43 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Observability
 
-- [ ] **OBSERV-01**: `OpenTelemetry` 1.15.x with `Exporter.OpenTelemetryProtocol`, `Instrumentation.AspNetCore`, `Instrumentation.Http`, `Extensions.Hosting`
-- [ ] **OBSERV-02**: Logs wired via `builder.Logging.AddOpenTelemetry(...)` (MEL integration — NOT `services.AddOpenTelemetry().WithLogging()` which bypasses MEL)
-- [ ] **OBSERV-03**: HTTP server + client metrics via `services.AddOpenTelemetry().WithMetrics(...).AddAspNetCoreInstrumentation().AddHttpClientInstrumentation()`
-- [ ] **OBSERV-04**: OTLP exporter targets external OTel Collector; endpoint from `OTEL_EXPORTER_OTLP_ENDPOINT` env var (default fallback to `OpenTelemetry:Endpoint` appsettings); protocol gRPC by default
-- [ ] **OBSERV-05**: OTel resource attributes `service.name` and `service.version` populated from `Service:Name` and `Service:Version` in appsettings
-- [ ] **OBSERV-06**: `Logging:LogLevel` from appsettings filters BOTH console and OTel sinks identically (single source of truth — MEL pipeline filters before either sink runs)
-- [ ] **OBSERV-07**: OTel logger options: `IncludeFormattedMessage=true`, `IncludeScopes=true`, `ParseStateValues=true`
-- [ ] **OBSERV-08**: Health endpoints excluded from metrics (filter via `AspNetCoreInstrumentationOptions.Filter`)
+- [x] **OBSERV-01
+**: `OpenTelemetry` 1.15.x with `Exporter.OpenTelemetryProtocol`, `Instrumentation.AspNetCore`, `Instrumentation.Http`, `Extensions.Hosting`
+- [x] **OBSERV-02
+**: Logs wired via `builder.Logging.AddOpenTelemetry(...)` (MEL integration — NOT `services.AddOpenTelemetry().WithLogging()` which bypasses MEL)
+- [x] **OBSERV-03
+**: HTTP server + client metrics via `services.AddOpenTelemetry().WithMetrics(...).AddAspNetCoreInstrumentation().AddHttpClientInstrumentation()`
+- [x] **OBSERV-04
+**: OTLP exporter targets external OTel Collector; endpoint from `OTEL_EXPORTER_OTLP_ENDPOINT` env var (default fallback to `OpenTelemetry:Endpoint` appsettings); protocol gRPC by default
+- [x] **OBSERV-05
+**: OTel resource attributes `service.name` and `service.version` populated from `Service:Name` and `Service:Version` in appsettings
+- [x] **OBSERV-06
+**: `Logging:LogLevel` from appsettings filters BOTH console and OTel sinks identically (single source of truth — MEL pipeline filters before either sink runs)
+- [x] **OBSERV-07
+**: OTel logger options: `IncludeFormattedMessage=true`, `IncludeScopes=true`, `ParseStateValues=true`
+- [x] **OBSERV-08
+**: Health endpoints excluded from metrics (filter via `AspNetCoreInstrumentationOptions.Filter`)
 - [x] **OBSERV-09
 **: `CorrelationIdMiddleware` in `BaseApi.Core/Middleware/`: reads `X-Correlation-Id` header if present, generates a new UUID if missing
 - [x] **OBSERV-10
 **: Correlation ID written to `HttpContext.Items["CorrelationId"]` and attached to log scope via `ILogger.BeginScope`
 - [x] **OBSERV-11
 **: Correlation ID echoed in `X-Correlation-Id` response header on every response (including error responses)
-- [ ] **OBSERV-12**: OTel tracing enabled (logs + metrics + traces) with `AddAspNetCoreInstrumentation`, `AddHttpClientInstrumentation`, `AddNpgsql` for DB spans
+- [x] **OBSERV-12
+**: OTel tracing enabled (logs + metrics + traces) with `AddAspNetCoreInstrumentation`, `AddHttpClientInstrumentation`, `AddNpgsql` for DB spans
 
 ### Health Probes
 
-- [ ] **HEALTH-01**: `/health/startup` returns Healthy after DI is built AND migrations have applied
-- [ ] **HEALTH-02**: `/health/live` returns Healthy as long as the process is responsive (no external dependencies checked)
-- [ ] **HEALTH-03**: `/health/ready` returns Healthy when Postgres is reachable AND startup probe is Healthy
-- [ ] **HEALTH-04**: `AspNetCore.HealthChecks.NpgSql` registered for the Postgres reachability check
-- [ ] **HEALTH-05**: Health endpoints (`/health/*`) excluded from logging and metrics emission
+- [x] **HEALTH-01
+**: `/health/startup` returns Healthy after DI is built AND migrations have applied
+- [x] **HEALTH-02
+**: `/health/live` returns Healthy as long as the process is responsive (no external dependencies checked)
+- [x] **HEALTH-03
+**: `/health/ready` returns Healthy when Postgres is reachable AND startup probe is Healthy
+- [x] **HEALTH-04
+**: `AspNetCore.HealthChecks.NpgSql` registered for the Postgres reachability check
+- [x] **HEALTH-05
+**: Health endpoints (`/health/*`) excluded from logging and metrics emission
 
 ### Error Responses
 
