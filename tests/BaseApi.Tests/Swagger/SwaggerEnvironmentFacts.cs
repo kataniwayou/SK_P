@@ -42,7 +42,7 @@ public sealed class SwaggerEnvironmentFacts
     public async Task SwaggerUi_Returns_404_In_Production()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var factory = new ProductionWebAppFactory();
+        await using var factory = new ProductionWebAppFactory();
         // ProductionWebAppFactory does NOT inherit Phase7WebAppFactory; it only flips the env to
         // Production for the /swagger 404 contract. No Postgres throwaway DB needed because the
         // /swagger probe never reaches a controller (it returns 404 from routing in Prod).
@@ -57,7 +57,7 @@ public sealed class SwaggerEnvironmentFacts
     public async Task SwaggerDocV1_Returns_404_In_Production()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var factory = new ProductionWebAppFactory();
+        await using var factory = new ProductionWebAppFactory();
         // ProductionWebAppFactory does NOT inherit Phase7WebAppFactory; it only flips the env to
         // Production for the /swagger 404 contract. No Postgres throwaway DB needed because the
         // /swagger probe never reaches a controller (it returns 404 from routing in Prod).
