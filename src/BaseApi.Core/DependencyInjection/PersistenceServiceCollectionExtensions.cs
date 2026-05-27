@@ -1,3 +1,4 @@
+using BaseApi.Core.Configuration;
 using BaseApi.Core.Persistence;
 using BaseApi.Core.Persistence.Interceptors;
 using BaseApi.Core.Persistence.Repositories;
@@ -25,7 +26,9 @@ internal static class PersistenceServiceCollectionExtensions
 
         services.AddDbContext<TDbContext>((sp, opts) =>
         {
-            opts.UseNpgsql(cfg.GetConnectionString("Postgres"))
+            // WR-03: fail fast with a clear message rather than letting null propagate
+            // into UseNpgsql which throws a less-clear error.
+            opts.UseNpgsql(cfg.RequireConnectionString("Postgres"))
                 .UseSnakeCaseNamingConvention()
                 .AddInterceptors(sp.GetRequiredService<AuditInterceptor>());
         });

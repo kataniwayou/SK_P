@@ -1,3 +1,4 @@
+using BaseApi.Core.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -38,8 +39,10 @@ public static class ObservabilityServiceCollectionExtensions
     public static IHostApplicationBuilder AddBaseApiObservability(
         this IHostApplicationBuilder builder, IConfiguration cfg)
     {
-        var serviceName    = cfg["Service:Name"]!;
-        var serviceVersion = cfg["Service:Version"]!;
+        // WR-03: fail fast at the boundary with an actionable message rather than letting
+        // null propagate into ResourceBuilder.AddService(null, null) → OTel SDK ArgumentNullException.
+        var serviceName    = cfg.Require("Service:Name");
+        var serviceVersion = cfg.Require("Service:Version");
 
         // OTel LOGS — MEL bridge (Phase 5 D-09 / OBSERV-02). MUST be builder.Logging.AddOpenTelemetry
         // — NOT services.AddOpenTelemetry().WithLogging() (creates a parallel provider that

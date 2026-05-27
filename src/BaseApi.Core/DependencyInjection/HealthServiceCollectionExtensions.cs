@@ -1,3 +1,4 @@
+using BaseApi.Core.Configuration;
 using BaseApi.Core.Health;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,7 +21,9 @@ internal static class HealthServiceCollectionExtensions
         services.AddHealthChecks()
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" })
             .AddCheck<StartupHealthCheck>("startup", tags: new[] { "startup", "ready" })
-            .AddNpgSql(cfg.GetConnectionString("Postgres")!, tags: new[] { "ready" });
+            // WR-03: fail fast with a clear "connection string missing" message rather than
+            // letting null propagate into AddNpgSql → health-check library NRE.
+            .AddNpgSql(cfg.RequireConnectionString("Postgres"), tags: new[] { "ready" });
 
         services.AddHostedService<StartupCompletionService>();
         return services;
