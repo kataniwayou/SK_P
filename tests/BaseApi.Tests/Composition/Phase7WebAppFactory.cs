@@ -46,7 +46,7 @@ namespace BaseApi.Tests.Composition;
 /// resolves <see cref="BaseDbContext"/> = <see cref="Phase7TestDbContext"/>.
 /// </para>
 /// </summary>
-public class Phase7WebAppFactory : WebAppFactory, IAsyncLifetime
+public sealed class Phase7WebAppFactory : WebAppFactory, IAsyncLifetime
 {
     private PostgresFixture? _fixture;
 
