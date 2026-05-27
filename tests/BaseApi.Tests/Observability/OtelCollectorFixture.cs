@@ -42,7 +42,11 @@ namespace BaseApi.Tests.Observability;
 /// host would NOT appear in <c>tests/.otel-out/telemetry.jsonl</c>.
 /// </para>
 /// </summary>
-public sealed class OtelCollectorFixture : WebApplicationFactory<Program>, IAsyncLifetime
+// NOT `sealed` — HealthEndpointsTests defines three nested subclasses
+// (HealthDeadPostgresFixture, HealthLiveLocalhostFixture, HealthNoStartupCompletionFixture)
+// that inherit from this fixture and override ConfigureWebHost to apply per-test overrides.
+// Sealing the base class would force a different (less natural) composition pattern.
+public class OtelCollectorFixture : WebApplicationFactory<Program>, IAsyncLifetime
 {
     /// <summary>Absolute path to the JSON-lines file the Collector writes to.</summary>
     public static readonly string TelemetryFile = ResolveTelemetryFile();
