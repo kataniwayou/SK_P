@@ -118,16 +118,18 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 7: Generic HTTP Base + Composition Root
 **Goal**: Build the abstract generic `BaseController` and `BaseService`, the `AddBaseApi`/`UseBaseApi` composition root extensions, and wire API versioning + Swagger so the runnable service is one inheritance step away from working.
-**Depends on**: Phase 3 (Repository), Phase 4 (error middleware), Phase 5 (OTel + health), Phase 6 (validator + mapper seam) â€” composition root brings them all together
+**Depends on**: Phase 3 (Repository), Phase 4 (error middleware), Phase 5 (OTel + health), Phase 6 (validator + mapper seam) — composition root brings them all together
 **Requirements**: HTTP-01, HTTP-02, HTTP-03, HTTP-08, HTTP-09, HTTP-13, HTTP-14, HTTP-15, HTTP-16
 **Success Criteria** (what must be TRUE):
-  1. A scratch derived class `public class TestsController : BaseController<TestEntity, TestCreateDto, TestUpdateDto, TestReadDto>` with no body exposes `GET /api/v1/tests`, `GET /api/v1/tests/{id:guid}`, `POST /api/v1/tests`, `PUT /api/v1/tests/{id:guid}`, `DELETE /api/v1/tests/{id:guid}` â€” the verbs come from the base, the URL prefix comes from versioning
+  1. A scratch derived class `public class TestsController : BaseController<TestEntity, TestCreateDto, TestUpdateDto, TestReadDto>` with no body exposes `GET /api/v1/tests`, `GET /api/v1/tests/{id:guid}`, `POST /api/v1/tests`, `PUT /api/v1/tests/{id:guid}`, `DELETE /api/v1/tests/{id:guid}` — the verbs come from the base, the URL prefix comes from versioning
   2. `BaseService<...>.CreateAsync` runs in this order: validator -> map create-DTO to entity -> repository.Add -> virtual `SyncJunctionsAsync` -> `SaveChangesAsync` -> map entity to read-DTO; controllers never call repository directly (Controller -> Service -> Repository layering enforced by visibility)
-  3. `BaseApi.Service`'s `Program.cs` is a thin file: it calls `builder.Services.AddBaseApi<AppDbContext>(builder.Configuration)`, `app.UseBaseApi()`, and `app.Run()` â€” no per-concern wiring duplicated outside `BaseApi.Core`
+  3. `BaseApi.Service`'s `Program.cs` is a thin file: it calls `builder.Services.AddBaseApi<AppDbContext>(builder.Configuration)`, `app.UseBaseApi()`, and `app.Run()` — no per-concern wiring duplicated outside `BaseApi.Core`
   4. Browsing `/swagger` in Development environment renders the OpenAPI UI listing the test controller's 5 verbs; the same endpoint returns 404 in Production
-**Plans**: TBD
+**Plans**: 2 plans
+- [x] 07-01-PLAN.md — Wave 1 build (autonomous) — SHIPPED 2026-05-27: 14 new BaseApi.Core files (IHasId + BaseController + BaseService + 3 Swagger helpers + 7 DI extensions) + AppDbContext placeholder + Program.cs collapsed from ~150 lines to ~7 non-trivial body lines (cap: 10). 9 REQ-IDs closed (HTTP-01/02/03/08/09/13/14/15/16). dotnet build SK_P.sln -c Release & -c Debug both exit 0 with zero warnings. CONTEXT D-13 amendment encoded: AddBaseApi<TDbContext> chains 6 sub-extensions on IServiceCollection + separate builder.AddBaseApiObservability(cfg) on IHostApplicationBuilder for OTel MEL bridge (needs ILoggingBuilder). 5 deviations auto-fixed: 4× Rule 1 bug (missing Microsoft.AspNetCore.Http using; CS0416 typeof(TRead) in ProducesResponseType attributes; missing Microsoft.Extensions.DependencyInjection using for SwaggerGenOptions extensions; missing Microsoft.Extensions.Hosting using for IsDevelopment) + 1× Rule 3 visibility plan-gap (AddBaseApiObservability promoted internal→public for cross-assembly call from Program.cs). Commits: c86cf08 (Task 1 pins), 099b5e4 (Task 2 BaseController+BaseService), ff6d866 (Task 3 7+3 extensions), 89dbf55 (Task 4 AppDbContext+Program.cs). Regression replay deferred to Plan 07-02 per CONTEXT D-15.
+- [ ] 07-02-PLAN.md — Wave 2 verification (autonomous:false, Phase 3 D-18 cadence): create 4 test scaffolds (TestsController empty-body + RecordingTestService + Phase7WebAppFactory + ProductionWebAppFactory) and audit TestReadDto for IHasId; create 8 fact-test classes covering all 9 HTTP-* REQ-IDs (BaseControllerRoutesFacts for HTTP-01/02/03/15 + BaseServiceOrderingFacts for HTTP-08/09 via NSubstitute Received.InOrder + ChangeTracker assertion + NotFoundFacts for HTTP-09 + AddBaseApiFacts for HTTP-13 + UseBaseApiPipelineFacts for HTTP-14 + VersioningFacts for HTTP-15 + Pitfall 7 mitigation + SwaggerEnvironmentFacts for HTTP-16/SC#4 + ProgramMinimalityFacts for SC#3); 3 consecutive GREEN dotnet test runs + byte-identical psql \l snapshots + tests/.otel-out clean + human-verify Swagger UI smoke checkpoint (SC#4 visual confirmation).
 **UI hint**: no
-**Parallelizable**: no (BaseController + BaseService + composition root are tightly coupled â€” split risks divergent DI graphs)
+**Parallelizable**: no (BaseController + BaseService + composition root are tightly coupled — split risks divergent DI graphs)
 
 ### Phase 8: Entity Build-Out + Migrations + Docker Runtime + Tests
 **Goal**: Plug all 5 concrete entities into the finished base in FK order, generate the single `InitialCreate` migration, build the runtime Docker image, and prove the stack with smoke + error-mapping integration tests against real Postgres.
@@ -157,7 +159,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 4. Cross-Cutting Middleware + Error Handling | 2/2 | Complete | 2026-05-27 |
 | 5. Observability + Health Probes | 2/2 | Complete    | 2026-05-27 |
 | 6. Validation + Mapping Base | 0/2 | Planned | - |
-| 7. Generic HTTP Base + Composition Root | 0/TBD | Not started | - |
+| 7. Generic HTTP Base + Composition Root | 1/2 | In Progress | - |
 | 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 0/TBD | Not started | - |
 
 ## Coverage Summary

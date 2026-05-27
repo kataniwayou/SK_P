@@ -57,23 +57,32 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### HTTP Surface
 
-- [ ] **HTTP-01**: Controller-based ASP.NET Core (not Minimal APIs) — required for `BaseController` inheritance
-- [ ] **HTTP-02**: `BaseController<TEntity, TCreate, TUpdate, TRead>` abstract generic in `BaseApi.Core/Controllers/`, decorated with `[ApiController]` and `[Route("api/v1/[controller]")]`
-- [ ] **HTTP-03**: Standard CRUD verbs on every concrete controller: `GET /api/v1/{entity}` (list), `GET /api/v1/{entity}/{id}`, `POST /api/v1/{entity}`, `PUT /api/v1/{entity}/{id}`, `DELETE /api/v1/{entity}/{id}`
+- [x] **HTTP-01
+**: Controller-based ASP.NET Core (not Minimal APIs) — required for `BaseController` inheritance
+- [x] **HTTP-02
+**: `BaseController<TEntity, TCreate, TUpdate, TRead>` abstract generic in `BaseApi.Core/Controllers/`, decorated with `[ApiController]` and `[Route("api/v1/[controller]")]`
+- [x] **HTTP-03
+**: Standard CRUD verbs on every concrete controller: `GET /api/v1/{entity}` (list), `GET /api/v1/{entity}/{id}`, `POST /api/v1/{entity}`, `PUT /api/v1/{entity}/{id}`, `DELETE /api/v1/{entity}/{id}`
 - [ ] **HTTP-04**: Each entity has 3 DTOs (Create, Update, Read) under `BaseApi.Service/{Entity}/Dtos/`
 - [ ] **HTTP-05**: `CreateDto` excludes server-controlled fields (`Id`, `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`)
 - [ ] **HTTP-06**: `UpdateDto` excludes `Id`, `CreatedAt`, `CreatedBy` (everything else mutable)
 - [ ] **HTTP-07**: `ReadDto` includes every entity field
-- [ ] **HTTP-08**: Layering enforced: Controller → Service → Repository (no Controller-to-Repository shortcut)
-- [ ] **HTTP-09**: `BaseService<TEntity, TCreate, TUpdate, TRead>` in `BaseApi.Core` provides generic CRUD plus virtual `SyncJunctionsAsync` hook for M2M sync
+- [x] **HTTP-08
+**: Layering enforced: Controller → Service → Repository (no Controller-to-Repository shortcut)
+- [x] **HTTP-09
+**: `BaseService<TEntity, TCreate, TUpdate, TRead>` in `BaseApi.Core` provides generic CRUD plus virtual `SyncJunctionsAsync` hook for M2M sync
 - [x] **HTTP-10
 **: `IEntityMapper<TEntity, TCreate, TUpdate, TRead>` interface in `BaseApi.Core` defines mapping signatures consumed by `BaseService`
 - [ ] **HTTP-11**: Each entity has a Mapperly `[Mapper] partial class` in `BaseApi.Service/{Entity}/Mapping/` implementing `IEntityMapper`
 - [ ] **HTTP-12**: Concrete controllers are empty derived classes (e.g., `public class SchemasController : BaseController<SchemaEntity, SchemaCreateDto, SchemaUpdateDto, SchemaReadDto>`)
-- [ ] **HTTP-13**: `AddBaseApi<TDbContext>(IConfiguration)` extension in `BaseApi.Core/Extensions/` registers DI for: DbContext + naming convention + interceptors, generic repositories, generic services, mappers, validators, OTel, correlation, error middleware, health checks
-- [ ] **HTTP-14**: `UseBaseApi()` extension in `BaseApi.Core/Extensions/` registers middleware in correct order (exception → correlation → routing → CORS → endpoints)
-- [ ] **HTTP-15**: API versioning via `Asp.Versioning.Http` with URL prefix `/api/v1/` from v1 release (prevents breaking URL change later)
-- [ ] **HTTP-16**: OpenAPI/Swagger UI via `Swashbuckle.AspNetCore`; exposed in Development environment
+- [x] **HTTP-13
+**: `AddBaseApi<TDbContext>(IConfiguration)` extension in `BaseApi.Core/Extensions/` registers DI for: DbContext + naming convention + interceptors, generic repositories, generic services, mappers, validators, OTel, correlation, error middleware, health checks
+- [x] **HTTP-14
+**: `UseBaseApi()` extension in `BaseApi.Core/Extensions/` registers middleware in correct order (exception → correlation → routing → CORS → endpoints)
+- [x] **HTTP-15
+**: API versioning via `Asp.Versioning.Http` with URL prefix `/api/v1/` from v1 release (prevents breaking URL change later)
+- [x] **HTTP-16
+**: OpenAPI/Swagger UI via `Swashbuckle.AspNetCore`; exposed in Development environment
 
 ### Validation
 

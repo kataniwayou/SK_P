@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 7 context gathered
-last_updated: "2026-05-27T12:46:37.380Z"
+status: executing
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-05-27T14:20:05.488Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 6
-  total_plans: 13
-  completed_plans: 13
-  percent: 100
+  total_plans: 15
+  completed_plans: 14
+  percent: 93
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 06 — validation-mapping-base
+**Current focus:** Phase 07 — generic-http-base-composition-root
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
-Status: Ready to plan
+Phase: 07 (generic-http-base-composition-root) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [██████████] 100%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -70,6 +70,7 @@ Progress: [██████████] 100%
 | Phase 05 P02 | ~60min | 8 tasks + continuation (Gap 1 + Gap 2 closures) | 13 files (9 new test files + 1 new assembly fixture + 2 modified Plan 05-01 files + 1 modified test file) |
 | Phase 06 P01 | 9min | 3 tasks tasks | 9 files (5 new + 4 modified) files |
 | Phase 06 P02 | ~20min | 3 tasks | 13 files |
+| Phase 07 P07-01 | 11min | 4 tasks tasks | 18 files files |
 
 ## Accumulated Context
 
@@ -127,6 +128,11 @@ Recent decisions affecting current work:
 - Plan 06-02: TestEntityMapper attribute coverage extended to all 3 methods (ToEntity/Update/ToRead) — plan-as-written only specified Update; Mapperly RequiredMappingStrategy=Both fires RMG012 on ToEntity (5 errors: target Id+audit on TestCreateDto source) and RMG020 on ToRead (4 errors: source audit on TestReadDto target). Rule 3 plan-gap fix-forward. Phase 8's 5 entity mappers MUST replicate the 3-method pattern: 5 [MapperIgnoreTarget] each on ToEntity+Update, 4 [MapperIgnoreSource] on ToRead (or omit if Read DTO carries audit fields per HTTP-07)
 - Plan 06-02: Drift-detection probe (Check 4) confirms RMG012+RMG020 promotion is LIVE across all 3 mapper methods — adding an unmapped Drift property to TestEntity fires errors on ToEntity (RMG012), Update (RMG012), AND ToRead (RMG020). Phase 8 mappers inherit this safety net.
 - Plan 06-02: Run 1 of 3 had 7 Phase 5 Observability test failures (LogExport/LogLevelFilter/MetricsExport/TraceExport — all asserted Collection was empty) — OTel Collector had been up only 28s when Run 1 started, telemetry hadn't fully batched/scraped. Runs 2/3/4 all 76/76 GREEN. Matches Phase 5 SUMMARY's documented fixture-lifecycle robustness items. No Phase 6 code change needed; plan resume-signal explicitly accommodated this re-run path.
+- Plan 07-01: Encoded CONTEXT D-13 amendment — AddBaseApi<TDbContext> chains 6 sub-extensions on IServiceCollection (Persistence -> Health -> ErrorHandling -> Http -> Validation -> Mapping); Observability invoked separately on IHostApplicationBuilder via builder.AddBaseApiObservability(cfg) from Program.cs because OTel MEL bridge needs ILoggingBuilder (not on IServiceCollection)
+- Plan 07-01: AuditInterceptor lifetime = Singleton (Phase 3 D-06 canonical; RESEARCH Pitfall 4 reconciliation overrides CONTEXT D-14's Scoped snippet); BaseDbContext alias = Scoped via sp.GetRequiredService<TDbContext>() (RESEARCH Pitfall 5) so BaseService<...> can resolve the abstract type without captive-lifetime risk
+- Plan 07-01: IHasId marker interface chosen over dynamic dispatch (RESEARCH Open Q2 option b); BaseService validator null-guards throw InvalidOperationException with descriptive message (Discretion option a); BaseService exposes protected BaseDbContext DbContext { get; } property (Pitfall 3) for Plan 07-02 RecordingTestService ChangeTracker assertion
+- Plan 07-01 deviation [Rule 1]: removed typeof(TRead) and typeof(IReadOnlyList<TRead>) from BaseController ProducesResponseType attributes — CS0416 forbids generic type parameters in attribute arguments; status-code-only variants retained; ActionResult<TRead> return type still surfaces schema on Swagger; Phase 8 concrete controllers MAY add typed [ProducesResponseType(typeof(ConcreteReadDto), 200)] in their bodies
+- Plan 07-01 deviation [Rule 3]: promoted AddBaseApiObservability from internal to public static — required for cross-assembly invocation from BaseApi.Service/Program.cs per D-13 amendment; InternalsVisibleTo alternative rejected (adds indirection without value); visibility now matches other top-level entries (AddBaseApi, UseBaseApi, AddBaseApiValidation, AddBaseApiMapping)
 
 ### Pending Todos
 
@@ -152,9 +158,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 7 context gathered
-Resume file: --resume-file
+Last session: 2026-05-27T14:20:05.480Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
 
-**Planned Phase:** 6 (Validation + Mapping Base) — 2 plans — 2026-05-27T11:52:23.650Z
+**Planned Phase:** 07 (Generic HTTP Base + Composition Root) — 2 plans — 2026-05-27T13:59:35.467Z
 **Next:** /gsd-plan-phase 6 (Validation + Mapping Base — BaseDtoValidator + FluentValidation DI + Mapperly IEntityMapper seam; covers VALID-01..07 + HTTP-10)
