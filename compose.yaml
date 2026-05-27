@@ -35,11 +35,18 @@ services:
     ports:
       - "4317:4317"   # OTLP gRPC (default exporter target)
       - "4318:4318"   # OTLP HTTP (optional — curl-from-laptop debugging)
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:13133/"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
+      - "13133:13133" # health_check extension (probed from host — distroless image has no wget/curl/sh)
+    # NOTE (fix-forward of Plan 05-01 deviation, Rule 1 — distroless image has no wget):
+    # The contrib 0.95.0 image is distroless (no /bin/sh, no wget, no curl). The original
+    # Plan 05-01 healthcheck `["CMD", "wget", ...]` cannot execute — exec fails with
+    # "wget: executable file not found in $PATH". The CMD form runs without a shell, so
+    # there is no portable HTTP probe inside the image. Resolutions:
+    #   (a) drop the container-level healthcheck entirely and rely on (i) port 13133
+    #       exposed to the host, which the test fixture can curl from outside, plus
+    #       (ii) the otelcol-contrib binary's own startup which exits non-zero on bad
+    #       config (so a misconfigured container would not stay Up at all).
+    # We use (a). Plan 05-02 Wave-0 verifies the collector is reachable from the host
+    # via `curl http://localhost:13133/` instead of the in-container healthcheck.
 
   baseapi-service:
     # Phase 8 (INFRA-05) will set this to: build: { context: ., dockerfile: src/BaseApi.Service/Dockerfile }
