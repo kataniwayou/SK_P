@@ -1,4 +1,7 @@
-# OTel Collector Contrib config — sourced verbatim from CONTEXT.md D-10.
+# OTel Collector Contrib config — sourced verbatim from CONTEXT.md D-10, then
+# extended in Plan 05-02 with a filterprocessor entry to close the SC#4 metrics-half
+# gap that Plan 05-01 deferred (Rule 1 deviation — see 05-01-SUMMARY Deviation #2).
+#
 # Receivers accept OTLP gRPC (4317) + HTTP (4318); exporters write to a
 # host-mounted JSON-lines file (read by tests/BaseApi.Tests/Observability/*Tests.cs)
 # AND stream to container stdout (live tailing via `docker logs sk-otel-collector`).
@@ -11,6 +14,32 @@ receivers:
         endpoint: 0.0.0.0:4317
       http:
         endpoint: 0.0.0.0:4318
+
+processors:
+  # Plan 05-02 fix-forward to Plan 05-01 (closes SC#4 metrics-half gap).
+  #
+  # CONTEXT: OpenTelemetry.Instrumentation.AspNetCore 1.15.0's
+  # MeterProviderBuilder.AddAspNetCoreInstrumentation is PARAMETERLESS — no Filter
+  # callback exists on the metrics side (only on the TracerProviderBuilder overload).
+  # In .NET 8 the AspNetCore HTTP server metrics come from the built-in
+  # `Microsoft.AspNetCore.Hosting` Meter whose `http.server.request.duration`
+  # instrument has no per-tag drop knob; `.DisableHttpMetrics()` is .NET 9+ only.
+  #
+  # SOLUTION (Collector-side filtering): the otel-collector-contrib filterprocessor
+  # drops data points whose `metric.name == "http.server.request.duration"` AND whose
+  # `attributes["http.route"]` starts with `/health/`. SDK still emits, Collector
+  # drops before the file exporter — tests observe ZERO health-route data points.
+  #
+  # This is the idiomatic OTel architecture: SDK emits all, Collector applies
+  # ops-policy filtering. Backend filtering (Grafana/Tempo/Datadog) becomes a
+  # secondary layer atop this. Plan 05-01 OBSERV-08 / HEALTH-05 are now FULLY
+  # satisfied for metrics (previously partial — backend-only).
+  filter/health_metrics:
+    error_mode: ignore
+    metrics:
+      datapoint:
+        # Drop http.server.request.duration data points whose http.route is a health probe
+        - 'metric.name == "http.server.request.duration" and IsMatch(attributes["http.route"], "^/health/.*")'
 
 exporters:
   file:
@@ -33,6 +62,7 @@ service:
       exporters: [file, logging]
     metrics:
       receivers: [otlp]
+      processors: [filter/health_metrics]
       exporters: [file, logging]
     traces:
       receivers: [otlp]
