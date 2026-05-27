@@ -72,6 +72,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Phase 4 addition: WebApplicationFactory<Program> for integration tests
+         (Plan 04-02 CONTEXT.md D-14 + PATTERNS.md line 397). Version pinned in
+         Directory.Packages.props line 82 (Phase 1 D-13). No Version= attribute
+         (CPM contract). -->
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- Phase 3 addition: FrameworkReference for DefaultHttpContext / ClaimsPrincipal
          in StubHttpContextAccessor (CONTEXT.md D-13 + Phase 3 RESEARCH.md A3). -->
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
@@ -79,6 +87,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\BaseApi.Core\BaseApi.Core.csproj" />
+    <!-- Phase 4 addition (Plan 04-02 PATTERNS.md line 398): WebApplicationFactory<Program>
+         resolves the partial-class marker in BaseApi.Service/Program.cs line 72. -->
+    <ProjectReference Include="..\..\src\BaseApi.Service\BaseApi.Service.csproj" />
   </ItemGroup>
 
 </Project>
