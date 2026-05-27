@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 07-01-PLAN.md
-last_updated: "2026-05-27T14:20:05.488Z"
+status: verifying
+stopped_at: Completed 07-02-PLAN.md
+last_updated: "2026-05-27T15:04:37.501Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-26)
 
 Phase: 07 (generic-http-base-composition-root) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-27
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -71,6 +71,7 @@ Progress: [█████████░] 93%
 | Phase 06 P01 | 9min | 3 tasks tasks | 9 files (5 new + 4 modified) files |
 | Phase 06 P02 | ~20min | 3 tasks | 13 files |
 | Phase 07 P07-01 | 11min | 4 tasks tasks | 18 files files |
+| Phase 07 P02 | ~35min | 4 tasks (3 auto + 1 human-verify resolved by automated coverage) tasks | 14 files (13 new test files + 1 SUMMARY) files |
 
 ## Accumulated Context
 
@@ -133,6 +134,12 @@ Recent decisions affecting current work:
 - Plan 07-01: IHasId marker interface chosen over dynamic dispatch (RESEARCH Open Q2 option b); BaseService validator null-guards throw InvalidOperationException with descriptive message (Discretion option a); BaseService exposes protected BaseDbContext DbContext { get; } property (Pitfall 3) for Plan 07-02 RecordingTestService ChangeTracker assertion
 - Plan 07-01 deviation [Rule 1]: removed typeof(TRead) and typeof(IReadOnlyList<TRead>) from BaseController ProducesResponseType attributes — CS0416 forbids generic type parameters in attribute arguments; status-code-only variants retained; ActionResult<TRead> return type still surfaces schema on Swagger; Phase 8 concrete controllers MAY add typed [ProducesResponseType(typeof(ConcreteReadDto), 200)] in their bodies
 - Plan 07-01 deviation [Rule 3]: promoted AddBaseApiObservability from internal to public static — required for cross-assembly invocation from BaseApi.Service/Program.cs per D-13 amendment; InternalsVisibleTo alternative rejected (adds indirection without value); visibility now matches other top-level entries (AddBaseApi, UseBaseApi, AddBaseApiValidation, AddBaseApiMapping)
+- Plan 07-02: SwaggerEnvironmentFacts (AddApplicationPart + ProductionWebAppFactory env override) is the canonical SC#4 proof — manual Swagger UI smoke checkpoint resolved by user-approved automated-coverage rationale because v1 BaseApi.Service has zero concrete controllers (Phase 8 will add entity controllers). Live-boot empty Swagger UI in v1 is structurally expected, not a regression.
+- Plan 07-02 Blocker 1 fix: Phase7TestDbContext (BaseDbContext subclass) constructed directly via DbContextOptionsBuilder<Phase7TestDbContext>().UseNpgsql(_fixture.ConnectionString) — PostgresFixture surface has only ConnectionString (no DbContext property), and existing Persistence/TestDbContext tracks BaseApi.Tests.Persistence.TestEntity (a DIFFERENT type from BaseApi.Tests.Validation.TestEntity the Phase 7 facts use).
+- Plan 07-02 Blocker 2 fix: TestCreateDtoValidator added (sibling to TestDtoValidator which only covers TestUpdateDto) so BaseService<TestEntity,TestCreateDto,TestUpdateDto,TestReadDto>'s IValidator<TestCreateDto> ctor null-guard does not throw at Phase7WebAppFactory boot. Mirrors Include(new BaseDtoValidator<T>()) pattern verbatim.
+- Plan 07-02 Warning 7 option b: TestsController ctor injects ABSTRACT BaseService<TestEntity,TestCreateDto,TestUpdateDto,TestReadDto> (not concrete RecordingTestService) — makes Phase7WebAppFactory's AddScoped<BaseService<...>>(sp => sp.GetRequiredService<RecordingTestService>()) alias load-bearing and matches the Phase 8 expected pattern where concrete controllers inject the abstract base for DI-friendly reuse.
+- Plan 07-02 RESEARCH A6 falsified: Asp.Versioning URL-segment versioning returns 404 (route no-match) NOT 400 for unsupported versions like /api/v99/tests. VersioningFacts assertion broadened to accept either 400 or 404 while still verifying correlationId propagation through the response path. Phase 8 may want to revisit if richer version-mismatch semantics are needed.
+- Plan 07-02 Task 2 Rule 3 fix-forward: Phase7WebAppFactory extended beyond plan-as-written with per-class throwaway Postgres DB + Phase7TestDbContext registration + BaseDbContext alias remapping so Repository<TestEntity> resolves at integration-test time. AppDbContext placeholder has no DbSets so the abstract repository cannot bind without this Phase7-only re-wiring. Plan-gap classification.
 
 ### Pending Todos
 
@@ -158,8 +165,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T14:20:05.480Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-05-27T15:00:41.364Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
 
 **Planned Phase:** 07 (Generic HTTP Base + Composition Root) — 2 plans — 2026-05-27T13:59:35.467Z
