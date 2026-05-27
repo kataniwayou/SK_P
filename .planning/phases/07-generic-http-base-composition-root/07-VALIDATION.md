@@ -1,11 +1,12 @@
 ---
 phase: 7
 slug: generic-http-base-composition-root
-status: planned
+status: complete
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-05-27
 last_updated: 2026-05-27
+last_audit: 2026-05-27
 ---
 
 # Phase 7 — Validation Strategy
@@ -50,7 +51,7 @@ last_updated: 2026-05-27
 | 07-02-02 | 07-02 | 2 | HTTP-16 | T-07-01 / Information Disclosure (Swagger in Prod) | `/swagger` 200 in Dev, 404 in Prod via ProductionWebAppFactory pattern (UseEnvironment(Environments.Production)) | integration | `dotnet test --filter "FullyQualifiedName~SwaggerEnvironmentFacts"` | ✅ | ✅ green |
 | 07-02-02 | 07-02 | 2 | SC#3 (Program.cs thin) | — | Program.cs source inspection — positive presence of AddBaseApi< / UseBaseApi( / MapControllers / AddBaseApiObservability (D-13 amendment per Plan 07-01 `<context_deviation>`); negative absence of AddOpenTelemetry / AddHealthChecks / AddExceptionHandler< / AddDbContext< / AddSwaggerGen / AddApiVersioning; body line count ≤ 10 | unit (file read) | `dotnet test --filter "FullyQualifiedName~ProgramMinimalityFacts"` | ✅ | ✅ green |
 | 07-02-03 | 07-02 | 2 | — | — | Regression: all 76 prior Phase 1-6 facts GREEN × 3 consecutive runs post-AddBaseApi migration encoded as a single PowerShell `1..3 \| ForEach-Object { dotnet test ... }` loop in `<automated>` (Warning 9 fix — not human-driven); byte-identical psql \l snapshot BEFORE/AFTER; tests/.otel-out clean | regression | PowerShell `1..3 \| ForEach-Object { dotnet test SK_P.sln --no-restore; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE } }` + Compare-Object psql_before psql_after + Test-Path tests\.otel-out\telemetry.jsonl | ✅ | ✅ green (98/98 × 3 runs: 20.7s / 19.0s / 18.4s — Phase 6's known-stable 76 plus 22 new Phase 7 facts) |
-| 07-02-04 | 07-02 | 2 | HTTP-16 / SC#4 (visual) | T-07-01 / Information Disclosure (defense-in-depth) | Manual UI smoke — Swagger UI lists 5 verbs under "Tests" group at /swagger in Development; X-Correlation-Id parameter visible on each operation expansion | manual | `dotnet run --project src/BaseApi.Service` + browser /swagger | ⬜ pending | ⬜ pending (checkpoint awaiting human) |
+| 07-02-04 | 07-02 | 2 | HTTP-16 / SC#4 (visual) | T-07-01 / Information Disclosure (defense-in-depth) | Manual UI smoke checkpoint resolved via user-approved automated-coverage rationale — SwaggerEnvironmentFacts loads TestsController via AddApplicationPart inside WebApplicationFactory and asserts /swagger 200 in Dev + 404 in Prod + /swagger/v1/swagger.json 200 in Dev + 404 in Prod across 4 facts; live-boot UI in v1 is structurally empty (Phase 8 adds the 5 entity controllers) | manual→automated (resolved) | covered by `dotnet test --filter "FullyQualifiedName~SwaggerEnvironmentFacts"` | ✅ (resolved 2026-05-27) | ✅ resolved (user-approved 2026-05-27 — SwaggerEnvironmentFacts is canonical SC#4 proof; see Manual-Only section + 07-02-SUMMARY decision matrix) |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -96,7 +97,23 @@ All Wave 0 artifacts are landed atomically by Plan 07-01 (package pins + BaseApi
 - [x] Regression: all 76 prior Phase 1-6 facts GREEN × 3 consecutive runs post-AddBaseApi migration encoded as PowerShell loop in `<automated>` (Phase 3 D-18 cadence; Warning 9 fix from revision iter 1) — verified during Plan 07-02 Task 3 execution (98/98 × 3 runs GREEN: 20.7s / 19.0s / 18.4s; psql snapshots byte-identical; tests/.otel-out clean)
 - [x] `nyquist_compliant: true` set in frontmatter (planner-filled — Task IDs are concrete `07-02-02` / `07-02-03` / `07-02-04`)
 
-**Approval:** approved by ROADMAP SC verification — Plan 07-02 Task 3 (3 consecutive GREEN runs encoded as PowerShell `<automated>` loop) + Task 4 (manual UI smoke) close all 9 HTTP-* REQ-IDs and SC#1-4. Pending execution.
+**Approval:** approved by ROADMAP SC verification — Plan 07-02 Task 3 (3 consecutive GREEN runs encoded as PowerShell `<automated>` loop, 98/98 GREEN at 20.7s / 19.0s / 18.4s) + Task 4 (manual UI smoke checkpoint resolved 2026-05-27 via user-approved automated-coverage rationale — SwaggerEnvironmentFacts as canonical SC#4 proof) close all 9 HTTP-* REQ-IDs and SC#1-4. **Executed and approved 2026-05-27.**
+
+---
+
+## Validation Audit 2026-05-27
+
+| Metric | Count |
+|--------|-------|
+| Requirements audited | 9 HTTP-* + 4 SC + 1 regression |
+| Gaps found | 0 |
+| Resolved | 0 (no spawn needed) |
+| Escalated | 0 |
+| Manual-only | 2 (defense-in-depth cross-checks; primary SC#4 proof is automated) |
+
+**Audit outcome:** Phase 7 is Nyquist-compliant. All 9 HTTP-* requirements (HTTP-01/02/03/08/09/13/14/15/16) plus SC#1-4 have automated coverage by 9 fact-test classes (BaseControllerRoutesFacts, BaseServiceOrderingFacts, NotFoundFacts, AddBaseApiFacts, UseBaseApiPipelineFacts, VersioningFacts, SwaggerEnvironmentFacts, ProgramMinimalityFacts) under Phase7WebAppFactory + ProductionWebAppFactory. All 14 test files claimed by VALIDATION.md exist on disk. Regression replay (98/98 GREEN × 3 consecutive runs) verified during Plan 07-02 Task 3 execution. No new tests required.
+
+**State drift fixed in this audit:** (a) frontmatter `status: planned` → `complete` (phase executed per 07-02-SUMMARY.md); (b) Per-Task Map row 07-02-04 status `⬜ pending` → `✅ resolved` reflecting user-approved automated-coverage rationale documented in 07-02-SUMMARY.md decision matrix; (c) Sign-off "Pending execution" → "Executed and approved 2026-05-27".
 
 ---
 
