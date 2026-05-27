@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 6 context gathered
-last_updated: "2026-05-27T11:52:23.661Z"
+status: executing
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-05-27T12:04:01.845Z"
 last_activity: 2026-05-27
 progress:
   total_phases: 8
   completed_phases: 5
   total_plans: 13
-  completed_plans: 11
-  percent: 85
+  completed_plans: 12
+  percent: 92
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-26)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 5 — Observability + Health Probes
+**Current focus:** Phase 06 — validation-mapping-base
 
 ## Current Position
 
-Phase: 6
-Plan: Not started
-Status: Ready to plan
+Phase: 06 (validation-mapping-base) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
 Last activity: 2026-05-27
 
-Progress: [██████████] 100% (planned plans complete; Phase 6-8 plans TBD)
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [██████████] 100% (planned plans complete; Phase 6
 | Phase 04 P02 | ~40min | 7 tasks tasks | 14 files files |
 | Phase 05 P01 | 10min | 7 tasks | 9 files |
 | Phase 05 P02 | ~60min | 8 tasks + continuation (Gap 1 + Gap 2 closures) | 13 files (9 new test files + 1 new assembly fixture + 2 modified Plan 05-01 files + 1 modified test file) |
+| Phase 06 P01 | 9min | 3 tasks tasks | 9 files (5 new + 4 modified) files |
 
 ## Accumulated Context
 
@@ -119,6 +120,8 @@ Recent decisions affecting current work:
 - Plan 05-02: Un-sealing OtelCollectorFixture for nested inheritance (Pattern G) — HealthEndpointsTests needs 4 nested subclasses overriding ConfigureWebHost; sealing would have forced awkward composition
 - Plan 05-02: Three-ctor IClassFixture activation strategy (Pattern A details) — public parameterless ctor for IClassFixture + internal overloads for direct `new`; default parameters do NOT satisfy IClassFixture parameter resolution
 - Plan 05-02: ROADMAP Phase 5 SC#1-5 + D-16 + T-05-PII/LOG-INJECT/OTLP-EXFIL/READY-DB-EXPOSE all GREEN via 16 new + 31 carryover = 47 facts; 3 consecutive dotnet test runs (17.67/17.71/18.09s); byte-identical psql \l BEFORE/AFTER; tests/.otel-out/telemetry.jsonl absent post-suite (D-11)
+- Plan 06-01: 5 BaseApi.Core seam files (IBaseDto, BaseDtoValidator<T>, IEntityMapper<,,,>, AddBaseApiValidation, AddBaseApiMapping) landed verbatim from RESEARCH Code Examples 1-5; Program.cs D-18 wiring inserted at Phase-7 cut-paste slot; Directory.Build.props promotes RMG007/RMG012/RMG020/RMG089 (RMG089 Info-severity is load-bearing — TreatWarningsAsErrors only catches Warning+); Mapperly PackageReference added to BaseApi.Tests.csproj with PrivateAssets=all ExcludeAssets=runtime; WebAppFactory unsealed (sealed→public class) per path A precedent set by Phase 5 OtelCollectorFixture; 47/47 Phase 1-5 regression suite passed unchanged.
+- Plan 06-01 deviation (Rule 1 - plan internal inconsistency): Directory.Build.props sub-edit 1 verbatim text contained MP0001/MP0011/MP0020/MP0021 codes but Plan verification line 734 required those codes be grep-empty across Directory.Build.props/src/tests. Resolved by rephrasing amended D-04 comment to convey the same correction history without naming the specific MP codes — preserves educational content (RESEARCH A-01 reference) and satisfies the grep-empty assertion. Build still 0-warning Release+Debug after rephrase.
 
 ### Pending Todos
 
@@ -144,9 +147,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 6 context gathered
-Resume file: --resume-file
+Last session: 2026-05-27T12:04:01.837Z
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None
 
 **Planned Phase:** 6 (Validation + Mapping Base) — 2 plans — 2026-05-27T11:52:23.650Z
 **Next:** /gsd-plan-phase 6 (Validation + Mapping Base — BaseDtoValidator + FluentValidation DI + Mapperly IEntityMapper seam; covers VALID-01..07 + HTTP-10)

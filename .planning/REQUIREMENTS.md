@@ -66,7 +66,8 @@ Requirements for initial release. Each maps to roadmap phases.
 - [ ] **HTTP-07**: `ReadDto` includes every entity field
 - [ ] **HTTP-08**: Layering enforced: Controller → Service → Repository (no Controller-to-Repository shortcut)
 - [ ] **HTTP-09**: `BaseService<TEntity, TCreate, TUpdate, TRead>` in `BaseApi.Core` provides generic CRUD plus virtual `SyncJunctionsAsync` hook for M2M sync
-- [ ] **HTTP-10**: `IEntityMapper<TEntity, TCreate, TUpdate, TRead>` interface in `BaseApi.Core` defines mapping signatures consumed by `BaseService`
+- [x] **HTTP-10
+**: `IEntityMapper<TEntity, TCreate, TUpdate, TRead>` interface in `BaseApi.Core` defines mapping signatures consumed by `BaseService`
 - [ ] **HTTP-11**: Each entity has a Mapperly `[Mapper] partial class` in `BaseApi.Service/{Entity}/Mapping/` implementing `IEntityMapper`
 - [ ] **HTTP-12**: Concrete controllers are empty derived classes (e.g., `public class SchemasController : BaseController<SchemaEntity, SchemaCreateDto, SchemaUpdateDto, SchemaReadDto>`)
 - [ ] **HTTP-13**: `AddBaseApi<TDbContext>(IConfiguration)` extension in `BaseApi.Core/Extensions/` registers DI for: DbContext + naming convention + interceptors, generic repositories, generic services, mappers, validators, OTel, correlation, error middleware, health checks
@@ -76,13 +77,19 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Validation
 
-- [ ] **VALID-01**: `FluentValidation` 12.x + `FluentValidation.DependencyInjectionExtensions` only (no `FluentValidation.AspNetCore` — deprecated)
-- [ ] **VALID-02**: Validators discovered via `services.AddValidatorsFromAssembly(...)`
+- [x] **VALID-01
+**: `FluentValidation` 12.x + `FluentValidation.DependencyInjectionExtensions` only (no `FluentValidation.AspNetCore` — deprecated)
+- [x] **VALID-02
+**: Validators discovered via `services.AddValidatorsFromAssembly(...)`
 - [ ] **VALID-03**: `IValidator<TDto>` invoked explicitly in the Service layer via `ValidateAsync`; no MVC auto-validation
-- [ ] **VALID-04**: `BaseDtoValidator<T>` in `BaseApi.Core/Validators/` provides shared rules for `Name`, `Version`, `Description`; concrete validators inherit via `Include(...)`
-- [ ] **VALID-05**: `Name`: NotEmpty, MaxLength(200)
-- [ ] **VALID-06**: `Version`: NotEmpty, regex `^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$` (strict SemVer numeric triple, no leading zeros)
-- [ ] **VALID-07**: `Description`: MaxLength(2000)
+- [x] **VALID-04
+**: `BaseDtoValidator<T>` in `BaseApi.Core/Validators/` provides shared rules for `Name`, `Version`, `Description`; concrete validators inherit via `Include(...)`
+- [x] **VALID-05
+**: `Name`: NotEmpty, MaxLength(200)
+- [x] **VALID-06
+**: `Version`: NotEmpty, regex `^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$` (strict SemVer numeric triple, no leading zeros)
+- [x] **VALID-07
+**: `Description`: MaxLength(2000)
 - [ ] **VALID-08**: `SchemaCreate/UpdateDto.Definition`: valid JSON syntax AND valid JSON Schema (draft 2020-12) via `JsonSchema.Net`
 - [ ] **VALID-09**: `JsonSchema.Net` remote `$ref` network access disabled (SSRF prevention)
 - [ ] **VALID-10**: `ProcessorCreate/UpdateDto.SourceHash`: regex `^[a-f0-9]{64}$` (lowercase SHA-256 hex)
