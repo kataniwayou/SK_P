@@ -17,15 +17,25 @@ namespace BaseApi.Core.DependencyInjection;
 /// spans (OBSERV-12 / T-05-PII — bare <c>.AddNpgsql()</c> per Phase 5 D-05 corrected — the
 /// 8.0.4 package default already does NOT capture parameter values).
 /// </summary>
-internal static class ObservabilityServiceCollectionExtensions
+public static class ObservabilityServiceCollectionExtensions
 {
     /// <summary>
     /// Takes the host builder because <c>builder.Logging.AddOpenTelemetry</c> requires the
     /// <see cref="ILoggingBuilder"/> surface (not <see cref="IServiceCollection"/>). The
     /// host builder gives access to both <c>.Logging</c> and <c>.Services</c>. This is the
     /// engineering necessity behind the CONTEXT D-13 amendment (see plan body).
+    ///
+    /// <para>
+    /// DEVIATION (Rule 3 — plan-gap fix-forward): the plan body specified <c>internal static</c>,
+    /// but this method is invoked from <c>BaseApi.Service/Program.cs</c> across the assembly
+    /// boundary (D-13 amendment requires separate invocation on IHostApplicationBuilder).
+    /// Promoting to <c>public static</c> matches the visibility of the two other top-level
+    /// entries (AddBaseApi, UseBaseApi) + already-public Phase 6 extensions
+    /// (AddBaseApiValidation, AddBaseApiMapping). The alternative (InternalsVisibleTo) adds
+    /// indirection without value.
+    /// </para>
     /// </summary>
-    internal static IHostApplicationBuilder AddBaseApiObservability(
+    public static IHostApplicationBuilder AddBaseApiObservability(
         this IHostApplicationBuilder builder, IConfiguration cfg)
     {
         var serviceName    = cfg["Service:Name"]!;
