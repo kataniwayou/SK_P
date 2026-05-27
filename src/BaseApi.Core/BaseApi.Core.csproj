@@ -54,4 +54,25 @@
     <PackageReference Include="FluentValidation" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Phase 5 Observability (CONTEXT.md D-08 + D-16). OTel core/exporter/hosting +
+         AspNetCore/Http auto-instrumentation pinned in Directory.Packages.props since
+         Phase 1 D-05. Phase 5 ADDS Runtime (D-16) + Npgsql.OpenTelemetry (D-05 corrected).
+         Versions resolve from Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="Npgsql.OpenTelemetry" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Phase 5 Health Checks (CONTEXT.md D-03 + D-07). NpgSql probe + UI.Client JSON writer.
+         Versions resolve from Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+    <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
+    <PackageReference Include="AspNetCore.HealthChecks.UI.Client" />
+  </ItemGroup>
+
 </Project>
