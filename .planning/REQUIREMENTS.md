@@ -134,12 +134,13 @@
 
 ## Traceability
 
-Phase mapping will be filled in by `gsd-roadmapper` during `/gsd-new-milestone` Step 10. Current expected mapping (subject to roadmapper validation):
+Phase-to-REQ-ID mapping, locked by `/gsd-new-milestone` roadmap creation 2026-05-29.
 
-| Phase | Title | Requirements |
-|-------|-------|--------------|
-| 12 | Redis infra + composition + healthcheck + DI | INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05 |
-| 13 | OrchestrationService split + L3 fetch + L1 build (no validation yet, no Redis write) | ORCH-SPLIT-01..04, L1-BUILD-01..05 |
-| 14 | Validation gates (DFS + schema-edge + payload-config-schema) | L1-VALIDATE-01..10 |
-| 15 | L2 Redis projection write + Stop existence check | L2-PROJECT-01..07, ORCH-START-01..08, ORCH-STOP-01..07, OBSERV-REDIS-01..04 |
-| 16 | Idempotency + concurrency + L1 cleanup + 3-GREEN closeout | TEST-REDIS-06..09 + cross-cutting closeout |
+| Phase | Title | REQ-ID Count | Requirements |
+|-------|-------|--------------|--------------|
+| 12 | Redis infra + composition + healthcheck + DI registration | 15 | INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05 |
+| 13 | OrchestrationService split + L3 fetch + L1 build | 9 | ORCH-SPLIT-01..04, L1-BUILD-01..05 |
+| 14 | Validation gates (DFS + schema-edge + payload-config-schema) | 10 | L1-VALIDATE-01..10 |
+| 15 | L2 Redis projection write + Stop existence check | 26 | L2-PROJECT-01..07, ORCH-START-01..08, ORCH-STOP-01..07, OBSERV-REDIS-01..04 |
+| 16 | Idempotency + concurrency + L1 cleanup + 3-GREEN closeout | 4 | TEST-REDIS-06..09 |
+| **Total** | | **64** | All v3.3.0 REQ-IDs covered, each assigned to exactly one phase. |

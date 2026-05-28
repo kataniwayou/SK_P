@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: defining_requirements
-stopped_at: Milestone v3.3.0 started — PROJECT.md updated with Current Milestone section; STATE.md reset; REQUIREMENTS.md + ROADMAP.md still to be created. v3.2.0 (Steps API MVP) shipped 2026-05-28 with git tag v3.2.0; archived to milestones/v3.2.0-{ROADMAP,REQUIREMENTS}.md.
-last_updated: "2026-05-28T00:00:00Z"
-last_activity: 2026-05-28
+status: planning_phase
+stopped_at: Milestone v3.3.0 roadmap created — 5 phases (12-16) cover 64 REQ-IDs from REQUIREMENTS.md; Phase 12 (Redis infra + composition + healthcheck + DI) ready for /gsd-discuss-phase 12.
+last_updated: "2026-05-29T00:00:00Z"
+last_activity: 2026-05-29
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -18,20 +18,20 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start)
+See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revised 2026-05-28 for Stop scope reduction + correlationId)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship.**
-**Current focus:** Milestone v3.3.0 — defining requirements for the L3 → L1 → L2 orchestration build pipeline.
+**Current focus:** Milestone v3.3.0 Phase 12 — Redis infra + composition + healthcheck + DI registration.
 
 ## Current Position
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
-Phase: Not started (defining requirements)
+Phase: 12 — Redis infra + composition + healthcheck + DI registration (Not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-28 — Milestone v3.3.0 started
+Status: Roadmap complete; ready for `/gsd-discuss-phase 12`
+Last activity: 2026-05-29 — v3.3.0 roadmap created (5 phases / 64 REQ-IDs)
 
-Progress: [░░░░░░░░░░] 0% (v3.3.0 — phases TBD by roadmapper)
+Progress: [░░░░░░░░░░] 0% (v3.3.0 — 0/5 phases)
 
 ## Performance Metrics
 
