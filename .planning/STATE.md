@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.11.3
 milestone_name: milestone
 status: executing
-stopped_at: "Completed Phase 11 Plan 06 (Wave 0 ES index name probe + 4 new test-helper files: Phase11WebAppFactory + ElasticsearchTestClient + PrometheusTestClient + EsIndexNames — commit 765b3fc)"
-last_updated: "2026-05-28T13:02:08.447Z"
+stopped_at: Completed Phase 11 Plan 07 (SchemasLogsE2ETests + SchemasMetricsE2ETests round-trip E2E pair — commit e3016e2)
+last_updated: "2026-05-28T13:24:43.594Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 41
-  completed_plans: 37
-  percent: 90
+  completed_plans: 38
+  percent: 93
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — EXECUTING
-Plan: 7 of 10
+Plan: 8 of 10
 Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [█████████░] 90%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -98,6 +98,7 @@ Progress: [█████████░] 90%
 | Phase 11 P04 | ~3min | 3 tasks | 1 files |
 | Phase 11 P05 | ~4min | 4 tasks tasks | 5 files files |
 | Phase 11 P06 | ~10min | 6 tasks | 4 files |
+| Phase 11 P07 | ~10min | 4 tasks tasks | 2 files files |
 
 ## Accumulated Context
 
@@ -261,6 +262,9 @@ Recent decisions affecting current work:
 - Plan 11-06: PrometheusTestClient.PollPrometheusUntilSumAtLeast MANDATORY 15s initial Task.Delay BEFORE first query (RESEARCH Pattern 3 / Pitfall 7) — Prom 15s scrape interval per D-08 means a naive poll-from-t=0 loop wastes the entire first scrape cycle on empty result vectors. PollIntervalMs=3_000, PollTimeoutMs=60_000. SumSampleValues static helper sums across multi-label result vectors. QueryPrometheus wraps PromQL in Uri.EscapeDataString (RESEARCH Don't Hand-Roll — PromQL { } " = break unencoded URL queries).
 - Plan 11-06: MTP filter syntax discovery — Microsoft.Testing.Platform uses --filter-class / --filter-method / --filter-namespace (NOT VSTest's --filter "FullyQualifiedName~ClassName" which produces MTP0001 warning + silently runs entire suite). Canonical regression smoke shape: BaseApi.Tests.exe --filter-class "BaseApi.Tests.Observability.HealthEndpointsTests". Future test-filtered runs on this codebase should bake this into plan command shapes.
 - Plan 11-06: ElasticsearchTestClient PollEsForLog exponential backoff 200ms → 3200ms cap (RESEARCH Pattern 2 verbatim from sk2_1). HTTP 404 + empty-hits tolerance (RESEARCH Pitfall 5 — ES creates data stream lazily on first write). HttpRequestException retry-on-network-blip. JsonElement.Clone-after-doc-disposal pattern lifted verbatim from OtelCollectorFixture line 211 — both new polling helpers + the Phase 5 fixture now use the identical JSON-detach idiom.
+- Plan 11-07: 2 new E2E test classes (SchemasLogsE2ETests + SchemasMetricsE2ETests) under tests/BaseApi.Tests/Observability/ ship as single atomic commit e3016e2 (225 insertions / 0 deletions). Both carry [Trait('Phase','11')] + [Trait('Category','E2E')] + [Collection('Observability')] + IClassFixture<Phase11WebAppFactory>. Per-test unique correlation IDs ($"{Guid.NewGuid():N}") per Pitfall 5 + T-11-03. Schema POST as traffic source per CONTEXT D-17 (real business endpoint exercises full HTTP-01..16 pipeline). 2/2 GREEN across 2 consecutive runs (~15-17s each fact; ~33s combined — well within < 90s plan budget). OBSERV-13 + OBSERV-14 + TEST-07 closed behaviorally.
+- Plan 11-07 deviation [Rule 1 plan-vs-live discrepancy, plan-authorized via Task 3 troubleshooting step 5]: corrected http_route PromQL label value from plan-as-written URL form 'api/v1/schemas' to live empirical route-TEMPLATE literal 'api/v{version:apiVersion}/Schemas'. ASP.NET Core HTTP instrumentation emits the route TEMPLATE verbatim — preserves both the Asp.Versioning route constraint syntax AND the [controller] PascalCase token resolution; the resolved URL path is NOT what flows to the http_route Prom label. Plan's literal grep gate at verify line 377 documented as superseded; must_haves invariant satisfied semantically (the test correctly polls the actual emitted label and passes). Empirically confirmed against curl :8889/metrics 2026-05-28. Reusable knowledge for any future PromQL filter on http_route for versioned/decorated controllers (Phase 9 OrchestrationController = 'api/v{version:apiVersion}/Orchestration' etc.). Plan 06-01 / 08-01 / 10-02 / 11-04 educational-rephrase precedent extended to PromQL label semantics.
+- Plan 11-07 pattern: route-template-preservation discovery — ASP.NET Core HTTP instrumentation (via OpenTelemetry.Instrumentation.AspNetCore + collector resource_to_telemetry_conversion: true per D-07) passes the route TEMPLATE literal as the http_route Prom label, NOT the resolved request URL. The [Route("api/v{version:apiVersion}/[controller]")] decoration on BaseController produces http_route='api/v{version:apiVersion}/Schemas' (Schema POST) or 'api/v{version:apiVersion}/Orchestration' (orchestration). Future PromQL assertions on http_route for any sk_p controller MUST use the route-template literal form, NOT the URL-path form. Pattern reusable for Plan 11-08b MetricsExportTests migration + any v2 metric-based monitoring/alerting on per-endpoint request rates.
 
 ### Roadmap Evolution
 
@@ -292,8 +296,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T13:02:08.438Z
-Stopped at: Completed Phase 11 Plan 06 (Wave 0 ES index name probe + 4 new test-helper files: Phase11WebAppFactory + ElasticsearchTestClient + PrometheusTestClient + EsIndexNames — commit 765b3fc)
+Last session: 2026-05-28T13:23:40.512Z
+Stopped at: Completed Phase 11 Plan 07 (SchemasLogsE2ETests + SchemasMetricsE2ETests round-trip E2E pair — commit e3016e2)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
