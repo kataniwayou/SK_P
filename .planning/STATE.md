@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.11.3
 milestone_name: milestone
-status: executing
-stopped_at: Completed Phase 11 Plan 08b (LogExport + LogLevelFilter + MetricsExport migration to ES/Prom polling — commit c40d062; 7/7 facts GREEN; OtelCollectorFixture orphaned, deletion deferred to Plan 11-08c)
-last_updated: "2026-05-28T13:53:58.202Z"
+status: complete
+stopped_at: Completed Phase 11 Plan 08c (Phase 11 close — OtelCollectorFixture.cs deleted + 2 residual orphan doc-comment rephrase fix-forwards + 3-consecutive-GREEN closing cadence 163s/161s/162s at 142/142 facts + byte-identical psql \l SHA-256 0d98b0de... — Phase 11 COMPLETE; 10-commit forensic-bisect sequence intact)
+last_updated: "2026-05-28T14:12:29Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
-  completed_phases: 10
-  total_plans: 41
-  completed_plans: 40
-  percent: 98
+  completed_phases: 11
+  total_plans: 43
+  completed_plans: 43
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 
 ## Current Position
 
-Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — EXECUTING
+Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — COMPLETE
 Plan: 10 of 10
-Status: Ready to execute
+Status: Phase 11 COMPLETE — milestone v3.11.3 ship-ready
 Last activity: 2026-05-28
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -101,6 +101,7 @@ Progress: [██████████] 98%
 | Phase 11 P07 | ~10min | 4 tasks tasks | 2 files files |
 | Phase 11 P08a | ~5min | 3 tasks | 1 files |
 | Phase 11 P08b | ~11min | 4 tasks | 3 files |
+| Phase 11 P08c | ~75min | 3 tasks (Task 1 deletion + 4 inline rephrases; Task 1.5 residual orphan rephrase; Task 2 closing-cadence checkpoint; Task 3 closing-narrative commit) | 6 modified + 1 deleted + 1 created SUMMARY + 2 updated for closing (ROADMAP + STATE) |
 
 ## Accumulated Context
 
@@ -276,6 +277,36 @@ Recent decisions affecting current work:
 - Plan 11-08b Rule 1 fix-forward: 2x Task.Delay(15_000) calls in MetricsExportTests now pass TestContext.Current.CancellationToken — xUnit1051 analyzer (escalated to error via TreatWarningsAsErrors=true) builds-fatal otherwise. Same pattern as Plan 03-02 deviation. Project-wide idiom for xUnit v3 async waits
 - Plan 11-08b educational-rephrase: LogLevelFilterTests doc-comment 'per-test <c>OtelCollectorFixture</c>' rephrased to 'per-test fixture instances (deleted by Plan 11-05 / 11-08c)' so plan's own literal grep gate passes. Same Plan 06-01 / 08-01 / 10-02 / 11-04 / 11-07 precedent — educational content preserved; semantic must_haves invariant (no CODE references to OtelCollectorFixture) satisfied
 - Plan 11-08b OtelCollectorFixture.cs PRESERVED at HEAD but now fully ORPHANED — zero consumers across all 4 historical Phase 5 test classes (LogExportTests + LogLevelFilterTests + MetricsExportTests + HealthEndpointsTests). Plan 11-08c performs the final git rm. Phase 11 build-green invariant between plans preserved end-to-end
+- Plan 11-08c: Phase 11 closing plan — `tests/BaseApi.Tests/Observability/OtelCollectorFixture.cs` DELETED via `git rm` (258 lines; commit `5c13683`) with 4 inline Rule 1 fix-forward doc-comment rephrases bundled into the same atomic commit (TestObservabilityController.cs cref + Phase11WebAppFactory.cs 3 historical refs + ValidationWebAppFactory.cs unsealing-precedent doc + ElasticsearchTestClient.cs inline comment — all rephrased to past-tense citations of "the retired Phase 5 fixture"). Task 2 closing-grep uncovered 2 residual doc-comment references that Task 1 missed (ObservabilityServiceCollectionExtensions.cs XML summary mentioned `<c>.WithTracing(...)</c> block` + CollectionDefinitions.cs XML summary cited `tests/.otel-out/telemetry.jsonl`) — swept in commit `c7050f3` via the same educational-rephrase pattern. Phase 3 D-18 cadence achieved on FIRST attempt at 3 consecutive GREEN: Run 1: 163s, Run 2: 161s, Run 3: 162s (142/142 facts each; wall-clock variance ≈1.2%; no warm-up signature) — structural improvement over Plans 08-08 / 09-03 / 10-05 which all needed retry cycles, attributed to the migrated polling-based test surface no longer racing a per-test file-exporter handle. Phase 3 D-15 cleanup discipline preserved byte-identically: psql `\l` SHA-256 BEFORE/AFTER both `0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127` (the 4th consecutive phase to record this exact baseline — Phase 8 P08 + Plan 09-03 + Plan 10-05 + Plan 11-08c verbatim; 4 baseline DBs; zero leaked `stepsdb_test_*`). Zero orphan references anywhere in `src/**/*.cs` + `tests/**/*.cs` for `OtelCollectorFixture | OtelEndOfSuiteCleanup | TraceExportTests | .WithTracing | tests/.otel-out`. Reusable patterns documented: phase-close-via-3-task-plan + residual-doc-comment-rephrase-as-fix-forward + closing-cadence-on-first-attempt structural-improvement claim.
+- Phase 11 COMPLETE — 10-commit forensic-bisect sequence intact (7041adb + a3c0b20 + 1f8eb69 + b40299c + 0fa325e + 765b3fc + e3016e2 + 481a607 + c40d062 + 5c13683): doc-first REQUIREMENTS.md amendment + compose backends + collector rewire + prometheus.yml + SDK strip + test infrastructure (Phase11WebAppFactory + ES/Prom test clients) + E2E round-trip facts + HealthEndpointsTests rebase + 3-test migration + OtelCollectorFixture deletion. Plus 1 fix-forward commit (c7050f3 — residual doc-comment rephrases) and the closing docs commit. All 4 new REQ-IDs (OBSERV-13, OBSERV-14, INFRA-08, TEST-07) closed; OBSERV-12 supersession finalized across SDK + collector + spec; INFRA-06 amendment locked in (4-service compose graph live + healthy). System is shippable end-to-end with the post-Phase-11 stack — ES :9200 green + Prom :9090 healthy + Collector :8889/:13133 up + Postgres :5432 healthy + 142/142 test suite GREEN. Forensic property preserved: each Phase 11 commit independently revertable per atomic-commit convention.
+
+### Roadmap Milestone Log
+
+**Phase 11 (2026-05-28) — Migrate Prometheus + Elasticsearch from compose stack sk2_1 to sk_p — COMPLETE**
+
+Phase 11 migrated Prometheus + Elasticsearch backends from the sibling sk2_1 stack into the sk_p compose stack and replaced Phase 5's file-exporter-based observability test surface with HTTP-polling against the new live backends. Ten plans shipped over a 6-wave structure (revised from planned 8 commits to 10 via revision iteration 1 — Plan 11-04 wave bump per BLOCKER #1 + Plan 11-08 3-way split per BLOCKER #2 + WARNING #3). Each commit independently revertable per atomic-commit convention.
+
+What shipped:
+- 4-backend compose stack: postgres + elasticsearch (8.15.5) + otel-collector (0.152.0) + prometheus (v3.11.3) with healthchecks + service_healthy gating on baseapi-service.
+- Collector pipelines: logs → elasticsearch only; metrics → filter/health_metrics → prometheus only; NO traces; single-sink discipline (no file/logging/debug exporter).
+- prometheus.yml: scrape job `otel-collector:8889`, 15s interval, dev posture.
+- SDK observability: `.WithTracing()` chain stripped; `OBSERV-12` superseded across SDK + collector + spec; `tests/.otel-out/` cleaned up.
+- Test infrastructure: `Phase11WebAppFactory` (subclasses Phase8WebAppFactory) + `ElasticsearchTestClient` (exponential backoff polling) + `PrometheusTestClient` (mandatory 15s pre-wait + EscapeDataString) + `EsIndexNames` (Wave 0 empirical probe — live ES shape is `otel` lowercase keys + nested attributes).
+- E2E round-trip: `SchemasLogsE2ETests` + `SchemasMetricsE2ETests` drive real Schema POST + verify ES + Prom ingestion.
+- Phase 5 baseline migration: `HealthEndpointsTests` rebased onto Phase11WebAppFactory + OTLP-absence fact migrated to ES polling; `LogExportTests` + `LogLevelFilterTests` + `MetricsExportTests` all migrated off `OtelCollectorFixture` to ES/Prom polling.
+- Final cleanup: `OtelCollectorFixture.cs` deleted; 6 residual doc-comment references swept via educational-rephrase pattern; zero orphan references anywhere.
+
+Key decisions:
+- Revision iteration 1 restructured 8 → 10 commits (Plan 11-04 wave bump; Plan 11-08 split into 11-08a/b/c).
+- Plan 11-07 discovered ASP.NET Core route-template-preservation pattern — `http_route` Prom label carries the route TEMPLATE literal (`api/v{version:apiVersion}/Schemas`), NOT the resolved URL path. Pattern reusable for any future PromQL filter on versioned/decorated controllers.
+- Plan 11-08b discovered multi-log-record-per-request pattern — a single sk_p HTTP request emits MULTIPLE log records sharing the same X-Correlation-Id scope (controller + framework Hosting.Diagnostics). Fix: bool/must ES query (corrId term + body.text match_phrase). Reusable for any future ES-polling fact targeting a specific log message within a scope-shared cluster.
+- Plan 11-06 Wave 0 probe empirically resolved RESEARCH Open Q1 — live ES uses `otel` shape (lowercase keys + nested attributes) DESPITE collector config `mapping.mode: none` (elasticsearchexporter@v0.152.0 emits deprecation warning + falls back to current default).
+- Plan 11-08c closing-cadence ran 3/3 on FIRST attempt — structural improvement over Plans 08-08 / 09-03 / 10-05 which all needed retry cycles; attributed to the migrated polling-based test surface no longer racing a per-test file-exporter handle.
+
+Forward-looking notes:
+- No Phase 12 currently planned in ROADMAP.md — v1 milestone is ship-ready as of Plan 11-08c.
+- The 4-backend compose graph + Phase11WebAppFactory + ES/Prom test clients are reusable infrastructure for any future observability-extension work.
+- Residual-doc-comment-rephrase-as-fix-forward pattern documented for future phase-close plans that retire symbols incrementally.
 
 ### Roadmap Evolution
 
@@ -307,12 +338,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T13:53:36.652Z
-Stopped at: Completed Phase 11 Plan 08b (LogExport + LogLevelFilter + MetricsExport migration to ES/Prom polling — commit c40d062; 7/7 facts GREEN; OtelCollectorFixture orphaned, deletion deferred to Plan 11-08c)
+Last session: 2026-05-28T14:12:29Z
+Stopped at: Completed Phase 11 Plan 08c (Phase 11 close — OtelCollectorFixture.cs deleted + 2 residual orphan doc-comment rephrase fix-forwards + 3-consecutive-GREEN closing cadence 163s/161s/162s at 142/142 facts + byte-identical psql \l SHA-256 0d98b0de... — Phase 11 COMPLETE; 10-commit forensic-bisect sequence intact)
 Resume file: None
 
-**Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
-**Next:** /gsd-plan-phase 9 (Processor.GetBySourceHash + Orchestration Start/Stop — SPEC.md locked + amended 2026-05-28 for 204 No Content; CONTEXT.md captured 20 implementation decisions across 4 areas; ready for planning)
-
-**Planned Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10 plans — 2026-05-28T11:44:16.235Z
-**Phase 9 context:** captured 2026-05-28 — SPEC.md (6 reqs, amended) + CONTEXT.md (20 decisions) + DISCUSSION-LOG.md committed; SPEC.md response amended from 200+List<WorkflowReadDto> → 204 No Content; OrchestrationService injects BaseDbContext + all 5 entity mappers up front for v2 readiness
+**Completed Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each — Run 1: 163s + Run 2: 161s + Run 3: 162s; byte-identical psql `\l` SHA-256 BEFORE/AFTER `0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127`; zero leaked test DBs; zero orphan references in `src/**/*.cs` + `tests/**/*.cs` for retired Phase 5 symbols; all 4 new REQ-IDs closed — OBSERV-13, OBSERV-14, INFRA-08, TEST-07; OBSERV-12 superseded; INFRA-06 amendment locked in)
+**Next:** TBD — no Phase 12 currently planned in ROADMAP.md; v1 milestone ship-ready as of Plan 11-08c.
