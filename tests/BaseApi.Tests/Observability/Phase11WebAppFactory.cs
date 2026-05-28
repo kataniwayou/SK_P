@@ -78,7 +78,19 @@ public class Phase11WebAppFactory : Phase8WebAppFactory
         // xUnit fixture-disposal ordering is not strict across collections, but a same-
         // process bleed-through into Validation / Composition / Phase 4 collections is
         // now bounded to a single fixture's lifetime instead of the whole process.
-        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", _priorOtlpEndpoint);
+        //
+        // IN-09 review fix: symmetrize the gate with the ctor. The ctor only sets the
+        // env var when _priorOtlpEndpoint is null (no explicit operator setting); if a
+        // prior value existed, the ctor left the env untouched. Mirroring that here:
+        // when _priorOtlpEndpoint is null, the ctor performed the set and DisposeAsync
+        // must clear it back to null. When _priorOtlpEndpoint is non-null, the ctor
+        // did NOT set anything, so DisposeAsync MUST NOT overwrite whatever value is
+        // currently in the env (a downstream code path may have legitimately changed
+        // it to a third value — overwriting would silently undo that mutation).
+        if (_priorOtlpEndpoint is null)
+        {
+            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", null);
+        }
         await base.DisposeAsync();
     }
 
