@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: planning_phase
-stopped_at: Milestone v3.3.0 roadmap created — 5 phases (12-16) cover 64 REQ-IDs from REQUIREMENTS.md; Phase 12 (Redis infra + composition + healthcheck + DI) ready for /gsd-discuss-phase 12.
-last_updated: "2026-05-29T00:00:00Z"
-last_activity: 2026-05-29
+status: completed
+stopped_at: Phase 12 context gathered
+last_updated: "2026-05-28T21:26:18.565Z"
+last_activity: 2026-05-29 — v3.3.0 roadmap created (5 phases / 64 REQ-IDs)
 progress:
   total_phases: 5
   completed_phases: 0
@@ -289,6 +289,7 @@ Recent decisions affecting current work:
 Phase 11 migrated Prometheus + Elasticsearch backends from the sibling sk2_1 stack into the sk_p compose stack and replaced Phase 5's file-exporter-based observability test surface with HTTP-polling against the new live backends. Ten plans shipped over a 6-wave structure (revised from planned 8 commits to 10 via revision iteration 1 — Plan 11-04 wave bump per BLOCKER #1 + Plan 11-08 3-way split per BLOCKER #2 + WARNING #3). Each commit independently revertable per atomic-commit convention.
 
 What shipped:
+
 - 4-backend compose stack: postgres + elasticsearch (8.15.5) + otel-collector (0.152.0) + prometheus (v3.11.3) with healthchecks + service_healthy gating on baseapi-service.
 - Collector pipelines: logs → elasticsearch only; metrics → filter/health_metrics → prometheus only; NO traces; single-sink discipline (no file/logging/debug exporter).
 - prometheus.yml: scrape job `otel-collector:8889`, 15s interval, dev posture.
@@ -299,6 +300,7 @@ What shipped:
 - Final cleanup: `OtelCollectorFixture.cs` deleted; 6 residual doc-comment references swept via educational-rephrase pattern; zero orphan references anywhere.
 
 Key decisions:
+
 - Revision iteration 1 restructured 8 → 10 commits (Plan 11-04 wave bump; Plan 11-08 split into 11-08a/b/c).
 - Plan 11-07 discovered ASP.NET Core route-template-preservation pattern — `http_route` Prom label carries the route TEMPLATE literal (`api/v{version:apiVersion}/Schemas`), NOT the resolved URL path. Pattern reusable for any future PromQL filter on versioned/decorated controllers.
 - Plan 11-08b discovered multi-log-record-per-request pattern — a single sk_p HTTP request emits MULTIPLE log records sharing the same X-Correlation-Id scope (controller + framework Hosting.Diagnostics). Fix: bool/must ES query (corrId term + body.text match_phrase). Reusable for any future ES-polling fact targeting a specific log message within a scope-shared cluster.
@@ -306,6 +308,7 @@ Key decisions:
 - Plan 11-08c closing-cadence ran 3/3 on FIRST attempt — structural improvement over Plans 08-08 / 09-03 / 10-05 which all needed retry cycles; attributed to the migrated polling-based test surface no longer racing a per-test file-exporter handle.
 
 Forward-looking notes:
+
 - No Phase 12 currently planned in ROADMAP.md — v1 milestone is ship-ready as of Plan 11-08c.
 - The 4-backend compose graph + Phase11WebAppFactory + ES/Prom test clients are reusable infrastructure for any future observability-extension work.
 - Residual-doc-comment-rephrase-as-fix-forward pattern documented for future phase-close plans that retire symbols incrementally.
@@ -340,9 +343,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T14:12:29Z
-Stopped at: Completed Phase 11 Plan 08c (Phase 11 close — OtelCollectorFixture.cs deleted + 2 residual orphan doc-comment rephrase fix-forwards + 3-consecutive-GREEN closing cadence 163s/161s/162s at 142/142 facts + byte-identical psql \l SHA-256 0d98b0de... — Phase 11 COMPLETE; 10-commit forensic-bisect sequence intact)
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 12 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each — Run 1: 163s + Run 2: 161s + Run 3: 162s; byte-identical psql `\l` SHA-256 BEFORE/AFTER `0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127`; zero leaked test DBs; zero orphan references in `src/**/*.cs` + `tests/**/*.cs` for retired Phase 5 symbols; all 4 new REQ-IDs closed — OBSERV-13, OBSERV-14, INFRA-08, TEST-07; OBSERV-12 superseded; INFRA-06 amendment locked in)
 **Next:** TBD — no Phase 12 currently planned in ROADMAP.md; v1 milestone ship-ready as of Plan 11-08c.
