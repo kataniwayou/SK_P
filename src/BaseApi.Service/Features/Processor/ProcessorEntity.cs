@@ -4,7 +4,7 @@ namespace BaseApi.Service.Features.Processor;
 
 /// <summary>
 /// Processor domain entity — sits one level below <c>SchemaEntity</c> in the FK topology
-/// and one level above <c>StepEntity</c>. ENTITY-04 verbatim: 3 new scalar properties on
+/// and one level above <c>StepEntity</c>. ENTITY-04 verbatim: 4 new scalar properties on
 /// top of <see cref="BaseEntity"/>.
 /// <para>
 /// <c>SourceHash</c> is a lowercase SHA-256 hex string (64 chars) — uniquely identifies

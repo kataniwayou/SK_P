@@ -4,7 +4,7 @@ namespace BaseApi.Service.Features.Schema;
 
 /// <summary>
 /// Schema domain entity — the root of the entity FK graph (Processor.InputSchemaId /
-/// Processor.OutputSchemaId reference it; Assignment.SchemaId references it).
+/// Processor.OutputSchemaId / Processor.ConfigSchemaId reference it).
 /// <para>
 /// <c>Definition</c> stores a JSON Schema document (draft 2020-12) as a Postgres
 /// <c>jsonb</c> column (PERSIST-08; wired by <c>SchemaEntityConfiguration</c>). The
