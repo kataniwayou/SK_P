@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: "Completed 10-04-PLAN.md (migration regen — old 20260527203118 InitialCreate files deleted; new 20260528074618 InitialCreate generated against post-Phase-10 model; AppDbContextModelSnapshot.cs regenerated; D-07 teardown + D-08 gate all PASS; commit #4 of Phase 10 sequence)"
-last_updated: "2026-05-28T07:52:06.241Z"
+status: verifying
+stopped_at: "Completed 10-05-PLAN.md (test cleanup commit #5 of Phase 10 sequence; 8 test files updated; 10 ProcessorCreateDto+UpdateDto positional adds; AssignmentsIntegrationTests SchemaId removal + CreatePrereqAsync collapse; 2 new ConfigSchemaId round-trip facts; 3 consecutive GREEN dotnet test runs at 142/142 each ~29s; byte-identical psql l snapshot; Phase 10 COMPLETE)"
+last_updated: "2026-05-28T08:29:21.846Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 10
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 31
-  completed_plans: 30
-  percent: 97
+  completed_plans: 31
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 
 Phase: 10 (remove-schemaid-on-assignmententity-and-add-configschemaid-o) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-28
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -90,6 +90,7 @@ Progress: [██████████] 97%
 | Phase 10 P02 | 4min | 5 tasks tasks | 4 files files |
 | Phase 10 P03 | 3min | 5 tasks tasks | 4 files files |
 | Phase 10 P04 | ~4min | 4 tasks tasks | 5 files (2 D + 2 A + 1 M) files |
+| Phase 10 P05 | ~28min | 5 tasks tasks | 8 files files |
 
 ## Accumulated Context
 
@@ -223,6 +224,10 @@ Recent decisions affecting current work:
 - Plan 10-04: Migration regen commit #4 (146d482) — D-07 teardown sequence executed end-to-end (docker compose down -v + dotnet ef database drop -f + rm old InitialCreate files + dotnet ef migrations add -o Persistence/Migrations + docker compose up -d postgres + pg_isready healthy in ~6s). Old 20260527203118 InitialCreate files deleted; new 20260528074618 InitialCreate files generated reflecting post-Phase-10 model; AppDbContextModelSnapshot.cs regenerated in place. Production projects build zero-warning Release. PostgresExceptionMapper.cs + both Mapperly mappers byte-identical (zero-touch invariants preserved).
 - Plan 10-04 Rule 3 deviation #1 (snapshot-replacement gap): plan's footnote assertion that 'dotnet ef migrations add automatically regenerates the snapshot to produce a clean InitialCreate' was incorrect — EF Core 8.0 computes a DELTA against the existing snapshot. First regen attempt emitted an ADDITIVE migration (DropForeignKey + DropColumn + AddColumn). Fix-forward: 'dotnet ef migrations remove -f' (which deletes BOTH the bad migration AND the snapshot per EF's documented behavior), then re-run 'dotnet ef migrations add' against the no-history state. Plan should explicitly delete AppDbContextModelSnapshot.cs in Task 0 OR document the 'remove + re-add' pattern as the canonical approach.
 - Plan 10-04 Rule 3 deviation #2 (EF default output-dir mismatch): EF Core 8.0 dotnet ef migrations add defaults to writing files to '<project-root>/Migrations/' regardless of where the existing snapshot lives. The canonical Phase 8 P07 layout placed migrations at 'src/BaseApi.Service/Persistence/Migrations/' with namespace 'BaseApi.Service.Persistence.Migrations'. Without the '-o Persistence/Migrations' flag, EF writes to './Migrations/' with namespace 'BaseApi.Service.Migrations', leaving the existing snapshot orphaned. Fix-forward: pass '-o Persistence/Migrations' on every 'dotnet ef migrations add' invocation in this project. Future migration plans should bake this flag into the plan's verbatim command.
+- Plan 10-05: Atomic test-cleanup commit #5 (6d043e4) — 10 ProcessorCreateDto/UpdateDto sites (SPEC said 8; live audit found 10) gained ConfigSchemaId: null as the 7th positional; AssignmentsIntegrationTests.CreatePrereqAsync collapsed to Task<Guid> (no Schema POST); 2 new ConfigSchemaId round-trip facts appended to ProcessorsIntegrationTests; 8 files changed (99 +/43 -); commit body documents the SPEC-vs-audit count discrepancy for forensic reviewability.
+- Plan 10-05 deviation (Rule 3 - prior-plan environment gap): Plan 10-04's D-07 teardown sequence executed 'docker compose down -v' (full teardown) but only restarted postgres via 'docker compose up -d postgres'. First 2 dotnet test attempts had 7 deterministic OTel Observability failures (LogLevelFilterTests + 2 MetricsExportTests + 2 TraceExportTests + 2 LogExportTests) — identical fingerprint to Phase 8 P08's documented OTel cold-start flake but structurally a missing-collector issue. Fix-forward: 'docker compose up -d otel-collector' brought the collector up healthy in ~4s; the SUBSEQUENT 3 'dotnet test SK_P.sln --no-restore -c Release' runs were each GREEN at 142/142 (29.281s + 28.979s + 28.869s — no warm-up signature, empirically confirming the issue was deterministic environment not cold-start flake). Future migration-regen plans should bake 'docker compose up -d' (all services) into the teardown sequence.
+- Plan 10-05: 3 consecutive GREEN dotnet test runs achieved at 142/142 each (29.281s + 28.979s + 28.869s = avg 29.043s) — Phase 10 suite carried 140 facts from Phase 9 baseline (independent of the 138 SPEC predicted) + 2 new ConfigSchemaId facts = 142 total. Byte-identical psql l SHA-256 BEFORE/AFTER snapshot (0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127 — matches Phase 8 P08 + Plan 09-03 baseline verbatim, deterministic 4-baseline-DB fingerprint across 3 phases). Zero leaked stepsdb_test_* databases. Phase 3 D-15 cleanup discipline preserved end-to-end through Phase 10.
+- Phase 10 COMPLETE — 5-commit sequence intact (1de7e71 + 79b07d1 + 12577ac + 146d482 + 6d043e4): doc-first REQUIREMENTS.md amendment + Assignment SchemaId removal + Processor ConfigSchemaId addition + migration regen + test cleanup. All 5 production commits independently revertable; system is shippable end-to-end with the post-Phase-10 model (entity + DTOs + validators + EF config + REQUIREMENTS.md + migration + test suite all consistent). 142/142 test suite GREEN; zero leaked test DBs; CONTEXT D-02 bisect-friendly forensic property preserved.
 
 ### Roadmap Evolution
 
@@ -253,8 +258,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T07:52:06.231Z
-Stopped at: Completed 10-04-PLAN.md (migration regen — old 20260527203118 InitialCreate files deleted; new 20260528074618 InitialCreate generated against post-Phase-10 model; AppDbContextModelSnapshot.cs regenerated; D-07 teardown + D-08 gate all PASS; commit #4 of Phase 10 sequence)
+Last session: 2026-05-28T08:29:21.835Z
+Stopped at: Completed 10-05-PLAN.md (test cleanup commit #5 of Phase 10 sequence; 8 test files updated; 10 ProcessorCreateDto+UpdateDto positional adds; AssignmentsIntegrationTests SchemaId removal + CreatePrereqAsync collapse; 2 new ConfigSchemaId round-trip facts; 3 consecutive GREEN dotnet test runs at 142/142 each ~29s; byte-identical psql l snapshot; Phase 10 COMPLETE)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
