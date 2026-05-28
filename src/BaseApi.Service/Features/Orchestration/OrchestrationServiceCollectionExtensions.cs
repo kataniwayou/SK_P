@@ -1,0 +1,37 @@
+using Microsoft.Extensions.DependencyInjection;
+
+namespace BaseApi.Service.Features.Orchestration;
+
+/// <summary>
+/// Per-feature DI extension for the Orchestration feature folder. Wired by
+/// <see cref="BaseApi.Service.Composition.AppFeatures.AddAppFeatures"/> as the 6th
+/// call after the 5 entity feature registrations.
+/// <para>
+/// <b>Simpler than the 5 entity extensions:</b> no abstract-base
+/// <c>BaseService&lt;...&gt;</c> alias is needed because
+/// <see cref="OrchestrationController"/> injects the concrete
+/// <see cref="OrchestrationService"/> directly (CONTEXT D-06 — deliberate deviation
+/// from Phase 7 Warning 7's abstract-base-injection pattern; there is no abstract
+/// base for orchestration to inherit from).
+/// </para>
+/// <para>
+/// <b>What this extension does NOT register (auto-discovered elsewhere):</b>
+/// <list type="bullet">
+///   <item><see cref="WorkflowIdsValidator"/> — auto-discovered by
+///     <c>AddBaseApiValidation</c>'s <c>AddValidatorsFromAssembly</c> scan
+///     (Phase 6 VALID-02).</item>
+///   <item>All 5 entity mappers — auto-discovered by <c>AddBaseApiMapping</c>'s
+///     closed-generic <c>IEntityMapper&lt;,,,&gt;</c> scan (Phase 6).</item>
+///   <item><see cref="BaseApi.Core.Persistence.BaseDbContext"/> alias — registered
+///     by <c>AddBaseApiPersistence</c> as Scoped (Phase 7 D-14).</item>
+/// </list>
+/// </para>
+/// </summary>
+internal static class OrchestrationServiceCollectionExtensions
+{
+    public static IServiceCollection AddOrchestrationFeature(this IServiceCollection services)
+    {
+        services.AddScoped<OrchestrationService>();
+        return services;
+    }
+}
