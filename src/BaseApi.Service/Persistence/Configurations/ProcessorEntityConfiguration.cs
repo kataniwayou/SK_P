@@ -9,9 +9,10 @@ namespace BaseApi.Service.Persistence.Configurations;
 /// EF Core entity configuration for <see cref="ProcessorEntity"/>. This is the LOAD-BEARING
 /// file for Plan 08-08 SC#2 (duplicate SourceHash POST returns 409 with offending field name) —
 /// the explicit unique-index name <c>uq_processor_source_hash</c> + explicit FK constraint
-/// names <c>fk_processor_input_schema_id</c> / <c>fk_processor_output_schema_id</c> match the
-/// Phase 4 PostgresExceptionMapper Option A regex (preserves <c>_id</c> suffix; rejects
-/// EF auto-names which would diverge with <c>ix_</c> prefix or extra <c>_schemas_</c> segment).
+/// names <c>fk_processor_input_schema_id</c> / <c>fk_processor_output_schema_id</c> /
+/// <c>fk_processor_config_schema_id</c> match the Phase 4 PostgresExceptionMapper Option A regex
+/// (preserves <c>_id</c> suffix; rejects EF auto-names which would diverge with <c>ix_</c> prefix
+/// or extra <c>_schemas_</c> segment).
 /// <para>
 /// <b>Lambda-less <c>HasOne&lt;SchemaEntity&gt;().WithMany()</c> form</b> per RESEARCH Pitfall 4 —
 /// avoids EF generating navigation properties between entities, satisfying ENTITY-09
@@ -38,6 +39,12 @@ internal sealed class ProcessorEntityConfiguration : IEntityTypeConfiguration<Pr
             .WithMany()
             .HasForeignKey(e => e.OutputSchemaId)
             .HasConstraintName("fk_processor_output_schema_id")
+            .OnDelete(DeleteBehavior.SetNull);
+
+        entity.HasOne<SchemaEntity>()
+            .WithMany()
+            .HasForeignKey(e => e.ConfigSchemaId)
+            .HasConstraintName("fk_processor_config_schema_id")
             .OnDelete(DeleteBehavior.SetNull);
 
         // VALID-10 — SHA-256 hex is exactly 64 chars; lock at DB.

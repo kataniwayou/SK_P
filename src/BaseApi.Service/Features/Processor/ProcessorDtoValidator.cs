@@ -10,14 +10,14 @@ namespace BaseApi.Service.Features.Processor;
 ///   <item><b>VALID-10</b> — <c>SourceHash</c> must match lowercase SHA-256 hex regex
 ///     <c>^[a-f0-9]{64}$</c>. Field-level 400 if malformed; the unique-index check at
 ///     Postgres (<c>uq_processor_source_hash</c>) handles the duplicate-hash → 409 path.</item>
-///   <item><b>VALID-11</b> — <c>InputSchemaId</c> / <c>OutputSchemaId</c> are nullable;
-///     null is valid (source/sink processors per ENTITY-04). When present, must not equal
-///     <c>Guid.Empty</c>. Pattern: <c>When(x =&gt; x.Field.HasValue, () =&gt; RuleFor(x =&gt; x.Field!.Value).NotEqual(Guid.Empty))</c>.</item>
+///   <item><b>VALID-11</b> — <c>InputSchemaId</c> / <c>OutputSchemaId</c> / <c>ConfigSchemaId</c>
+///     are nullable; null is valid (source/sink/unconfigured processors per ENTITY-04). When present,
+///     must not equal <c>Guid.Empty</c>. Pattern: <c>When(x =&gt; x.Field.HasValue, () =&gt; RuleFor(x =&gt; x.Field!.Value).NotEqual(Guid.Empty))</c>.</item>
 /// </list>
 /// Non-existent (but well-formed) FK Guids are NOT rejected here — they surface through
 /// Postgres FK constraint violation (SQLSTATE 23503) and are mapped to HTTP 422 by Phase 4
 /// <c>PostgresExceptionMapper</c> with the constraint field name (<c>fk_processor_input_schema_id</c>
-/// → <c>input_schema_id</c>).
+/// → <c>input_schema_id</c>, or <c>fk_processor_config_schema_id</c> → <c>config_schema_id</c>).
 /// </summary>
 public sealed class ProcessorCreateDtoValidator : AbstractValidator<ProcessorCreateDto>
 {
@@ -44,6 +44,13 @@ public sealed class ProcessorCreateDtoValidator : AbstractValidator<ProcessorCre
             RuleFor(x => x.OutputSchemaId!.Value)
                 .NotEqual(Guid.Empty)
                 .WithMessage("OutputSchemaId must not be Guid.Empty when provided.");
+        });
+
+        When(x => x.ConfigSchemaId.HasValue, () =>
+        {
+            RuleFor(x => x.ConfigSchemaId!.Value)
+                .NotEqual(Guid.Empty)
+                .WithMessage("ConfigSchemaId must not be Guid.Empty when provided.");
         });
     }
 }
@@ -75,6 +82,13 @@ public sealed class ProcessorUpdateDtoValidator : AbstractValidator<ProcessorUpd
             RuleFor(x => x.OutputSchemaId!.Value)
                 .NotEqual(Guid.Empty)
                 .WithMessage("OutputSchemaId must not be Guid.Empty when provided.");
+        });
+
+        When(x => x.ConfigSchemaId.HasValue, () =>
+        {
+            RuleFor(x => x.ConfigSchemaId!.Value)
+                .NotEqual(Guid.Empty)
+                .WithMessage("ConfigSchemaId must not be Guid.Empty when provided.");
         });
     }
 }
