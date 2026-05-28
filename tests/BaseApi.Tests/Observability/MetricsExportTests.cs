@@ -1,149 +1,118 @@
+using System.Net;
 using System.Text.Json;
+using BaseApi.Tests.Observability.Helpers;
 using Xunit;
 
 namespace BaseApi.Tests.Observability;
 
 /// <summary>
-/// SC#4 metrics-half (OBSERV-03 / OBSERV-08 / HEALTH-05): HTTP server metrics
-/// (<c>http.server.request.duration</c>) appear for app endpoints (<c>/test-obs/ok</c>)
-/// but NOT for <c>/health/*</c> requests. D-16: at least one
-/// <c>process.runtime.dotnet.*</c> metric appears in the exported metric stream.
+/// Phase 11 D-16 migration of Phase 5 SC#4 metrics-half (OBSERV-03 / OBSERV-08 /
+/// HEALTH-05 / D-04 invariant): HTTP server metrics surface in Prometheus for app
+/// endpoints (<c>/test-obs/ok</c>) but NOT for <c>/health/*</c> (filter/health_metrics
+/// processor on the collector drops them before reaching the Prom exporter).
 ///
 /// <para>
-/// <b>Plan 05-02 fix-forward to Plan 05-01 (SC#4 metrics-half gap closed):</b>
-/// Plan 05-01 Deviation #2 deferred metrics-side <c>/health/*</c> filtering because
-/// OpenTelemetry.Instrumentation.AspNetCore 1.15.0's
-/// <c>MeterProviderBuilder.AddAspNetCoreInstrumentation</c> is parameterless (no Filter
-/// callback). The closing fix-forward is a Collector-side <c>filter/health_metrics</c>
-/// processor in <c>compose/otel-collector-config.yaml</c> that drops data points whose
-/// <c>metric.name == "http.server.request.duration"</c> AND whose <c>http.route</c>
-/// attribute starts with <c>/health/</c>. SDK still emits, Collector drops before the
-/// file exporter — observable behaviour is zero health-route data points in
-/// telemetry.jsonl. <see cref="Test_HealthPath_Absent_From_HttpServerMetrics"/> now
-/// asserts STRICT empty (was SOFT-PASS in Wave-2 task 6 commit).
+/// Migration: was Phase 5 file-exporter + position-marker fixture (deleted). Now uses
+/// <see cref="Phase11WebAppFactory"/> + Prom polling via <see cref="PrometheusTestClient"/>.
+/// Metric names translated from OTLP form (e.g., <c>http.server.request.duration</c>)
+/// to Prom form (e.g., <c>http_server_request_duration_seconds_count</c>) per RESEARCH
+/// Pitfall 1. service_name label surfaces because <c>resource_to_telemetry_conversion: true</c>
+/// (Phase 11 D-07).
 /// </para>
 /// </summary>
+[Trait("Phase", "11")]
 [Collection("Observability")]
-public sealed class MetricsExportTests : IClassFixture<OtelCollectorFixture>
+public sealed class MetricsExportTests : IClassFixture<Phase11WebAppFactory>
 {
-    private readonly OtelCollectorFixture _fixture;
+    private readonly Phase11WebAppFactory _factory;
 
-    public MetricsExportTests(OtelCollectorFixture fixture) => _fixture = fixture;
+    public MetricsExportTests(Phase11WebAppFactory factory) => _factory = factory;
 
     [Fact]
     public async Task Test_HttpServerRequestDuration_Present_For_App_Endpoint()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = _fixture.CreateClient();
+        using var client = _factory.CreateClient();
 
-        // Issue a few requests to ensure the histogram has data
-        for (int i = 0; i < 5; i++)
+        // Issue 5 requests so the histogram has a meaningful sample count.
+        const int RequestCount = 5;
+        for (var i = 0; i < RequestCount; i++)
+        {
             _ = await client.GetAsync("/test-obs/ok", ct);
+        }
 
-        await _fixture.FlushAsync(TimeSpan.FromSeconds(1));
+        // Prom-form name (Pitfall 1):
+        //   OTLP http.server.request.duration (Histogram, unit "s")
+        //   → http_server_request_duration_seconds_count (+ _sum + _bucket)
+        // service_name="sk-api" because D-07 resource_to_telemetry_conversion: true.
+        // http_route="test-obs/ok" (NO leading slash — ASP.NET Core route template).
+        const string query = """http_server_request_duration_seconds_count{service_name="sk-api",http_route="test-obs/ok"}""";
 
-        var metricNames = _fixture.ReadExportedMetrics()
-            .SelectMany(EnumerateMetricNames)
-            .ToHashSet();
+        using var prom = new PrometheusTestClient();
+        var samples = await prom.PollPrometheusUntilSumAtLeast(query, threshold: RequestCount);
 
-        Assert.Contains("http.server.request.duration", metricNames);
+        Assert.NotEmpty(samples);
+        var totalCount = PrometheusTestClient.SumSampleValues(samples);
+        Assert.True(totalCount >= RequestCount,
+            $"Expected http_server_request_duration_seconds_count >= {RequestCount} for "
+            + $"service_name=sk-api, http_route=test-obs/ok; got {totalCount}.");
     }
 
     [Fact]
     public async Task Test_HealthPath_Absent_From_HttpServerMetrics()
     {
-        // SC#4 metrics-half — /health/* filtered from metrics via Collector-side
-        // filter/health_metrics processor (Plan 05-02 fix-forward to Plan 05-01).
+        // D-04 invariant — filter/health_metrics processor on the collector drops
+        // /health/* data points BEFORE the Prom exporter. STRICT EMPTY assertion.
         var ct = TestContext.Current.CancellationToken;
-        using var client = _fixture.CreateClient();
+        using var client = _factory.CreateClient();
 
-        // 10 probe hits — would generate data points with http.route="/health/{*}" tags
-        // if SDK-side filtering existed; instead, the Collector drops them before file write.
-        for (int i = 0; i < 10; i++)
-            _ = await client.GetAsync("/health/live", ct);
-
-        await _fixture.FlushAsync(TimeSpan.FromSeconds(1));
-
-        var metrics = _fixture.ReadExportedMetrics();
-        var serverDurationDataPoints = metrics
-            .SelectMany(EnumerateMetricNodes)
-            .Where(m => m.GetProperty("name").GetString() == "http.server.request.duration")
-            .SelectMany(GetAllDataPointAttributes)
-            .ToList();
-
-        // Inventory http.route + url.path tags across all data points — expect ZERO health routes
-        var healthRoutes = new List<string>();
-        foreach (var attrs in serverDurationDataPoints)
+        // 10 probe hits to /health/live — would produce http_server_* samples tagged
+        // http_route="health/live" if SDK-side filtering existed; instead the Collector's
+        // filter/health_metrics processor drops them per Phase 5 Plan 05-02 + Phase 11 D-04.
+        for (var i = 0; i < 10; i++)
         {
-            foreach (var attr in attrs)
-            {
-                var key = attr.GetProperty("key").GetString();
-                if (key != "http.route" && key != "url.path") continue;
-                if (!attr.GetProperty("value").TryGetProperty("stringValue", out var sv)) continue;
-                var val = sv.GetString();
-                if (val is not null && val.Contains("/health", StringComparison.Ordinal))
-                    healthRoutes.Add(val);
-            }
+            _ = await client.GetAsync("/health/live", ct);
         }
 
-        // STRICT empty — Collector-side filter/health_metrics processor drops these
-        // data points before file write. Failure here means either: (a) the filter
-        // processor was removed from compose/otel-collector-config.yaml, (b) the
-        // processor wiring in the metrics pipeline was dropped, or (c) the collector
-        // image was downgraded below 0.95.0.
-        Assert.Empty(healthRoutes);
+        // Wait one Prom scrape cycle (15s) for any leaked samples to appear.
+        // PromQL regex match: http_route =~ ".*health.*"
+        const string query = """http_server_request_duration_seconds_count{service_name="sk-api",http_route=~".*health.*"}""";
+
+        using var prom = new PrometheusTestClient();
+        // Single-shot query after a 15s wait — no need for the threshold poll
+        // (we're asserting EMPTY, not asserting a threshold is reached).
+        await Task.Delay(15_000, ct);
+        var samples = await prom.QueryPrometheus(query);
+
+        Assert.Empty(samples);
     }
 
     [Fact]
     public async Task Test_RuntimeMetric_ProcessRuntimeDotnet_Exported()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var client = _fixture.CreateClient();
-        _ = await client.GetAsync("/test-obs/ok", ct);   // let the host warm a bit
+        using var client = _factory.CreateClient();
 
-        await _fixture.FlushAsync(TimeSpan.FromSeconds(2));   // runtime metrics emit on a slower cadence
+        // Warm a request so the runtime instrumentation has fired at least once.
+        _ = await client.GetAsync("/test-obs/ok", ct);
 
-        var metricNames = _fixture.ReadExportedMetrics()
-            .SelectMany(EnumerateMetricNames)
-            .ToHashSet();
+        // OpenTelemetry.Instrumentation.Runtime 1.15.0 ships newer semantic-convention
+        // names; D-16 prescribed process.runtime.dotnet.* but the SDK uses dotnet.* in
+        // some versions. Accept EITHER prefix — the point is that SOME runtime metric
+        // landed in Prom. Query both with PromQL `or` operator.
+        const string queryDotnet  = """{__name__=~"dotnet_.*"}""";
+        const string queryProcRt  = """{__name__=~"process_runtime_dotnet_.*"}""";
 
-        // D-16 prescribes process.runtime.dotnet.* names, but OpenTelemetry.Instrumentation.Runtime
-        // 1.15.0 ships with the newer semantic-convention names: dotnet.gc.collections,
-        // dotnet.thread_pool.thread.count, etc. Accept either flavor — the point is that
-        // SOME runtime instrumentation metric is present.
-        var hasRuntimeMetric =
-            metricNames.Any(n => n.StartsWith("process.runtime.dotnet.", StringComparison.Ordinal)) ||
-            metricNames.Any(n => n.StartsWith("dotnet.", StringComparison.Ordinal));
+        // Wait one Prom scrape cycle so any runtime sample has been collected.
+        await Task.Delay(15_000, ct);
+
+        using var prom = new PrometheusTestClient();
+        var dotnetSamples  = await prom.QueryPrometheus(queryDotnet);
+        var procRtSamples  = await prom.QueryPrometheus(queryProcRt);
+
+        var hasRuntimeMetric = dotnetSamples.Count > 0 || procRtSamples.Count > 0;
         Assert.True(hasRuntimeMetric,
-            $"Expected a runtime metric (process.runtime.dotnet.* OR dotnet.*) — got: {string.Join(", ", metricNames)}");
-    }
-
-    private static IEnumerable<string> EnumerateMetricNames(JsonElement resourceMetricsContainer)
-    {
-        foreach (var rm in resourceMetricsContainer.GetProperty("resourceMetrics").EnumerateArray())
-        foreach (var sm in rm.GetProperty("scopeMetrics").EnumerateArray())
-        foreach (var m in sm.GetProperty("metrics").EnumerateArray())
-            yield return m.GetProperty("name").GetString() ?? string.Empty;
-    }
-
-    private static IEnumerable<JsonElement> EnumerateMetricNodes(JsonElement resourceMetricsContainer)
-    {
-        foreach (var rm in resourceMetricsContainer.GetProperty("resourceMetrics").EnumerateArray())
-        foreach (var sm in rm.GetProperty("scopeMetrics").EnumerateArray())
-        foreach (var m in sm.GetProperty("metrics").EnumerateArray())
-            yield return m;
-    }
-
-    private static IEnumerable<List<JsonElement>> GetAllDataPointAttributes(JsonElement metricNode)
-    {
-        // OTLP histogram metrics: metric.histogram.dataPoints[].attributes[]
-        if (metricNode.TryGetProperty("histogram", out var hist))
-        {
-            foreach (var dp in hist.GetProperty("dataPoints").EnumerateArray())
-            {
-                if (dp.TryGetProperty("attributes", out var attrs))
-                    yield return attrs.EnumerateArray().ToList();
-            }
-        }
+            "Expected at least one runtime metric (dotnet_* OR process_runtime_dotnet_*) "
+            + "in Prometheus; got 0 samples in either family.");
     }
 }
