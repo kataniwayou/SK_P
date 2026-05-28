@@ -1,5 +1,4 @@
 using BaseApi.Service.Features.Assignment;
-using BaseApi.Service.Features.Schema;
 using BaseApi.Service.Features.Step;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -11,13 +10,12 @@ namespace BaseApi.Service.Persistence.Configurations;
 /// <c>Payload</c> column as Postgres <c>jsonb</c> (PERSIST-08) so the column is
 /// efficiently stored and indexable.
 /// <para>
-/// Two NON-nullable FKs: <c>StepId</c> → <see cref="StepEntity"/> and
-/// <c>SchemaId</c> → <see cref="SchemaEntity"/>, both with <c>OnDelete(Restrict)</c>
-/// per RESEARCH §Cascade behaviors. Constraint names are EXPLICIT
-/// (<c>fk_assignment_step_id</c> + <c>fk_assignment_schema_id</c>) to match the
-/// Phase 4 PostgresExceptionMapper Option A regex (fk_{table}_{column}_id pattern;
-/// ERROR-11). EF auto-names would diverge (e.g. include extra principal-table segments)
-/// and break the 23503 → field-name mapping path.
+/// One NON-nullable FK: <c>StepId</c> → <see cref="StepEntity"/> with
+/// <c>OnDelete(Restrict)</c> per RESEARCH §Cascade behaviors. The constraint name is
+/// EXPLICIT (<c>fk_assignment_step_id</c>) to match the Phase 4 PostgresExceptionMapper
+/// Option A regex (fk_{table}_{column}_id pattern; ERROR-11). EF auto-names would
+/// diverge (e.g. include extra principal-table segments) and break the 23503 →
+/// field-name mapping path.
 /// </para>
 /// <para>
 /// <b>Lambda-less <c>HasOne&lt;StepEntity&gt;().WithMany()</c> form</b> per RESEARCH
@@ -39,13 +37,6 @@ internal sealed class AssignmentEntityConfiguration : IEntityTypeConfiguration<A
             .WithMany()
             .HasForeignKey(e => e.StepId)
             .HasConstraintName("fk_assignment_step_id")
-            .OnDelete(DeleteBehavior.Restrict);
-
-        // ENTITY-07 + ERROR-11 — non-nullable FK to Schema; Restrict per cascade table line 585.
-        entity.HasOne<SchemaEntity>()
-            .WithMany()
-            .HasForeignKey(e => e.SchemaId)
-            .HasConstraintName("fk_assignment_schema_id")
             .OnDelete(DeleteBehavior.Restrict);
     }
 }

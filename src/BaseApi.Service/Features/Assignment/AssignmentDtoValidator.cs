@@ -8,10 +8,10 @@ namespace BaseApi.Service.Features.Assignment;
 /// Create-side validator. <c>Include(new BaseDtoValidator&lt;...&gt;())</c> absorbs the
 /// shared Name/Version/Description rules (VALID-20). Per-entity rules:
 /// <list type="bullet">
-///   <item><b>VALID-15</b> — <c>StepId</c> / <c>SchemaId</c> must not be
+///   <item><b>VALID-15</b> — <c>StepId</c> must not be
 ///     <see cref="Guid.Empty"/>. Field-level 400 if violated. Non-existent (but
 ///     well-formed) FK Guids surface as Postgres SQLSTATE 23503 → HTTP 422 via the
-///     Phase 4 PostgresExceptionMapper.</item>
+///     Phase 4 PostgresExceptionMapper (constraint <c>fk_assignment_step_id</c>).</item>
 ///   <item><b>VALID-16</b> — <c>Payload</c> must be valid JSON syntax (validated via
 ///     <see cref="System.Text.Json.JsonDocument.Parse(string,System.Text.Json.JsonDocumentOptions)"/>)
 ///     AND at most 1,048,576 characters (~1 MB cap). The MaxLength rule fires BEFORE
@@ -19,10 +19,11 @@ namespace BaseApi.Service.Features.Assignment;
 ///     pathologically large parse-target strings.</item>
 /// </list>
 /// <para>
-/// <b>VALID-21 deferred to v2</b> per 08-CONTEXT line 23 — payload-against-referenced-Schema
-/// conformance is NOT checked at the validator (no DB roundtrip to fetch the Schema
-/// definition). v1 ships syntactic validation only; semantic schema conformance is a
-/// future-phase concern.
+/// <b>VALID-21 deferred to v2</b> — payload-against-referenced-schema conformance is
+/// now structurally impossible at this layer (Phase 10 removed the direct schema
+/// reference from Assignment). Any future revival would need a new design
+/// (e.g., a processor-side schema reference for payload conformance). v1 ships
+/// syntactic validation only.
 /// </para>
 /// </summary>
 public sealed class AssignmentCreateDtoValidator : AbstractValidator<AssignmentCreateDto>
@@ -37,11 +38,6 @@ public sealed class AssignmentCreateDtoValidator : AbstractValidator<AssignmentC
         RuleFor(x => x.StepId)
             .NotEqual(Guid.Empty)
             .WithMessage("StepId must not be Guid.Empty.");
-
-        // VALID-15 — SchemaId must not be Guid.Empty.
-        RuleFor(x => x.SchemaId)
-            .NotEqual(Guid.Empty)
-            .WithMessage("SchemaId must not be Guid.Empty.");
 
         // VALID-16 — Payload: required + max length + valid JSON syntax.
         RuleFor(x => x.Payload)
@@ -79,10 +75,6 @@ public sealed class AssignmentUpdateDtoValidator : AbstractValidator<AssignmentU
         RuleFor(x => x.StepId)
             .NotEqual(Guid.Empty)
             .WithMessage("StepId must not be Guid.Empty.");
-
-        RuleFor(x => x.SchemaId)
-            .NotEqual(Guid.Empty)
-            .WithMessage("SchemaId must not be Guid.Empty.");
 
         RuleFor(x => x.Payload)
             .NotEmpty()
