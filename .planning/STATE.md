@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
-stopped_at: "Completed 08-08-PLAN.md (Phase 8 final plan: ErrorMappingFacts + MigrationFailureFacts + D-18 regression cadence)"
-last_updated: "2026-05-27T21:00:05.224Z"
-last_activity: 2026-05-27
+status: executing
+stopped_at: "Completed 09-01-PLAN.md (Phase 9 plan 1 of 3: ProcessorService.GetBySourceHashAsync + controller route)"
+last_updated: "2026-05-28T05:27:58.023Z"
+last_activity: 2026-05-28
 progress:
-  total_phases: 8
-  completed_phases: 9
-  total_plans: 23
-  completed_plans: 23
-  percent: 113
+  total_phases: 9
+  completed_phases: 8
+  total_plans: 26
+  completed_plans: 24
+  percent: 92
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-27)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 08 — entity-build-out-migrations-docker-runtime-tests
+**Current focus:** Phase 09 — add-getbysourcehash-to-processor-controller-and-new-orchestr
 
 ## Current Position
 
-Phase: 08
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-27
+Phase: 09 (add-getbysourcehash-to-processor-controller-and-new-orchestr) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-05-28
 
-Progress: [██████████] 100%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -82,6 +82,7 @@ Progress: [██████████] 100%
 | Phase 08 P06 | 10min | 3 tasks tasks | 13 files files |
 | Phase 08 P07 | 17min | 4 tasks tasks | 12 files files |
 | Phase 08 P08 | 25min | 3 tasks | 5 files |
+| Phase 09 P01 | 3min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -187,6 +188,10 @@ Recent decisions affecting current work:
 - Plan 08-08: 3 CONSECUTIVE GREEN achieved on Runs 4/5/6 of full suite (128/128 each ~28.6s) — Runs 1+3 had pre-existing flakes (ConcurrencyTokenTests.Test_RacingWrites racing-writes + LogLevelFilterTests OTel cold-start); plan accommodation honored ('consecutive is the gate, not first-attempt-3')
 - Plan 08-08: byte-identical psql \l BEFORE/AFTER snapshot proven via SHA-256 hash match (0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127) across full 6-run cycle — zero leaked stepsdb_test_<guid> databases (Phase 3 D-15 cleanup discipline preserved end-to-end through Phase 8)
 - Plan 08-08: Phase 8 COMPLETE — all 41 phase REQ-IDs covered (39 implemented + TEST-03/TEST-04 deferred to v2 per Plan 08-01 amendment); SC#1..SC#6 all behaviorally verified end-to-end via 30 new Phase 8 facts (25 Wave B smoke + 4 cross-entity error-mapping + 1 migration-failure isolation); system is shippable as v1 Steps API base
+- Plan 09-01: ProcessorService.GetBySourceHashAsync uses DbContext.Set<ProcessorEntity>() + AsNoTracking() + FirstOrDefaultAsync directly (CONTEXT D-04 + Phase 3 D-04) — IRepository<T> stays at exactly 5 methods
+- Plan 09-01: ProcessorService duplicates IEntityMapper<...> injection rather than promoting BaseService._mapper from private to protected (PATTERNS Section 2 Option B) — singleton mapper means duplicate is cheap; visibility-change-for-one-consumer rejected
+- Plan 09-01: ProcessorsController dual ctor injection — abstract BaseService<...> (for inherited 5 CRUD verbs per Phase 7 Warning 7 option b) + concrete ProcessorService (for new GetBySourceHash action). AddProcessorFeature DI alias already exposes both shapes, so no DI change required
+- Plan 09-01: Route literal 'by-source-hash/{sourceHash}' chosen over bare '{sourceHash}' — avoids collision with inherited BaseController.GetById '{id:guid}' constraint; off-format strings 404 via row-miss per SPEC.md Constraint (no route-level validation)
 
 ### Roadmap Evolution
 
@@ -216,12 +221,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-27T21:00:05.215Z
-Stopped at: Completed 08-08-PLAN.md (Phase 8 final plan: ErrorMappingFacts + MigrationFailureFacts + D-18 regression cadence)
+Last session: 2026-05-28T05:27:45.204Z
+Stopped at: Completed 09-01-PLAN.md (Phase 9 plan 1 of 3: ProcessorService.GetBySourceHashAsync + controller route)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
 **Next:** /gsd-plan-phase 9 (Processor.GetBySourceHash + Orchestration Start/Stop — SPEC.md locked + amended 2026-05-28 for 204 No Content; CONTEXT.md captured 20 implementation decisions across 4 areas; ready for planning)
 
-**Planned Phase:** 08 (entity-build-out-migrations-docker-runtime-tests) — 8 plans — 2026-05-27T19:03:44.612Z
+**Planned Phase:** 09 (Processor.GetBySourceHash + Orchestration Start/Stop) — 3 plans — 2026-05-27T23:17:39.203Z
 **Phase 9 context:** captured 2026-05-28 — SPEC.md (6 reqs, amended) + CONTEXT.md (20 decisions) + DISCUSSION-LOG.md committed; SPEC.md response amended from 200+List<WorkflowReadDto> → 204 No Content; OrchestrationService injects BaseDbContext + all 5 entity mappers up front for v2 readiness

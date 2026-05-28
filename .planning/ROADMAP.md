@@ -161,6 +161,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8
 | 6. Validation + Mapping Base | 0/2 | Planned | - |
 | 7. Generic HTTP Base + Composition Root | 1/2 | In Progress | - |
 | 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 8/8 | Complete | 2026-05-28 |
+| 9. Processor.GetBySourceHash + Orchestration Start/Stop | 0/3 | Planned | - |
 
 ## Coverage Summary
 
@@ -180,15 +181,17 @@ Per-category coverage:
 - ERROR (11): Phase 4 (all)
 - TEST (6): Phase 8 (all)
 
-### Phase 9: Add GetBySourceHash to Processor controller and new Orchestration controller with Start/Stop endpoints accepting List<guid> WorkflowIds, following the existing GetById design pattern
+### Phase 9: Processor.GetBySourceHash + Orchestration Start/Stop
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Add one new endpoint on `ProcessorsController` (`GetBySourceHash`) and create a new `Features/Orchestration/` feature folder containing `OrchestrationController` with two endpoints (`StartOrchestration`, `StopOrchestration`). v1 orchestration endpoints **validate only** (duplicates + non-empty + non-`Guid.Empty` + existence of every Workflow id) and return **`204 No Content`** on success — no entity projection, no response payload, no orchestration side-effects.
+**Requirements**: REQ-1, REQ-2, REQ-3, REQ-4, REQ-5, REQ-6 (locked in 09-SPEC.md — amended 2026-05-28)
 **Depends on:** Phase 8
-**Plans:** 0 plans
+**Plans:** 3 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 9 to break down)
+- [x] 09-01-PLAN.md — ProcessorService.GetBySourceHashAsync + ProcessorsController.GetBySourceHash (REQ-1; D-01..D-03 — direct DbContext.Set lookup + .AsNoTracking, route `by-source-hash/{sourceHash}`, NotFoundException → 404) — SHIPPED 2026-05-28: 2 files modified (ProcessorService.cs ctor extended with `IEntityMapper<...>` parameter + new `GetBySourceHashAsync` public method using `DbContext.Set<ProcessorEntity>().AsNoTracking().FirstOrDefaultAsync(p => p.SourceHash == sourceHash, ct)` throwing `NotFoundException(nameof(ProcessorEntity), sourceHash)` on miss; ProcessorController.cs ctor extended with concrete `ProcessorService` param + new `GetBySourceHash` action mapped to `[HttpGet("by-source-hash/{sourceHash}")]`); IRepository<T> 5-method surface preserved (Phase 3 D-04); AddProcessorFeature DI unchanged (concrete + alias both registered); both `dotnet build SK_P.sln -c Release & -c Debug --no-restore` exit 0 with zero warnings; 0 deviations — plan executed exactly as written. Commits: f99974a (Task 1 ProcessorService.GetBySourceHashAsync), f3872cd (Task 2 ProcessorsController.GetBySourceHash).
+- [ ] 09-02-PLAN.md — Features/Orchestration/ feature folder (REQ-2..REQ-6; D-04..D-18 — WorkflowIdsValidator + OrchestrationService injecting BaseDbContext + 5 mappers + OrchestrationController Start/Stop returning 204 + AddOrchestrationFeature wired into AppFeatures)
+- [ ] 09-03-PLAN.md — Integration tests (D-19 + D-20; reuses Phase8WebAppFactory) — GetBySourceHashFacts (3 facts) + StartOrchestrationFacts (5 facts) + StopOrchestrationFacts (2 facts), 3 consecutive GREEN dotnet test runs, byte-identical psql \l snapshots, Phase 5 D-11 telemetry.jsonl cleanup preserved
 
 ---
 *Roadmap created: 2026-05-26*
