@@ -52,6 +52,15 @@ public sealed class ProcessorService :
     /// </summary>
     public async Task<ProcessorReadDto> GetBySourceHashAsync(string sourceHash, CancellationToken ct)
     {
+        // WR-02 guard: a null/empty/whitespace sourceHash cannot match any row
+        // (the validator enforces a 64-char lowercase hex string at create time).
+        // Short-circuit to a 404 to avoid an unnecessary DB round-trip and a
+        // misleading 404 with resourceId="". The 404 here mirrors the existing
+        // "miss => 404" contract — public method reachable from non-controller
+        // callers (CONTEXT D-05 pre-injected mappers anticipate cross-entity reuse).
+        if (string.IsNullOrWhiteSpace(sourceHash))
+            throw new NotFoundException(nameof(ProcessorEntity), sourceHash ?? "(null)");
+
         var entity = await DbContext.Set<ProcessorEntity>()
             .AsNoTracking()
             .FirstOrDefaultAsync(p => p.SourceHash == sourceHash, ct);
