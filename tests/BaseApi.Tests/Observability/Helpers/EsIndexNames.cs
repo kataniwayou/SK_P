@@ -47,17 +47,28 @@ public static class EsIndexNames
     /// inside the OTLP-normalized lowercase <c>attributes</c> map.
     ///
     /// <para>
-    /// IN-05 review fix: query against the <c>.keyword</c> sub-field instead of the raw
-    /// analyzed text field. ES 8.x default dynamic mapping creates a <c>text</c> field
-    /// with a <c>fields.keyword</c> sub-field for string attributes; <c>term</c> queries
-    /// against the raw analyzed text only matched because 32-hex GUIDs accidentally
-    /// survive the <c>standard</c> analyzer (no token splits on hex-only input). If a
-    /// future correlation-id format adds dashes or other non-alphanumeric chars, the
-    /// raw-field <c>term</c> query would silently miss; routing through
-    /// <c>.keyword</c> makes the query robust to any correlation-id shape.
+    /// The OTel-managed <c>logs-generic.otel-default</c> data stream is governed by the x-pack
+    /// ECS index template whose <c>all_strings_to_keywords</c> dynamic template maps every string
+    /// attribute DIRECTLY to <c>keyword</c> (with <c>ignore_above: 1024</c>) — NOT to <c>text</c>
+    /// with a <c>fields.keyword</c> sub-field. A field-API probe confirms:
+    /// <code>
+    /// GET /logs-generic.otel-default/_mapping/field/attributes.CorrelationId
+    /// → {"CorrelationId":{"type":"keyword","ignore_above":1024}}
+    /// </code>
+    /// So <c>term</c> queries must target <c>attributes.CorrelationId</c> directly. Querying
+    /// against a non-existent <c>attributes.CorrelationId.keyword</c> sub-field returns zero
+    /// hits and breaks every log-readback fact in the suite.
+    /// </para>
+    ///
+    /// <para>
+    /// Historical context: a prior IN-05 review fix (commit 9370e89) attempted to route through
+    /// <c>.keyword</c> on the assumption that stock ES 8.x dynamic mapping creates a sub-field.
+    /// That assumption holds for un-templated indices but NOT for the x-pack ECS-managed data
+    /// stream this suite actually queries. The change broke 4 log-readback facts at Phase 11 UAT
+    /// (LogLevelFilterTests, SchemasLogsE2ETests, LogExportTests ×2) and was reverted.
     /// </para>
     /// </summary>
-    public const string CorrelationIdFieldPath = "attributes.CorrelationId.keyword";
+    public const string CorrelationIdFieldPath = "attributes.CorrelationId";
 
     /// <summary>
     /// The OTLP field path prefix for resource attributes (service.name, service.version)
