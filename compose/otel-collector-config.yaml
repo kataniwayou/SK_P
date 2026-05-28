@@ -1,11 +1,19 @@
-# OTel Collector Contrib config — sourced verbatim from CONTEXT.md D-10, then
-# extended in Plan 05-02 with a filterprocessor entry to close the SC#4 metrics-half
-# gap that Plan 05-01 deferred (Rule 1 deviation — see 05-01-SUMMARY Deviation #2).
+# OTel Collector Contrib config — Phase 11 shape (was Phase 5 D-10 + Plan 05-02 fix-forward).
 #
-# Receivers accept OTLP gRPC (4317) + HTTP (4318); exporters write to a
-# host-mounted JSON-lines file (read by tests/BaseApi.Tests/Observability/*Tests.cs)
-# AND stream to container stdout (live tailing via `docker logs sk-otel-collector`).
-# health_check extension on :13133 backs the compose-level service healthcheck.
+# Pipelines: logs → elasticsearch exporter (single-sink per Phase 11 D-01);
+#            metrics → filter/health_metrics processor → prometheus exporter
+#            (single-sink per Phase 11 D-02; D-04 preserves the Phase 5 fix-forward
+#            that drops /health/* data points before egress);
+#            traces → REMOVED (Phase 11 D-03 — no traces backend in v1).
+#
+# Receivers accept OTLP gRPC (4317) + HTTP (4318) — unchanged from Phase 5.
+# health_check extension on :13133 — host-side `curl localhost:13133/` smoke probe
+# (Phase 5 D-10 + RESEARCH Open Q4 carry-forward; distroless image has no in-container
+# probe per Plan 05-01 deviation #1 + RESEARCH Pitfall 3).
+#
+# Backends (compose-internal DNS):
+#   - http://elasticsearch:9200 (sk-elasticsearch container, D-12 dev posture)
+#   - http://prometheus:9090 (scrape source: this collector exposes /metrics on :8889)
 
 receivers:
   otlp:
@@ -16,7 +24,7 @@ receivers:
         endpoint: 0.0.0.0:4318
 
 processors:
-  # Plan 05-02 fix-forward to Plan 05-01 (closes SC#4 metrics-half gap).
+  # Plan 05-02 fix-forward to Plan 05-01 (closes SC#4 metrics-half gap); Phase 11 D-04 re-points this processor at the Prometheus exporter pipeline (was [file, logging]).
   #
   # CONTEXT: OpenTelemetry.Instrumentation.AspNetCore 1.15.0's
   # MeterProviderBuilder.AddAspNetCoreInstrumentation is PARAMETERLESS — no Filter
@@ -28,7 +36,7 @@ processors:
   # SOLUTION (Collector-side filtering): the otel-collector-contrib filterprocessor
   # drops data points whose `metric.name == "http.server.request.duration"` AND whose
   # `attributes["http.route"]` starts with `/health/`. SDK still emits, Collector
-  # drops before the file exporter — tests observe ZERO health-route data points.
+  # drops data points whose http.route starts with /health/ before the Prometheus exporter — tests observe ZERO health-route samples in Prom queries (Phase 11 D-04).
   #
   # This is the idiomatic OTel architecture: SDK emits all, Collector applies
   # ops-policy filtering. Backend filtering (Grafana/Tempo/Datadog) becomes a
@@ -42,13 +50,41 @@ processors:
         - 'metric.name == "http.server.request.duration" and IsMatch(attributes["http.route"], "^/health/.*")'
 
 exporters:
-  file:
-    path: /var/otel-out/telemetry.jsonl
-    rotation:
-      max_megabytes: 10
-      max_days: 1
-  logging:
-    verbosity: detailed
+  # Phase 11 D-07 — exposes /metrics on :8889 for the sk-prometheus container to scrape.
+  # OTel → Prometheus naming (load-bearing for test assertions):
+  #   dot-form `http.server.request.duration` → underscore-form `http_server_request_duration`;
+  #   Histogram (unit="s") expands to `_count` + `_sum` + `_bucket` triplet with `_seconds` suffix
+  #   → final Prom name `http_server_request_duration_seconds_count` (and _sum / _bucket).
+  #   monotonic Sum gains `_total` suffix (e.g., `db.client.operations` → `db_client_operations_total`).
+  # (RESEARCH Pitfall 1 — the only complete reference for this mapping is the OTel spec at
+  #  https://opentelemetry.io/docs/specs/otel/compatibility/prometheus_and_openmetrics/.)
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # CRITICAL per RESEARCH Pitfall 1: without resource_to_telemetry_conversion: true,
+    # resource attributes (service.name, service.version) do NOT become Prometheus labels.
+    # Phase 11 D-17 round-trip tests assert {service_name="sk-api"} — non-negotiable.
+    resource_to_telemetry_conversion:
+      enabled: true
+    # Emit sample timestamps from the OTLP source rather than scrape time. Reduces
+    # Prometheus's apparent metric latency by ~15s — improves E2E test determinism.
+    send_timestamps: true
+
+  # Phase 11 D-06 — native elasticsearch exporter (otel-collector-contrib).
+  # mapping.mode: none preserves OTLP raw field structure (Body, SeverityText,
+  # Attributes.<key>, Resource.<key> — capital first letter) and produces the
+  # data stream `logs-generic-default` (backing index `.ds-logs-generic-default-NNNN`).
+  # NOTE (RESEARCH Open Q1): sk2_1's live ES on this host shows the OTel-mode index
+  # `logs-generic.otel-default` despite an identical `mapping.mode: none` YAML. Wave 0
+  # verification in Plan 11-07 confirms the actual index name on first sk_p compose-up
+  # by running `curl /_cat/indices`; the test helper constant is baked from that probe.
+  elasticsearch:
+    endpoints:
+      # Compose-internal hostname — resolves to sk-elasticsearch container via default
+      # compose network (Pattern 5: collector inside compose, tests outside via host-DNS).
+      - http://elasticsearch:9200
+    mapping:
+      mode: none
+    # No auth/tls blocks — dev posture per Phase 11 D-12 + sk2_1 lock-in.
 
 extensions:
   health_check:
@@ -58,12 +94,19 @@ service:
   extensions: [health_check]
   pipelines:
     logs:
+      # Phase 11 D-01 — single sink. No file fan-out. No debug exporter.
       receivers: [otlp]
-      exporters: [file, logging]
+      exporters: [elasticsearch]
     metrics:
+      # Phase 11 D-02 — single sink to Prometheus exporter.
+      # Phase 11 D-04 — filter/health_metrics processor re-pointed at this pipeline
+      # (was metrics→file in Phase 5; now metrics→prometheus). OBSERV-08 invariant
+      # preserved: /health/* data points dropped before reaching the Prom exporter.
       receivers: [otlp]
       processors: [filter/health_metrics]
-      exporters: [file, logging]
-    traces:
-      receivers: [otlp]
-      exporters: [file, logging]
+      exporters: [prometheus]
+    # Phase 11 D-03 — traces pipeline REMOVED. No traces backend in v1. OBSERV-12
+    # superseded to Out of Scope (REQUIREMENTS.md Phase 11 amendment). The collector
+    # will still ACCEPT trace OTLP records on the OTLP receiver but will silently
+    # drop them since no pipeline consumes them — this is intentional and matches
+    # sk2_1's lock-in posture.
