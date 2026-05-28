@@ -32,11 +32,21 @@ public sealed class WorkflowIdsValidator : AbstractValidator<IReadOnlyList<Guid>
 {
     public WorkflowIdsValidator()
     {
-        RuleFor(ids => ids).NotNull().NotEmpty();
-
+        // WR-03: collapse NotNull -> NotEmpty -> Distinct into a single cascading
+        // chain so NotEmpty short-circuits the duplicate scan on `[]`, and so the
+        // duplicate rule no longer has to carry an inline `ids is null` null-guard
+        // (the cascade now owns the null case at the head of the chain). Rule order
+        // matches the documentation block at the top of the file (NotNull -> NotEmpty
+        // -> Distinct -> per-item GuidEmpty). The Cascade(...) extension method on
+        // the rule builder is the FluentValidation 12 idiom (the AbstractValidator
+        // property `CascadeMode` was removed in FV12 — only the per-rule extension
+        // remains; see Phase 6 RESEARCH FluentValidation 12 upgrade notes).
         RuleFor(ids => ids)
-            .Must(ids => ids is null || ids.Distinct().Count() == ids.Count)
-            .WithMessage("WorkflowIds must be unique.");
+            .Cascade(CascadeMode.Stop)
+            .NotNull()
+            .NotEmpty()
+            .Must(ids => ids.Distinct().Count() == ids.Count)
+                .WithMessage("WorkflowIds must be unique.");
 
         RuleForEach(ids => ids)
             .NotEqual(Guid.Empty)
