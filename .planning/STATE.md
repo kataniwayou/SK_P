@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: "Completed 09-02-PLAN.md (Phase 9 plan 2 of 3: Features/Orchestration folder + AppFeatures wiring)"
-last_updated: "2026-05-28T05:36:38.846Z"
+status: verifying
+stopped_at: "Completed 09-03-PLAN.md (Phase 9 plan 3 of 3: 10 new integration facts proving REQ-1/3/4/5/6; 3 consecutive GREEN runs)"
+last_updated: "2026-05-28T05:48:57.183Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 26
-  completed_plans: 25
-  percent: 96
+  completed_plans: 26
+  percent: 100
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 
 Phase: 09 (add-getbysourcehash-to-processor-controller-and-new-orchestr) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-28
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -84,6 +84,7 @@ Progress: [██████████] 96%
 | Phase 08 P08 | 25min | 3 tasks | 5 files |
 | Phase 09 P01 | 3min | 3 tasks | 2 files |
 | Phase 09 P02 | 10min | 5 tasks tasks | 5 files files |
+| Phase 09 P03 | 15min | 4 tasks tasks | 3 files files |
 
 ## Accumulated Context
 
@@ -201,6 +202,11 @@ Recent decisions affecting current work:
 - Plan 09-02: Existence check uses single SQL SELECT id WHERE id IN (...) projection per CONTEXT D-10 — _db.Set<WorkflowEntity>().AsNoTracking().Where(w => ids.Contains(w.Id)).Select(w => w.Id).ToListAsync(ct); NO N-query loop, NO full entity materialization, NotFoundException listing missing ids via string.Join(', ', missing)
 - Plan 09-02: AddOrchestrationFeature is the simplest per-feature DI extension in the codebase — single AddScoped<OrchestrationService>() line, NO abstract-base alias (CONTEXT D-06); validator + 5 entity mappers auto-discovered by Phase 6 AddBaseApiValidation + AddBaseApiMapping scans
 - Plan 09-02: Both Start and Stop endpoints delegate to the same OrchestrationService.ValidateWorkflowIdsAsync method per CONTEXT D-12 — v1 behavior is functionally identical, only URL segment differs; future divergence will split into separate service methods
+- Plan 09-03: 3 independent [Fact] methods per requirement axis (no [Theory]) per CONTEXT D-19 — keeps failure attribution clean
+- Plan 09-03: Stop fact set covers only happy + 404 URL-routing per CONTEXT D-12 (Start and Stop share OrchestrationService.ValidateWorkflowIdsAsync) — detailed validation coverage delegated to StartOrchestrationFacts
+- Plan 09-03: tests/BaseApi.Tests/Features/{Entity}/ folder layout (CONTEXT D-19) — sibling to existing Integration/ folder; future feature-specific facts ship here
+- Plan 09-03: SeedWorkflowAsync helper duplicated verbatim in StartOrchestrationFacts and StopOrchestrationFacts rather than extracted (CONTEXT Deferred — would couple sibling files)
+- Plan 09-03: 3 consecutive GREEN dotnet test runs achieved (138/138 each ~29s) after one Run 0 pre-existing flake (Phase 8 P08 known flake); byte-identical psql l snapshots (SHA-256 1C611C6006E2...) prove zero leaked stepsdb_test_* databases
 
 ### Roadmap Evolution
 
@@ -230,8 +236,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T05:36:18.682Z
-Stopped at: Completed 09-02-PLAN.md (Phase 9 plan 2 of 3: Features/Orchestration folder + AppFeatures wiring)
+Last session: 2026-05-28T05:48:41.809Z
+Stopped at: Completed 09-03-PLAN.md (Phase 9 plan 3 of 3: 10 new integration facts proving REQ-1/3/4/5/6; 3 consecutive GREEN runs)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
