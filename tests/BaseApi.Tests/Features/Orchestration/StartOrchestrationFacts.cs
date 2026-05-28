@@ -175,8 +175,56 @@ public sealed class StartOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
         using var doc = JsonDocument.Parse(body);
         Assert.Equal(404, doc.RootElement.GetProperty("status").GetInt32());
         Assert.Equal("WorkflowEntity", doc.RootElement.GetProperty("resourceType").GetString());
-        // resourceId is the comma-joined missing-id string (a single id here).
+        // IN-04 (iteration 2): for a single missing id the resourceId must equal the
+        // bare GUID string — `string.Join(", ", missing)` over a one-element list
+        // emits the GUID with no separator/wrapping. Strict equality locks in the
+        // exact format and catches any future separator/wrapping regression.
         var resourceId = doc.RootElement.GetProperty("resourceId").GetString();
-        Assert.Contains(missingId.ToString(), resourceId);
+        Assert.Equal(missingId.ToString(), resourceId);
+    }
+
+    /// <summary>
+    /// IN-04 (iteration 2): locks the multi-id <c>string.Join(", ", missing)</c>
+    /// contract — every missing id appears in <c>resourceId</c> and they are
+    /// comma-space delimited (not <c>;</c>, <c>\n</c>, <c>[...]</c>, etc.). The
+    /// single-id fact above cannot detect a regression in the join formatting.
+    /// </summary>
+    [Fact]
+    public async Task Start_Returns404_WithCommaJoinedIds_WhenMultipleWorkflowIdsMissing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = _factory.CreateClient();
+
+        var missingId1 = Guid.NewGuid();
+        var missingId2 = Guid.NewGuid();
+        var resp = await client.PostAsJsonAsync(
+            "/api/v1/orchestration/start",
+            new List<Guid> { missingId1, missingId2 },
+            ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        Assert.Equal("application/problem+json", resp.Content.Headers.ContentType?.MediaType);
+
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal(404, doc.RootElement.GetProperty("status").GetInt32());
+        Assert.Equal("WorkflowEntity", doc.RootElement.GetProperty("resourceType").GetString());
+        var resourceId = doc.RootElement.GetProperty("resourceId").GetString();
+        Assert.NotNull(resourceId);
+        // Both ids must appear (order is whatever LINQ Except yields — currently
+        // input order, but we don't depend on that here).
+        Assert.Contains(missingId1.ToString(), resourceId);
+        Assert.Contains(missingId2.ToString(), resourceId);
+        // The exact ", " separator (comma + single space) is the locked contract
+        // from OrchestrationService.ValidateWorkflowIdsAsync (`string.Join(", ", missing)`).
+        Assert.Contains(", ", resourceId);
+        // Resource id must be exactly "{id1}, {id2}" — no wrapping ([...]), no
+        // alternate separators (;, \n, etc.). Try both possible orderings so we
+        // do not over-couple to LINQ Except's incidental input-order behavior.
+        var expectedInOrder = $"{missingId1}, {missingId2}";
+        var expectedReversed = $"{missingId2}, {missingId1}";
+        Assert.True(
+            resourceId == expectedInOrder || resourceId == expectedReversed,
+            $"resourceId '{resourceId}' must equal '{expectedInOrder}' or '{expectedReversed}' (comma-space joined, unwrapped).");
     }
 }

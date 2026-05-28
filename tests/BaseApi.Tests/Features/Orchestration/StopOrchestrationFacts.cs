@@ -111,7 +111,48 @@ public sealed class StopOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
         var body = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(body);
         Assert.Equal("WorkflowEntity", doc.RootElement.GetProperty("resourceType").GetString());
+        // IN-04 (iteration 2): single-id resourceId must equal the bare GUID string.
+        // See StartOrchestrationFacts.Start_Returns404_WhenAnyWorkflowIdMissing for
+        // the rationale (strict equality locks the `string.Join(", ", missing)` shape).
         var resourceId = doc.RootElement.GetProperty("resourceId").GetString();
-        Assert.Contains(missingId.ToString(), resourceId);
+        Assert.Equal(missingId.ToString(), resourceId);
+    }
+
+    /// <summary>
+    /// IN-04 (iteration 2) mirror — proves the multi-id <c>string.Join(", ", missing)</c>
+    /// contract holds for the <c>/stop</c> URL too (not just <c>/start</c>). Stop and
+    /// Start share <c>OrchestrationService.ValidateWorkflowIdsAsync</c> per CONTEXT D-12,
+    /// but a small explicit fact here defends against a future split that might
+    /// accidentally diverge the error-shape on one side only.
+    /// </summary>
+    [Fact]
+    public async Task Stop_Returns404_WithCommaJoinedIds_WhenMultipleWorkflowIdsMissing()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = _factory.CreateClient();
+
+        var missingId1 = Guid.NewGuid();
+        var missingId2 = Guid.NewGuid();
+        var resp = await client.PostAsJsonAsync(
+            "/api/v1/orchestration/stop",
+            new List<Guid> { missingId1, missingId2 },
+            ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        Assert.Equal("application/problem+json", resp.Content.Headers.ContentType?.MediaType);
+
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal("WorkflowEntity", doc.RootElement.GetProperty("resourceType").GetString());
+        var resourceId = doc.RootElement.GetProperty("resourceId").GetString();
+        Assert.NotNull(resourceId);
+        Assert.Contains(missingId1.ToString(), resourceId);
+        Assert.Contains(missingId2.ToString(), resourceId);
+        Assert.Contains(", ", resourceId);
+        var expectedInOrder = $"{missingId1}, {missingId2}";
+        var expectedReversed = $"{missingId2}, {missingId1}";
+        Assert.True(
+            resourceId == expectedInOrder || resourceId == expectedReversed,
+            $"resourceId '{resourceId}' must equal '{expectedInOrder}' or '{expectedReversed}' (comma-space joined, unwrapped).");
     }
 }
