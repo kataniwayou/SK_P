@@ -17,7 +17,7 @@ namespace BaseApi.Tests.Observability;
 ///   <item>
 ///     <b>(a) <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> env-var pin</b> — defensively set to
 ///     <c>http://localhost:4317</c> in the constructor (T-05-OTLP-EXFIL inheritance from
-///     Phase 5 OtelCollectorFixture lines 87-95). Prevents accidental telemetry leakage to
+///     the retired Phase 5 fixture lines 87-95). Prevents accidental telemetry leakage to
 ///     an unexpected collector if a developer sets a sibling env var.
 ///   </item>
 ///   <item>
@@ -29,9 +29,9 @@ namespace BaseApi.Tests.Observability;
 ///   </item>
 ///   <item>
 ///     <b>(c) Optional <c>Logging:LogLevel:Default</c> override constructor</b> — preserves
-///     parity with the deprecated <c>OtelCollectorFixture(string, string?)</c> overload so
-///     <c>LogLevelFilterTests</c> (migrated in Plan 11-08) has a clean substitute for the
-///     2-arg form it currently uses.
+///     parity with the retired Phase 5 fixture's 2-arg overload so
+///     <c>LogLevelFilterTests</c> (migrated in Plan 11-08b) has a clean substitute for the
+///     prior 2-arg form.
 ///   </item>
 /// </list>
 ///
@@ -40,8 +40,8 @@ namespace BaseApi.Tests.Observability;
 /// <c>WebAppFactory</c> → <c>WebApplicationFactory&lt;Program&gt;</c>. Each layer composes
 /// the next: Phase8 owns Postgres + ConnectionString rewrite; WebAppFactory owns
 /// AddApplicationPart for the test-assembly controllers; Phase11 owns the OTel test-only
-/// overrides. RESEARCH Open Q2 recommends this composition over evolving OtelCollectorFixture
-/// in place — fewer mutations to Phase 5/8 assets; cleaner trait + filter posture.
+/// overrides. RESEARCH Open Q2 recommends this composition over evolving the retired Phase 5
+/// fixture in place — fewer mutations to Phase 5/8 assets; cleaner trait + filter posture.
 /// </para>
 /// </summary>
 public class Phase11WebAppFactory : Phase8WebAppFactory
@@ -61,7 +61,7 @@ public class Phase11WebAppFactory : Phase8WebAppFactory
         _logLevelDefaultOverride = logLevelDefaultOverride;
         // T-05-OTLP-EXFIL defensive — pin env var even before ConfigureWebHost runs.
         // Persistent process-wide side effect (NOT cleared on DisposeAsync — same posture
-        // as Phase 5 OtelCollectorFixture; the var stays pinned for the test process lifetime).
+        // as the retired Phase 5 fixture; the var stays pinned for the test process lifetime).
         Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
     }
 

@@ -19,9 +19,9 @@ namespace BaseApi.Tests.Validation;
 /// </para>
 ///
 /// <para>
-/// Plan 06-01 unsealed the base <see cref="WebAppFactory"/> (matching Phase 5's
-/// <c>OtelCollectorFixture</c> unsealing precedent) so this subclass can override
-/// <c>ConfigureWebHost</c>.
+/// Plan 06-01 unsealed the base <see cref="WebAppFactory"/> (matching the Phase 5
+/// observability fixture's unsealing precedent, retired by Plan 11-08c) so this subclass
+/// can override <c>ConfigureWebHost</c>.
 /// </para>
 /// </summary>
 public sealed class ValidationWebAppFactory : WebAppFactory

@@ -8,7 +8,9 @@ namespace BaseApi.Tests.Observability;
 /// <summary>
 /// Test-only endpoints used by Phase 5 verification battery. NOT registered in
 /// <c>src/BaseApi.Service/</c> — discovered through the test assembly's
-/// <see cref="OtelCollectorFixture"/>.<c>AddApplicationPart</c> call.
+/// <c>AddApplicationPart</c> call (originally on the Phase 5 fixture; now on
+/// <see cref="Phase11WebAppFactory"/> and <see cref="BaseApi.Tests.Composition.Phase8WebAppFactory"/>
+/// after Plan 11-08c retired the prior fixture).
 ///
 /// <para>
 /// <b>Endpoint coverage map (Plan 05-02 SC#):</b>

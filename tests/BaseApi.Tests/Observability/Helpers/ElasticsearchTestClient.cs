@@ -85,7 +85,7 @@ public sealed class ElasticsearchTestClient : IDisposable
                     {
                         // Clone() detaches the element from the parsing scope (the using-var
                         // doc disposes at end of block); the returned element is safe to
-                        // retain. Pattern lifted verbatim from OtelCollectorFixture line 211.
+                        // retain. Pattern lifted verbatim from the retired Phase 5 fixture line 211.
                         using var inner = JsonDocument.Parse(hits[0].GetRawText());
                         return inner.RootElement.Clone();
                     }
