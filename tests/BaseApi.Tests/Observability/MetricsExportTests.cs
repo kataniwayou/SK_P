@@ -49,7 +49,7 @@ public sealed class MetricsExportTests : IClassFixture<Phase11WebAppFactory>
         const string query = """http_server_request_duration_seconds_count{service_name="sk-api",http_route="test-obs/ok"}""";
 
         using var prom = new PrometheusTestClient();
-        var samples = await prom.PollPrometheusUntilSumAtLeast(query, threshold: RequestCount);
+        var samples = await prom.PollPrometheusUntilSumAtLeast(query, threshold: RequestCount, ct: ct);
 
         Assert.NotEmpty(samples);
         var totalCount = PrometheusTestClient.SumSampleValues(samples);
@@ -82,7 +82,7 @@ public sealed class MetricsExportTests : IClassFixture<Phase11WebAppFactory>
         // Single-shot query after a 15s wait — no need for the threshold poll
         // (we're asserting EMPTY, not asserting a threshold is reached).
         await Task.Delay(15_000, ct);
-        var samples = await prom.QueryPrometheus(query);
+        var samples = await prom.QueryPrometheus(query, ct);
 
         Assert.Empty(samples);
     }
@@ -107,8 +107,8 @@ public sealed class MetricsExportTests : IClassFixture<Phase11WebAppFactory>
         await Task.Delay(15_000, ct);
 
         using var prom = new PrometheusTestClient();
-        var dotnetSamples  = await prom.QueryPrometheus(queryDotnet);
-        var procRtSamples  = await prom.QueryPrometheus(queryProcRt);
+        var dotnetSamples  = await prom.QueryPrometheus(queryDotnet, ct);
+        var procRtSamples  = await prom.QueryPrometheus(queryProcRt, ct);
 
         var hasRuntimeMetric = dotnetSamples.Count > 0 || procRtSamples.Count > 0;
         Assert.True(hasRuntimeMetric,

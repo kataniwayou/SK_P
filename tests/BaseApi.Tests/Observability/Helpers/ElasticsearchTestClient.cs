@@ -59,7 +59,8 @@ public sealed class ElasticsearchTestClient : IDisposable
     /// constant). Override only for cross-index probes.
     /// </para>
     /// </summary>
-    public async Task<JsonElement?> PollEsForLog(string queryBody, int timeoutMs, string? indexPath = null)
+    public async Task<JsonElement?> PollEsForLog(
+        string queryBody, int timeoutMs, string? indexPath = null, CancellationToken ct = default)
     {
         indexPath ??= EsIndexNames.LogsDataStream;
 
@@ -67,16 +68,17 @@ public sealed class ElasticsearchTestClient : IDisposable
         var delay = InitialDelayMs;
         while (sw.ElapsedMilliseconds < timeoutMs)
         {
+            ct.ThrowIfCancellationRequested();
             try
             {
                 using var req = new HttpRequestMessage(HttpMethod.Post, $"{indexPath}/_search")
                 {
                     Content = new StringContent(queryBody, Encoding.UTF8, "application/json"),
                 };
-                using var resp = await _es.SendAsync(req);
+                using var resp = await _es.SendAsync(req, ct);
                 if (resp.IsSuccessStatusCode)
                 {
-                    var json = await resp.Content.ReadAsStringAsync();
+                    var json = await resp.Content.ReadAsStringAsync(ct);
                     using var doc = JsonDocument.Parse(json);
                     if (doc.RootElement.TryGetProperty("hits", out var outer)
                         && outer.TryGetProperty("hits", out var hits)
@@ -100,7 +102,7 @@ public sealed class ElasticsearchTestClient : IDisposable
 
             var remaining = (int)(timeoutMs - sw.ElapsedMilliseconds);
             if (remaining <= 0) break;
-            await Task.Delay(Math.Min(delay, remaining));
+            await Task.Delay(Math.Min(delay, remaining), ct);
             delay = Math.Min(delay * 2, MaxDelayMs);
         }
         return null;

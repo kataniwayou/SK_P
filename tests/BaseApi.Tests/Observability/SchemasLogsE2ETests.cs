@@ -87,7 +87,7 @@ public sealed class SchemasLogsE2ETests : IClassFixture<Phase11WebAppFactory>
           }
           """;
 
-        var hit = await esClient.PollEsForLog(queryBody, timeoutMs: 30_000);
+        var hit = await esClient.PollEsForLog(queryBody, timeoutMs: 30_000, ct: ct);
         Assert.NotNull(hit);
 
         // The hit's _source carries the OTLP log document. Inspect resource attributes

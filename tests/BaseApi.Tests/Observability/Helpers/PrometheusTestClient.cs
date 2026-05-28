@@ -55,24 +55,26 @@ public sealed class PrometheusTestClient : IDisposable
     /// <c>Assert.NotEmpty(samples)</c>.
     /// </para>
     /// </summary>
-    public async Task<List<JsonElement>> PollPrometheusUntilSumAtLeast(string promql, double threshold)
+    public async Task<List<JsonElement>> PollPrometheusUntilSumAtLeast(
+        string promql, double threshold, CancellationToken ct = default)
     {
         // RESEARCH Pitfall 7 / Pattern 3 — MANDATORY initial sleep. Without it, the
         // first 15s of polling returns empty result vectors (scrape cycle has not run
         // yet); time wasted in the loop instead of in the sleep.
-        await Task.Delay(InitialSleepMs);
+        await Task.Delay(InitialSleepMs, ct);
 
-        var lastSamples = await QueryPrometheus(promql);
+        var lastSamples = await QueryPrometheus(promql, ct);
         var elapsed     = InitialSleepMs;
         while (elapsed < PollTimeoutMs)
         {
+            ct.ThrowIfCancellationRequested();
             if (lastSamples.Count > 0 && SumSampleValues(lastSamples) >= threshold)
             {
                 return lastSamples;
             }
-            await Task.Delay(PollIntervalMs);
+            await Task.Delay(PollIntervalMs, ct);
             elapsed += PollIntervalMs;
-            lastSamples = await QueryPrometheus(promql);
+            lastSamples = await QueryPrometheus(promql, ct);
         }
         return lastSamples;
     }
@@ -82,14 +84,14 @@ public sealed class PrometheusTestClient : IDisposable
     /// <see cref="List{JsonElement}"/> of cloned elements (safe to retain).
     /// Calls <see cref="Assert.Fail(string)"/> on non-success responses.
     /// </summary>
-    public async Task<List<JsonElement>> QueryPrometheus(string promql)
+    public async Task<List<JsonElement>> QueryPrometheus(string promql, CancellationToken ct = default)
     {
         // RESEARCH Don't Hand-Roll table — EscapeDataString mandatory; PromQL contains
         // { } " = which break unencoded URL queries.
         var url   = $"api/v1/query?query={Uri.EscapeDataString(promql)}";
-        using var resp = await _prom.GetAsync(url);
+        using var resp = await _prom.GetAsync(url, ct);
         resp.EnsureSuccessStatusCode();
-        var json = await resp.Content.ReadAsStringAsync();
+        var json = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(json);
         if (!doc.RootElement.TryGetProperty("status", out var statusEl)
             || statusEl.GetString() != "success"

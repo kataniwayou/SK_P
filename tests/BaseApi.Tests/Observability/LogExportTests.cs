@@ -60,7 +60,7 @@ public sealed class LogExportTests : IClassFixture<Phase11WebAppFactory>
             }
           }
           """;
-        var hit = await es.PollEsForLog(queryBody, timeoutMs: 30_000);
+        var hit = await es.PollEsForLog(queryBody, timeoutMs: 30_000, ct: ct);
         Assert.NotNull(hit);
 
         // Field-shape-agnostic sanity probes against the hit's _source raw JSON:
@@ -112,7 +112,7 @@ public sealed class LogExportTests : IClassFixture<Phase11WebAppFactory>
             }
           }
           """;
-        var hit = await es.PollEsForLog(queryBody, timeoutMs: 30_000);
+        var hit = await es.PollEsForLog(queryBody, timeoutMs: 30_000, ct: ct);
         Assert.NotNull(hit);
 
         // The log doc MUST carry the sanitized value, NOT the raw \r-injected input.

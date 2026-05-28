@@ -188,7 +188,7 @@ public sealed class HealthEndpointsTests
           }
           """;
 
-        var hit = await es.PollEsForLog(queryBody, timeoutMs: 8_000);
+        var hit = await es.PollEsForLog(queryBody, timeoutMs: 8_000, ct: ct);
         Assert.Null(hit);
     }
 

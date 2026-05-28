@@ -102,7 +102,7 @@ public sealed class SchemasMetricsE2ETests : IClassFixture<Phase11WebAppFactory>
             """http_server_request_duration_seconds_count{service_name="sk-api",http_route="api/v{version:apiVersion}/Schemas"}""";
 
         using var promClient = new PrometheusTestClient();
-        var samples = await promClient.PollPrometheusUntilSumAtLeast(query, threshold: RequestCount);
+        var samples = await promClient.PollPrometheusUntilSumAtLeast(query, threshold: RequestCount, ct: ct);
 
         Assert.NotEmpty(samples);
         var totalCount = PrometheusTestClient.SumSampleValues(samples);

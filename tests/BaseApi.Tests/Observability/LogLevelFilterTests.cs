@@ -53,7 +53,7 @@ public sealed class LogLevelFilterTests
             "query": { "term": { "{{EsIndexNames.CorrelationIdFieldPath}}": "{{thisRequestCorrId}}" } }
           }
           """;
-        var hit = await es.PollEsForLog(queryBody, timeoutMs: 8_000);
+        var hit = await es.PollEsForLog(queryBody, timeoutMs: 8_000, ct: ct);
         Assert.Null(hit);
     }
 
@@ -82,7 +82,7 @@ public sealed class LogLevelFilterTests
             "query": { "term": { "{{EsIndexNames.CorrelationIdFieldPath}}": "{{thisRequestCorrId}}" } }
           }
           """;
-        var hit = await es.PollEsForLog(queryBody, timeoutMs: 30_000);
+        var hit = await es.PollEsForLog(queryBody, timeoutMs: 30_000, ct: ct);
         Assert.NotNull(hit);
     }
 }
