@@ -4,14 +4,14 @@ milestone: v1.0
 milestone_name: milestone
 status: completed
 stopped_at: Phase 10 context gathered (10 decisions across 4 areas)
-last_updated: "2026-05-28T06:45:05.765Z"
+last_updated: "2026-05-28T07:18:29.798Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 10
   completed_phases: 9
-  total_plans: 26
+  total_plans: 31
   completed_plans: 26
-  percent: 100
+  percent: 84
 ---
 
 # Project State
@@ -245,5 +245,5 @@ Resume file: --resume-file
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
 **Next:** /gsd-plan-phase 9 (Processor.GetBySourceHash + Orchestration Start/Stop — SPEC.md locked + amended 2026-05-28 for 204 No Content; CONTEXT.md captured 20 implementation decisions across 4 areas; ready for planning)
 
-**Planned Phase:** 09 (Processor.GetBySourceHash + Orchestration Start/Stop) — 3 plans — 2026-05-27T23:17:39.203Z
+**Planned Phase:** 10 (Remove SchemaId on AssignmentEntity and add ConfigSchemaId on ProcessorEntity) — 5 plans — 2026-05-28T07:18:29.788Z
 **Phase 9 context:** captured 2026-05-28 — SPEC.md (6 reqs, amended) + CONTEXT.md (20 decisions) + DISCUSSION-LOG.md committed; SPEC.md response amended from 200+List<WorkflowReadDto> → 204 No Content; OrchestrationService injects BaseDbContext + all 5 entity mappers up front for v2 readiness
