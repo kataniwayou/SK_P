@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: milestone_complete
-stopped_at: "Completed 10-05-PLAN.md (test cleanup commit #5 of Phase 10 sequence; 8 test files updated; 10 ProcessorCreateDto+UpdateDto positional adds; AssignmentsIntegrationTests SchemaId removal + CreatePrereqAsync collapse; 2 new ConfigSchemaId round-trip facts; 3 consecutive GREEN dotnet test runs at 142/142 each ~29s; byte-identical psql l snapshot; Phase 10 COMPLETE)"
-last_updated: "2026-05-28T08:29:21.846Z"
+status: completed
+stopped_at: Phase 11 context gathered
+last_updated: "2026-05-28T10:20:30.737Z"
 last_activity: 2026-05-28
 progress:
-  total_phases: 10
-  completed_phases: 11
+  total_phases: 11
+  completed_phases: 10
   total_plans: 31
   completed_plans: 31
-  percent: 110
+  percent: 100
 ---
 
 # Project State
@@ -234,6 +234,7 @@ Recent decisions affecting current work:
 
 - Phase 9 added: Add GetBySourceHash to Processor controller and new Orchestration controller with Start/Stop endpoints accepting List<guid> WorkflowIds, following the existing GetById design pattern
 - Phase 10 added: Remove SchemaId on AssignmentEntity (analyze the effect) and add nullable Guid? ConfigSchemaId on ProcessorEntity with same behavior as InputSchemaId
+- Phase 11 added: Migrate Prometheus and Elastic containers from compose stack sk2_1 to sk_p, wire OpenTelemetry collector to ship logs to Elastic and metrics to Prometheus. Smoke test: verify logs appear in Elastic and metrics appear in Prometheus.
 
 ### Pending Todos
 
@@ -259,9 +260,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T08:29:21.835Z
-Stopped at: Completed 10-05-PLAN.md (test cleanup commit #5 of Phase 10 sequence; 8 test files updated; 10 ProcessorCreateDto+UpdateDto positional adds; AssignmentsIntegrationTests SchemaId removal + CreatePrereqAsync collapse; 2 new ConfigSchemaId round-trip facts; 3 consecutive GREEN dotnet test runs at 142/142 each ~29s; byte-identical psql l snapshot; Phase 10 COMPLETE)
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 11 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
 **Next:** /gsd-plan-phase 9 (Processor.GetBySourceHash + Orchestration Start/Stop — SPEC.md locked + amended 2026-05-28 for 204 No Content; CONTEXT.md captured 20 implementation decisions across 4 areas; ready for planning)
