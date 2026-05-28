@@ -47,6 +47,7 @@ namespace BaseApi.Tests.Observability;
 public class Phase11WebAppFactory : Phase8WebAppFactory
 {
     private readonly string? _logLevelDefaultOverride;
+    private readonly string? _priorOtlpEndpoint;
 
     /// <summary>
     /// xUnit's <c>IClassFixture&lt;Phase11WebAppFactory&gt;</c> requires exactly ONE public
@@ -60,9 +61,25 @@ public class Phase11WebAppFactory : Phase8WebAppFactory
     {
         _logLevelDefaultOverride = logLevelDefaultOverride;
         // T-05-OTLP-EXFIL defensive — pin env var even before ConfigureWebHost runs.
-        // Persistent process-wide side effect (NOT cleared on DisposeAsync — same posture
-        // as the retired Phase 5 fixture; the var stays pinned for the test process lifetime).
-        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
+        // WR-03 review fix: capture prior value and restore in DisposeAsync so the
+        // env var does NOT leak across collections inside a single test process. Gate
+        // on whether the var is already set so we do NOT clobber an explicit operator
+        // setting (an integration-test runner may legitimately want a different endpoint).
+        _priorOtlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+        if (_priorOtlpEndpoint is null)
+        {
+            Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
+        }
+    }
+
+    public override async ValueTask DisposeAsync()
+    {
+        // WR-03 review fix: best-effort restore of the prior OTLP endpoint env var.
+        // xUnit fixture-disposal ordering is not strict across collections, but a same-
+        // process bleed-through into Validation / Composition / Phase 4 collections is
+        // now bounded to a single fixture's lifetime instead of the whole process.
+        Environment.SetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT", _priorOtlpEndpoint);
+        await base.DisposeAsync();
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
