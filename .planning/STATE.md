@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
+milestone: v3.11.3
 milestone_name: milestone
-status: completed
-stopped_at: Phase 11 context gathered
-last_updated: "2026-05-28T10:20:30.737Z"
+status: executing
+stopped_at: Completed Phase 11 Plan 01 (REQUIREMENTS.md amendments)
+last_updated: "2026-05-28T11:54:29.275Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
   completed_phases: 10
-  total_plans: 31
-  completed_plans: 31
-  percent: 100
+  total_plans: 41
+  completed_plans: 32
+  percent: 78
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-27)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 10 — remove-schemaid-on-assignmententity-and-add-configschemaid-o
+**Current focus:** Phase 11 — migrate-prometheus-and-elastic-containers-from-compose-stack
 
 ## Current Position
 
-Phase: 10
-Plan: Not started
-Status: Milestone complete
+Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — EXECUTING
+Plan: 2 of 10
+Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [██████████] 100%
+Progress: [████████░░] 78%
 
 ## Performance Metrics
 
@@ -92,6 +92,7 @@ Progress: [██████████] 100%
 | Phase 10 P03 | 3min | 5 tasks tasks | 4 files files |
 | Phase 10 P04 | ~4min | 4 tasks tasks | 5 files (2 D + 2 A + 1 M) files |
 | Phase 10 P05 | ~28min | 5 tasks tasks | 8 files files |
+| Phase 11 P01 | ~4min | 5 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -229,6 +230,8 @@ Recent decisions affecting current work:
 - Plan 10-05 deviation (Rule 3 - prior-plan environment gap): Plan 10-04's D-07 teardown sequence executed 'docker compose down -v' (full teardown) but only restarted postgres via 'docker compose up -d postgres'. First 2 dotnet test attempts had 7 deterministic OTel Observability failures (LogLevelFilterTests + 2 MetricsExportTests + 2 TraceExportTests + 2 LogExportTests) — identical fingerprint to Phase 8 P08's documented OTel cold-start flake but structurally a missing-collector issue. Fix-forward: 'docker compose up -d otel-collector' brought the collector up healthy in ~4s; the SUBSEQUENT 3 'dotnet test SK_P.sln --no-restore -c Release' runs were each GREEN at 142/142 (29.281s + 28.979s + 28.869s — no warm-up signature, empirically confirming the issue was deterministic environment not cold-start flake). Future migration-regen plans should bake 'docker compose up -d' (all services) into the teardown sequence.
 - Plan 10-05: 3 consecutive GREEN dotnet test runs achieved at 142/142 each (29.281s + 28.979s + 28.869s = avg 29.043s) — Phase 10 suite carried 140 facts from Phase 9 baseline (independent of the 138 SPEC predicted) + 2 new ConfigSchemaId facts = 142 total. Byte-identical psql l SHA-256 BEFORE/AFTER snapshot (0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127 — matches Phase 8 P08 + Plan 09-03 baseline verbatim, deterministic 4-baseline-DB fingerprint across 3 phases). Zero leaked stepsdb_test_* databases. Phase 3 D-15 cleanup discipline preserved end-to-end through Phase 10.
 - Phase 10 COMPLETE — 5-commit sequence intact (1de7e71 + 79b07d1 + 12577ac + 146d482 + 6d043e4): doc-first REQUIREMENTS.md amendment + Assignment SchemaId removal + Processor ConfigSchemaId addition + migration regen + test cleanup. All 5 production commits independently revertable; system is shippable end-to-end with the post-Phase-10 model (entity + DTOs + validators + EF config + REQUIREMENTS.md + migration + test suite all consistent). 142/142 test suite GREEN; zero leaked test DBs; CONTEXT D-02 bisect-friendly forensic property preserved.
+- Plan 11-01: Doc-first commit #1 of Phase 11 (commit 7041adb) — REQUIREMENTS.md amended atomically per Phase 10 D-01/D-02 precedent. OBSERV-12 SUPERSEDED in place (header bytes preserved per Phase 3 D-03b ID preservation invariant; first '[SUPERSEDED — Phase X D-NN]' marker in this codebase); INFRA-06 extended in place with 4-service enumeration; 4 new REQ-IDs added in correct category sections (OBSERV-13/14, INFRA-08, TEST-07); Out of Scope row appended with bidirectional cross-reference; Traceability table updated (OBSERV-12 row mutated + 4 new rows); per-phase footnote rebalanced; Coverage 102 -> 105 active v1. Single 1-file commit with verbatim subject 'docs(req): amend OBSERV-12 + INFRA-06 + add OBSERV-13/14 + INFRA-08 + TEST-07 for Phase 11 shape'. Forensic property: every Phase 11 commit (11-02 compose, 11-03 collector, 11-04 code strip, 11-05+ tests) now points back to authoritative amended REQ-IDs and is independently revertable.
+- Plan 11-01 pattern: '[SUPERSEDED — Phase X D-NN]' header marker convention — first instance in this codebase. Pattern is reusable for future phases that retire REQ-IDs while preserving their byte-identical header for cross-reference stability. Companion pattern: superseded REQ body cross-references new Out of Scope row (bidirectional); Out of Scope row text declares which REQ-ID it supersedes. Combined effect: readers can trace REQ -> decision -> out-of-scope rationale either direction.
 
 ### Roadmap Evolution
 
@@ -260,12 +263,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 11 context gathered
-Resume file: --resume-file
+Last session: 2026-05-28T11:54:29.263Z
+Stopped at: Completed Phase 11 Plan 01 (REQUIREMENTS.md amendments)
+Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
 **Next:** /gsd-plan-phase 9 (Processor.GetBySourceHash + Orchestration Start/Stop — SPEC.md locked + amended 2026-05-28 for 204 No Content; CONTEXT.md captured 20 implementation decisions across 4 areas; ready for planning)
 
-**Planned Phase:** 10 (Remove SchemaId on AssignmentEntity and add ConfigSchemaId on ProcessorEntity) — 5 plans — 2026-05-28T07:18:29.788Z
+**Planned Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10 plans — 2026-05-28T11:44:16.235Z
 **Phase 9 context:** captured 2026-05-28 — SPEC.md (6 reqs, amended) + CONTEXT.md (20 decisions) + DISCUSSION-LOG.md committed; SPEC.md response amended from 200+List<WorkflowReadDto> → 204 No Content; OrchestrationService injects BaseDbContext + all 5 entity mappers up front for v2 readiness

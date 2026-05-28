@@ -23,7 +23,8 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `docker-compose.yml` (filename `compose.yaml` per Compose v2 default per Phase 2 D-10) declares `postgres:17-alpine` (with `pg_isready` healthcheck), `elasticsearch:8.15.5` (with `curl -fs '/_cluster/health?wait_for_status=yellow&timeout=5s'` healthcheck and `start_period: 60s` per Phase 11 D-12; dev posture per sk2_1 — `discovery.type=single-node`, `xpack.security.enabled=false`, no volume), `otel-collector:0.152.0` (distroless — no in-container healthcheck per Phase 5 Plan 05-01 deviation #1), and `prom/prometheus:v3.11.3` (with `wget --spider /-/healthy` healthcheck per Phase 11 D-13). `baseapi-service.depends_on` extends to ALL four services: `postgres: service_healthy`, `otel-collector: service_started`, `elasticsearch: service_healthy`, `prometheus: service_healthy` (per Phase 11 D-15). Compose-up therefore blocks for ~60s on ES cold-start; acceptable for dev + CI.
 - [x] **INFRA-07
 **: Postgres data persisted in a named volume across `docker-compose down/up`
-- [ ] **INFRA-08
+- [x] **INFRA-08
+
 **: Phase 11 compose-stack additions. `compose.yaml` declares `elasticsearch` service (image `docker.elastic.co/elasticsearch/elasticsearch:8.15.5` per Phase 11 D-10; env `discovery.type=single-node` + `xpack.security.enabled=false` + `xpack.security.enrollment.enabled=false` + `ES_JAVA_OPTS=-Xms512m -Xmx512m`; port `9200:9200`; healthcheck `curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1` with `start_period: 60s`; no volume — ephemeral dev posture per D-12) AND `prometheus` service (image `prom/prometheus:v3.11.3` per Phase 11 D-11; command `--config.file=/etc/prometheus/prometheus.yml --web.enable-lifecycle`; bind-mount `./prometheus.yml:/etc/prometheus/prometheus.yml:ro`; port `9090:9090`; healthcheck `wget --no-verbose --tries=1 --spider http://localhost:9090/-/healthy`; depends on `otel-collector: service_started`; no volume — ephemeral dev posture per D-13). `otel-collector` image bumped to `otel/opentelemetry-collector-contrib:0.152.0` (per Phase 11 D-09; D-14 adds port `8889:8889` to the existing ports list and removes the `./tests/.otel-out:/var/otel-out` bind-mount + `user: "0:0"` override no longer needed without file exporter). `prometheus.yml` (NEW file at repo root) carries the single `job_name: 'otel-collector'` scrape config targeting `otel-collector:8889` per D-08. Container-name collision with sibling sk2_1 stack is acknowledged Out of Scope (RESEARCH Pitfall 4) — sk_p and sk2_1 stacks are mutually exclusive on a given Docker daemon.
 
 ### Persistence
@@ -177,9 +178,11 @@ Requirements for initial release. Each maps to roadmap phases.
 **: Correlation ID echoed in `X-Correlation-Id` response header on every response (including error responses)
 - [ ] **OBSERV-12 [SUPERSEDED — Phase 11 D-03]
 **: OTel tracing pipeline removed in Phase 11 (D-03). Moved to Out of Scope. Rationale: no traces backend in v1 (mirrors sk2_1 CLAUDE.md non-negotiable #2); `.WithTracing()` registration stripped from `AddBaseApiObservability`; collector traces pipeline + Npgsql tracing instrumentation no longer wired. See "OTel tracing pipeline (traces backend)" Out of Scope row.
-- [ ] **OBSERV-13
+- [x] **OBSERV-13
+
 **: OTel collector ships logs to Elasticsearch via the contrib `elasticsearch` exporter (`mapping.mode: none` per Phase 11 D-06). Logs land in the data stream `logs-generic-default` (backing index `.ds-logs-generic-default-NNNN`) with the OTLP raw field shape preserved — `Attributes.CorrelationId` matches the Phase 4 `X-Correlation-Id` middleware value; resource attributes `service.name=sk-api` and `service.version=3.2.0` appear under `Resource.attributes` on every log doc. ES exporter `endpoints: [http://elasticsearch:9200]`; no auth, no TLS (dev posture). Verification: Wave 0 manual `curl /_cat/indices` after first compose-up confirms actual index name and field shape (RESEARCH Open Q1).
-- [ ] **OBSERV-14
+- [x] **OBSERV-14
+
 **: OTel collector exposes a Prometheus exporter on `0.0.0.0:8889` with `resource_to_telemetry_conversion: { enabled: true }` (Phase 11 D-07; `service.name` becomes the `service_name` Prom label — load-bearing for test assertions) and `send_timestamps: true`. The standalone Prometheus container scrapes `otel-collector:8889` at 15s intervals (Phase 11 D-08, verbatim from sk2_1). Test code queries `http://localhost:9090/api/v1/query?query=...` and assertions reference Prom-form metric names (e.g., `http_server_request_duration_seconds_count` — dot-to-underscore + `_seconds_count` histogram suffix per OTel→Prom spec, RESEARCH Pitfall 1). `filter/health_metrics` processor still drops `/health/*` data points before they reach the Prom exporter (D-04; Phase 5 fix-forward preserved).
 
 ### Health Probes
@@ -230,7 +233,8 @@ Requirements for initial release. Each maps to roadmap phases.
 **: At least one happy-path integration test per CRUD verb per entity (5 entities × 5 verbs = 25 smoke tests, minimum)
 - [x] **TEST-06
 **: At least one negative-path integration test per error mapping (400 validation, 404 not found, 409 unique violation, 422 FK violation)
-- [ ] **TEST-07
+- [x] **TEST-07
+
 **: Round-trip E2E test class(es) under `tests/BaseApi.Tests/Observability/` (Phase 11 D-17) drive a real HTTP request against a sk_p business endpoint (Schema POST per D-17) via in-process `Phase11WebAppFactory : Phase8WebAppFactory` then poll BOTH backends within a bounded budget: (a) Elasticsearch `POST /logs-generic-default/_search` with `Attributes.CorrelationId` term query — must return a hit within 30s (`ElasticsearchTestClient` helper with exponential backoff 200ms→3.2s and HTTP 404 + empty-hits tolerance per RESEARCH Pattern 2); (b) Prometheus `GET /api/v1/query?query=http_server_request_duration_seconds_count{service_name="sk-api",http_route="api/v1/schemas"}` — must return a sample with cumulative count ≥ requests-issued within 60s (`PrometheusTestClient` helper with mandatory 15s initial sleep then 3s poll interval per RESEARCH Pattern 3 / Pitfall 7). Per-test unique correlation-id (`$"{Guid.NewGuid():N}"`) is the ES cleanup discipline (T-11-03 mitigation; analog to Phase 3 D-15 psql `\l` byte-identical proof). `Phase11WebAppFactory` overrides `PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds = 1_000` (RESEARCH Pattern 4 / Pitfall 7 — default 60s would exceed budget). Tests carry `[Trait("Phase","11")]` + `[Trait("Category","E2E")]` for `dotnet test --filter "Category!=E2E"` fast-path.
 
 ## v2 Requirements
