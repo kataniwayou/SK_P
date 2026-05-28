@@ -57,13 +57,13 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **ENTITY-03
 **: `SchemaEntity : BaseEntity` adds `Definition` string (jsonb)
 - [x] **ENTITY-04
-**: `ProcessorEntity : BaseEntity` adds `SourceHash` string (SHA-256 hex, unique), `InputSchemaId` Guid? (nullable FK→Schema), `OutputSchemaId` Guid? (nullable FK→Schema). Null permitted on both — supports source processors (no input) and sink processors (no output). DB columns are nullable; Postgres FK constraint still enforced when value is non-null.
+**: `ProcessorEntity : BaseEntity` adds `SourceHash` string (SHA-256 hex, unique), `InputSchemaId` Guid? (nullable FK→Schema), `OutputSchemaId` Guid? (nullable FK→Schema), `ConfigSchemaId` Guid? (nullable FK→Schema). Null permitted on all three — supports source processors (no input), sink processors (no output), and unconfigured processors (no config). DB columns are nullable; Postgres FK constraints (`fk_processor_input_schema_id`, `fk_processor_output_schema_id`, `fk_processor_config_schema_id`) still enforced when value is non-null.
 - [x] **ENTITY-05
 **: `StepEntity : BaseEntity` adds `ProcessorId` Guid (FK→Processor), `NextStepIds` List<Guid>? (M2M self-ref via `StepNextSteps`), `EntryCondition` `StepEntryCondition` (default `PreviousCompleted`)
 - [x] **ENTITY-06
 **: `StepEntryCondition` enum: `PreviousProcessing=0`, `PreviousCompleted=1`, `PreviousFailed=2`, `PreviousCancelled=3`, `Always=4`, `Never=5`
 - [x] **ENTITY-07
-**: `AssignmentEntity : BaseEntity` adds `StepId` Guid (FK→Step), `SchemaId` Guid (FK→Schema), `Payload` string (jsonb)
+**: `AssignmentEntity : BaseEntity` adds `StepId` Guid (FK→Step), `Payload` string (jsonb)
 - [x] **ENTITY-08
 **: `WorkflowEntity : BaseEntity` adds `EntryStepIds` List<Guid> (M2M to Step via `WorkflowEntrySteps`, required non-empty), `AssignmentIds` List<Guid>? (M2M to Assignment via `WorkflowAssignments`), `CronExpression` string? (nullable)
 - [x] **ENTITY-09
@@ -128,7 +128,7 @@ Requirements for initial release. Each maps to roadmap phases.
 **: `JsonSchema.Net` remote `$ref` network access disabled (SSRF prevention)
 - [x] **VALID-10
 **: `ProcessorCreate/UpdateDto.SourceHash`: regex `^[a-f0-9]{64}$` (lowercase SHA-256 hex)
-- [x] **VALID-11**: `ProcessorCreate/UpdateDto.InputSchemaId`/`OutputSchemaId`: nullable `Guid?` — null is valid (source/sink processor). When present, must not equal `Guid.Empty`. FluentValidation pattern: `When(x => x.InputSchemaId.HasValue, () => RuleFor(x => x.InputSchemaId!.Value).NotEqual(Guid.Empty));` (same for `OutputSchemaId`). `Guid.Empty` (`00000000-0000-0000-0000-000000000000`) is rejected at HTTP 400 by the validator, NOT at the DB layer. FK existence for non-empty Guids is still enforced by Postgres at persist time (SQLSTATE 23503 → HTTP 422 per ERROR-04
+- [x] **VALID-11**: `ProcessorCreate/UpdateDto.InputSchemaId`/`OutputSchemaId`/`ConfigSchemaId`: nullable `Guid?` — null is valid (source/sink/unconfigured processor). When present, must not equal `Guid.Empty`. FluentValidation pattern: `When(x => x.InputSchemaId.HasValue, () => RuleFor(x => x.InputSchemaId!.Value).NotEqual(Guid.Empty));` (same for `OutputSchemaId` and `ConfigSchemaId`). `Guid.Empty` (`00000000-0000-0000-0000-000000000000`) is rejected at HTTP 400 by the validator, NOT at the DB layer. FK existence for non-empty Guids is still enforced by Postgres at persist time (SQLSTATE 23503 → HTTP 422 per ERROR-04
 ).
 - [x] **VALID-12
 **: `StepCreate/UpdateDto.ProcessorId`: `NotEmpty` Guid
@@ -137,7 +137,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **VALID-14
 **: `StepCreate/UpdateDto.EntryCondition`: `IsInEnum()`
 - [x] **VALID-15
-**: `AssignmentCreate/UpdateDto.StepId`/`SchemaId`: `NotEmpty` Guid
+**: `AssignmentCreate/UpdateDto.StepId`: `NotEmpty` Guid
 - [x] **VALID-16
 **: `AssignmentCreate/UpdateDto.Payload`: valid JSON syntax (parsed by `System.Text.Json`), MaxLength 1,048,576 chars (~1 MB)
 - [x] **VALID-17
@@ -394,4 +394,4 @@ Per-phase coverage:
 
 ---
 *Requirements defined: 2026-05-26*
-*Last updated: 2026-05-26 — ENTITY-04 and VALID-11 amended: ProcessorEntity InputSchemaId/OutputSchemaId are now nullable `Guid?`*
+*Last updated: 2026-05-28 — Phase 10 amendments for Assignment.SchemaId removal + Processor.ConfigSchemaId addition*
