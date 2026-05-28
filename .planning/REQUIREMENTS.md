@@ -392,7 +392,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | OBSERV-13 | Phase 11 | Complete |
 | OBSERV-14 | Phase 11 | Complete |
 | INFRA-08 | Phase 11 | Complete |
-| TEST-07 | Phase 11 | Pending |
+| TEST-07 | Phase 11 | Complete |
 
 **Coverage:**
 - v1 requirements: 105 total active v1 (one OBSERV superseded to Out of Scope; 4 new IDs added Phase 11). Breakdown: 7 INFRA (now 8 with INFRA-08) + 15 PERSIST + 10 ENTITY + 16 HTTP + 20 VALID + 12 OBSERV (now 13 active: OBSERV-12 superseded + OBSERV-13/14 added) + 5 HEALTH + 11 ERROR + 6 TEST (now 7 with TEST-07; TEST-03/04 still v2-deferred). Note: previous header line summed to 103 by counting ERROR-11 twice; corrected here.

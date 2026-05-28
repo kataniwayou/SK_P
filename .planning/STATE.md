@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.11.3
 milestone_name: milestone
 status: executing
-stopped_at: Completed Phase 11 Plan 05 (.WithTracing stripped from SDK; TraceExportTests + OtelEndOfSuiteCleanup deleted; tests/.otel-out/ removed; .gitignore stanza cleaned up — commit 0fa325e)
-last_updated: "2026-05-28T12:46:42.419Z"
+stopped_at: "Completed Phase 11 Plan 06 (Wave 0 ES index name probe + 4 new test-helper files: Phase11WebAppFactory + ElasticsearchTestClient + PrometheusTestClient + EsIndexNames — commit 765b3fc)"
+last_updated: "2026-05-28T13:02:08.447Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 41
-  completed_plans: 36
-  percent: 88
+  completed_plans: 37
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — EXECUTING
-Plan: 6 of 10
+Plan: 7 of 10
 Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -97,6 +97,7 @@ Progress: [█████████░] 88%
 | Phase 11 P03 | ~4min | 5 tasks | 1 files |
 | Phase 11 P04 | ~3min | 3 tasks | 1 files |
 | Phase 11 P05 | ~4min | 4 tasks tasks | 5 files files |
+| Phase 11 P06 | ~10min | 6 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -255,6 +256,11 @@ Recent decisions affecting current work:
 - Plan 11-05 must_haves semantic-vs-literal pattern reaffirmed — XML doc comment legitimately references '.WithTracing(...) block deleted' for educational continuity; literal grep returns 1 match but code-only check (strip /// lines first) returns 0. Plan 11-04 set the precedent (negative-assertion comments preserved despite literal grep gate). Pattern: must_haves invariants are SEMANTIC (no production CALL) not LITERAL (no string match anywhere). Future plans referencing this pattern: Plan 06-01 + 08-01 + 10-02 + 11-04.
 - Plan 11-05 gitignored-file-filesystem-rm pattern — tests/.otel-out/telemetry.jsonl was untracked (gitignored), so 'git rm' would exit non-zero. Plan body Task 2 step 4 anticipated this and prescribed filesystem 'rm -f' fallback. Used 'rm -f tests/.otel-out/telemetry.jsonl' followed by 'rmdir tests/.otel-out' to clear both. Only the .gitkeep deletion (tracked) shows in 'git show --stat HEAD'; the gitignored file's removal is invisible to git's history. Pattern reusable for any future cleanup of ignored-but-on-disk files (.env.local removal when a feature stops using it, etc.).
 - Plan 11-05 Test Migration Sequencing intentional-RED-on-the-horizon — after commit 0fa325e lands, LogExportTests / LogLevelFilterTests / MetricsExportTests still reference OtelCollectorFixture (file-exporter path now non-functional); 3 facts WILL fail at runtime with 'telemetry.jsonl not found'. Matches Phase 8/10 5-commit forensic bisect precedent. Build remains GREEN throughout because test code still compiles (references to OtelCollectorFixture types resolve; file preserved, just non-functional). Plan 11-08 migrates the 3 facts to ES/Prom polling; OtelCollectorFixture.cs itself is REPLACED by Phase11WebAppFactory in Plan 11-06 and deleted in Plan 11-08.
+- Plan 11-06: Wave 0 probe empirically resolved RESEARCH Open Q1 — live ES shape is 'otel' (lowercase keys + nested attributes) DESPITE collector config mapping.mode: none. elasticsearchexporter@v0.152.0 emits 'mapping::mode config option is deprecated and ignored' warning + falls back to current default. Verified constants baked into EsIndexNames.cs: LogsDataStream='logs-generic.otel-default', CorrelationIdFieldPath='attributes.CorrelationId', ResourceAttributesFieldPath='resource.attributes', FieldShape='otel'. Same shape sk2_1 observed live.
+- Plan 11-06: Phase11WebAppFactory subclasses Phase8WebAppFactory (RESEARCH Open Q2 — composition over OtelCollectorFixture evolution). Composition chain: Phase11WebAppFactory → Phase8WebAppFactory → WebAppFactory → WebApplicationFactory<Program>. Phase11 owns 3 OTel knobs: OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 env-var pin (T-05-OTLP-EXFIL); PeriodicExportingMetricReaderOptions.ExportIntervalMilliseconds=1_000 override (RESEARCH Pattern 4 — overrides SDK 60s default for E2E determinism); optional internal Phase11WebAppFactory(string? logLevelDefaultOverride) ctor for LogLevelFilterTests migration in Plan 11-08.
+- Plan 11-06: PrometheusTestClient.PollPrometheusUntilSumAtLeast MANDATORY 15s initial Task.Delay BEFORE first query (RESEARCH Pattern 3 / Pitfall 7) — Prom 15s scrape interval per D-08 means a naive poll-from-t=0 loop wastes the entire first scrape cycle on empty result vectors. PollIntervalMs=3_000, PollTimeoutMs=60_000. SumSampleValues static helper sums across multi-label result vectors. QueryPrometheus wraps PromQL in Uri.EscapeDataString (RESEARCH Don't Hand-Roll — PromQL { } " = break unencoded URL queries).
+- Plan 11-06: MTP filter syntax discovery — Microsoft.Testing.Platform uses --filter-class / --filter-method / --filter-namespace (NOT VSTest's --filter "FullyQualifiedName~ClassName" which produces MTP0001 warning + silently runs entire suite). Canonical regression smoke shape: BaseApi.Tests.exe --filter-class "BaseApi.Tests.Observability.HealthEndpointsTests". Future test-filtered runs on this codebase should bake this into plan command shapes.
+- Plan 11-06: ElasticsearchTestClient PollEsForLog exponential backoff 200ms → 3200ms cap (RESEARCH Pattern 2 verbatim from sk2_1). HTTP 404 + empty-hits tolerance (RESEARCH Pitfall 5 — ES creates data stream lazily on first write). HttpRequestException retry-on-network-blip. JsonElement.Clone-after-doc-disposal pattern lifted verbatim from OtelCollectorFixture line 211 — both new polling helpers + the Phase 5 fixture now use the identical JSON-detach idiom.
 
 ### Roadmap Evolution
 
@@ -286,8 +292,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T12:46:42.407Z
-Stopped at: Completed Phase 11 Plan 05 (.WithTracing stripped from SDK; TraceExportTests + OtelEndOfSuiteCleanup deleted; tests/.otel-out/ removed; .gitignore stanza cleaned up — commit 0fa325e)
+Last session: 2026-05-28T13:02:08.438Z
+Stopped at: Completed Phase 11 Plan 06 (Wave 0 ES index name probe + 4 new test-helper files: Phase11WebAppFactory + ElasticsearchTestClient + PrometheusTestClient + EsIndexNames — commit 765b3fc)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
