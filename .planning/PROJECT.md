@@ -6,12 +6,37 @@
 
 v1 delivered a reusable `BaseApi.Core` library plus a runnable `BaseApi.Service` exposing CRUD over 5 entities (Schema, Processor, Step, Assignment, Workflow) + 3 junctions, against Postgres 17 in Docker Compose. OpenTelemetry logs ship to Elasticsearch; metrics to Prometheus; no traces (per Phase 11 D-03). RFC 7807 Problem Details on every error path with `X-Correlation-Id` end-to-end. Three K8s-style health probes (live/ready/startup) with migration-gated readiness. 142/142 integration facts GREEN × 3 consecutive runs against real Postgres + ES + Prom. 5,924 LOC src + 6,397 LOC tests across 190 C# files.
 
-## Next Milestone Goals
+## Current Milestone: v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline
 
-To be defined via `/gsd-new-milestone`. Candidate themes surfaced by v1:
-- v2 hardening items already deferred (TEST-03 Testcontainers, TEST-04 Respawn, INFRA-09 advisory-lock startup migration, INFRA-10 least-privilege Postgres roles, VALID-21 dynamic schema conformance)
-- v2 querying items (HTTP-17/18/19: pagination, filtering, sorting)
-- Authentication boundary (currently out of scope; `CreatedBy`/`UpdatedBy` only populate when `HttpContext.User.Identity.Name` is available)
+**Goal:** On `POST /api/v1/orchestration/start`, build a transient in-memory (L1) representation of each requested workflow (validating existence, cycles, and Payload↔ConfigSchema conformance) and project it into a Redis (L2) materialized view that external consumers read; mirror on Stop to evict the projection. Both endpoints are idempotent (PUT-like).
+
+**Target features:**
+- **L3 fetch + L1 build (transient)** — flat `Dictionary<Guid, EntityDto>` for Workflows, Assignments, Steps, Processors, Schemas; populated inside `OrchestrationService.StartAsync`; discarded at end of request.
+- **Workflow-graph traversal with cycle detection** — DFS from each `Workflow.EntryStepIds[*]` via `StepEntity.NextStepIds`; per-traversal `visited` temp list rejects cycles (422), missing next-step ids (422), accepts `null` as terminal.
+- **Schema-edge compatibility gate** — for every `(parent step → child step)` edge in the traversal, `parent.Processor.OutputSchemaId` must equal `child.Processor.InputSchemaId` (strict Schema.Id equality in v3.3.0; structural/canonical compatibility is a future-milestone candidate). If either side is `null` (source/sink/unconfigured processor per Phase 10) the edge passes. Mismatch returns 422 with the offending edge's `(parentStepId, childStepId)` pair.
+- **Payload↔ConfigSchema validation gate (closes deferred VALID-21)** — for every Assignment, resolve `Step.ProcessorId → Processor.ConfigSchemaId → Schema.Definition`, validate `Assignment.Payload` against that JSON Schema (draft 2020-12, SSRF-disabled per Phase 8). Failure returns 422 with offending assignment id. Orchestration-start only; Assignment-PUT remains "valid JSON only" (v3.2.0 behavior preserved).
+- **L2 (Redis) materialized projection** — three key spaces:
+  - `{workflowId}` → `{ entryStepIds[], cron, jobId(Guid), liveness{timestamp,interval,status} }`
+  - `{workflowId:stepId}` → `{ entryCondition, processorId, payload, nextStepId }` (chain form; one nextStepId per record)
+  - `{processorId}` → `{ inputDefinition, outputDefinition, liveness{timestamp,interval,status} }`
+- **Start is idempotent (PUT-like)** — second Start for the same WorkflowIds re-runs the full pipeline and replaces L2 keys; returns 204. Concurrent Starts: last-write-wins, no Redis lock.
+- **Stop deletes the L2 projection (idempotent)** — evicts all Redis keys created by Start for the given WorkflowIds; 204 even when no keys exist.
+- **L1 cleanup contract** — explicit teardown of the in-memory dictionary + temp traversal lists at the end of `StartAsync` (success or failure path).
+
+**Key context / locked constraints:**
+- Reuse existing `StepEntity.EntryCondition` enum (PreviousProcessing/Completed/Failed/Cancelled/Always/Never) — no new entity columns.
+- `JobId` (Guid) and `Liveness` (`{ DateTime timestamp, int interval, string status }`) are L2-DTO field shapes only — no Hangfire/Quartz integration this milestone; write semantics deferred.
+- No new SQL-side entities or columns — L3 schema is the v3.2.0 `InitialCreate` unchanged.
+- Validation order is mandatory: existence → cycles → schema-edge compatibility → Payload↔ConfigSchema → L1 build → L2 write → cleanup.
+- Schema-edge compatibility in v3.3.0 is **strict Schema.Id equality** (parent.Output == child.Input). Null on either side passes (preserves Phase 10 source/sink/unconfigured processor semantics).
+- Redis is a new infrastructure dependency (added to `compose.yaml` next to Postgres/Elasticsearch/Prometheus/OTel Collector).
+- L2 DTO field names: `inputDefinition` / `outputDefinition` (NOT `definitionIn` / `definitionOut` or `definitionInput` / `definitionOutput`).
+
+**Deferred (not in this milestone):**
+- Scheduler integration (who writes `JobId` / emits `Liveness`) — TBD, possibly external Scheduler service.
+- v2 hardening items: TEST-03 (Testcontainers), TEST-04 (Respawn), INFRA-09 (advisory-lock startup migration), INFRA-10 (least-privilege Postgres roles).
+- v2 querying items: HTTP-17/18/19 (pagination, filtering, sorting).
+- Authentication boundary — still out of scope.
 
 ## What This Is
 
@@ -93,7 +118,7 @@ A .NET 8 Web API platform that exposes CRUD over a workflow-engine data model �
 
 ### Active
 
-(empty — set during `/gsd-new-milestone` for next milestone)
+Defined in `.planning/REQUIREMENTS.md` for milestone v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline). Created during `/gsd-new-milestone` on 2026-05-28.
 
 ### Out of Scope
 
@@ -182,7 +207,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-28 — after v3.2.0 milestone (Steps API MVP). See `milestones/v3.2.0-ROADMAP.md` for the full phase narrative; per-phase footers preserved below for git-blame continuity.*
+*Last updated: 2026-05-28 — milestone v3.3.0 started (Orchestration L3 → L1 → L2 Build Pipeline). v3.2.0 (Steps API MVP) shipped 2026-05-28; see `milestones/v3.2.0-ROADMAP.md` for the full phase narrative; per-phase footers preserved below for git-blame continuity.*
 
 <details>
 <summary>Historical phase footers (Phases 1-11, v3.2.0)</summary>

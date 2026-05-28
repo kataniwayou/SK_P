@@ -1,37 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.2.0
-milestone_name: Steps API MVP
-status: milestone_shipped
-stopped_at: Milestone v3.2.0 closed — 11 phases / 41 plans archived to milestones/v3.2.0-{ROADMAP,REQUIREMENTS}.md; ROADMAP.md collapsed to one-line summary; PROJECT.md evolved (all reqs validated, Key Decisions outcomes set); MILESTONES.md created; git tag v3.2.0 created
+milestone: v3.3.0
+milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
+status: defining_requirements
+stopped_at: Milestone v3.3.0 started — PROJECT.md updated with Current Milestone section; STATE.md reset; REQUIREMENTS.md + ROADMAP.md still to be created. v3.2.0 (Steps API MVP) shipped 2026-05-28 with git tag v3.2.0; archived to milestones/v3.2.0-{ROADMAP,REQUIREMENTS}.md.
 last_updated: "2026-05-28T00:00:00Z"
 last_activity: 2026-05-28
 progress:
-  total_phases: 11
-  completed_phases: 11
-  total_plans: 41
-  completed_plans: 41
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-28 after v3.2.0 milestone)
+See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship.**
-**Current focus:** Planning next milestone — run `/gsd-new-milestone`
+**Current focus:** Milestone v3.3.0 — defining requirements for the L3 → L1 → L2 orchestration build pipeline.
 
 ## Current Position
 
-Milestone: v3.2.0 (Steps API MVP) — SHIPPED 2026-05-28
-Phase: — (between milestones)
-Plan: — (between milestones)
-Status: Milestone shipped; tagged `v3.2.0`
-Last activity: 2026-05-28
+Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-28 — Milestone v3.3.0 started
 
-Progress: [██████████] 100% (v3.2.0 — 41/41 plans)
+Progress: [░░░░░░░░░░] 0% (v3.3.0 — phases TBD by roadmapper)
 
 ## Performance Metrics
 
