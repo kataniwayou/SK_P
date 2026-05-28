@@ -7,6 +7,7 @@ using BaseApi.Service.Features.Schema;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using FluentValidation;
+using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 
 namespace BaseApi.Service.Features.Orchestration;
@@ -85,6 +86,21 @@ public sealed class OrchestrationService
     /// </summary>
     public async Task ValidateWorkflowIdsAsync(IReadOnlyList<Guid> ids, CancellationToken ct)
     {
+        // WR-01 guard: a JSON `null` body (or empty body) binds `ids` to `null`.
+        // FluentValidation 11+/12 ValidateAndThrowAsync throws ArgumentNullException
+        // for a null instance — that becomes HTTP 500. Translate to a
+        // ValidationException so the Phase 4 ValidationExceptionHandler maps it to
+        // the 400 ValidationProblemDetails advertised by the [ProducesResponseType]
+        // contract on Start/Stop. The WorkflowIdsValidator.NotNull() rule is
+        // unreachable for the bare-null case (validator never runs when input is null).
+        if (ids is null)
+        {
+            throw new ValidationException(new[]
+            {
+                new ValidationFailure(nameof(ids), "Request body must not be null."),
+            });
+        }
+
         // Step 1: rule validation (mirrors BaseService.CreateAsync line 97 verbatim).
         await _idsValidator.ValidateAndThrowAsync(ids, ct);
 
