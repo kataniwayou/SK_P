@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: completed
-stopped_at: Phase 10 context gathered (10 decisions across 4 areas)
-last_updated: "2026-05-28T07:18:29.798Z"
+status: executing
+stopped_at: Completed 10-01-PLAN.md (doc-first amendments to REQUIREMENTS.md)
+last_updated: "2026-05-28T07:25:31.556Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 31
-  completed_plans: 26
-  percent: 84
+  completed_plans: 27
+  percent: 87
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-27)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 09 — add-getbysourcehash-to-processor-controller-and-new-orchestr
+**Current focus:** Phase 10 — remove-schemaid-on-assignmententity-and-add-configschemaid-o
 
 ## Current Position
 
-Phase: 09
-Plan: Not started
-Status: Milestone complete
+Phase: 10 (remove-schemaid-on-assignmententity-and-add-configschemaid-o) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [██████████] 100%
+Progress: [█████████░] 87%
 
 ## Performance Metrics
 
@@ -86,6 +86,7 @@ Progress: [██████████] 100%
 | Phase 09 P01 | 3min | 3 tasks | 2 files |
 | Phase 09 P02 | 10min | 5 tasks tasks | 5 files files |
 | Phase 09 P03 | 15min | 4 tasks tasks | 3 files files |
+| Phase 10 P01 | 5min | 4 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -208,6 +209,8 @@ Recent decisions affecting current work:
 - Plan 09-03: tests/BaseApi.Tests/Features/{Entity}/ folder layout (CONTEXT D-19) — sibling to existing Integration/ folder; future feature-specific facts ship here
 - Plan 09-03: SeedWorkflowAsync helper duplicated verbatim in StartOrchestrationFacts and StopOrchestrationFacts rather than extracted (CONTEXT Deferred — would couple sibling files)
 - Plan 09-03: 3 consecutive GREEN dotnet test runs achieved (138/138 each ~29s) after one Run 0 pre-existing flake (Phase 8 P08 known flake); byte-identical psql l snapshots (SHA-256 1C611C6006E2...) prove zero leaked stepsdb_test_* databases
+- Plan 10-01: Doc-first commit #1 of Phase 10 — REQUIREMENTS.md ENTITY-04/07 + VALID-11/15 amended in place per D-01 BEFORE any code/EF/migration/test commit. ID preservation invariant: no renumbering, no superseding — same REQ-IDs edited in place. Forensic property — every commit #1..#5 independently revertable. Commit 1de7e71 verbatim subject 'docs(req): amend ENTITY-04/07 + VALID-11/15 for Phase 10 shape' per D-02.
+- Plan 10-01: Trinary 'source/sink/unconfigured' wording locked in ENTITY-04 — extends the existing binary source/sink semantics for Phase 10 ConfigSchemaId addition; constraint names enumerated inline (fk_processor_input_schema_id, fk_processor_output_schema_id, fk_processor_config_schema_id) so readers can trace REQ-5 → Phase 4 PostgresExceptionMapper Option A regex without re-deriving the invariant.
 
 ### Roadmap Evolution
 
@@ -238,9 +241,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 10 context gathered (10 decisions across 4 areas)
-Resume file: --resume-file
+Last session: 2026-05-28T07:25:31.545Z
+Stopped at: Completed 10-01-PLAN.md (doc-first amendments to REQUIREMENTS.md)
+Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
 **Next:** /gsd-plan-phase 9 (Processor.GetBySourceHash + Orchestration Start/Stop — SPEC.md locked + amended 2026-05-28 for 204 No Content; CONTEXT.md captured 20 implementation decisions across 4 areas; ready for planning)
