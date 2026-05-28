@@ -39,10 +39,20 @@ public sealed class OrchestrationService
     private readonly BaseDbContext _db;
     private readonly IValidator<IReadOnlyList<Guid>> _idsValidator;
     // 5 entity mappers injected up-front per CONTEXT D-05 (build for the second use).
+    // IN-01..IN-04 iteration-2 IN-03: each unused-in-v1 mapper carries its own
+    // [SuppressMessage("Style","IDE0052")] attribute (more localized + analyzer-config
+    // robust than the discard-expression pattern previously used in the ctor). The
+    // suppression travels with the field declaration so future readers see the
+    // CONTEXT D-05 justification at the point of declaration.
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
     private readonly IEntityMapper<SchemaEntity,     SchemaCreateDto,     SchemaUpdateDto,     SchemaReadDto>     _schemaMapper;
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
     private readonly IEntityMapper<ProcessorEntity,  ProcessorCreateDto,  ProcessorUpdateDto,  ProcessorReadDto>  _processorMapper;
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
     private readonly IEntityMapper<StepEntity,       StepCreateDto,       StepUpdateDto,       StepReadDto>       _stepMapper;
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
     private readonly IEntityMapper<AssignmentEntity, AssignmentCreateDto, AssignmentUpdateDto, AssignmentReadDto> _assignmentMapper;
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
     private readonly IEntityMapper<WorkflowEntity,   WorkflowCreateDto,   WorkflowUpdateDto,   WorkflowReadDto>   _workflowMapper;
 
     public OrchestrationService(
@@ -62,13 +72,10 @@ public sealed class OrchestrationService
         _assignmentMapper  = assignmentMapper  ?? throw new ArgumentNullException(nameof(assignmentMapper));
         _workflowMapper    = workflowMapper    ?? throw new ArgumentNullException(nameof(workflowMapper));
 
-        // Suppress IDE0052 "unused private field" diagnostics for the 4 mappers that
-        // v1 does not yet read — they are intentionally retained per CONTEXT D-05.
-        _ = _schemaMapper;
-        _ = _processorMapper;
-        _ = _stepMapper;
-        _ = _assignmentMapper;
-        _ = _workflowMapper;
+        // IN-03 (iteration 2) — the prior `_ = _xxxMapper;` discard suppression
+        // pattern was replaced with field-level [SuppressMessage("Style","IDE0052")]
+        // attributes (see field declarations above). The attribute is more localized,
+        // travels with the field, and is robust across analyzer configurations.
     }
 
     /// <summary>
