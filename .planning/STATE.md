@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.11.3
 milestone_name: milestone
 status: executing
-stopped_at: Completed Phase 11 Plan 03 (collector config rewire — logs to ES, metrics to Prom, drop traces + file exporter)
-last_updated: "2026-05-28T12:24:13.519Z"
+stopped_at: "Completed Phase 11 Plan 04 (prometheus.yml created — scrape config for otel-collector:8889; resolved Plan 11-02 bind-mount deferral)"
+last_updated: "2026-05-28T12:35:06.057Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 41
-  completed_plans: 34
-  percent: 83
+  completed_plans: 35
+  percent: 85
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — EXECUTING
-Plan: 4 of 10
+Plan: 5 of 10
 Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [████████░░] 83%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -95,6 +95,7 @@ Progress: [████████░░] 83%
 | Phase 11 P01 | ~4min | 5 tasks | 1 files |
 | Phase 11 P02 | ~15min | 6 tasks (5 sequential mutations + 1 deferred checkpoint + 1 atomic commit; Task 5 backend smoke verification DEFERRED to post-Wave-3) | 1 files (compose.yaml; 71 insertions / 15 deletions) |
 | Phase 11 P03 | ~4min | 5 tasks | 1 files |
+| Phase 11 P04 | ~3min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -243,6 +244,12 @@ Recent decisions affecting current work:
 - Plan 11-03: Edit-in-place over wholesale replace (CONTEXT Discretion option) preserves the Phase 5 Plan 05-02 fix-forward narrative — the 24-line educational comment block on filter/health_metrics explaining the OTel 1.15.0 parameterless-MeterProviderBuilder.AddAspNetCoreInstrumentation workaround stays load-bearing and would be lost in a wholesale replace.
 - Plan 11-03 Task 4: Partial-stack bring-up (docker compose up -d elasticsearch otel-collector) replaced plan-as-written restart command because the stack was DOWN at plan-start (Plan 11-02 deferred checkpoint). Skips prometheus + baseapi-service due to prometheus.yml chicken-and-egg with Plan 11-04. Functionally equivalent for verification intent; documented in 11-03-SUMMARY Issues Encountered.
 - Plan 11-03 known-benign warning at collector startup: elasticsearchexporter@v0.152.0 emits 'mapping::mode config option is deprecated and ignored' (RESEARCH Pitfall 2 anticipated). Config still loads + parses + exporter still initializes; deprecation cleanup deferred to Plan 11-07 wave-0 probe which will empirically confirm which mapping.mode semantics are live on the sk_p stack (Open Q1 resolution).
+- Plan 11-04: prometheus.yml created at sk_p repo root (verbatim from sk2_1 per D-08, NOT in compose/); single static target otel-collector:8889 + 15s scrape_interval/evaluation_interval + 10s scrape_timeout + metrics_path /metrics; no auth/TLS/relabel functional blocks (semantic invariant satisfied; negative-assertion comments preserved verbatim per plan action body). Comment header rewritten to cite Phase 11 D-07 + D-08 (sk2_1's Phase 12 INFR-07 labels are sk2_1-internal). Bind-mounted into sk-prometheus via compose.yaml line 94 (Plan 11-02). Single atomic commit b40299c (30 insertions / 0 deletions / 1 new file).
+- Plan 11-04 deviation [Rule 3 - blocking]: removed pre-existing empty directory prometheus.yml/ created by Plan 11-02's deferred compose-up before writing the host-side file. Plan 11-02 SUMMARY anticipated this cleanup would be needed; this plan exercised the rmdir + Write recovery pattern. Pattern: pre-existing-empty-directory-cleanup before bind-mount-precedes-file-creation deferral resolution.
+- Plan 11-04 deviation [Rule 3 - command shape]: used docker compose up -d prometheus instead of plan-as-written restart prometheus, because the prometheus service had never been started (Plan 11-02 deferred compose-up + Plan 11-03 partial-stack bring-up of ES + collector only). Plan 11-03 partial-stack-bring-up precedent applies. Functionally equivalent for verification intent; service started cleanly on first attempt; smoke probes all passed.
+- Plan 11-04 deviation [Rule 1 - plan-internal-inconsistency]: negative-assertion comments (# NO tls_config, # No metric_relabel_configs) preserved verbatim from plan action body despite literal grep gate at <verify> line 147 saying ! grep -E basic_auth|bearer_token|tls_config|metric_relabel_configs. The plan's <action> verbatim content takes precedence over the contradictory grep gate; must_haves invariants are SEMANTIC (no functional YAML key declarations) — satisfied. Plan 06-01 + 08-01 + 10-02 precedent followed. Confirmed via grep -vE '^\s*#' (comments stripped) returning EXIT:1 for the contested patterns.
+- Plan 11-04 pattern: end-to-end ingestion verification via Prom HTTP API + sample query (up{job=otel-collector} returning value '1') is a stronger smoke gate than /api/v1/targets alone (which only confirms scrape SETUP). The targets endpoint shows DNS+port reachability; the up query confirms Prom's scraper + parser + TSDB ingestion path are all live. Pattern reusable for any future Prom smoke verification.
+- Plan 11-04 pattern: bind-mount-precedes-file-creation deferral RESOLVED — Plan 11-02 declared the ./prometheus.yml:/etc/prometheus/prometheus.yml:ro bind-mount as commit #2 deferring backend smoke verification to post-Wave-3. This plan ships the host-side file, closing the chicken-and-egg gap. The orchestrator can now run the full Plan 11-02 Task 5 backend smoke probe sequence (compose up -d --wait + ES + Prom + collector :8889 + collector :13133).
 
 ### Roadmap Evolution
 
@@ -274,8 +281,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T12:24:13.506Z
-Stopped at: Completed Phase 11 Plan 03 (collector config rewire — logs to ES, metrics to Prom, drop traces + file exporter)
+Last session: 2026-05-28T12:35:06.046Z
+Stopped at: Completed Phase 11 Plan 04 (prometheus.yml created — scrape config for otel-collector:8889; resolved Plan 11-02 bind-mount deferral)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)

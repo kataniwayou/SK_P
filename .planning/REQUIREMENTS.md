@@ -391,7 +391,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | TEST-06 | Phase 8 | Complete |
 | OBSERV-13 | Phase 11 | Complete |
 | OBSERV-14 | Phase 11 | Complete |
-| INFRA-08 | Phase 11 | Pending |
+| INFRA-08 | Phase 11 | Complete |
 | TEST-07 | Phase 11 | Pending |
 
 **Coverage:**
