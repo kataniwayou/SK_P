@@ -68,7 +68,14 @@ public sealed class PrometheusTestClient : IDisposable
         while (elapsed < PollTimeoutMs)
         {
             ct.ThrowIfCancellationRequested();
-            if (lastSamples.Count > 0 && SumSampleValues(lastSamples) >= threshold)
+            // IN-04 review fix: dropped the `lastSamples.Count > 0 &&` gate. With
+            // threshold == 0 the desired "trivially satisfied" exit path was being
+            // blocked by an empty result vector. SumSampleValues over an empty list
+            // returns 0, which correctly compares to threshold (0 >= 0 is true; for
+            // any positive threshold, the empty-vector path still rejects via the
+            // arithmetic alone). Current callers all use positive thresholds, but the
+            // latent edge case is now closed.
+            if (SumSampleValues(lastSamples) >= threshold)
             {
                 return lastSamples;
             }
