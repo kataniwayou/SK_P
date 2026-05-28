@@ -176,7 +176,7 @@ Requirements for initial release. Each maps to roadmap phases.
 **: Correlation ID written to `HttpContext.Items["CorrelationId"]` and attached to log scope via `ILogger.BeginScope`
 - [x] **OBSERV-11
 **: Correlation ID echoed in `X-Correlation-Id` response header on every response (including error responses)
-- [ ] **OBSERV-12 [SUPERSEDED — Phase 11 D-03]
+- [x] **OBSERV-12 [SUPERSEDED — Phase 11 D-03]
 **: OTel tracing pipeline removed in Phase 11 (D-03). Moved to Out of Scope. Rationale: no traces backend in v1 (mirrors sk2_1 CLAUDE.md non-negotiable #2); `.WithTracing()` registration stripped from `AddBaseApiObservability`; collector traces pipeline + Npgsql tracing instrumentation no longer wired. See "OTel tracing pipeline (traces backend)" Out of Scope row.
 - [x] **OBSERV-13
 

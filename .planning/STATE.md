@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.11.3
 milestone_name: milestone
 status: executing
-stopped_at: "Completed Phase 11 Plan 04 (prometheus.yml created — scrape config for otel-collector:8889; resolved Plan 11-02 bind-mount deferral)"
-last_updated: "2026-05-28T12:35:06.057Z"
+stopped_at: Completed Phase 11 Plan 05 (.WithTracing stripped from SDK; TraceExportTests + OtelEndOfSuiteCleanup deleted; tests/.otel-out/ removed; .gitignore stanza cleaned up — commit 0fa325e)
+last_updated: "2026-05-28T12:46:42.419Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 41
-  completed_plans: 35
-  percent: 85
+  completed_plans: 36
+  percent: 88
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — EXECUTING
-Plan: 5 of 10
+Plan: 6 of 10
 Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [█████████░] 85%
+Progress: [█████████░] 88%
 
 ## Performance Metrics
 
@@ -96,6 +96,7 @@ Progress: [█████████░] 85%
 | Phase 11 P02 | ~15min | 6 tasks (5 sequential mutations + 1 deferred checkpoint + 1 atomic commit; Task 5 backend smoke verification DEFERRED to post-Wave-3) | 1 files (compose.yaml; 71 insertions / 15 deletions) |
 | Phase 11 P03 | ~4min | 5 tasks | 1 files |
 | Phase 11 P04 | ~3min | 3 tasks | 1 files |
+| Phase 11 P05 | ~4min | 4 tasks tasks | 5 files files |
 
 ## Accumulated Context
 
@@ -250,6 +251,10 @@ Recent decisions affecting current work:
 - Plan 11-04 deviation [Rule 1 - plan-internal-inconsistency]: negative-assertion comments (# NO tls_config, # No metric_relabel_configs) preserved verbatim from plan action body despite literal grep gate at <verify> line 147 saying ! grep -E basic_auth|bearer_token|tls_config|metric_relabel_configs. The plan's <action> verbatim content takes precedence over the contradictory grep gate; must_haves invariants are SEMANTIC (no functional YAML key declarations) — satisfied. Plan 06-01 + 08-01 + 10-02 precedent followed. Confirmed via grep -vE '^\s*#' (comments stripped) returning EXIT:1 for the contested patterns.
 - Plan 11-04 pattern: end-to-end ingestion verification via Prom HTTP API + sample query (up{job=otel-collector} returning value '1') is a stronger smoke gate than /api/v1/targets alone (which only confirms scrape SETUP). The targets endpoint shows DNS+port reachability; the up query confirms Prom's scraper + parser + TSDB ingestion path are all live. Pattern reusable for any future Prom smoke verification.
 - Plan 11-04 pattern: bind-mount-precedes-file-creation deferral RESOLVED — Plan 11-02 declared the ./prometheus.yml:/etc/prometheus/prometheus.yml:ro bind-mount as commit #2 deferring backend smoke verification to post-Wave-3. This plan ships the host-side file, closing the chicken-and-egg gap. The orchestrator can now run the full Plan 11-02 Task 5 backend smoke probe sequence (compose up -d --wait + ES + Prom + collector :8889 + collector :13133).
+- Plan 11-05: Single atomic commit #5 of Phase 11 (commit 0fa325e) — refactor(observability): strip .WithTracing + delete TraceExportTests + OtelEndOfSuiteCleanup + tests/.otel-out/. SDK-side teardown of traces pipeline; pairs with Plan 11-03 collector-side removal so both producer and consumer agree on no-traces posture. ObservabilityServiceCollectionExtensions.cs lost .WithTracing chain + 2 orphan using directives (Npgsql + OpenTelemetry.Trace) + XML doc summary refreshed to cite OBSERV-12 supersession + Phase 11 D-03. .gitignore Phase 5 8-line stanza removed; tests/.otel-out/ directory removed entirely (telemetry.jsonl via filesystem rm — was gitignored / untracked); .gitkeep + 2 test files via git rm. dotnet build SK_P.sln zero-warning Release+Debug. 5 files changed, 8 insertions / 352 deletions.
+- Plan 11-05 must_haves semantic-vs-literal pattern reaffirmed — XML doc comment legitimately references '.WithTracing(...) block deleted' for educational continuity; literal grep returns 1 match but code-only check (strip /// lines first) returns 0. Plan 11-04 set the precedent (negative-assertion comments preserved despite literal grep gate). Pattern: must_haves invariants are SEMANTIC (no production CALL) not LITERAL (no string match anywhere). Future plans referencing this pattern: Plan 06-01 + 08-01 + 10-02 + 11-04.
+- Plan 11-05 gitignored-file-filesystem-rm pattern — tests/.otel-out/telemetry.jsonl was untracked (gitignored), so 'git rm' would exit non-zero. Plan body Task 2 step 4 anticipated this and prescribed filesystem 'rm -f' fallback. Used 'rm -f tests/.otel-out/telemetry.jsonl' followed by 'rmdir tests/.otel-out' to clear both. Only the .gitkeep deletion (tracked) shows in 'git show --stat HEAD'; the gitignored file's removal is invisible to git's history. Pattern reusable for any future cleanup of ignored-but-on-disk files (.env.local removal when a feature stops using it, etc.).
+- Plan 11-05 Test Migration Sequencing intentional-RED-on-the-horizon — after commit 0fa325e lands, LogExportTests / LogLevelFilterTests / MetricsExportTests still reference OtelCollectorFixture (file-exporter path now non-functional); 3 facts WILL fail at runtime with 'telemetry.jsonl not found'. Matches Phase 8/10 5-commit forensic bisect precedent. Build remains GREEN throughout because test code still compiles (references to OtelCollectorFixture types resolve; file preserved, just non-functional). Plan 11-08 migrates the 3 facts to ES/Prom polling; OtelCollectorFixture.cs itself is REPLACED by Phase11WebAppFactory in Plan 11-06 and deleted in Plan 11-08.
 
 ### Roadmap Evolution
 
@@ -281,8 +286,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T12:35:06.046Z
-Stopped at: Completed Phase 11 Plan 04 (prometheus.yml created — scrape config for otel-collector:8889; resolved Plan 11-02 bind-mount deferral)
+Last session: 2026-05-28T12:46:42.407Z
+Stopped at: Completed Phase 11 Plan 05 (.WithTracing stripped from SDK; TraceExportTests + OtelEndOfSuiteCleanup deleted; tests/.otel-out/ removed; .gitignore stanza cleaned up — commit 0fa325e)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
