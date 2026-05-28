@@ -234,8 +234,20 @@ public sealed class HealthEndpointsTests
             // Set env var in ctor — runs BEFORE any base ctor logic that builds the host.
             // Capture+restore the prior value on dispose so subsequent fixtures see the
             // pristine appsettings-derived connection string (process-wide env vars persist).
+            // WR-02 review fix: wrap SetEnvironmentVariable in try/catch so a failure
+            // between SetEnvironmentVariable and DisposeAsync (e.g., factory.InitializeAsync()
+            // throws) does NOT leave the env var pinned to the dead string for subsequent
+            // tests in the same process.
             _priorEnvValue = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres");
-            Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", DeadConnectionString);
+            try
+            {
+                Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", DeadConnectionString);
+            }
+            catch
+            {
+                Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", _priorEnvValue);
+                throw;
+            }
         }
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -271,9 +283,21 @@ public sealed class HealthEndpointsTests
         private readonly string? _priorEnvValue;
         public HealthLiveLocalhostFixture()
         {
+            // WR-02 review fix: same try/catch restore-on-failure pattern as
+            // HealthDeadPostgresFixture — a throw between SetEnvironmentVariable and
+            // DisposeAsync would otherwise leak the localhost connection string and
+            // cascade-poison subsequent tests.
             _priorEnvValue = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres");
-            Environment.SetEnvironmentVariable("ConnectionStrings__Postgres",
-                "Host=localhost;Port=5433;Database=postgres;Username=postgres;Password=postgres");
+            try
+            {
+                Environment.SetEnvironmentVariable("ConnectionStrings__Postgres",
+                    "Host=localhost;Port=5433;Database=postgres;Username=postgres;Password=postgres");
+            }
+            catch
+            {
+                Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", _priorEnvValue);
+                throw;
+            }
         }
         public override async ValueTask DisposeAsync()
         {
