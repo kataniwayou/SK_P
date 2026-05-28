@@ -266,21 +266,13 @@ public sealed class HealthEndpointsTests
                 throw;
             }
         }
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
-        {
-            // Plan 11-08a Rule 1 fix-forward: Phase8WebAppFactory.ConfigureWebHost adds
-            // its throwaway-DB conn string via AddInMemoryCollection, which would OVERRIDE
-            // the env-var dead-port value set in our ctor. Override after base so our
-            // dead-port wins (last InMemoryCollection added wins for the same key).
-            base.ConfigureWebHost(builder);
-            builder.ConfigureAppConfiguration((_, cfg) =>
-            {
-                cfg.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["ConnectionStrings:Postgres"] = DeadConnectionString,
-                });
-            });
-        }
+        // IN-11 review fix: ConfigureWebHost override removed. The pre-WR-04 world
+        // required overriding base's AddInMemoryCollection because base would otherwise
+        // write its own (throwaway-DB) connection string and OVERWRITE the env-var
+        // dead-port value. After WR-04, base.ConfigureWebHost writes
+        // `ConnectionString` (which is `_connectionStringOverride` = DeadConnectionString
+        // here) — so the override block was writing DeadConnectionString a SECOND time
+        // (harmless but stale + redundant). The base now does the right thing.
         public override async ValueTask DisposeAsync()
         {
             Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", _priorEnvValue);
