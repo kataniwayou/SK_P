@@ -113,7 +113,11 @@ public sealed class MetricsExportTests : IClassFixture<Phase11WebAppFactory>
         using var client = _factory.CreateClient();
 
         // Warm a request so the runtime instrumentation has fired at least once.
-        _ = await client.GetAsync("/test-obs/ok", ct);
+        // IN-06 review fix: assert the warm request returned 200. Discarding the status
+        // earlier let a 500 response (e.g., logger DI broken) slip through; the runtime
+        // metric timer fires regardless, so the test would pass for the wrong reason.
+        var warmResp = await client.GetAsync("/test-obs/ok", ct);
+        Assert.Equal(HttpStatusCode.OK, warmResp.StatusCode);
 
         // OpenTelemetry.Instrumentation.Runtime 1.15.0 ships newer semantic-convention
         // names; D-16 prescribed process.runtime.dotnet.* but the SDK uses dotnet.* in
