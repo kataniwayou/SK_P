@@ -27,6 +27,7 @@ public class Phase8WebAppFactory : WebAppFactory, IAsyncLifetime
 {
     private PostgresFixture? _fixture;
     private readonly string? _connectionStringOverride;
+    private readonly bool _skipPostgresFixture;
 
     public Phase8WebAppFactory() { }
 
@@ -40,12 +41,41 @@ public class Phase8WebAppFactory : WebAppFactory, IAsyncLifetime
         _connectionStringOverride = connectionStringOverride;
     }
 
+    /// <summary>
+    /// WR-04 review fix: constructor variant that SKIPS the real PostgresFixture
+    /// testcontainer boot. Used by health-dead-postgres tests
+    /// (<c>HealthDeadPostgresFixture</c> in
+    /// <see cref="BaseApi.Tests.Observability.HealthEndpointsTests"/>) which explicitly
+    /// want Postgres to be UNREACHABLE — spinning up a real testcontainer just to
+    /// ignore it costs ~10s per fixture instance × 4 facts = ~40s of waste per run.
+    /// </summary>
+    /// <param name="skipPostgresFixture">When <c>true</c>, <see cref="InitializeAsync"/>
+    /// does NOT construct a <see cref="PostgresFixture"/>. Callers MUST supply
+    /// <paramref name="connectionStringOverride"/> so <see cref="ConnectionString"/>
+    /// is resolvable.</param>
+    /// <param name="connectionStringOverride">Connection string returned by
+    /// <see cref="ConnectionString"/> — typically a dead-port string for the
+    /// health-dead-postgres tests.</param>
+    protected Phase8WebAppFactory(bool skipPostgresFixture, string connectionStringOverride)
+    {
+        _skipPostgresFixture = skipPostgresFixture;
+        _connectionStringOverride = connectionStringOverride;
+    }
+
     public string ConnectionString => _connectionStringOverride
         ?? _fixture?.ConnectionString
         ?? throw new InvalidOperationException("InitializeAsync has not run yet.");
 
     public async ValueTask InitializeAsync()
     {
+        // WR-04 review fix: skip testcontainer boot for fixtures that explicitly want
+        // Postgres unreachable. The dead-port override on _connectionStringOverride is
+        // returned by ConnectionString and surfaces via the standard
+        // ConfigureAppConfiguration override below.
+        if (_skipPostgresFixture)
+        {
+            return;
+        }
         if (_connectionStringOverride is null)
         {
             _fixture = new PostgresFixture();

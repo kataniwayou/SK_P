@@ -229,7 +229,12 @@ public sealed class HealthEndpointsTests
         private const string DeadConnectionString =
             "Host=localhost;Port=1;Database=postgres;Username=postgres;Password=postgres;Timeout=2";
         private readonly string? _priorEnvValue;
+        // WR-04 review fix: skip the real PostgresFixture testcontainer boot — these
+        // tests explicitly want Postgres UNREACHABLE, so paying ~10s per fixture instance
+        // for a container that will never serve a connection is pure dev-loop waste
+        // (~40s saved across the 4 facts that consume this fixture).
         public HealthDeadPostgresFixture()
+            : base(skipPostgresFixture: true, connectionStringOverride: DeadConnectionString)
         {
             // Set env var in ctor — runs BEFORE any base ctor logic that builds the host.
             // Capture+restore the prior value on dispose so subsequent fixtures see the
