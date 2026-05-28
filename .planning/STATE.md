@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.11.3
 milestone_name: milestone
 status: executing
-stopped_at: Completed Phase 11 Plan 01 (REQUIREMENTS.md amendments)
-last_updated: "2026-05-28T11:54:29.275Z"
+stopped_at: Completed Phase 11 Plan 02 (compose.yaml elasticsearch + prometheus + collector bump; Task 5 backend smoke verification DEFERRED to post-Wave-3)
+last_updated: "2026-05-28T12:10:00Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 41
-  completed_plans: 32
-  percent: 78
+  completed_plans: 33
+  percent: 80
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — EXECUTING
-Plan: 2 of 10
-Status: Ready to execute
+Plan: 3 of 10
+Status: Ready to execute (Plan 11-03 collector-config rewire next; or Plan 11-04 prometheus.yml creation in parallel)
 Last activity: 2026-05-28
 
-Progress: [████████░░] 78%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -93,6 +93,7 @@ Progress: [████████░░] 78%
 | Phase 10 P04 | ~4min | 4 tasks tasks | 5 files (2 D + 2 A + 1 M) files |
 | Phase 10 P05 | ~28min | 5 tasks tasks | 8 files files |
 | Phase 11 P01 | ~4min | 5 tasks | 1 files |
+| Phase 11 P02 | ~15min | 6 tasks (5 sequential mutations + 1 deferred checkpoint + 1 atomic commit; Task 5 backend smoke verification DEFERRED to post-Wave-3) | 1 files (compose.yaml; 71 insertions / 15 deletions) |
 
 ## Accumulated Context
 
@@ -232,6 +233,10 @@ Recent decisions affecting current work:
 - Phase 10 COMPLETE — 5-commit sequence intact (1de7e71 + 79b07d1 + 12577ac + 146d482 + 6d043e4): doc-first REQUIREMENTS.md amendment + Assignment SchemaId removal + Processor ConfigSchemaId addition + migration regen + test cleanup. All 5 production commits independently revertable; system is shippable end-to-end with the post-Phase-10 model (entity + DTOs + validators + EF config + REQUIREMENTS.md + migration + test suite all consistent). 142/142 test suite GREEN; zero leaked test DBs; CONTEXT D-02 bisect-friendly forensic property preserved.
 - Plan 11-01: Doc-first commit #1 of Phase 11 (commit 7041adb) — REQUIREMENTS.md amended atomically per Phase 10 D-01/D-02 precedent. OBSERV-12 SUPERSEDED in place (header bytes preserved per Phase 3 D-03b ID preservation invariant; first '[SUPERSEDED — Phase X D-NN]' marker in this codebase); INFRA-06 extended in place with 4-service enumeration; 4 new REQ-IDs added in correct category sections (OBSERV-13/14, INFRA-08, TEST-07); Out of Scope row appended with bidirectional cross-reference; Traceability table updated (OBSERV-12 row mutated + 4 new rows); per-phase footnote rebalanced; Coverage 102 -> 105 active v1. Single 1-file commit with verbatim subject 'docs(req): amend OBSERV-12 + INFRA-06 + add OBSERV-13/14 + INFRA-08 + TEST-07 for Phase 11 shape'. Forensic property: every Phase 11 commit (11-02 compose, 11-03 collector, 11-04 code strip, 11-05+ tests) now points back to authoritative amended REQ-IDs and is independently revertable.
 - Plan 11-01 pattern: '[SUPERSEDED — Phase X D-NN]' header marker convention — first instance in this codebase. Pattern is reusable for future phases that retire REQ-IDs while preserving their byte-identical header for cross-reference stability. Companion pattern: superseded REQ body cross-references new Out of Scope row (bidirectional); Out of Scope row text declares which REQ-ID it supersedes. Combined effect: readers can trace REQ -> decision -> out-of-scope rationale either direction.
+- Plan 11-02: Atomic compose-only commit #2 of Phase 11 (commit a3c0b20) — single compose.yaml mutation (71 insertions / 15 deletions) adds elasticsearch (8.15.5) + prometheus (v3.11.3) service blocks verbatim from sk2_1 (lines 41-72 + 77-100 respectively) with Phase 11 D-NN-cited comment headers; mutates otel-collector (image bump 0.95.0 -> 0.152.0 with Phase 11 D-09 rationale comment, port 8889:8889 added between 4318 and 13133 per D-14, ./tests/.otel-out:/var/otel-out bind-mount + user:"0:0" override DROPPED together per D-14 since file exporter goes away in Plan 11-03, collector-config bind-mount byte-preserved, distroless NOTE block preserved with 0.152.0 verification annotation per RESEARCH Pitfall 3); extends baseapi-service.depends_on to 4 entries (postgres + otel-collector + elasticsearch + prometheus) with elasticsearch/prometheus both gated by service_healthy per D-15. Offline `docker compose -f compose.yaml config --quiet` validation gate PASS (exit 0). Same atomic-commit pattern as Plan 11-01 (Tasks 1-4 are sub-edits of a single forensic-friendly commit; Task 5 is verification-only; Task 6 is the single commit point).
+- Plan 11-02 deferral (orchestrator-directed; not a Rule 1/2/3/4 deviation): Task 5 backend smoke verification (docker compose up -d --wait --timeout 120 + ES /_cluster/health curl + Prom /-/healthy curl + collector :8889/metrics curl + collector :13133/ curl) DEFERRED to post-Wave-3. Reason: Plan 11-02's new prometheus service declares ./prometheus.yml:/etc/prometheus/prometheus.yml:ro bind-mount, but Plan 11-04 (Wave 3) is responsible for creating that file. Attempted compose-up at the checkpoint failed deterministically with `failed to mount ".../prometheus.yml": not a directory: Are you trying to mount a directory onto a file (or vice-versa)?` because Docker auto-creates a directory when the host bind-mount source path does not exist. User responded "skip-verify, commit anyway"; orchestrator will run the full smoke probe sequence AFTER Plan 11-04 lands prometheus.yml. Pitfall 4 (sibling sk2_1 stack collision) WAS observed at pre-flight and resolved cleanly: sk2_1 stack was holding sk-elasticsearch + sk-prometheus + sk-mongodb container names; `docker compose -f C:/Users/UserL/source/repos/sk2_1/docker-compose.yml down` cleared them; old sk_p stack (0.95.0 collector + postgres) also brought down via `docker compose -f compose.yaml down`. Pattern: Bind-mount-precedes-file-creation deferral — when an atomic compose-mutation commit declares a bind-mount whose host-side file is created by a later plan, the compose-up smoke verification gate is DEFERRED to post-file-creation; the offline `docker compose config --quiet` gate still runs at commit time and is sufficient for the atomic commit to land.
+- Plan 11-02 pattern: Image-bump rationale-comment-block convention — every image-version bump in compose.yaml is paired with an inline comment block citing the Phase D-NN decision + the load-bearing reason for the bump (e.g., "0.95.0 predates `mapping.mode` field"). Future readers can grep `Phase NN D-MM — bumped` to find every image bump's rationale without leaving the file. First instance: the 0.95.0 -> 0.152.0 collector bump in compose.yaml lines 51-56 carries the Phase 11 D-09 rationale comment block.
+- Plan 11-02 pattern: Workaround-pair-drop convention — when a workaround (like the file-exporter UID-mismatch Windows tweak via `user:"0:0"` + `./tests/.otel-out:/var/otel-out`) is paired with the thing it works around, both lines drop in the same atomic commit (not split across two commits). Keeps the collector service block consistent at every commit-state; the workaround was only meaningful when paired with the bind-mount it was working around. First instance: this plan's D-14 mutation drops both lines together in anticipation of Plan 11-03's file-exporter removal.
 
 ### Roadmap Evolution
 
@@ -259,12 +264,12 @@ Items acknowledged and carried forward from previous milestone close:
 
 | Category | Item | Status | Deferred At |
 |----------|------|--------|-------------|
-| *(none)* | | | |
+| Verification | Phase 11 Plan 02 Task 5 backend smoke probe sequence (docker compose up -d --wait --timeout 120 + ES `/_cluster/health` curl + Prom `/-/healthy` curl + collector `:8889/metrics` curl + collector `:13133/` curl) — DEFERRED to post-Wave-3 because the prometheus service's `./prometheus.yml` bind-mount cannot resolve until Plan 11-04 creates the file. Orchestrator will run the full sequence AFTER Plan 11-04 lands. Offline `docker compose config --quiet` validation gate DID pass at commit time. | Pending | 2026-05-28 (Plan 11-02 Task 5 checkpoint) |
 
 ## Session Continuity
 
-Last session: 2026-05-28T11:54:29.263Z
-Stopped at: Completed Phase 11 Plan 01 (REQUIREMENTS.md amendments)
+Last session: 2026-05-28T12:10:00Z
+Stopped at: Completed Phase 11 Plan 02 (compose.yaml elasticsearch + prometheus + collector image bump + extended baseapi-service depends_on chain; commit a3c0b20). Task 5 backend smoke verification (compose up --wait + 4 host-side backend curls) DEFERRED to post-Wave-3 per orchestrator instruction — the new prometheus service declares ./prometheus.yml bind-mount whose host-side file is created by Plan 11-04 (Wave 3 chicken-and-egg). Offline `docker compose -f compose.yaml config --quiet` validation gate PASS at commit time.
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
