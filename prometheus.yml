@@ -1,0 +1,30 @@
+# Phase 11 D-08 — Prometheus scrape config for the otel-collector's prometheus exporter.
+# Single static target — the collector exposes /metrics on :8889 (see compose/otel-collector-config.yaml
+# exporters.prometheus.endpoint per Phase 11 D-07). 15s scrape interval matches sk2_1 lock-in.
+#
+# Layout: this file lives at the sk_p repo root (matches sk2_1's flat layout per D-08); the
+# `prometheus` service in compose.yaml bind-mounts it read-only at /etc/prometheus/prometheus.yml.
+
+global:
+  scrape_interval: 15s        # D-07 / D-08: matches default; explicit for clarity
+  evaluation_interval: 15s    # Rule eval cadence (no rules defined — kept for default sanity)
+  scrape_timeout: 10s         # Must be < scrape_interval per Prometheus validation
+
+scrape_configs:
+  - job_name: 'otel-collector'
+    # NO authentication — dev mode (parallels compose.yaml D-12/D-13 no-auth posture).
+    # NO tls_config — dev mode (production hardening lives in a downstream service repo).
+    static_configs:
+      - targets:
+          # Compose-internal hostname; resolves to sk-otel-collector container via the
+          # default compose network. RESEARCH Pattern 5 — Prom container is INSIDE compose
+          # so it uses service-DNS, not host-DNS. Test code outside compose uses
+          # http://localhost:9090 (Prom HTTP API) instead.
+          - 'otel-collector:8889'
+    # Path defaults to /metrics — explicit for documentation clarity.
+    metrics_path: '/metrics'
+    # No metric_relabel_configs — we want raw OTel → Prometheus name translation.
+    # The resource_to_telemetry_conversion: true setting lives on the collector's
+    # prometheus exporter (Phase 11 D-07; compose/otel-collector-config.yaml). That is
+    # what makes `service.name` become the `service_name` Prom label — non-negotiable
+    # for Phase 11 D-17 round-trip test assertions.
