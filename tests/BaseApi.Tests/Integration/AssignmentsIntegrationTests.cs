@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using BaseApi.Service.Features.Assignment;
 using BaseApi.Service.Features.Processor;
-using BaseApi.Service.Features.Schema;
 using BaseApi.Service.Features.Step;
 using BaseApi.Tests.Composition;
 using Xunit;
@@ -21,12 +20,12 @@ namespace BaseApi.Tests.Integration;
 /// Phase 8 Plan 08-08 verifies the GREEN-state regression after Wave C completes.
 /// </para>
 /// <para>
-/// <b>FK prerequisite chain:</b> AssignmentCreateDto requires non-Guid.Empty StepId
-/// and SchemaId values that EXIST in their respective Postgres tables (Postgres FK
-/// constraint <c>fk_assignment_step_id</c> + <c>fk_assignment_schema_id</c> reject
-/// non-existent Guids). <see cref="CreatePrereqAsync"/> creates a Schema, then a
-/// Processor, then a Step inline via the public HTTP API — mirrors the Plan 08-04
-/// helper pattern but extended with a Schema POST.
+/// <b>FK prerequisite chain:</b> AssignmentCreateDto requires a non-Guid.Empty StepId
+/// value that EXISTS in the steps table (Postgres FK constraint
+/// <c>fk_assignment_step_id</c> rejects non-existent Guids).
+/// <see cref="CreatePrereqAsync"/> creates a Processor, then a Step inline via the
+/// public HTTP API — mirrors the Plan 08-04 helper pattern (Phase 10 simplification:
+/// no Schema POST since AssignmentEntity no longer carries a SchemaId field).
 /// </para>
 /// </summary>
 [Trait("Phase8Wave", "B")]
@@ -42,31 +41,22 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
         return string.Concat(bytes.Select(b => b.ToString("x2")));
     }
 
-    private static async Task<(Guid stepId, Guid schemaId)> CreatePrereqAsync(HttpClient client, CancellationToken ct)
+    private static async Task<Guid> CreatePrereqAsync(HttpClient client, CancellationToken ct)
     {
-        // 1. Schema — FK target for AssignmentEntity.SchemaId.
-        var schemaDto = new SchemaCreateDto(
-            Name: $"prereq-schema-{Guid.NewGuid():N}",
-            Version: "1.0.0",
-            Description: null,
-            Definition: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\"}");
-        var schemaResp = await client.PostAsJsonAsync("/api/v1/schemas", schemaDto, ct);
-        schemaResp.EnsureSuccessStatusCode();
-        var schema = await schemaResp.Content.ReadFromJsonAsync<SchemaReadDto>(cancellationToken: ct);
-
-        // 2. Processor — FK target for StepEntity.ProcessorId (transitive prereq for Step).
+        // 1. Processor — FK target for StepEntity.ProcessorId (transitive prereq for Step).
         var procDto = new ProcessorCreateDto(
             Name: $"prereq-proc-{Guid.NewGuid():N}",
             Version: "1.0.0",
             Description: null,
             SourceHash: RandomSha256Hex(),
             InputSchemaId: null,
-            OutputSchemaId: null);
+            OutputSchemaId: null,
+            ConfigSchemaId: null);
         var procResp = await client.PostAsJsonAsync("/api/v1/processors", procDto, ct);
         procResp.EnsureSuccessStatusCode();
         var proc = await procResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
 
-        // 3. Step — FK target for AssignmentEntity.StepId.
+        // 2. Step — FK target for AssignmentEntity.StepId.
         var stepDto = new StepCreateDto(
             Name: $"prereq-step-{Guid.NewGuid():N}",
             Version: "1.0.0",
@@ -78,15 +68,14 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
         stepResp.EnsureSuccessStatusCode();
         var step = await stepResp.Content.ReadFromJsonAsync<StepReadDto>(cancellationToken: ct);
 
-        return (step!.Id, schema!.Id);
+        return step!.Id;
     }
 
-    private static AssignmentCreateDto NewValidCreateDto(Guid stepId, Guid schemaId, string suffix = "") => new(
+    private static AssignmentCreateDto NewValidCreateDto(Guid stepId, string suffix = "") => new(
         Name: $"my-assignment{suffix}",
         Version: "1.0.0",
         Description: "Integration test assignment",
         StepId: stepId,
-        SchemaId: schemaId,
         Payload: "{\"key\":\"value\"}");
 
     [Fact]
@@ -112,10 +101,10 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
-        var (stepId, schemaId) = await CreatePrereqAsync(client, ct);
+        var stepId = await CreatePrereqAsync(client, ct);
 
         var resp = await client.PostAsJsonAsync("/api/v1/assignments",
-            NewValidCreateDto(stepId, schemaId), ct);
+            NewValidCreateDto(stepId), ct);
 
         Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
         Assert.NotNull(resp.Headers.Location);
@@ -128,7 +117,6 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
         Assert.NotNull(read);
         Assert.NotEqual(Guid.Empty, read!.Id);
         Assert.Equal(stepId, read.StepId);
-        Assert.Equal(schemaId, read.SchemaId);
         // Postgres jsonb normalizes whitespace (adds " " after colons) and may reorder keys.
         // Compare semantically rather than via literal string equality.
         Assert.Equal(NormalizeJson("{\"key\":\"value\"}"), NormalizeJson(read.Payload));
@@ -141,10 +129,10 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
-        var (stepId, schemaId) = await CreatePrereqAsync(client, ct);
+        var stepId = await CreatePrereqAsync(client, ct);
 
         var createResp = await client.PostAsJsonAsync("/api/v1/assignments",
-            NewValidCreateDto(stepId, schemaId, "-getbyid"), ct);
+            NewValidCreateDto(stepId, "-getbyid"), ct);
         var created = await createResp.Content.ReadFromJsonAsync<AssignmentReadDto>(cancellationToken: ct);
 
         var resp = await client.GetAsync($"/api/v1/assignments/{created!.Id}", ct);
@@ -160,10 +148,10 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
-        var (stepId, schemaId) = await CreatePrereqAsync(client, ct);
+        var stepId = await CreatePrereqAsync(client, ct);
 
         var createResp = await client.PostAsJsonAsync("/api/v1/assignments",
-            NewValidCreateDto(stepId, schemaId, "-update"), ct);
+            NewValidCreateDto(stepId, "-update"), ct);
         var created = await createResp.Content.ReadFromJsonAsync<AssignmentReadDto>(cancellationToken: ct);
 
         var update = new AssignmentUpdateDto(
@@ -171,7 +159,6 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
             Version: "1.0.1",
             Description: "Updated",
             StepId: stepId,
-            SchemaId: schemaId,
             Payload: "{\"updated\":true}");
         var putResp = await client.PutAsJsonAsync($"/api/v1/assignments/{created.Id}", update, ct);
         Assert.Equal(HttpStatusCode.OK, putResp.StatusCode);
@@ -234,10 +221,10 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
-        var (stepId, schemaId) = await CreatePrereqAsync(client, ct);
+        var stepId = await CreatePrereqAsync(client, ct);
 
         var createResp = await client.PostAsJsonAsync("/api/v1/assignments",
-            NewValidCreateDto(stepId, schemaId, "-delete"), ct);
+            NewValidCreateDto(stepId, "-delete"), ct);
         var created = await createResp.Content.ReadFromJsonAsync<AssignmentReadDto>(cancellationToken: ct);
 
         var deleteResp = await client.DeleteAsync($"/api/v1/assignments/{created!.Id}", ct);

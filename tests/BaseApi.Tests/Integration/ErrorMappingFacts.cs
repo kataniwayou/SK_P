@@ -42,7 +42,8 @@ public sealed class ErrorMappingFacts : IClassFixture<Phase8WebAppFactory>
             Description: null,
             SourceHash: hash,
             InputSchemaId: null,
-            OutputSchemaId: null);
+            OutputSchemaId: null,
+            ConfigSchemaId: null);
         var first = await client.PostAsJsonAsync("/api/v1/processors", dto1, ct);
         Assert.Equal(HttpStatusCode.Created, first.StatusCode);
 
@@ -113,7 +114,8 @@ public sealed class ErrorMappingFacts : IClassFixture<Phase8WebAppFactory>
             Description: null,
             SourceHash: RandomSha256Hex(),
             InputSchemaId: null,
-            OutputSchemaId: null);
+            OutputSchemaId: null,
+            ConfigSchemaId: null);
         var procResp = await client.PostAsJsonAsync("/api/v1/processors", procDto, ct);
         procResp.EnsureSuccessStatusCode();
         var proc = await procResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);

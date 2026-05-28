@@ -59,7 +59,8 @@ public sealed class WorkflowsIntegrationTests : IClassFixture<Phase8WebAppFactor
             Description: null,
             SourceHash: RandomSha256Hex(),
             InputSchemaId: null,
-            OutputSchemaId: null);
+            OutputSchemaId: null,
+            ConfigSchemaId: null);
         var procResp = await client.PostAsJsonAsync("/api/v1/processors", procDto, ct);
         procResp.EnsureSuccessStatusCode();
         var proc = await procResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);

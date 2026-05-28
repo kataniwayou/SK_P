@@ -50,7 +50,8 @@ public sealed class StepsIntegrationTests : IClassFixture<Phase8WebAppFactory>
             Description: null,
             SourceHash: RandomSha256Hex(),
             InputSchemaId: null,
-            OutputSchemaId: null);
+            OutputSchemaId: null,
+            ConfigSchemaId: null);
         var resp = await client.PostAsJsonAsync("/api/v1/processors", dto, ct);
         resp.EnsureSuccessStatusCode();
         var read = await resp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);

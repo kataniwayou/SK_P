@@ -49,7 +49,8 @@ public sealed class GetBySourceHashFacts : IClassFixture<Phase8WebAppFactory>
         Description: "Phase 9 GetBySourceHash test processor",
         SourceHash: sourceHash,
         InputSchemaId: null,
-        OutputSchemaId: null);
+        OutputSchemaId: null,
+        ConfigSchemaId: null);
 
     [Fact]
     public async Task GetBySourceHash_Returns200_AndDto_WhenExisting()

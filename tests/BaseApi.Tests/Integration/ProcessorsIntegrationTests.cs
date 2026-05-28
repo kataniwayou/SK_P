@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using BaseApi.Service.Features.Processor;
+using BaseApi.Service.Features.Schema;
 using BaseApi.Tests.Composition;
 using Xunit;
 
@@ -42,7 +43,8 @@ public sealed class ProcessorsIntegrationTests : IClassFixture<Phase8WebAppFacto
         Description: "Integration test processor",
         SourceHash: RandomSha256Hex(),
         InputSchemaId: null,                                   // source processor (ENTITY-04)
-        OutputSchemaId: null);
+        OutputSchemaId: null,
+        ConfigSchemaId: null);
 
     [Fact]
     public async Task List_ReturnsEmptyArray_OnEmptyDb()
@@ -117,7 +119,8 @@ public sealed class ProcessorsIntegrationTests : IClassFixture<Phase8WebAppFacto
             Description: "Updated processor",
             SourceHash: created.SourceHash,                    // keep same hash (no collision)
             InputSchemaId: null,
-            OutputSchemaId: null);
+            OutputSchemaId: null,
+            ConfigSchemaId: null);
         var putResp = await client.PutAsJsonAsync($"/api/v1/processors/{created.Id}", update, ct);
         Assert.Equal(HttpStatusCode.OK, putResp.StatusCode);
 
@@ -141,5 +144,64 @@ public sealed class ProcessorsIntegrationTests : IClassFixture<Phase8WebAppFacto
 
         var getResp = await client.GetAsync($"/api/v1/processors/{created.Id}", ct);
         Assert.Equal(HttpStatusCode.NotFound, getResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_ProcessorWithConfigSchemaId_RoundTripsCorrectly()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = _factory.CreateClient();
+
+        // 1. Seed a Schema inline (FK target for ConfigSchemaId).
+        var schemaDto = new SchemaCreateDto(
+            Name: $"config-schema-{Guid.NewGuid():N}",
+            Version: "1.0.0",
+            Description: null,
+            Definition: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\"}");
+        var schemaResp = await client.PostAsJsonAsync("/api/v1/schemas", schemaDto, ct);
+        schemaResp.EnsureSuccessStatusCode();
+        var schema = await schemaResp.Content.ReadFromJsonAsync<SchemaReadDto>(cancellationToken: ct);
+
+        // 2. POST Processor with ConfigSchemaId set.
+        var procDto = new ProcessorCreateDto(
+            Name: $"my-processor-cfgschema-{Guid.NewGuid():N}",
+            Version: "1.0.0",
+            Description: "ConfigSchemaId round-trip",
+            SourceHash: RandomSha256Hex(),
+            InputSchemaId: null,
+            OutputSchemaId: null,
+            ConfigSchemaId: schema!.Id);
+        var createResp = await client.PostAsJsonAsync("/api/v1/processors", procDto, ct);
+        Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
+        var created = await createResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+
+        // 3. GET by Id and assert ConfigSchemaId round-trips.
+        var getResp = await client.GetAsync($"/api/v1/processors/{created!.Id}", ct);
+        Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
+        var read = await getResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+        Assert.Equal(schema.Id, read!.ConfigSchemaId);
+    }
+
+    [Fact]
+    public async Task Create_ProcessorWithNullConfigSchemaId_RoundTripsAsNull()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = _factory.CreateClient();
+
+        var procDto = new ProcessorCreateDto(
+            Name: $"my-processor-nullcfg-{Guid.NewGuid():N}",
+            Version: "1.0.0",
+            Description: "Null ConfigSchemaId round-trip",
+            SourceHash: RandomSha256Hex(),
+            InputSchemaId: null,
+            OutputSchemaId: null,
+            ConfigSchemaId: null);
+        var createResp = await client.PostAsJsonAsync("/api/v1/processors", procDto, ct);
+        Assert.Equal(HttpStatusCode.Created, createResp.StatusCode);
+        var created = await createResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+
+        var getResp = await client.GetAsync($"/api/v1/processors/{created!.Id}", ct);
+        var read = await getResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+        Assert.Null(read!.ConfigSchemaId);
     }
 }
