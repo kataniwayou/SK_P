@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: "Completed 09-01-PLAN.md (Phase 9 plan 1 of 3: ProcessorService.GetBySourceHashAsync + controller route)"
-last_updated: "2026-05-28T05:27:58.023Z"
+stopped_at: "Completed 09-02-PLAN.md (Phase 9 plan 2 of 3: Features/Orchestration folder + AppFeatures wiring)"
+last_updated: "2026-05-28T05:36:38.846Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 26
-  completed_plans: 24
-  percent: 92
+  completed_plans: 25
+  percent: 96
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 09 (add-getbysourcehash-to-processor-controller-and-new-orchestr) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [█████████░] 92%
+Progress: [██████████] 96%
 
 ## Performance Metrics
 
@@ -83,6 +83,7 @@ Progress: [█████████░] 92%
 | Phase 08 P07 | 17min | 4 tasks tasks | 12 files files |
 | Phase 08 P08 | 25min | 3 tasks | 5 files |
 | Phase 09 P01 | 3min | 3 tasks | 2 files |
+| Phase 09 P02 | 10min | 5 tasks tasks | 5 files files |
 
 ## Accumulated Context
 
@@ -192,6 +193,14 @@ Recent decisions affecting current work:
 - Plan 09-01: ProcessorService duplicates IEntityMapper<...> injection rather than promoting BaseService._mapper from private to protected (PATTERNS Section 2 Option B) — singleton mapper means duplicate is cheap; visibility-change-for-one-consumer rejected
 - Plan 09-01: ProcessorsController dual ctor injection — abstract BaseService<...> (for inherited 5 CRUD verbs per Phase 7 Warning 7 option b) + concrete ProcessorService (for new GetBySourceHash action). AddProcessorFeature DI alias already exposes both shapes, so no DI change required
 - Plan 09-01: Route literal 'by-source-hash/{sourceHash}' chosen over bare '{sourceHash}' — avoids collision with inherited BaseController.GetById '{id:guid}' constraint; off-format strings 404 via row-miss per SPEC.md Constraint (no route-level validation)
+- Plan 09-02: OrchestrationService is concrete + sealed (NOT BaseService<...>-derived) per CONTEXT D-04 — no single entity to project, composes over WorkflowEntity directly via _db.Set<WorkflowEntity>()
+- Plan 09-02: OrchestrationController injects concrete OrchestrationService (no IOrchestrationService interface, no abstract-base alias) per CONTEXT D-06 — Phase 7 Warning 7 abstract-base-injection pattern intentionally NOT applied (no abstract base for orchestration)
+- Plan 09-02: OrchestrationService ctor injects all 5 entity mappers up-front per CONTEXT D-05 (v2 surface stability — known smell, build for the second use); _ = _xxxMapper; suppressors load-bearing under TreatWarningsAsErrors=true to prevent IDE0052 unused-field diagnostics
+- Plan 09-02: OrchestrationController class name is SINGULAR (first and only singular controller in the codebase) per CONTEXT D-13 — [controller] token resolves to lowercase 'orchestration', making routes /api/v1/orchestration/start and /stop
+- Plan 09-02: WorkflowIdsValidator targets IReadOnlyList<Guid> directly (one-of-a-kind primitive-collection validator) per CONTEXT D-08 + D-09 — bare JSON-array body, no envelope DTO, no MaximumCount rule (deferred); auto-discovered by AddValidatorsFromAssembly without subclassing BaseDtoValidator
+- Plan 09-02: Existence check uses single SQL SELECT id WHERE id IN (...) projection per CONTEXT D-10 — _db.Set<WorkflowEntity>().AsNoTracking().Where(w => ids.Contains(w.Id)).Select(w => w.Id).ToListAsync(ct); NO N-query loop, NO full entity materialization, NotFoundException listing missing ids via string.Join(', ', missing)
+- Plan 09-02: AddOrchestrationFeature is the simplest per-feature DI extension in the codebase — single AddScoped<OrchestrationService>() line, NO abstract-base alias (CONTEXT D-06); validator + 5 entity mappers auto-discovered by Phase 6 AddBaseApiValidation + AddBaseApiMapping scans
+- Plan 09-02: Both Start and Stop endpoints delegate to the same OrchestrationService.ValidateWorkflowIdsAsync method per CONTEXT D-12 — v1 behavior is functionally identical, only URL segment differs; future divergence will split into separate service methods
 
 ### Roadmap Evolution
 
@@ -221,8 +230,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T05:27:45.204Z
-Stopped at: Completed 09-01-PLAN.md (Phase 9 plan 1 of 3: ProcessorService.GetBySourceHashAsync + controller route)
+Last session: 2026-05-28T05:36:18.682Z
+Stopped at: Completed 09-02-PLAN.md (Phase 9 plan 2 of 3: Features/Orchestration folder + AppFeatures wiring)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
