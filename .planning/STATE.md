@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 10-01-PLAN.md (doc-first amendments to REQUIREMENTS.md)
-last_updated: "2026-05-28T07:25:31.556Z"
+stopped_at: "Completed 10-02-PLAN.md (Assignment SchemaId removal — atomic refactor commit #2 of Phase 10 sequence)"
+last_updated: "2026-05-28T07:33:33.008Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 10
   completed_phases: 9
   total_plans: 31
-  completed_plans: 27
-  percent: 87
+  completed_plans: 28
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 10 (remove-schemaid-on-assignmententity-and-add-configschemaid-o) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [█████████░] 87%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -87,6 +87,7 @@ Progress: [█████████░] 87%
 | Phase 09 P02 | 10min | 5 tasks tasks | 5 files files |
 | Phase 09 P03 | 15min | 4 tasks tasks | 3 files files |
 | Phase 10 P01 | 5min | 4 tasks | 1 files |
+| Phase 10 P02 | 4min | 5 tasks tasks | 4 files files |
 
 ## Accumulated Context
 
@@ -211,6 +212,9 @@ Recent decisions affecting current work:
 - Plan 09-03: 3 consecutive GREEN dotnet test runs achieved (138/138 each ~29s) after one Run 0 pre-existing flake (Phase 8 P08 known flake); byte-identical psql l snapshots (SHA-256 1C611C6006E2...) prove zero leaked stepsdb_test_* databases
 - Plan 10-01: Doc-first commit #1 of Phase 10 — REQUIREMENTS.md ENTITY-04/07 + VALID-11/15 amended in place per D-01 BEFORE any code/EF/migration/test commit. ID preservation invariant: no renumbering, no superseding — same REQ-IDs edited in place. Forensic property — every commit #1..#5 independently revertable. Commit 1de7e71 verbatim subject 'docs(req): amend ENTITY-04/07 + VALID-11/15 for Phase 10 shape' per D-02.
 - Plan 10-01: Trinary 'source/sink/unconfigured' wording locked in ENTITY-04 — extends the existing binary source/sink semantics for Phase 10 ConfigSchemaId addition; constraint names enumerated inline (fk_processor_input_schema_id, fk_processor_output_schema_id, fk_processor_config_schema_id) so readers can trace REQ-5 → Phase 4 PostgresExceptionMapper Option A regex without re-deriving the invariant.
+- Plan 10-02: Atomic 4-file refactor commit (79b07d1) removed SchemaId from AssignmentEntity + 3 DTOs + 2 validators + EF config per CONTEXT D-02 verbatim subject. Production projects (BaseApi.Core + BaseApi.Service) build zero-warning Release + Debug; test project intentionally RED until commit #5 (D-02 bisect-friendliness — solution-level build deferred to commit #5).
+- Plan 10-02 deviation (Rule 1 plan-internal-inconsistency): rephrased VALID-21 deferral note in AssignmentEntity.cs + AssignmentDtoValidator.cs to avoid literal 'Assignment.SchemaId' and 'Processor.ConfigSchemaId' tokens — plan's suggested wording conflicted with the plan-level grep-empty assertion at SPEC line 299. Educational rephrase preserves the VALID-21 marker + deferral semantics + structural-impossibility note + future-processor-side-schema cross-reference, satisfying all plan-level invariants simultaneously. Plan 06-01 / 08-01 rephrase precedent.
+- Plan 10-02: Mapperly drift probe zero-touch confirmed (CONTEXT D-10) — symmetric SchemaId removal across entity + 3 DTOs means RMG012 (target unmapped) + RMG020 (source unmapped) do not fire on AssignmentEntityMapper.cs (zero changes). Production projects 0 warnings + 0 errors Release + Debug verifies.
 
 ### Roadmap Evolution
 
@@ -241,8 +245,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T07:25:31.545Z
-Stopped at: Completed 10-01-PLAN.md (doc-first amendments to REQUIREMENTS.md)
+Last session: 2026-05-28T07:33:33.000Z
+Stopped at: Completed 10-02-PLAN.md (Assignment SchemaId removal — atomic refactor commit #2 of Phase 10 sequence)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)

@@ -302,7 +302,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ENTITY-04 | Phase 8 | Pending |
 | ENTITY-05 | Phase 8 | Pending |
 | ENTITY-06 | Phase 8 | Pending |
-| ENTITY-07 | Phase 8 | Pending |
+| ENTITY-07 | Phase 8 (amended Phase 10) | Pending |
 | ENTITY-08 | Phase 8 | Pending |
 | ENTITY-09 | Phase 8 | Pending |
 | ENTITY-10 | Phase 8 | Pending |
@@ -336,7 +336,7 @@ Which phases cover which requirements. Populated during roadmap creation.
 | VALID-12 | Phase 8 | Pending |
 | VALID-13 | Phase 8 | Pending |
 | VALID-14 | Phase 8 | Pending |
-| VALID-15 | Phase 8 | Pending |
+| VALID-15 | Phase 8 (amended Phase 10) | Pending |
 | VALID-16 | Phase 8 | Pending |
 | VALID-17 | Phase 8 | Pending |
 | VALID-18 | Phase 8 | Pending |
