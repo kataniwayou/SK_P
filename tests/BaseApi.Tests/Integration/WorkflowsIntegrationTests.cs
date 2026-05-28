@@ -4,6 +4,7 @@ using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
+using BaseApi.Tests.TestHelpers;
 using Npgsql;
 using Xunit;
 
@@ -39,12 +40,6 @@ public sealed class WorkflowsIntegrationTests : IClassFixture<Phase8WebAppFactor
 
     public WorkflowsIntegrationTests(Phase8WebAppFactory factory) => _factory = factory;
 
-    private static string RandomSha256Hex()
-    {
-        var bytes = Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray();
-        return string.Concat(bytes.Select(b => b.ToString("x2")));
-    }
-
     /// <summary>
     /// Creates a Step prerequisite (and its Processor FK chain) inline via the public
     /// HTTP API. Returns the new Step's Id, suitable for use in
@@ -57,7 +52,7 @@ public sealed class WorkflowsIntegrationTests : IClassFixture<Phase8WebAppFactor
             Name: $"wf-proc-{Guid.NewGuid():N}",
             Version: "1.0.0",
             Description: null,
-            SourceHash: RandomSha256Hex(),
+            SourceHash: HashHelpers.RandomSha256Hex(),
             InputSchemaId: null,
             OutputSchemaId: null,
             ConfigSchemaId: null);

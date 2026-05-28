@@ -7,6 +7,7 @@ using BaseApi.Service.Features.Schema;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
+using BaseApi.Tests.TestHelpers;
 using Xunit;
 
 namespace BaseApi.Tests.Integration;
@@ -22,19 +23,13 @@ public sealed class ErrorMappingFacts : IClassFixture<Phase8WebAppFactory>
 
     public ErrorMappingFacts(Phase8WebAppFactory factory) => _factory = factory;
 
-    private static string RandomSha256Hex()
-    {
-        var bytes = Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray();
-        return string.Concat(bytes.Select(b => b.ToString("x2")));
-    }
-
     // SC#2 — Postgres unique violation (23505) → Phase 4 mapper → 409 + field name in detail.
     [Fact]
     public async Task Create_Duplicate_SourceHash_Returns409()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
-        var hash = RandomSha256Hex();
+        var hash = HashHelpers.RandomSha256Hex();
 
         var dto1 = new ProcessorCreateDto(
             Name: $"dup-1-{Guid.NewGuid():N}",
@@ -112,7 +107,7 @@ public sealed class ErrorMappingFacts : IClassFixture<Phase8WebAppFactory>
             Name: $"sc5-proc-{Guid.NewGuid():N}",
             Version: "1.0.0",
             Description: null,
-            SourceHash: RandomSha256Hex(),
+            SourceHash: HashHelpers.RandomSha256Hex(),
             InputSchemaId: null,
             OutputSchemaId: null,
             ConfigSchemaId: null);

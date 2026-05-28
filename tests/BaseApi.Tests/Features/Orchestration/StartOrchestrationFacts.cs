@@ -5,6 +5,7 @@ using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
+using BaseApi.Tests.TestHelpers;
 using Xunit;
 
 namespace BaseApi.Tests.Features.Orchestration;
@@ -37,13 +38,6 @@ public sealed class StartOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
 
     public StartOrchestrationFacts(Phase8WebAppFactory factory) => _factory = factory;
 
-    // Copied verbatim from tests/BaseApi.Tests/Integration/WorkflowsIntegrationTests.cs.
-    private static string RandomSha256Hex()
-    {
-        var bytes = Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray();
-        return string.Concat(bytes.Select(b => b.ToString("x2")));
-    }
-
     /// <summary>
     /// Seeds a Workflow via the public HTTP API (Processor → Step → Workflow chain).
     /// Returns the new Workflow's Id. Mirrors
@@ -57,7 +51,7 @@ public sealed class StartOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
             Name: $"orch-proc-{Guid.NewGuid():N}",
             Version: "1.0.0",
             Description: null,
-            SourceHash: RandomSha256Hex(),
+            SourceHash: HashHelpers.RandomSha256Hex(),
             InputSchemaId: null,
             OutputSchemaId: null,
             ConfigSchemaId: null);

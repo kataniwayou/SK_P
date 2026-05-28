@@ -4,6 +4,7 @@ using BaseApi.Service.Features.Assignment;
 using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Step;
 using BaseApi.Tests.Composition;
+using BaseApi.Tests.TestHelpers;
 using Xunit;
 
 namespace BaseApi.Tests.Integration;
@@ -35,12 +36,6 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
 
     public AssignmentsIntegrationTests(Phase8WebAppFactory factory) => _factory = factory;
 
-    private static string RandomSha256Hex()
-    {
-        var bytes = Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray();
-        return string.Concat(bytes.Select(b => b.ToString("x2")));
-    }
-
     private static async Task<Guid> CreatePrereqAsync(HttpClient client, CancellationToken ct)
     {
         // 1. Processor — FK target for StepEntity.ProcessorId (transitive prereq for Step).
@@ -48,7 +43,7 @@ public sealed class AssignmentsIntegrationTests : IClassFixture<Phase8WebAppFact
             Name: $"prereq-proc-{Guid.NewGuid():N}",
             Version: "1.0.0",
             Description: null,
-            SourceHash: RandomSha256Hex(),
+            SourceHash: HashHelpers.RandomSha256Hex(),
             InputSchemaId: null,
             OutputSchemaId: null,
             ConfigSchemaId: null);

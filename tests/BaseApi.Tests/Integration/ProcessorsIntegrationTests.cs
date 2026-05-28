@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Schema;
 using BaseApi.Tests.Composition;
+using BaseApi.Tests.TestHelpers;
 using Xunit;
 
 namespace BaseApi.Tests.Integration;
@@ -19,7 +20,7 @@ namespace BaseApi.Tests.Integration;
 /// Phase 8 Plan 08-08 verifies the GREEN-state regression after Wave C completes.
 /// </para>
 /// <para>
-/// <b>SourceHash collision discipline:</b> each Create body uses <see cref="RandomSha256Hex"/>
+/// <b>SourceHash collision discipline:</b> each Create body uses <see cref="HashHelpers.RandomSha256Hex"/>
 /// to generate a unique 64-char lowercase hex string — avoids colliding with the
 /// duplicate-sourceHash error-mapping fact in Plan 08-08 and with sibling test runs.
 /// </para>
@@ -31,17 +32,11 @@ public sealed class ProcessorsIntegrationTests : IClassFixture<Phase8WebAppFacto
 
     public ProcessorsIntegrationTests(Phase8WebAppFactory factory) => _factory = factory;
 
-    private static string RandomSha256Hex()
-    {
-        var bytes = Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray();
-        return string.Concat(bytes.Select(b => b.ToString("x2")));
-    }
-
     private static ProcessorCreateDto NewValidCreateDto(string suffix = "") => new(
         Name: $"my-processor{suffix}",
         Version: "1.0.0",
         Description: "Integration test processor",
-        SourceHash: RandomSha256Hex(),
+        SourceHash: HashHelpers.RandomSha256Hex(),
         InputSchemaId: null,                                   // source processor (ENTITY-04)
         OutputSchemaId: null,
         ConfigSchemaId: null);
@@ -167,7 +162,7 @@ public sealed class ProcessorsIntegrationTests : IClassFixture<Phase8WebAppFacto
             Name: $"my-processor-cfgschema-{Guid.NewGuid():N}",
             Version: "1.0.0",
             Description: "ConfigSchemaId round-trip",
-            SourceHash: RandomSha256Hex(),
+            SourceHash: HashHelpers.RandomSha256Hex(),
             InputSchemaId: null,
             OutputSchemaId: null,
             ConfigSchemaId: schema!.Id);
@@ -192,7 +187,7 @@ public sealed class ProcessorsIntegrationTests : IClassFixture<Phase8WebAppFacto
             Name: $"my-processor-nullcfg-{Guid.NewGuid():N}",
             Version: "1.0.0",
             Description: "Null ConfigSchemaId round-trip",
-            SourceHash: RandomSha256Hex(),
+            SourceHash: HashHelpers.RandomSha256Hex(),
             InputSchemaId: null,
             OutputSchemaId: null,
             ConfigSchemaId: null);

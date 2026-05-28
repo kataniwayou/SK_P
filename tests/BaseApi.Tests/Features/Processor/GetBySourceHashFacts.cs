@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using BaseApi.Service.Features.Processor;
 using BaseApi.Tests.Composition;
+using BaseApi.Tests.TestHelpers;
 using Xunit;
 
 namespace BaseApi.Tests.Features.Processor;
@@ -19,7 +20,7 @@ namespace BaseApi.Tests.Features.Processor;
 ///     via POST /api/v1/processors, then GET /api/v1/processors/by-source-hash/{hash}
 ///     and assert the returned ProcessorReadDto matches.</item>
 ///   <item><c>GetBySourceHash_Returns404_AndProblemDetails_WhenHashDoesNotExist</c>
-///     — GET with a fresh <see cref="RandomSha256Hex"/> that no row has;
+///     — GET with a fresh <see cref="HashHelpers.RandomSha256Hex"/> that no row has;
 ///     assert 404 + <c>application/problem+json</c> + <c>resourceType="ProcessorEntity"</c>.</item>
 ///   <item><c>GetBySourceHash_Returns404_AndProblemDetails_WhenHashMalformed</c>
 ///     — GET with literal <c>"not-a-hash"</c>; SPEC.md Constraint dictates no
@@ -33,15 +34,6 @@ public sealed class GetBySourceHashFacts : IClassFixture<Phase8WebAppFactory>
     private readonly Phase8WebAppFactory _factory;
 
     public GetBySourceHashFacts(Phase8WebAppFactory factory) => _factory = factory;
-
-    // Copied verbatim from tests/BaseApi.Tests/Integration/ProcessorsIntegrationTests.cs
-    // lines 33-37. Generates a unique 64-char lowercase SHA-256 hex string per call —
-    // avoids cross-fact collisions on the unique uq_processor_source_hash index.
-    private static string RandomSha256Hex()
-    {
-        var bytes = Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray();
-        return string.Concat(bytes.Select(b => b.ToString("x2")));
-    }
 
     private static ProcessorCreateDto NewValidCreateDto(string sourceHash, string suffix = "") => new(
         Name: $"phase9-processor{suffix}",
@@ -59,7 +51,7 @@ public sealed class GetBySourceHashFacts : IClassFixture<Phase8WebAppFactory>
         using var client = _factory.CreateClient();
 
         // Seed a Processor via the HTTP API; capture the hash we used.
-        var hash = RandomSha256Hex();
+        var hash = HashHelpers.RandomSha256Hex();
         var createResp = await client.PostAsJsonAsync("/api/v1/processors", NewValidCreateDto(hash, "-hit"), ct);
         createResp.EnsureSuccessStatusCode();
         var created = await createResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
@@ -83,7 +75,7 @@ public sealed class GetBySourceHashFacts : IClassFixture<Phase8WebAppFactory>
         using var client = _factory.CreateClient();
 
         // Use a freshly-generated hash that has not been POSTed.
-        var missingHash = RandomSha256Hex();
+        var missingHash = HashHelpers.RandomSha256Hex();
 
         var resp = await client.GetAsync($"/api/v1/processors/by-source-hash/{missingHash}", ct);
 

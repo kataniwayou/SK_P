@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Step;
 using BaseApi.Tests.Composition;
+using BaseApi.Tests.TestHelpers;
 using Npgsql;
 using Xunit;
 
@@ -36,19 +37,13 @@ public sealed class StepsIntegrationTests : IClassFixture<Phase8WebAppFactory>
 
     public StepsIntegrationTests(Phase8WebAppFactory factory) => _factory = factory;
 
-    private static string RandomSha256Hex()
-    {
-        var bytes = Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray();
-        return string.Concat(bytes.Select(b => b.ToString("x2")));
-    }
-
     private static async Task<Guid> CreateProcessorAsync(HttpClient client, CancellationToken ct)
     {
         var dto = new ProcessorCreateDto(
             Name: $"step-proc-{Guid.NewGuid():N}",
             Version: "1.0.0",
             Description: null,
-            SourceHash: RandomSha256Hex(),
+            SourceHash: HashHelpers.RandomSha256Hex(),
             InputSchemaId: null,
             OutputSchemaId: null,
             ConfigSchemaId: null);

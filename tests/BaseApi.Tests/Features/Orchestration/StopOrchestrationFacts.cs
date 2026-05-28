@@ -5,6 +5,7 @@ using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
+using BaseApi.Tests.TestHelpers;
 using Xunit;
 
 namespace BaseApi.Tests.Features.Orchestration;
@@ -33,19 +34,13 @@ public sealed class StopOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
 
     public StopOrchestrationFacts(Phase8WebAppFactory factory) => _factory = factory;
 
-    private static string RandomSha256Hex()
-    {
-        var bytes = Guid.NewGuid().ToByteArray().Concat(Guid.NewGuid().ToByteArray()).ToArray();
-        return string.Concat(bytes.Select(b => b.ToString("x2")));
-    }
-
     private static async Task<Guid> SeedWorkflowAsync(HttpClient client, CancellationToken ct)
     {
         var procDto = new ProcessorCreateDto(
             Name: $"orch-stop-proc-{Guid.NewGuid():N}",
             Version: "1.0.0",
             Description: null,
-            SourceHash: RandomSha256Hex(),
+            SourceHash: HashHelpers.RandomSha256Hex(),
             InputSchemaId: null,
             OutputSchemaId: null,
             ConfigSchemaId: null);
