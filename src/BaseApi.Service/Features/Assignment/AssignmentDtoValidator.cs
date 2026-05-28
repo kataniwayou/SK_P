@@ -40,7 +40,12 @@ public sealed class AssignmentCreateDtoValidator : AbstractValidator<AssignmentC
             .WithMessage("StepId must not be Guid.Empty.");
 
         // VALID-16 — Payload: required + max length + valid JSON syntax.
+        // .Cascade(CascadeMode.Stop) makes the docstring's DoS-prevention claim load-bearing:
+        // FluentValidation 12 defaults RuleLevelCascadeMode to Continue, so without Stop the
+        // .Custom(JsonDocument.Parse) would run on oversized payloads anyway. Mirrors the
+        // pattern in OrchestrationDtoValidator.WorkflowIdsValidator (WR-03 fix).
         RuleFor(x => x.Payload)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .MaximumLength(MaxPayloadBytes)
             .WithMessage($"Payload must be at most {MaxPayloadBytes} characters.")
@@ -76,7 +81,9 @@ public sealed class AssignmentUpdateDtoValidator : AbstractValidator<AssignmentU
             .NotEqual(Guid.Empty)
             .WithMessage("StepId must not be Guid.Empty.");
 
+        // .Cascade(CascadeMode.Stop) — see AssignmentCreateDtoValidator rationale (WR-01).
         RuleFor(x => x.Payload)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .MaximumLength(MaxPayloadBytes)
             .WithMessage($"Payload must be at most {MaxPayloadBytes} characters.")
