@@ -58,6 +58,18 @@ public class Phase8WebAppFactory : WebAppFactory, IAsyncLifetime
     /// health-dead-postgres tests.</param>
     protected Phase8WebAppFactory(bool skipPostgresFixture, string connectionStringOverride)
     {
+        // IN-10 review fix: enforce the XML doc invariant at construction time so a
+        // caller violating "skipPostgresFixture=true requires non-empty
+        // connectionStringOverride" fails fast at ctor instead of deferring to the
+        // first ConnectionString property read (which surfaces as a confusing
+        // InvalidOperationException downstream). The nullable-reference-type compiler
+        // hint alone is advisory — null! suppression bypasses it silently.
+        if (skipPostgresFixture && string.IsNullOrEmpty(connectionStringOverride))
+        {
+            throw new ArgumentException(
+                "skipPostgresFixture=true requires a non-empty connectionStringOverride.",
+                nameof(connectionStringOverride));
+        }
         _skipPostgresFixture = skipPostgresFixture;
         _connectionStringOverride = connectionStringOverride;
     }
