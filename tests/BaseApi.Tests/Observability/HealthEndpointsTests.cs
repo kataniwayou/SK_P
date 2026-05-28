@@ -239,10 +239,22 @@ public sealed class HealthEndpointsTests
             // Set env var in ctor — runs BEFORE any base ctor logic that builds the host.
             // Capture+restore the prior value on dispose so subsequent fixtures see the
             // pristine appsettings-derived connection string (process-wide env vars persist).
-            // WR-02 review fix: wrap SetEnvironmentVariable in try/catch so a failure
-            // between SetEnvironmentVariable and DisposeAsync (e.g., factory.InitializeAsync()
-            // throws) does NOT leave the env var pinned to the dead string for subsequent
-            // tests in the same process.
+            // WR-02 review fix: wrap SetEnvironmentVariable in try/catch so a synchronous
+            // failure inside SetEnvironmentVariable itself (rare — argument validation,
+            // process-exit) does NOT leak the dead string.
+            //
+            // WR-A residual scoping (review re-pass): the try/catch covers only throws
+            // inside SetEnvironmentVariable. The C# 8+ `await using` path on the fixture
+            // DOES call DisposeAsync on a thrown InitializeAsync() — so the restore runs
+            // for the standard caller pattern used throughout this file. BUT:
+            //   (1) CALLERS MUST USE `await using` — a non-`await using` caller whose
+            //       InitializeAsync throws will silently skip the restore.
+            //   (2) This fixture is NOT safe to NEST inside another env-var-mutating
+            //       fixture that targets the same `ConnectionStrings__Postgres` key —
+            //       the inner would capture the outer's mutation as its "prior" baseline.
+            //       The [Collection("Observability")] serialization currently prevents
+            //       nesting; if that invariant changes, factor out an explicit
+            //       EnvVarScope IDisposable helper instead of the inline pattern below.
             _priorEnvValue = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres");
             try
             {
@@ -288,10 +300,11 @@ public sealed class HealthEndpointsTests
         private readonly string? _priorEnvValue;
         public HealthLiveLocalhostFixture()
         {
-            // WR-02 review fix: same try/catch restore-on-failure pattern as
-            // HealthDeadPostgresFixture — a throw between SetEnvironmentVariable and
-            // DisposeAsync would otherwise leak the localhost connection string and
-            // cascade-poison subsequent tests.
+            // WR-02 review fix: same try/catch restore-on-SetEnvironmentVariable-throw
+            // pattern as HealthDeadPostgresFixture. See WR-A scoping notes there:
+            // restore on InitializeAsync-throw depends on caller `await using` discipline;
+            // fixture is NOT nesting-safe across multiple env-var-mutating fixtures
+            // targeting the same key.
             _priorEnvValue = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres");
             try
             {
