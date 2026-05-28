@@ -59,6 +59,7 @@ namespace BaseApi.Service.Persistence.Migrations
                     source_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     input_schema_id = table.Column<Guid>(type: "uuid", nullable: true),
                     output_schema_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    config_schema_id = table.Column<Guid>(type: "uuid", nullable: true),
                     xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
                     name = table.Column<string>(type: "text", nullable: false),
                     version = table.Column<string>(type: "text", nullable: false),
@@ -71,6 +72,12 @@ namespace BaseApi.Service.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_processors", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_processor_config_schema_id",
+                        column: x => x.config_schema_id,
+                        principalTable: "schemas",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.SetNull);
                     table.ForeignKey(
                         name: "fk_processor_input_schema_id",
                         column: x => x.input_schema_id,
@@ -118,7 +125,6 @@ namespace BaseApi.Service.Persistence.Migrations
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     step_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    schema_id = table.Column<Guid>(type: "uuid", nullable: false),
                     payload = table.Column<string>(type: "jsonb", nullable: false),
                     xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false),
                     name = table.Column<string>(type: "text", nullable: false),
@@ -132,12 +138,6 @@ namespace BaseApi.Service.Persistence.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_assignments", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_assignment_schema_id",
-                        column: x => x.schema_id,
-                        principalTable: "schemas",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Restrict);
                     table.ForeignKey(
                         name: "fk_assignment_step_id",
                         column: x => x.step_id,
@@ -219,14 +219,14 @@ namespace BaseApi.Service.Persistence.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "ix_assignments_schema_id",
-                table: "assignments",
-                column: "schema_id");
-
-            migrationBuilder.CreateIndex(
                 name: "ix_assignments_step_id",
                 table: "assignments",
                 column: "step_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_processors_config_schema_id",
+                table: "processors",
+                column: "config_schema_id");
 
             migrationBuilder.CreateIndex(
                 name: "ix_processors_input_schema_id",

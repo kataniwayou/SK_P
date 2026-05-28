@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace BaseApi.Service.Persistence.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260527203118_InitialCreate")]
+    [Migration("20260528074618_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -54,10 +54,6 @@ namespace BaseApi.Service.Persistence.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("payload");
 
-                    b.Property<Guid>("SchemaId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("schema_id");
-
                     b.Property<Guid>("StepId")
                         .HasColumnType("uuid")
                         .HasColumnName("step_id");
@@ -84,9 +80,6 @@ namespace BaseApi.Service.Persistence.Migrations
                     b.HasKey("Id")
                         .HasName("pk_assignments");
 
-                    b.HasIndex("SchemaId")
-                        .HasDatabaseName("ix_assignments_schema_id");
-
                     b.HasIndex("StepId")
                         .HasDatabaseName("ix_assignments_step_id");
 
@@ -99,6 +92,10 @@ namespace BaseApi.Service.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
                         .HasColumnName("id");
+
+                    b.Property<Guid?>("ConfigSchemaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("config_schema_id");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -152,6 +149,9 @@ namespace BaseApi.Service.Persistence.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_processors");
+
+                    b.HasIndex("ConfigSchemaId")
+                        .HasDatabaseName("ix_processors_config_schema_id");
 
                     b.HasIndex("InputSchemaId")
                         .HasDatabaseName("ix_processors_input_schema_id");
@@ -393,13 +393,6 @@ namespace BaseApi.Service.Persistence.Migrations
 
             modelBuilder.Entity("BaseApi.Service.Features.Assignment.AssignmentEntity", b =>
                 {
-                    b.HasOne("BaseApi.Service.Features.Schema.SchemaEntity", null)
-                        .WithMany()
-                        .HasForeignKey("SchemaId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
-                        .HasConstraintName("fk_assignment_schema_id");
-
                     b.HasOne("BaseApi.Service.Features.Step.StepEntity", null)
                         .WithMany()
                         .HasForeignKey("StepId")
@@ -410,6 +403,12 @@ namespace BaseApi.Service.Persistence.Migrations
 
             modelBuilder.Entity("BaseApi.Service.Features.Processor.ProcessorEntity", b =>
                 {
+                    b.HasOne("BaseApi.Service.Features.Schema.SchemaEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ConfigSchemaId")
+                        .OnDelete(DeleteBehavior.SetNull)
+                        .HasConstraintName("fk_processor_config_schema_id");
+
                     b.HasOne("BaseApi.Service.Features.Schema.SchemaEntity", null)
                         .WithMany()
                         .HasForeignKey("InputSchemaId")
