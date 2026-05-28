@@ -21,31 +21,52 @@ services:
       retries: 10
       start_period: 5s
 
+  # Phase 11 D-10 + D-12 — verbatim sk2_1 dev posture: single-node, no auth, no TLS, no volume,
+  # 512m heap, port 9200:9200 only (9300 cluster transport intentionally not exposed).
+  # container_name reuses sk2_1's `sk-elasticsearch` literal — sk_p + sk2_1 stacks are
+  # mutually exclusive on a single Docker daemon (RESEARCH Pitfall 4).
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.5
+    container_name: sk-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    healthcheck:
+      # Single-quote the URL so the shell does not parse `&` as a background operator
+      # (would silently background curl and skip `|| exit 1`, making the healthcheck always green).
+      # wait_for_status=yellow — single-node ES never reaches green (replicas can never be assigned).
+      # RESEARCH Pitfall 6 — start_period: 60s essential; ES 8.x cold-start ~30s on warm dev machine,
+      # default start_period: 0s exhausts the retries budget before ES is ready.
+      test: ["CMD-SHELL", "curl -fs 'http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
   otel-collector:
-    # Phase 5 (CONTEXT.md D-10) — receives OTLP from BaseApi.Service, writes JSON-lines
-    # to ./tests/.otel-out/ (host bind-mount; tests/.otel-out/ is gitignored). Contrib
-    # image required for the `file` exporter that Plan 05-02 verification reads.
-    image: otel/opentelemetry-collector-contrib:0.95.0
+    # Phase 11 D-09 — bumped 0.95.0 -> 0.152.0 (gives us the native elasticsearch + prometheus
+    # exporters with current `mapping.mode` semantics; 0.95.0 predates `mapping.mode` field).
+    # Receives OTLP from BaseApi.Service (gRPC :4317 / HTTP :4318), exposes Prom-scrape
+    # endpoint on :8889 (Phase 11 D-14), exposes health_check extension on :13133 (carried
+    # forward — host-side `curl localhost:13133/` smoke probe; distroless image still has
+    # no in-container probe per RESEARCH Pitfall 3).
+    image: otel/opentelemetry-collector-contrib:0.152.0
     container_name: sk-otel-collector
     restart: unless-stopped
     command: ["--config=/etc/otel-collector-config.yaml"]
-    # Override the default non-root user (UID 10001) so the file exporter can write to the
-    # Windows + Docker Desktop bind-mount target ./tests/.otel-out — on Windows the host
-    # directory permissions don't map cleanly to UID 10001 inside the container, and the
-    # file exporter SILENTLY drops writes when it cannot create /var/otel-out/telemetry.jsonl.
-    # Surfaced during Plan 05-02 Task 3 (LogExportTests first run). Acceptable for dev-only
-    # observability scaffolding (compose.yaml is local-only — Phase 8 production stack will
-    # ship a separate image with a dedicated otel user matching the host).
-    user: "0:0"
     volumes:
       - ./compose/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
-      - ./tests/.otel-out:/var/otel-out
     ports:
       - "4317:4317"   # OTLP gRPC (default exporter target)
       - "4318:4318"   # OTLP HTTP (optional — curl-from-laptop debugging)
+      - "8889:8889"   # Phase 11 D-14 — Prom scrape endpoint exposed to host
       - "13133:13133" # health_check extension (probed from host — distroless image has no wget/curl/sh)
-    # NOTE (fix-forward of Plan 05-01 deviation, Rule 1 — distroless image has no wget):
-    # The contrib 0.95.0 image is distroless (no /bin/sh, no wget, no curl). The original
+    # NOTE (Phase 5 Plan 05-01 deviation + Phase 11 0.152.0 verification) — distroless image still has no wget):
+    # The contrib 0.152.0 image is distroless (no /bin/sh, no wget, no curl). The original
     # Plan 05-01 healthcheck `["CMD", "wget", ...]` cannot execute — exec fails with
     # "wget: executable file not found in $PATH". The CMD form runs without a shell, so
     # there is no portable HTTP probe inside the image. Resolutions:
@@ -55,6 +76,37 @@ services:
     #       config (so a misconfigured container would not stay Up at all).
     # We use (a). Plan 05-02 Wave-0 verifies the collector is reachable from the host
     # via `curl http://localhost:13133/` instead of the in-container healthcheck.
+
+  # Phase 11 D-11 + D-13 — verbatim sk2_1 dev posture. Scrapes otel-collector:8889 every 15s
+  # (configured in prometheus.yml at repo root; bind-mounted read-only). No persistence volume
+  # (ephemeral dev), no remote_write, no alerting/recording rules (deferred Out of Scope).
+  # container_name reuses sk2_1's `sk-prometheus` literal — mutually exclusive with sibling
+  # sk2_1 stack on a single Docker daemon (RESEARCH Pitfall 4).
+  prometheus:
+    image: prom/prometheus:v3.11.3
+    container_name: sk-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      # --web.enable-lifecycle exposes POST /-/reload for runtime config reload (dev convenience).
+      - "--web.enable-lifecycle"
+    volumes:
+      # prometheus.yml lives at the sk_p repo root (NEW file in Plan 11-04).
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"   # Prometheus HTTP API — host-side `/api/v1/query` reachable from tests.
+    depends_on:
+      otel-collector:
+        # service_started is sufficient: otel-collector 0.152.0 starts listening on :8889
+        # immediately; service_healthy would require a healthcheck on the distroless image
+        # (currently absent per RESEARCH Pitfall 3).
+        condition: service_started
+    healthcheck:
+      # /-/healthy is the Prometheus liveness endpoint (200 == process running + config loaded).
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   baseapi-service:
     build:
@@ -78,6 +130,10 @@ services:
         condition: service_healthy
       otel-collector:
         condition: service_started
+      elasticsearch:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
 
 volumes:
   pgdata:
