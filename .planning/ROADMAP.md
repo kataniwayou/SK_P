@@ -164,7 +164,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 8/8 | Complete | 2026-05-28 |
 | 9. Processor.GetBySourceHash + Orchestration Start/Stop | 3/3 | Complete | 2026-05-28 |
 | 10. Remove SchemaId on AssignmentEntity and add ConfigSchemaId on ProcessorEntity | 5/5 | Complete    | 2026-05-28 |
-| 11. Migrate Prometheus + Elasticsearch from compose stack sk2_1 to sk_p | 10/10 | Complete | 2026-05-28 |
+| 11. Migrate Prometheus + Elasticsearch from compose stack sk2_1 to sk_p | 10/10 | Complete    | 2026-05-28 |
 
 ## Coverage Summary
 
@@ -224,7 +224,7 @@ Plans:
   8. REQUIREMENTS.md amended: OBSERV-12 superseded to Out of Scope; INFRA-06 extended in place; 4 new REQ-IDs land (OBSERV-13, OBSERV-14, INFRA-08, TEST-07).
 **Requirements**: OBSERV-12 (supersede), INFRA-06 (extend), OBSERV-03 (unchanged in intent; metrics now in Prom), OBSERV-04 (unchanged), OBSERV-08 (unchanged in intent; filter now feeds Prom), OBSERV-13 (NEW — logs in ES), OBSERV-14 (NEW — metrics in Prom with service_name label), INFRA-08 (NEW — compose ES + Prom + collector bump), TEST-07 (NEW — E2E round-trip), OBSERV-06 (LogLevelFilter migrated; single-MEL-filter invariant preserved)
 **Depends on:** Phase 10
-**Plans:** 10/10 plans complete (revised iteration 1) — **COMPLETE** — 1 doc-first → 2 parallel-safe Wave-2 config edits → 2 parallel-safe Wave-3 [prometheus.yml + SDK strip] → 1 helpers + Wave 0 → 1 E2E → 3-way Wave-6 close [HealthEndpointsTests rebase + 3-test migration + OtelCollectorFixture deletion + Phase close]
+**Plans:** 10/10 plans complete
 
 Plans:
 - [x] 11-01-PLAN.md — Wave 1 (doc-first per Phase 10 D-01 precedent): amend `.planning/REQUIREMENTS.md` per Phase 11 D-19 — supersede OBSERV-12 + extend INFRA-06 in place + add 4 new REQ-IDs (OBSERV-13/14 + INFRA-08 + TEST-07) + append Out of Scope row "OTel tracing pipeline (traces backend)" + update Traceability table + footer. Single atomic doc-only commit `docs(req): amend OBSERV-12 + INFRA-06 + add OBSERV-13/14 + INFRA-08 + TEST-07 for Phase 11 shape`. Forensic property — every later commit (compose / collector / helpers / tests) references the amended REQ-IDs as authoritative — SHIPPED 2026-05-28: commit `7041adb`.
