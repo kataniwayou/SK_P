@@ -8,7 +8,7 @@ v1 delivered a reusable `BaseApi.Core` library plus a runnable `BaseApi.Service`
 
 ## Current Milestone: v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline
 
-**Goal:** On `POST /api/v1/orchestration/start`, build a transient in-memory (L1) representation of each requested workflow (validating existence, cycles, and Payload↔ConfigSchema conformance) and project it into a Redis (L2) materialized view that external consumers read; mirror on Stop to evict the projection. Both endpoints are idempotent (PUT-like).
+**Goal:** On `POST /api/v1/orchestration/start`, build a transient in-memory (L1) representation of each requested workflow (validating existence, cycles, schema-edge compatibility, and Payload↔ConfigSchema conformance) and project it into a Redis (L2) materialized view that external consumers read. Stop is an L2-existence check only in v3.3.0 (no eviction — full Stop-side semantics deferred to a later milestone).
 
 **Target features:**
 - **L3 fetch + L1 build (transient)** — flat `Dictionary<Guid, EntityDto>` for Workflows, Assignments, Steps, Processors, Schemas; populated inside `OrchestrationService.StartAsync`; discarded at end of request.
@@ -16,11 +16,11 @@ v1 delivered a reusable `BaseApi.Core` library plus a runnable `BaseApi.Service`
 - **Schema-edge compatibility gate** — for every `(parent step → child step)` edge in the traversal, `parent.Processor.OutputSchemaId` must equal `child.Processor.InputSchemaId` (strict Schema.Id equality in v3.3.0; structural/canonical compatibility is a future-milestone candidate). If either side is `null` (source/sink/unconfigured processor per Phase 10) the edge passes. Mismatch returns 422 with the offending edge's `(parentStepId, childStepId)` pair.
 - **Payload↔ConfigSchema validation gate (closes deferred VALID-21)** — for every Assignment, resolve `Step.ProcessorId → Processor.ConfigSchemaId → Schema.Definition`, validate `Assignment.Payload` against that JSON Schema (draft 2020-12, SSRF-disabled per Phase 8). Failure returns 422 with offending assignment id. Orchestration-start only; Assignment-PUT remains "valid JSON only" (v3.2.0 behavior preserved).
 - **L2 (Redis) materialized projection** — three key spaces:
-  - `{workflowId}` → `{ entryStepIds[], cron, jobId(Guid), liveness{timestamp,interval,status} }`
-  - `{workflowId:stepId}` → `{ entryCondition, processorId, payload, nextStepId }` (chain form; one nextStepId per record)
+  - `{workflowId}` → `{ entryStepIds[], cron, jobId(Guid), liveness{timestamp,interval,status}, correlationId }` — `correlationId` is the `X-Correlation-Id` value from the originating Start POST request; lets external consumers trace each projection back to its build request.
+  - `{workflowId:stepId}` → `{ entryCondition, processorId, payload, nextStepIds[] }` — `nextStepIds[]` is a list because `StepNextSteps` is many-to-many; a step can branch to multiple children. Empty/null list = terminal step.
   - `{processorId}` → `{ inputDefinition, outputDefinition, liveness{timestamp,interval,status} }`
 - **Start is idempotent (PUT-like)** — second Start for the same WorkflowIds re-runs the full pipeline and replaces L2 keys; returns 204. Concurrent Starts: last-write-wins, no Redis lock.
-- **Stop deletes the L2 projection (idempotent)** — evicts all Redis keys created by Start for the given WorkflowIds; 204 even when no keys exist.
+- **Stop is an L2 existence check only (v3.3.0 scope)** — for each WorkflowId in the request, check whether the `{workflowId}` key exists in Redis (`EXISTS` command). Returns 204 if all exist; 422 if any are missing. NO DELETE, NO eviction, NO `{workflowId:stepId}` or `{processorId}` cleanup. Full Stop-side eviction semantics deferred to a later milestone. **(Revised 2026-05-28 during /gsd-new-milestone — earlier draft framed Stop as the mirror-of-Start eviction; user reduced scope to existence-check only.)**
 - **L1 cleanup contract** — explicit teardown of the in-memory dictionary + temp traversal lists at the end of `StartAsync` (success or failure path).
 
 **Key context / locked constraints:**
@@ -33,7 +33,10 @@ v1 delivered a reusable `BaseApi.Core` library plus a runnable `BaseApi.Service`
 - L2 DTO field names: `inputDefinition` / `outputDefinition` (NOT `definitionIn` / `definitionOut` or `definitionInput` / `definitionOutput`).
 
 **Deferred (not in this milestone):**
+- **Full Stop-side L2 eviction** — v3.3.0 Stop is existence-check only. A future milestone will add DELETE semantics, processor-key reference-counting / orphan cleanup, and (if needed) Stop-side Redis transactions.
 - Scheduler integration (who writes `JobId` / emits `Liveness`) — TBD, possibly external Scheduler service.
+- OTel Redis instrumentation — Phase 11 D-03 stripped `.WithTracing()`; Redis trace spans deferred until a traces backend exists in a future milestone.
+- `generationId` on the L2 root DTO — additive forward-compat candidate; revisit when Scheduler integration introduces multi-writer races.
 - v2 hardening items: TEST-03 (Testcontainers), TEST-04 (Respawn), INFRA-09 (advisory-lock startup migration), INFRA-10 (least-privilege Postgres roles).
 - v2 querying items: HTTP-17/18/19 (pagination, filtering, sorting).
 - Authentication boundary — still out of scope.
