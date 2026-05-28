@@ -69,22 +69,41 @@ public sealed class MetricsExportTests : IClassFixture<Phase11WebAppFactory>
         // 10 probe hits to /health/live — would produce http_server_* samples tagged
         // http_route="health/live" if SDK-side filtering existed; instead the Collector's
         // filter/health_metrics processor drops them per Phase 5 Plan 05-02 + Phase 11 D-04.
+        // Also drive 5 hits to /test-obs/ok as a POSITIVE CONTROL — the Prom pipeline
+        // MUST be alive for the empty-/health/* assertion to be meaningful (WR-05 review fix:
+        // without the positive control, a silent collector restart or filterprocessor misconfig
+        // would let the test pass spuriously even when the filter is broken).
         for (var i = 0; i < 10; i++)
         {
             _ = await client.GetAsync("/health/live", ct);
         }
+        for (var i = 0; i < 5; i++)
+        {
+            _ = await client.GetAsync("/test-obs/ok", ct);
+        }
 
-        // Wait one Prom scrape cycle (15s) for any leaked samples to appear.
-        // PromQL regex match: http_route =~ ".*health.*"
-        const string query = """http_server_request_duration_seconds_count{service_name="sk-api",http_route=~".*health.*"}""";
+        // WR-05 review fix: wait 2 × scrape_interval (30s) instead of the bare-minimum
+        // 15s. A single missed scrape (timeout, network blip) defers sample arrival into
+        // the second scrape cycle; the previous 15s wait left a TOCTOU window where the
+        // process could be paged out between Task.Delay returning and QueryPrometheus
+        // running, allowing a sample arriving in the next cycle to be captured.
+        await Task.Delay(30_000, ct);
+
+        // WR-05 review fix: positive control + negative query as two separate single-shot
+        // queries against the same Prom snapshot. The positive control proves the Prom
+        // pipeline IS receiving samples; the empty negative assertion then proves the
+        // filter (NOT a transport failure) is the reason /health/* is absent.
+        const string positiveControl =
+            """http_server_request_duration_seconds_count{service_name="sk-api",http_route!~".*health.*"}""";
+        const string negativeQuery =
+            """http_server_request_duration_seconds_count{service_name="sk-api",http_route=~".*health.*"}""";
 
         using var prom = new PrometheusTestClient();
-        // Single-shot query after a 15s wait — no need for the threshold poll
-        // (we're asserting EMPTY, not asserting a threshold is reached).
-        await Task.Delay(15_000, ct);
-        var samples = await prom.QueryPrometheus(query, ct);
+        var positiveSamples = await prom.QueryPrometheus(positiveControl, ct);
+        var healthSamples   = await prom.QueryPrometheus(negativeQuery,   ct);
 
-        Assert.Empty(samples);
+        Assert.NotEmpty(positiveSamples);  // Prom pipeline is alive (positive control)
+        Assert.Empty(healthSamples);       // filter dropped /health/* (negative assertion)
     }
 
     [Fact]
