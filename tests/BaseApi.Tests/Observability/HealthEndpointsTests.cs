@@ -157,12 +157,12 @@ public sealed class HealthEndpointsTests
         await factory.InitializeAsync();
         using var client = factory.CreateClient();
 
-        // Per-probe-cycle unique correlation id so a positive-control "this probe set was here"
-        // sentinel exists in ES (defensive — the fact asserts negative, but a unique id lets us
-        // distinguish "no /health/* hits because filtering works" from "no /health/* hits
-        // because OTLP transport silently dropped everything").
-        var probeBatchId = $"{Guid.NewGuid():N}";
-        client.DefaultRequestHeaders.Add("X-Probe-Batch-Id", probeBatchId);
+        // IN-01 review fix: removed unused X-Probe-Batch-Id header. The prior version
+        // attached a unique GUID per probe cycle and advertised it as a positive-control
+        // sentinel, but no query/assertion ever consumed it — the only ES query below
+        // searches for "/health/" substrings, never for the batch id. Removing the
+        // unused header keeps the test smaller; future hardening can layer a positive
+        // control by also querying for "test-obs ok ran" body text on a parallel probe.
 
         // Issue 10 probe requests to swamp the export stream IF the filter is broken.
         // Status codes are intentionally ignored — see comment above.
