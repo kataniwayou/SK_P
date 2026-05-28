@@ -1,5 +1,7 @@
 using System.Net;
 using BaseApi.Core.Health;
+using BaseApi.Tests.Composition;
+using BaseApi.Tests.Observability.Helpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
@@ -77,7 +79,7 @@ public sealed class HealthEndpointsTests
     public async Task Test_HealthStartup_200_After_GateFlipped_By_HostedService()
     {
         var ct = TestContext.Current.CancellationToken;
-        await using var factory = new OtelCollectorFixture();
+        await using var factory = new Phase11WebAppFactory();
         await factory.InitializeAsync();
         using var client = factory.CreateClient();
 
@@ -134,51 +136,60 @@ public sealed class HealthEndpointsTests
     public async Task Test_HealthEndpoints_Absent_From_OTLP_Logs()
     {
         var ct = TestContext.Current.CancellationToken;
-        // This test's assertions are path-string-only - it only checks that "/health/live",
+        // This test's assertions are path-string-only — it only checks that "/health/live",
         // "/health/ready", and "/health/startup" do NOT appear in any exported OTLP log
         // record. Whether the underlying NpgSql health check returns Healthy or Unhealthy is
-        // irrelevant; even if /health/ready returns 503 due to Postgres unreachable in the
-        // default Host=postgres config, the path-string filter assertion is still what is
-        // being verified. NO Postgres reachability dependency.
+        // irrelevant; even if /health/ready returns 503, the path-string negation is still
+        // what is being verified. NO Postgres reachability dependency.
         //
-        // DEVIATION FROM PLAN (Rule 1 — bug): the original plan assumed
-        // `Microsoft.AspNetCore=Warning` from appsettings.json would suppress request-start
-        // logs for /health/* (since /health/* should not be filtered at the path level —
-        // CONTEXT D-09 deferred per-path filtering, so the coarse category filter is the
-        // mechanism). WebApplicationFactory<Program> defaults to ASPNETCORE_ENVIRONMENT=
-        // Development, which loads appsettings.Development.json — that file raises
-        // Microsoft.AspNetCore back to Information, so request-start logs for /health/* DO
-        // reach OTLP under the default test environment. Fix: use the OtelCollectorFixture's
-        // logLevelDefaultOverride knob to set both Default AND Microsoft.AspNetCore down to
-        // Warning, replicating the production behavior the test is meant to verify.
+        // PHASE 11 D-16 MIGRATION (Plan 11-08a): was Phase 5 file-exporter + position-marker
+        // readback against telemetry.jsonl; now polls Elasticsearch via ElasticsearchTestClient
+        // and asserts NO log doc contains `/health/` substrings within an 8s budget. Negative
+        // assertion budget is shorter than positive (30s in LogExportTests) — long enough for
+        // ES indexing pipeline to flush any actual hit, short enough to keep suite wall-clock
+        // manageable (RESEARCH PATTERNS option a + Plan 11-08b LogLevelFilterTests precedent).
         //
-        // RACE-CONDITION GUARD: when this test runs as part of the full HealthEndpointsTests
-        // class, prior tests may have written records to telemetry.jsonl that arrive in the
-        // file AFTER this fixture's InitializeAsync position-marker (the Collector batches
-        // writes; records produced by tests N-1 may flush during test N's window). To stop
-        // those records from polluting our assertion, we (a) wait briefly BEFORE
-        // InitializeAsync so the Collector has time to drain prior tests' buffered records,
-        // and (b) take the position marker AFTER that drain.
+        // RACE-CONDITION GUARD: the 1-second pre-wait before fixture init lets the Collector
+        // drain prior-test buffered records before our probe loop starts. Carries forward from
+        // Phase 5 fix-forward.
         await Task.Delay(TimeSpan.FromSeconds(1), ct);
         await using var factory = new HealthFilterEnabledFixture();
         await factory.InitializeAsync();
         using var client = factory.CreateClient();
+
+        // Per-probe-cycle unique correlation id so a positive-control "this probe set was here"
+        // sentinel exists in ES (defensive — the fact asserts negative, but a unique id lets us
+        // distinguish "no /health/* hits because filtering works" from "no /health/* hits
+        // because OTLP transport silently dropped everything").
+        var probeBatchId = $"{Guid.NewGuid():N}";
+        client.DefaultRequestHeaders.Add("X-Probe-Batch-Id", probeBatchId);
+
         // Issue 10 probe requests to swamp the export stream IF the filter is broken.
-        // Status codes are intentionally ignored - see comment above.
+        // Status codes are intentionally ignored — see comment above.
         for (int i = 0; i < 10; i++)
         {
             _ = await client.GetAsync("/health/live", ct);
             _ = await client.GetAsync("/health/ready", ct);
             _ = await client.GetAsync("/health/startup", ct);
         }
-        await factory.FlushAsync(TimeSpan.FromSeconds(1));
 
-        var logs = factory.ReadExportedLogs();
-        // For each log record's body / scope attributes, assert no "/health/" path appears.
-        var rawJoined = string.Concat(logs.Select(l => l.GetRawText()));
-        Assert.DoesNotContain("/health/live", rawJoined);
-        Assert.DoesNotContain("/health/ready", rawJoined);
-        Assert.DoesNotContain("/health/startup", rawJoined);
+        // Poll ES with a regex query against the body / scope / attributes for any `/health/`
+        // substring. Short budget (8s) for negative assertion — RESEARCH PATTERNS option a.
+        using var es = new ElasticsearchTestClient();
+
+        // Use a query_string query that matches ANY doc containing the literal `/health/`
+        // substring in any indexed text field. The query body shape is field-shape-agnostic
+        // (works for both `mapping.mode: none` (raw OTLP) and `mapping.mode: otel` (normalized)
+        // outputs since query_string searches all _source by default).
+        var queryBody = """
+          {
+            "size": 10,
+            "query": { "query_string": { "query": "\"/health/\"" } }
+          }
+          """;
+
+        var hit = await es.PollEsForLog(queryBody, timeoutMs: 8_000);
+        Assert.Null(hit);
     }
 
     // -------- Specialized fixtures for HealthEndpointsTests -----------------------------------
@@ -212,8 +223,11 @@ public sealed class HealthEndpointsTests
     /// construction (in the ctor body) is the working pattern.
     /// </para>
     /// </summary>
-    private sealed class HealthDeadPostgresFixture : OtelCollectorFixture
+    private sealed class HealthDeadPostgresFixture : Phase8WebAppFactory
     {
+        // Dead-port conn string the NpgSql health check should fail against.
+        private const string DeadConnectionString =
+            "Host=localhost;Port=1;Database=postgres;Username=postgres;Password=postgres;Timeout=2";
         private readonly string? _priorEnvValue;
         public HealthDeadPostgresFixture()
         {
@@ -221,8 +235,22 @@ public sealed class HealthEndpointsTests
             // Capture+restore the prior value on dispose so subsequent fixtures see the
             // pristine appsettings-derived connection string (process-wide env vars persist).
             _priorEnvValue = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres");
-            Environment.SetEnvironmentVariable("ConnectionStrings__Postgres",
-                "Host=localhost;Port=1;Database=postgres;Username=postgres;Password=postgres;Timeout=2");
+            Environment.SetEnvironmentVariable("ConnectionStrings__Postgres", DeadConnectionString);
+        }
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            // Plan 11-08a Rule 1 fix-forward: Phase8WebAppFactory.ConfigureWebHost adds
+            // its throwaway-DB conn string via AddInMemoryCollection, which would OVERRIDE
+            // the env-var dead-port value set in our ctor. Override after base so our
+            // dead-port wins (last InMemoryCollection added wins for the same key).
+            base.ConfigureWebHost(builder);
+            builder.ConfigureAppConfiguration((_, cfg) =>
+            {
+                cfg.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:Postgres"] = DeadConnectionString,
+                });
+            });
         }
         public override async ValueTask DisposeAsync()
         {
@@ -238,7 +266,7 @@ public sealed class HealthEndpointsTests
     /// (/health/ready -> 200 when Postgres reachable on localhost:5433) AND the
     /// T-05-READY-DB-EXPOSE ready-body shape test.
     /// </summary>
-    private sealed class HealthLiveLocalhostFixture : OtelCollectorFixture
+    private sealed class HealthLiveLocalhostFixture : Phase8WebAppFactory
     {
         private readonly string? _priorEnvValue;
         public HealthLiveLocalhostFixture()
@@ -264,7 +292,7 @@ public sealed class HealthEndpointsTests
     /// IConfiguration at every log event, unlike AddNpgSql which captures the connection
     /// string by value at registration time).
     /// </summary>
-    private sealed class HealthFilterEnabledFixture : OtelCollectorFixture
+    private sealed class HealthFilterEnabledFixture : Phase11WebAppFactory
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -285,7 +313,7 @@ public sealed class HealthEndpointsTests
     /// Variant: removes StartupCompletionService registration so IStartupGate stays Unhealthy.
     /// Used by SC#3 negative-path: /health/startup -> 503 before gate flipped.
     /// </summary>
-    private sealed class HealthNoStartupCompletionFixture : OtelCollectorFixture
+    private sealed class HealthNoStartupCompletionFixture : Phase8WebAppFactory
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
