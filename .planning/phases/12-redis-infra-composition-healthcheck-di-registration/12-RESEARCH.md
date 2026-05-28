@@ -978,24 +978,24 @@ afterPg=$(docker exec sk-postgres psql -U postgres -lqt | sha256sum)
 
 **If this table is empty:** N/A — six assumptions surfaced. Five are MEDIUM-LOW risk (A1, A2, A3, A4, A5) with explicit mitigations; A6 is verified. The planner should add a Wave-0 verification step for A1 (docker run `which redis-cli`) and a Wave-final smoke fact for A4 (assert `IConnectionMultiplexer` resolves with the AddInMemoryCollection-overridden connection string in `Phase8WebAppFactory`).
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Exact 7.4.x patch pin: 7.4.9 vs `7.4-alpine` (floating)?**
+1. **Exact 7.4.x patch pin: 7.4.9 vs `7.4-alpine` (floating)?** **RESOLVED: pin exact 7.4.9-alpine** (per Plan 12-02 which already encodes `redis:7.4.9-alpine` in compose.yaml, consistent with v3.2.0 exact-patch discipline for postgres/ES/prom/otel-collector).
    - What we know: CONTEXT D-01 / INFRA-REDIS-01 lock "7.4.x-alpine" as a placeholder; current latest is 7.4.9 (Docker Hub 2026-05-29).
    - What's unclear: Whether to pin the exact patch `7.4.9-alpine` or use the floating `7.4-alpine` tag.
    - Recommendation: Pin exact patch `7.4.9-alpine` for v3.2.0 discipline consistency (Postgres 17-alpine, ES 8.15.5, Prom v3.11.3, OTel-Collector 0.152.0 — all exact). Record SHA digest in compose comment for true immutability if desired. Planner-discretion item.
 
-2. **Wave/commit decomposition cadence — Phase 11 fan-out (10 commits) vs Phase 10 (5 commits)?**
+2. **Wave/commit decomposition cadence — Phase 11 fan-out (10 commits) vs Phase 10 (5 commits)?** **RESOLVED: 8 plans** (planner's chosen cadence per Plans 12-01..12-08 — closer to Phase 11 fan-out than Phase 10 cluster, calibrated to the 3-layer scope: compose/CPM in 12-01..03, DI in 12-04, test infra in 12-05..06, fact classes in 12-07, close gate in 12-08).
    - What we know: CONTEXT plan-decomposition hint at lines 156-166 suggests 7 commits (docs / chore / feat(infra) / feat(core) / test(infra) / test(health) / test(close)); CONTEXT "Claude's Discretion" line 74 explicitly leaves this open.
    - What's unclear: The user has not picked between the two cadences.
    - Recommendation: Phase 12 spans 3 layers (compose, DI, tests) which aligns more naturally with the Phase 11 fan-out (10 commits). Suggested decomposition: (1) docs REQUIREMENTS amendment (no-op if already locked); (2) chore CPM pins + csproj edits; (3) feat compose.yaml redis service + baseapi env; (4) feat appsettings split; (5) feat RedisProjectionOptions + AddBaseApiRedis; (6) feat composition-root call #7; (7) test RedisFixture; (8) test Phase8WebAppFactory in-place extension; (9) test HealthDeadRedisFixture + 2 facts; (10) close phase-close gate extension + 3-GREEN cadence harness. Planner picks final cadence based on plan-decomposition mechanics.
 
-3. **`private const string SectionName = "Redis"` helper in `RedisServiceCollectionExtensions.cs` or inline string literal twice?**
+3. **`private const string SectionName = "Redis"` helper in `RedisServiceCollectionExtensions.cs` or inline string literal twice?** **RESOLVED: inline the string literal twice** (matches the `AddBaseApiPersistence` / `AddBaseApiHealth` pattern at `PersistenceServiceCollectionExtensions.cs:31` and `HealthServiceCollectionExtensions.cs:26`; two uses is below the rule-of-three threshold for extraction).
    - What we know: CONTEXT "Claude's Discretion" line 72 leaves open.
    - What's unclear: Which the planner prefers stylistically.
    - Recommendation: Inline twice. Two uses (`RequireConnectionString("Redis")` and `GetSection("Redis")`) is below the "rule of three" threshold for extracting a named constant; symmetrical with `AddBaseApiHealth` (inlines `"Postgres"` once at `HealthServiceCollectionExtensions.cs:26`) and `AddBaseApiPersistence` (inlines `"Postgres"` once at `PersistenceServiceCollectionExtensions.cs:31`).
 
-4. **Should `Phase8WebAppFactory`'s D-07 extension expose `RedisFixture.Multiplexer` directly, or only the connection string?**
+4. **Should `Phase8WebAppFactory`'s D-07 extension expose `RedisFixture.Multiplexer` directly, or only the connection string?** **RESOLVED: expose now** via `public IConnectionMultiplexer RedisMultiplexer` property in Plan 12-05 (Phase 16 TEST-REDIS-06..09 facts will need direct multiplexer access for 3-keyspace assertions; surface cost is one property; zero risk to the soft-dep contract).
    - What we know: TEST-REDIS-06..09 (Phase 16) will need direct multiplexer access for 3-keyspace assertion. Phase 12 only needs connection string + KeyPrefix via AddInMemoryCollection.
    - What's unclear: Whether to expose now (future-headroom) or later.
    - Recommendation: Expose now via a `public IConnectionMultiplexer RedisMultiplexer => _redisFixture?.Multiplexer ?? throw ...` property. Phase 16 facts will need it; surface cost is one property; zero risk to the soft-dep contract. Mirrors how `ConnectionString` is already exposed on the existing factory.
