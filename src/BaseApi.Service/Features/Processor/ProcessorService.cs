@@ -50,6 +50,19 @@ public sealed class ProcessorService :
     /// <c>resourceId=&lt;the sourceHash string&gt;</c>. Off-format hashes (non-hex, wrong
     /// length) simply 404 via row-miss — no route-level validation (SPEC.md Constraint).
     /// </summary>
+    /// <remarks>
+    /// IN-01 (iteration 2) — case sensitivity contract: callers MUST supply the
+    /// <paramref name="sourceHash"/> lowercased. <see cref="ProcessorCreateDtoValidator"/>
+    /// enforces a lowercase 64-char hex string at create time, and this lookup performs
+    /// a case-sensitive equality match (<c>p.SourceHash == sourceHash</c>) — uppercase
+    /// (or mixed-case) variants will 404 even when a row with the same logical hash
+    /// exists. This is the intentional shape per SPEC.md Constraint ("no route-level
+    /// validation") and CONTEXT D-03 ("off-format strings 404 via row-miss"); we do
+    /// NOT normalize on the read path because doing so would silently accept inputs
+    /// the validator rejects on writes. Option (a) from REVIEW IN-01
+    /// (<c>sourceHash.ToLowerInvariant()</c>) was deliberately rejected to preserve
+    /// strict round-tripping with the create-time format contract.
+    /// </remarks>
     public async Task<ProcessorReadDto> GetBySourceHashAsync(string sourceHash, CancellationToken ct)
     {
         // WR-02 guard: a null/empty/whitespace sourceHash cannot match any row

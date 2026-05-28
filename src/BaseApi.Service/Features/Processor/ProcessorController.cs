@@ -41,6 +41,15 @@ public sealed class ProcessorsController :
     /// NotFoundExceptionHandler when <see cref="ProcessorService.GetBySourceHashAsync"/>
     /// throws <see cref="BaseApi.Core.Exceptions.NotFoundException"/>.
     /// </summary>
+    /// <remarks>
+    /// IN-01 (iteration 2) — case sensitivity contract: callers MUST supply the
+    /// <c>{sourceHash}</c> route segment lowercased. The matching is byte-for-byte
+    /// against the stored value (which the <c>ProcessorDtoValidator</c> normalizes
+    /// to lowercase <c>[a-f0-9]{64}</c> at create time), so uppercase or mixed-case
+    /// variants will receive a 404 even when a row with the equivalent logical hash
+    /// exists. See <see cref="ProcessorService.GetBySourceHashAsync"/> remarks for the
+    /// full rationale (SPEC.md Constraint + CONTEXT D-03).
+    /// </remarks>
     [HttpGet("by-source-hash/{sourceHash}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
