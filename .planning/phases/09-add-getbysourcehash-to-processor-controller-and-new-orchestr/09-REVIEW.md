@@ -16,111 +16,63 @@ files_reviewed_list:
   - tests/BaseApi.Tests/Features/Processor/GetBySourceHashFacts.cs
 findings:
   critical: 0
-  warning: 3
+  warning: 0
   info: 4
-  total: 7
+  total: 4
 status: issues_found
+iteration: 2
+prior_review_commits:
+  - e456551  # WR-01 fix
+  - cde104e  # WR-02 fix
+  - c5da00a  # WR-03 fix
 ---
 
-# Phase 9: Code Review Report
+# Phase 9: Code Review Report (Re-review, Iteration 2)
 
 **Reviewed:** 2026-05-28T00:00:00Z
 **Depth:** standard
 **Files Reviewed:** 10
-**Status:** issues_found
+**Status:** issues_found (info-only — all warnings resolved)
 
 ## Summary
 
-Phase 9 adds two surfaces: (1) `GET /api/v1/processors/by-source-hash/{sourceHash}` on the existing Processor feature and (2) a new singular `OrchestrationController` exposing validation-only `start` / `stop` endpoints over `List<Guid>` workflow ids. The implementation is small, follows the established CONTEXT decisions (D-01..D-13), and is well-documented inline. Integration tests cover happy path + validation + existence/404 mapping for all three new endpoints.
+Re-review after commits `e456551` (WR-01), `cde104e` (WR-02), and `c5da00a` (WR-03). All three prior warnings are resolved and the fixes were applied cleanly with appropriate inline comments tying each guard back to its review item:
 
-The review found no critical (security / data-loss / crash) issues. The 3 warnings are correctness/robustness concerns at the controller -> service -> validator boundary that can produce HTTP 500 responses where 400/404 is expected; specifically, a `null` JSON request body to `/orchestration/start` (or `/stop`) will currently surface as an unhandled exception rather than a `ValidationProblemDetails`. The 4 info items are minor cleanups (input normalization, redundant docs, weak assertions).
+- **WR-01 (verified):** `OrchestrationService.ValidateWorkflowIdsAsync` now throws `FluentValidation.ValidationException` with a single `ValidationFailure(nameof(ids), "Request body must not be null.")` when `ids is null`, before any validator/DB call (`OrchestrationService.cs:96-102`). The Phase 4 `ValidationExceptionHandler` will map this to the 400 `ValidationProblemDetails` advertised by `[ProducesResponseType]` on both `Start` and `Stop`. Guard lives in the service rather than the controller, so non-controller callers also benefit. `using FluentValidation.Results;` was added correctly.
+- **WR-02 (verified):** `ProcessorService.GetBySourceHashAsync` now short-circuits on `string.IsNullOrWhiteSpace(sourceHash)` and throws `NotFoundException(nameof(ProcessorEntity), sourceHash ?? "(null)")` before the EF Core round-trip (`ProcessorService.cs:61-62`). Behaviour matches the existing "miss → 404" contract and the CONTEXT D-03 off-format-hash rule.
+- **WR-03 (verified):** `WorkflowIdsValidator` collapsed the prior two top-level `RuleFor(...)` chains into a single `Cascade(CascadeMode.Stop)` chain ordered `NotNull → NotEmpty → Must(distinct)` (`OrchestrationDtoValidator.cs:44-49`). The previously-redundant inline `ids is null || …` null-guard on the duplicate rule was correctly removed. The per-item `RuleForEach(...).NotEqual(Guid.Empty)` is correctly preserved as a separate top-level rule (its iteration semantics differ from the cascading head rule).
 
-Performance considerations (e.g., the `WHERE id IN (...)` translation, allocation of the `Distinct().Count()` pass, the EF Core `Contains` parameter-expansion behavior for very large id lists) are out of scope per the v1 review brief and intentionally not flagged.
-
-## Warnings
-
-### WR-01: Null JSON body to `/orchestration/{start,stop}` is not handled cleanly
-
-**File:** `src/BaseApi.Service/Features/Orchestration/OrchestrationController.cs:48,64`
-**Issue:** Both action methods accept `[FromBody] List<Guid> workflowIds` without any null check, and pass the value straight to `_service.ValidateWorkflowIdsAsync(workflowIds, ct)`. When a client posts a JSON `null` (or an empty body), ASP.NET Core binds `workflowIds` to `null` — `[FromBody]` on a reference-type list does not enforce non-null unless an `[ApiController]` / nullable-reference-aware contract forces it (and `List<Guid>` is non-nullable in the signature but the binder does not synthesize a 400 for `null` body by default in many configurations). The service then calls `_idsValidator.ValidateAndThrowAsync(null, ct)` which, depending on the FluentValidation version, throws `ArgumentNullException` (current 11.x) rather than the `ValidationException` the Phase 4 handler maps to 400. The `WorkflowIdsValidator.NotNull()` rule is therefore unreachable for the bare-null case — it can only fire for nested-null scenarios that do not apply to a bare list. Inside `OrchestrationService.ValidateWorkflowIdsAsync`, the subsequent `ids.Contains(w.Id)` and `ids.Except(...)` would also NRE if validation didn't throw first.
-**Fix:** Guard at the action edge (or at the top of the service method) and translate to a `ValidationException` so the existing 400 mapping fires. Either:
-```csharp
-// In OrchestrationService.ValidateWorkflowIdsAsync, before the validator call:
-ArgumentNullException.ThrowIfNull(ids);   // becomes 500 — NOT what we want
-// — OR (preferred, matches the 400 contract advertised by ProducesResponseType):
-if (ids is null)
-{
-    throw new ValidationException(new[]
-    {
-        new ValidationFailure(nameof(ids), "Request body must not be null.")
-    });
-}
-await _idsValidator.ValidateAndThrowAsync(ids, ct);
-```
-Add a test fact: `Start_Returns400_WhenBodyIsNull` posting raw `"null"` as the JSON body and asserting 400 + `application/problem+json`.
-
-### WR-02: `ProcessorService.GetBySourceHashAsync` does not guard against `null` / empty `sourceHash`
-
-**File:** `src/BaseApi.Service/Features/Processor/ProcessorService.cs:53-60`
-**Issue:** The method dereferences `sourceHash` directly into `p.SourceHash == sourceHash`. In normal routing `string sourceHash` from `{sourceHash}` will be a non-null, non-empty segment (the route would not match an empty segment), so this is unlikely to NRE in production. However: (1) the method is `public` and reachable from non-controller call sites (the `OrchestrationService` ctor already pre-injects mappers anticipating cross-entity reuse — Phase 9 CONTEXT D-05), so future callers may pass `null`; (2) an empty string would translate to `WHERE source_hash = ''`, which would issue an unnecessary round-trip and emit a misleading 404 with `resourceId=""`. The CONTEXT D-03 "off-format hashes 404 via row-miss" rule is explicit about *off-format* strings reaching the DB, but does not require null/empty to do so.
-**Fix:** Add a defensive guard that mirrors the rest of the service-layer style:
-```csharp
-public async Task<ProcessorReadDto> GetBySourceHashAsync(string sourceHash, CancellationToken ct)
-{
-    if (string.IsNullOrWhiteSpace(sourceHash))
-        throw new NotFoundException(nameof(ProcessorEntity), sourceHash ?? "(null)");
-    // ... existing body unchanged
-}
-```
-The 404 is consistent with the existing "miss => 404" contract and avoids a DB round-trip on a guaranteed-empty result.
-
-### WR-03: `WorkflowIdsValidator` duplicate-detection rule emits redundant errors for the empty case
-
-**File:** `src/BaseApi.Service/Features/Orchestration/OrchestrationDtoValidator.cs:33-39`
-**Issue:** Three top-level `RuleFor(ids => ids)` chains all run unconditionally because FluentValidation does not short-circuit across separate `RuleFor` builders by default. For a `null` body the `.Must(ids => ids is null || ...)` short-circuit lets the duplicate rule pass silently — good — but if the bound value is a non-null empty list, the validator emits one error for `NotEmpty()` and zero errors for the duplicate rule (also good). The actual subtle bug: the duplicate rule uses `ids.Distinct().Count() == ids.Count`, which for `Guid` uses the default `EqualityComparer`, but does NOT short-circuit on the empty case at the rule-level — it allocates an enumerator and a distinct-set even for the trivial `[]` input. More importantly, when validation fails on `NotEmpty`, the duplicate rule still iterates the empty list (harmless but wasteful), AND if a future maintainer reads only the duplicate rule, the inline `ids is null || ...` null-guard implies the rule is responsible for the null case — it is not. Mixing null-handling responsibilities across rules is a small footgun.
-**Fix:** Use `RuleFor(...).Cascade(CascadeMode.Stop)` to collapse the three rules into one chain so `NotEmpty()` short-circuits the duplicate scan, and drop the inline `ids is null ||` once the cascade owns null:
-```csharp
-RuleFor(ids => ids)
-    .Cascade(CascadeMode.Stop)
-    .NotNull()
-    .NotEmpty()
-    .Must(ids => ids.Distinct().Count() == ids.Count)
-        .WithMessage("WorkflowIds must be unique.");
-
-RuleForEach(ids => ids)
-    .NotEqual(Guid.Empty)
-    .WithMessage("WorkflowIds must not contain Guid.Empty.");
-```
-This also makes the rule order matches the documentation block at the top of the file (NotNull -> NotEmpty -> Distinct -> per-item GuidEmpty).
+No new bugs, security issues, crashes, NRE candidates, or unhandled-exception paths were introduced by the fix commits. No critical or warning items remain. The four info items below are carried forward verbatim from the iteration-1 review (none of them were in scope for `critical_warning` fixing) and remain accurate against the current source. Performance topics (EF Core `Contains` parameter expansion, `Distinct().Count()` allocations) remain out of v1 review scope.
 
 ## Info
 
 ### IN-01: `sourceHash` route segment is not normalized — case sensitivity may surprise callers
 
-**File:** `src/BaseApi.Service/Features/Processor/ProcessorService.cs:57`
-**Issue:** The `ProcessorDtoValidator` (referenced in the grep results) enforces that `SourceHash` is stored as a *lowercase* SHA-256 hex string (`[a-f0-9]{64}`), but `GetBySourceHashAsync` performs a case-sensitive equality match on the raw route segment. A caller who passes the same hash uppercased will receive a 404 even though semantically the resource exists. This is consistent with SPEC.md Constraint ("no route-level validation") but worth a `<remarks>` doc note so API consumers know to lowercase before calling.
-**Fix:** Either (a) add a single line `sourceHash = sourceHash?.ToLowerInvariant();` before the query (matches the storage normalization the validator enforces), or (b) add an XML `<remarks>` block on `ProcessorsController.GetBySourceHash` and `ProcessorService.GetBySourceHashAsync` stating "Callers MUST supply the hash lowercased; uppercase variants will 404."
+**File:** `src/BaseApi.Service/Features/Processor/ProcessorService.cs:64-67`
+**Issue:** The `ProcessorDtoValidator` enforces that `SourceHash` is stored as a lowercase SHA-256 hex string (`[a-f0-9]{64}`), but `GetBySourceHashAsync` performs a case-sensitive equality match on the raw route segment (`p.SourceHash == sourceHash`). A caller who passes the same hash uppercased will receive a 404 even though semantically the resource exists. This is consistent with SPEC.md Constraint ("no route-level validation") but is invisible to API consumers without a docs note. The WR-02 guard runs before the DB call but does not normalize case — only whitespace/null is handled.
+**Fix:** Either (a) add a single line `sourceHash = sourceHash.ToLowerInvariant();` immediately after the `IsNullOrWhiteSpace` guard (matches storage-side normalization the validator enforces), or (b) add an XML `<remarks>` block on both `ProcessorsController.GetBySourceHash` and `ProcessorService.GetBySourceHashAsync` stating "Callers MUST supply the hash lowercased; uppercase variants will 404." Option (a) is a one-liner and removes a footgun; option (b) preserves strict round-tripping.
 
 ### IN-02: Duplicated `SeedWorkflowAsync` / `RandomSha256Hex` across `StartOrchestrationFacts` and `StopOrchestrationFacts`
 
 **File:** `tests/BaseApi.Tests/Features/Orchestration/StartOrchestrationFacts.cs:41-91` and `tests/BaseApi.Tests/Features/Orchestration/StopOrchestrationFacts.cs:36-77`
-**Issue:** The two test classes copy ~40 lines of seeding helpers verbatim (the only delta is the `orch-stop-` vs `orch-` name prefix). This violates DRY and means any change to the Processor/Step/Workflow create-DTO shape requires editing both files. The XML doc on `StopOrchestrationFacts` already notes "behaviorally identical to Start" — the seeding helper is a natural shared-fixture candidate.
+**Issue:** The two test classes copy ~40 lines of seeding helpers verbatim (the only delta is the `orch-stop-` vs `orch-` name prefix). This violates DRY and means any change to the Processor / Step / Workflow create-DTO shape requires editing both files. `StopOrchestrationFacts`' own XML doc already says "behaviorally identical to Start" — the seeding helper is a natural shared-fixture candidate.
 **Fix:** Extract `SeedWorkflowAsync` and `RandomSha256Hex` to a `static class OrchestrationTestSeeds` under `tests/BaseApi.Tests/Features/Orchestration/`. Both fact classes call into it. Optional: parameterize the name prefix so the two suites still produce distinct seed names for grep-ability.
 
 ### IN-03: `_ = _schemaMapper;` discard pattern in `OrchestrationService` ctor is unusual
 
-**File:** `src/BaseApi.Service/Features/Orchestration/OrchestrationService.cs:64-70`
-**Issue:** Storing a field and then immediately discarding the local reference (`_ = _schemaMapper;`) does NOT suppress IDE0052 ("private field is assigned but its value is never used") in all analyzer configurations — the discard expression is only a read of the *field*, but the compiler analyzer may still flag the field as write-only if no other method reads it. The CONTEXT D-05 rationale (future-proofing ctor surface) is valid, but the suppression mechanism may not work as documented.
-**Fix:** Either (a) add `#pragma warning disable IDE0052` blocks around the 4 unused field declarations with a comment pointing to CONTEXT D-05, or (b) annotate the fields with `[System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 stability.")]`. The current `_ = field;` pattern is non-idiomatic and creates noise for readers.
+**File:** `src/BaseApi.Service/Features/Orchestration/OrchestrationService.cs:65-71`
+**Issue:** Storing a field and then immediately discarding the local reference (`_ = _schemaMapper;` etc.) does not reliably suppress IDE0052 ("private field is assigned but its value is never used") across all analyzer configurations — the discard expression is a *field* read in C# semantics, but some analyzer rule-sets still flag the field as write-only if no other method reads it. The CONTEXT D-05 rationale (future-proofing the ctor surface so v2 phases add methods rather than ctor params) remains valid, but the suppression mechanism is non-idiomatic and creates reader noise. The five non-discarded fields (`_db`, `_idsValidator`, and the same five mappers again) all already get a write — only the four `v1-unused` mappers need a suppression.
+**Fix:** Either (a) replace the four `_ = …;` lines with `#pragma warning disable IDE0052` / `#pragma warning restore IDE0052` around the four declarations with a comment pointing to CONTEXT D-05, or (b) annotate each unused field with `[System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]`. Option (b) is more localized and travels with the field.
 
 ### IN-04: Test assertion `Assert.Contains(missingId.ToString(), resourceId)` accepts substring match — could mask a serialization bug
 
 **File:** `tests/BaseApi.Tests/Features/Orchestration/StartOrchestrationFacts.cs:180` and `tests/BaseApi.Tests/Features/Orchestration/StopOrchestrationFacts.cs:115`
-**Issue:** The 404 test asserts that the missing-id GUID is *contained* in the `resourceId` extension, but does not assert the exact format produced by `string.Join(", ", missing)`. If a future refactor changes the separator (e.g., to `;` or `\n`) or wraps the ids (e.g., `"[id1, id2]"`), the substring match still passes for the single-id case — defeating the purpose of the test. The single-id test cannot detect a regression in the multi-id formatting either.
-**Fix:** For the single-id case, assert exact equality: `Assert.Equal(missingId.ToString(), resourceId);` Add a multi-id 404 fact that posts `[Guid.NewGuid(), Guid.NewGuid()]` and asserts the comma-separated format (e.g., `Assert.Contains(", ", resourceId)` plus both id substrings) — this locks in the contract `string.Join(", ", missing)` advertises.
+**Issue:** The 404 tests assert that the missing-id GUID is *contained* in the `resourceId` extension, but do not assert the exact format produced by `string.Join(", ", missing)`. If a future refactor changes the separator (e.g., to `;` or `\n`) or wraps the ids (e.g., `"[id1, id2]"`), the substring match still passes for the single-id case — defeating the purpose of the test. The single-id test cannot detect a regression in the multi-id formatting either.
+**Fix:** For the single-id case, assert exact equality: `Assert.Equal(missingId.ToString(), resourceId);` Add a multi-id 404 fact that posts `[Guid.NewGuid(), Guid.NewGuid()]` and asserts the comma-separated format (e.g., `Assert.Contains(", ", resourceId)` plus both id substrings) — this locks in the `string.Join(", ", missing)` contract.
 
 ---
 
 _Reviewed: 2026-05-28T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Iteration: 2 (re-review after WR-01/WR-02/WR-03 fix commits e456551 / cde104e / c5da00a)_
