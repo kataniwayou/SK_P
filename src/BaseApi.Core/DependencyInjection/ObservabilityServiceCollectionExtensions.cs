@@ -14,7 +14,7 @@ namespace BaseApi.Core.DependencyInjection;
 /// metrics with AspNetCore/HttpClient/Runtime instrumentation. Traces pipeline REMOVED
 /// in Phase 11 (D-03) — OBSERV-12 superseded to Out of Scope (REQUIREMENTS.md Phase 11
 /// amendment). The collector receives no traces (Plan 11-03 deletes the pipeline);
-/// the SDK no longer emits them (this file's <c>.WithTracing(...)</c> block deleted).
+/// the SDK no longer emits them (Plan 11-05 stripped the prior tracer-provider block).
 /// </summary>
 public static class ObservabilityServiceCollectionExtensions
 {
