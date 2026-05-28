@@ -45,8 +45,19 @@ public static class EsIndexNames
     /// Verified shape from Plan 11-06 Task 0 Wave 0 probe — the .NET MEL bridge preserves
     /// the <c>BeginScope</c> key name verbatim, so <c>CorrelationId</c> stays capital-C
     /// inside the OTLP-normalized lowercase <c>attributes</c> map.
+    ///
+    /// <para>
+    /// IN-05 review fix: query against the <c>.keyword</c> sub-field instead of the raw
+    /// analyzed text field. ES 8.x default dynamic mapping creates a <c>text</c> field
+    /// with a <c>fields.keyword</c> sub-field for string attributes; <c>term</c> queries
+    /// against the raw analyzed text only matched because 32-hex GUIDs accidentally
+    /// survive the <c>standard</c> analyzer (no token splits on hex-only input). If a
+    /// future correlation-id format adds dashes or other non-alphanumeric chars, the
+    /// raw-field <c>term</c> query would silently miss; routing through
+    /// <c>.keyword</c> makes the query robust to any correlation-id shape.
+    /// </para>
     /// </summary>
-    public const string CorrelationIdFieldPath = "attributes.CorrelationId";
+    public const string CorrelationIdFieldPath = "attributes.CorrelationId.keyword";
 
     /// <summary>
     /// The OTLP field path prefix for resource attributes (service.name, service.version)
