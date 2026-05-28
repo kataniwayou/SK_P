@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.11.3
 milestone_name: milestone
 status: executing
-stopped_at: Completed Phase 11 Plan 07 (SchemasLogsE2ETests + SchemasMetricsE2ETests round-trip E2E pair — commit e3016e2)
-last_updated: "2026-05-28T13:24:43.594Z"
+stopped_at: Completed Phase 11 Plan 08a (HealthEndpointsTests rebase + ES polling migration — commit 481a607)
+last_updated: "2026-05-28T13:35:25.385Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 41
-  completed_plans: 38
-  percent: 93
+  completed_plans: 39
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — EXECUTING
-Plan: 8 of 10
+Plan: 9 of 10
 Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [█████████░] 93%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -99,6 +99,7 @@ Progress: [█████████░] 93%
 | Phase 11 P05 | ~4min | 4 tasks tasks | 5 files files |
 | Phase 11 P06 | ~10min | 6 tasks | 4 files |
 | Phase 11 P07 | ~10min | 4 tasks tasks | 2 files files |
+| Phase 11 P08a | ~5min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -265,6 +266,10 @@ Recent decisions affecting current work:
 - Plan 11-07: 2 new E2E test classes (SchemasLogsE2ETests + SchemasMetricsE2ETests) under tests/BaseApi.Tests/Observability/ ship as single atomic commit e3016e2 (225 insertions / 0 deletions). Both carry [Trait('Phase','11')] + [Trait('Category','E2E')] + [Collection('Observability')] + IClassFixture<Phase11WebAppFactory>. Per-test unique correlation IDs ($"{Guid.NewGuid():N}") per Pitfall 5 + T-11-03. Schema POST as traffic source per CONTEXT D-17 (real business endpoint exercises full HTTP-01..16 pipeline). 2/2 GREEN across 2 consecutive runs (~15-17s each fact; ~33s combined — well within < 90s plan budget). OBSERV-13 + OBSERV-14 + TEST-07 closed behaviorally.
 - Plan 11-07 deviation [Rule 1 plan-vs-live discrepancy, plan-authorized via Task 3 troubleshooting step 5]: corrected http_route PromQL label value from plan-as-written URL form 'api/v1/schemas' to live empirical route-TEMPLATE literal 'api/v{version:apiVersion}/Schemas'. ASP.NET Core HTTP instrumentation emits the route TEMPLATE verbatim — preserves both the Asp.Versioning route constraint syntax AND the [controller] PascalCase token resolution; the resolved URL path is NOT what flows to the http_route Prom label. Plan's literal grep gate at verify line 377 documented as superseded; must_haves invariant satisfied semantically (the test correctly polls the actual emitted label and passes). Empirically confirmed against curl :8889/metrics 2026-05-28. Reusable knowledge for any future PromQL filter on http_route for versioned/decorated controllers (Phase 9 OrchestrationController = 'api/v{version:apiVersion}/Orchestration' etc.). Plan 06-01 / 08-01 / 10-02 / 11-04 educational-rephrase precedent extended to PromQL label semantics.
 - Plan 11-07 pattern: route-template-preservation discovery — ASP.NET Core HTTP instrumentation (via OpenTelemetry.Instrumentation.AspNetCore + collector resource_to_telemetry_conversion: true per D-07) passes the route TEMPLATE literal as the http_route Prom label, NOT the resolved request URL. The [Route("api/v{version:apiVersion}/[controller]")] decoration on BaseController produces http_route='api/v{version:apiVersion}/Schemas' (Schema POST) or 'api/v{version:apiVersion}/Orchestration' (orchestration). Future PromQL assertions on http_route for any sk_p controller MUST use the route-template literal form, NOT the URL-path form. Pattern reusable for Plan 11-08b MetricsExportTests migration + any v2 metric-based monitoring/alerting on per-endpoint request rates.
+- Plan 11-08a: HealthEndpointsTests rebased off OtelCollectorFixture entirely — 3 nested fixtures (HealthDeadPostgresFixture, HealthLiveLocalhostFixture, HealthNoStartupCompletionFixture) inherit Phase8WebAppFactory (minimum-coupling); 1 nested fixture (HealthFilterEnabledFixture) + 1 direct call site (line 80) inherit Phase11WebAppFactory (OTel-emission-aware fixture)
+- Plan 11-08a: Test_HealthEndpoints_Absent_From_OTLP_Logs migrated from file-exporter readback (factory.FlushAsync + factory.ReadExportedLogs) to ES polling (ElasticsearchTestClient.PollEsForLog with 8s negative-assertion budget + Assert.Null(hit)). Query uses ES query_string syntax with literal /health/ substring (field-shape-agnostic across mapping.mode: none/otel). Probe-batch-id forensic header (defensive — not asserted on).
+- Plan 11-08a Rule 1 fix-forward (HealthDeadPostgresFixture ConfigureWebHost override): Phase8WebAppFactory.ConfigureWebHost adds ConnectionStrings:Postgres = throwaway-DB via AddInMemoryCollection, which OVERRIDES the env-var-in-ctor pattern (later IConfiguration source wins for same key). Without fix, Test_HealthReady_503_When_Postgres_Unreachable would return 200 instead of 503. Fix: override ConfigureWebHost, call base FIRST, then add a second AddInMemoryCollection with dead-port conn string — last InMemoryCollection wins. Pattern reusable for any future Phase8WebAppFactory subclass needing custom ConnectionStrings.
+- Plan 11-08a: OtelCollectorFixture.cs intentionally PRESERVED at commit 481a607 — Plan 11-08b consumers (LogExportTests, LogLevelFilterTests, MetricsExportTests) still reference it. Plan 11-08c performs the final deletion after Plan 11-08b lands. Phase 11 build-green invariant between plans preserved end-to-end.
 
 ### Roadmap Evolution
 
@@ -296,8 +301,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T13:23:40.512Z
-Stopped at: Completed Phase 11 Plan 07 (SchemasLogsE2ETests + SchemasMetricsE2ETests round-trip E2E pair — commit e3016e2)
+Last session: 2026-05-28T13:35:08.222Z
+Stopped at: Completed Phase 11 Plan 08a (HealthEndpointsTests rebase + ES polling migration — commit 481a607)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
