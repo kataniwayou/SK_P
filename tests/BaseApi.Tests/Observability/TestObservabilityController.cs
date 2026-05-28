@@ -26,7 +26,9 @@ namespace BaseApi.Tests.Observability;
 [Route("test-obs")]
 public sealed class TestObservabilityController(ILogger<TestObservabilityController> log) : ControllerBase
 {
-    private readonly ILogger<TestObservabilityController> _log = log;
+    // IN-02 review fix: removed redundant `_log = log;` field assignment. The primary
+    // constructor captures `log` implicitly into the closure; the explicit field was
+    // a no-op that duplicated the captured parameter.
 
     [HttpGet("ok")]
     public IActionResult Ok2xx()
@@ -34,7 +36,7 @@ public sealed class TestObservabilityController(ILogger<TestObservabilityControl
         // Emit a sample Information log so LogExportTests can assert against it.
         // Phase 4 CorrelationIdMiddleware's BeginScope("CorrelationId", id) is the active
         // ambient scope — IncludeScopes=true exports it as a log attribute.
-        _log.LogInformation("test-obs ok ran");
+        log.LogInformation("test-obs ok ran");
         return Ok(new { ok = true });
     }
 
