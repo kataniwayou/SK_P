@@ -1,36 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.11.3
-milestone_name: milestone
-status: milestone_complete
-stopped_at: Completed Phase 11 Plan 08c (Phase 11 close — OtelCollectorFixture.cs deleted + 2 residual orphan doc-comment rephrase fix-forwards + 3-consecutive-GREEN closing cadence 163s/161s/162s at 142/142 facts + byte-identical psql \l SHA-256 0d98b0de... — Phase 11 COMPLETE; 10-commit forensic-bisect sequence intact)
-last_updated: "2026-05-28T14:12:29Z"
+milestone: v3.2.0
+milestone_name: Steps API MVP
+status: milestone_shipped
+stopped_at: Milestone v3.2.0 closed — 11 phases / 41 plans archived to milestones/v3.2.0-{ROADMAP,REQUIREMENTS}.md; ROADMAP.md collapsed to one-line summary; PROJECT.md evolved (all reqs validated, Key Decisions outcomes set); MILESTONES.md created; git tag v3.2.0 created
+last_updated: "2026-05-28T00:00:00Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
-  completed_phases: 12
-  total_plans: 43
-  completed_plans: 43
-  percent: 109
+  completed_phases: 11
+  total_plans: 41
+  completed_plans: 41
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-27)
+See: .planning/PROJECT.md (updated 2026-05-28 after v3.2.0 milestone)
 
-**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework.
-**Current focus:** Phase 11 — migrate-prometheus-and-elastic-containers-from-compose-stack
+**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship.**
+**Current focus:** Planning next milestone — run `/gsd-new-milestone`
 
 ## Current Position
 
-Phase: 11
-Plan: Not started
-Status: Milestone complete
+Milestone: v3.2.0 (Steps API MVP) — SHIPPED 2026-05-28
+Phase: — (between milestones)
+Plan: — (between milestones)
+Status: Milestone shipped; tagged `v3.2.0`
 Last activity: 2026-05-28
 
-Progress: [██████████] 100%
+Progress: [██████████] 100% (v3.2.0 — 41/41 plans)
 
 ## Performance Metrics
 
