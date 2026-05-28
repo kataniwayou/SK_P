@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.11.3
 milestone_name: milestone
 status: executing
-stopped_at: Completed Phase 11 Plan 08a (HealthEndpointsTests rebase + ES polling migration — commit 481a607)
-last_updated: "2026-05-28T13:35:25.385Z"
+stopped_at: Completed Phase 11 Plan 08b (LogExport + LogLevelFilter + MetricsExport migration to ES/Prom polling — commit c40d062; 7/7 facts GREEN; OtelCollectorFixture orphaned, deletion deferred to Plan 11-08c)
+last_updated: "2026-05-28T13:53:58.202Z"
 last_activity: 2026-05-28
 progress:
   total_phases: 11
   completed_phases: 10
   total_plans: 41
-  completed_plans: 39
-  percent: 95
+  completed_plans: 40
+  percent: 98
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-27)
 ## Current Position
 
 Phase: 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — EXECUTING
-Plan: 9 of 10
+Plan: 10 of 10
 Status: Ready to execute
 Last activity: 2026-05-28
 
-Progress: [██████████] 95%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -100,6 +100,7 @@ Progress: [██████████] 95%
 | Phase 11 P06 | ~10min | 6 tasks | 4 files |
 | Phase 11 P07 | ~10min | 4 tasks tasks | 2 files files |
 | Phase 11 P08a | ~5min | 3 tasks | 1 files |
+| Phase 11 P08b | ~11min | 4 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -270,6 +271,11 @@ Recent decisions affecting current work:
 - Plan 11-08a: Test_HealthEndpoints_Absent_From_OTLP_Logs migrated from file-exporter readback (factory.FlushAsync + factory.ReadExportedLogs) to ES polling (ElasticsearchTestClient.PollEsForLog with 8s negative-assertion budget + Assert.Null(hit)). Query uses ES query_string syntax with literal /health/ substring (field-shape-agnostic across mapping.mode: none/otel). Probe-batch-id forensic header (defensive — not asserted on).
 - Plan 11-08a Rule 1 fix-forward (HealthDeadPostgresFixture ConfigureWebHost override): Phase8WebAppFactory.ConfigureWebHost adds ConnectionStrings:Postgres = throwaway-DB via AddInMemoryCollection, which OVERRIDES the env-var-in-ctor pattern (later IConfiguration source wins for same key). Without fix, Test_HealthReady_503_When_Postgres_Unreachable would return 200 instead of 503. Fix: override ConfigureWebHost, call base FIRST, then add a second AddInMemoryCollection with dead-port conn string — last InMemoryCollection wins. Pattern reusable for any future Phase8WebAppFactory subclass needing custom ConnectionStrings.
 - Plan 11-08a: OtelCollectorFixture.cs intentionally PRESERVED at commit 481a607 — Plan 11-08b consumers (LogExportTests, LogLevelFilterTests, MetricsExportTests) still reference it. Plan 11-08c performs the final deletion after Plan 11-08b lands. Phase 11 build-green invariant between plans preserved end-to-end.
+- Plan 11-08b: Single atomic commit c40d062 migrates LogExportTests + LogLevelFilterTests + MetricsExportTests off OtelCollectorFixture to Phase11WebAppFactory + ElasticsearchTestClient/PrometheusTestClient (commit #10 of Phase 11); 7/7 facts GREEN combined ~1m 44s
+- Plan 11-08b Rule 1 fix-forward: LogExportTests uses bool/must ES query (corrId term + body.text match_phrase) instead of term-only query — a single sk_p HTTP request emits multiple log records sharing the corrId scope (controller + framework Hosting.Diagnostics Request started/finished); term-only PollEsForLog returns hits[0] which may be the wrong record; bool/must guarantees the controller's specific log is returned. Reusable pattern for any future ES-polling fact targeting a specific message within a scope-shared cluster
+- Plan 11-08b Rule 1 fix-forward: 2x Task.Delay(15_000) calls in MetricsExportTests now pass TestContext.Current.CancellationToken — xUnit1051 analyzer (escalated to error via TreatWarningsAsErrors=true) builds-fatal otherwise. Same pattern as Plan 03-02 deviation. Project-wide idiom for xUnit v3 async waits
+- Plan 11-08b educational-rephrase: LogLevelFilterTests doc-comment 'per-test <c>OtelCollectorFixture</c>' rephrased to 'per-test fixture instances (deleted by Plan 11-05 / 11-08c)' so plan's own literal grep gate passes. Same Plan 06-01 / 08-01 / 10-02 / 11-04 / 11-07 precedent — educational content preserved; semantic must_haves invariant (no CODE references to OtelCollectorFixture) satisfied
+- Plan 11-08b OtelCollectorFixture.cs PRESERVED at HEAD but now fully ORPHANED — zero consumers across all 4 historical Phase 5 test classes (LogExportTests + LogLevelFilterTests + MetricsExportTests + HealthEndpointsTests). Plan 11-08c performs the final git rm. Phase 11 build-green invariant between plans preserved end-to-end
 
 ### Roadmap Evolution
 
@@ -301,8 +307,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-28T13:35:08.222Z
-Stopped at: Completed Phase 11 Plan 08a (HealthEndpointsTests rebase + ES polling migration — commit 481a607)
+Last session: 2026-05-28T13:53:36.652Z
+Stopped at: Completed Phase 11 Plan 08b (LogExport + LogLevelFilter + MetricsExport migration to ES/Prom polling — commit c40d062; 7/7 facts GREEN; OtelCollectorFixture orphaned, deletion deferred to Plan 11-08c)
 Resume file: None
 
 **Completed Phase:** 07 (Generic HTTP Base + Composition Root) — 2/2 plans — verified 2026-05-27 (98/98 dotnet test GREEN × 3 runs; SECURITY 0 open threats; VALIDATION nyquist-compliant; UAT 10/10 auto-passed)
