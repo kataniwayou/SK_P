@@ -411,11 +411,3 @@ obj/
 .env.local
 *.env.local
 
-# Phase 5 (CONTEXT.md D-10) — otel-collector file exporter host-mount target.
-# The compose service `otel-collector` writes telemetry.jsonl to a host bind-mount
-# at ./tests/.otel-out/. Each Plan 05-02 test class truncates the file on
-# InitializeAsync and deletes it on DisposeAsync (PostgresFixture lift). The
-# .gitkeep file (committed by Plan 05-01 Task 4) preserves the directory at
-# clone time; this glob ignores any subsequent file the exporter writes.
-tests/.otel-out/*
-!tests/.otel-out/.gitkeep
