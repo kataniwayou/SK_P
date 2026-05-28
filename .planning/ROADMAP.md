@@ -162,7 +162,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9 -> 10
 | 7. Generic HTTP Base + Composition Root | 1/2 | In Progress | - |
 | 8. Entity Build-Out + Migrations + Docker Runtime + Tests | 8/8 | Complete | 2026-05-28 |
 | 9. Processor.GetBySourceHash + Orchestration Start/Stop | 3/3 | Complete | 2026-05-28 |
-| 10. Remove SchemaId on AssignmentEntity and add ConfigSchemaId on ProcessorEntity | 2/5 | In Progress | - |
+| 10. Remove SchemaId on AssignmentEntity and add ConfigSchemaId on ProcessorEntity | 5/5 | Complete    | 2026-05-28 |
 
 ## Coverage Summary
 
@@ -199,7 +199,7 @@ Plans:
 **Goal:** Coordinated field-shape revision of the v1 surface — drop `SchemaId` from `AssignmentEntity` (entity + DTOs + validator + EF config + migration + REQUIREMENTS.md + tests) and add nullable `Guid? ConfigSchemaId` to `ProcessorEntity` mirroring `InputSchemaId` behavior exactly (SetNull cascade, lambda-less HasOne, `When().HasValue → NotEqual(Guid.Empty)` validator, no nav properties). DB migration is regenerated in place with a new timestamp (no additive migration). REQUIREMENTS.md ENTITY-04/07 + VALID-11/15 are amended in place. 138 → 140 facts; 3 consecutive GREEN `dotnet test` runs required.
 **Requirements**: ENTITY-04 (amend), ENTITY-07 (amend), VALID-11 (amend), VALID-15 (amend) — plus migration/test requirements PERSIST-09, PERSIST-10, PERSIST-13, ERROR-04, ERROR-11, TEST-05, TEST-06 inherited from Phase 8 traceability (no new REQ-IDs introduced; locked semantics in 10-SPEC.md)
 **Depends on:** Phase 9
-**Plans:** 5 plans
+**Plans:** 5/5 plans complete
 
 Plans:
 - [x] 10-01-PLAN.md — Wave 1 (doc-first per CONTEXT D-01/D-02): amend `.planning/REQUIREMENTS.md` ENTITY-04 (add ConfigSchemaId to nullable-Schema-FK enumeration with `fk_processor_config_schema_id` constraint name), ENTITY-07 (drop SchemaId from Assignment shape), VALID-11 (extend `When().HasValue → NotEqual(Guid.Empty)` rule to ConfigSchemaId), VALID-15 (drop SchemaId rule from Assignment validator); update footer to Phase 10 amendment note; commit #1 `docs(req): amend ENTITY-04/07 + VALID-11/15 for Phase 10 shape` — SHIPPED 2026-05-28: single doc-only commit `1de7e71` modified `.planning/REQUIREMENTS.md` in place (5 insertions / 5 deletions); 4 REQ-ID headers byte-preserved; trinary "source/sink/unconfigured" wording locked in ENTITY-04; constraint names enumerated (fk_processor_input/output/config_schema_id); 0 deviations — plan executed exactly as written; forensic property established (commits #2..#5 can run against locked spec)

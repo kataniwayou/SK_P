@@ -288,21 +288,21 @@ Which phases cover which requirements. Populated during roadmap creation.
 | PERSIST-06 | Phase 3 | Complete |
 | PERSIST-07 | Phase 3 | Complete |
 | PERSIST-08 | Phase 8 | Pending |
-| PERSIST-09 | Phase 8 | Pending |
-| PERSIST-10 | Phase 8 | Pending |
+| PERSIST-09 | Phase 8 | Complete |
+| PERSIST-10 | Phase 8 | Complete |
 | PERSIST-11 | Phase 3 | Complete |
 | PERSIST-12 | Phase 8 | Pending |
-| PERSIST-13 | Phase 8 | Pending |
+| PERSIST-13 | Phase 8 | Complete |
 | PERSIST-14 | Phase 8 | Pending |
 | PERSIST-15 | Phase 3 | Complete |
 | PERSIST-16 | Phase 3 | Complete |
 | ENTITY-01 | Phase 3 | Complete |
 | ENTITY-02 | Phase 3 | Complete |
 | ENTITY-03 | Phase 8 | Pending |
-| ENTITY-04 | Phase 8 | Pending |
+| ENTITY-04 | Phase 8 | Complete |
 | ENTITY-05 | Phase 8 | Pending |
 | ENTITY-06 | Phase 8 | Pending |
-| ENTITY-07 | Phase 8 (amended Phase 10) | Pending |
+| ENTITY-07 | Phase 8 (amended Phase 10) | Complete |
 | ENTITY-08 | Phase 8 | Pending |
 | ENTITY-09 | Phase 8 | Pending |
 | ENTITY-10 | Phase 8 | Pending |
@@ -332,11 +332,11 @@ Which phases cover which requirements. Populated during roadmap creation.
 | VALID-08 | Phase 8 | Pending |
 | VALID-09 | Phase 8 | Pending |
 | VALID-10 | Phase 8 | Pending |
-| VALID-11 | Phase 8 | Pending |
+| VALID-11 | Phase 8 | Complete |
 | VALID-12 | Phase 8 | Pending |
 | VALID-13 | Phase 8 | Pending |
 | VALID-14 | Phase 8 | Pending |
-| VALID-15 | Phase 8 (amended Phase 10) | Pending |
+| VALID-15 | Phase 8 (amended Phase 10) | Complete |
 | VALID-16 | Phase 8 | Pending |
 | VALID-17 | Phase 8 | Pending |
 | VALID-18 | Phase 8 | Pending |
@@ -362,20 +362,20 @@ Which phases cover which requirements. Populated during roadmap creation.
 | ERROR-01 | Phase 4 | Pending |
 | ERROR-02 | Phase 4 | Pending |
 | ERROR-03 | Phase 4 | Pending |
-| ERROR-04 | Phase 4 | Pending |
+| ERROR-04 | Phase 4 | Complete |
 | ERROR-05 | Phase 4 | Pending |
 | ERROR-06 | Phase 4 | Pending |
 | ERROR-07 | Phase 4 | Pending |
 | ERROR-08 | Phase 4 | Pending |
 | ERROR-09 | Phase 4 | Pending |
 | ERROR-10 | Phase 4 | Pending |
-| ERROR-11 | Phase 4 | Pending |
+| ERROR-11 | Phase 4 | Complete |
 | TEST-01 | Phase 8 | Pending |
 | TEST-02 | Phase 8 | Pending |
 | TEST-03 | v2 | Deferred |
 | TEST-04 | v2 | Deferred |
-| TEST-05 | Phase 8 | Pending |
-| TEST-06 | Phase 8 | Pending |
+| TEST-05 | Phase 8 | Complete |
+| TEST-06 | Phase 8 | Complete |
 
 **Coverage:**
 - v1 requirements: 102 total (7 INFRA + 15 PERSIST + 10 ENTITY + 16 HTTP + 20 VALID + 12 OBSERV + 5 HEALTH + 11 ERROR + 6 TEST). Note: previous header line summed to 103 by counting ERROR-11 twice; corrected here.
