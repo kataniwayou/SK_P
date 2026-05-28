@@ -1,10 +1,13 @@
 # Stack Research
 
-**Domain:** .NET 8 Web API — modular monolith CRUD service over PostgreSQL with shared base library, OTel observability, RFC 7807 errors
-**Researched:** 2026-05-26
+**Domain:** .NET 8 Web API — modular monolith CRUD service over PostgreSQL with shared base library, OTel observability, RFC 7807 errors. **v3.3.0 adds Redis (L2 materialized projection) and graph-traversal logic inside `OrchestrationService`.**
+**Researched (v3.2.0 baseline):** 2026-05-26
+**v3.3.0 additions researched:** 2026-05-28
 **Confidence:** HIGH (versions verified against NuGet.org and vendor docs within last 30 days)
 
-## Executive Summary
+---
+
+# Part A — v3.2.0 Baseline (LOCKED — preserved for traceability)
 
 The locked decisions (.NET 8 + EF Core 8 + Npgsql + Mapperly + FluentValidation + OTel + Postgres) are all on **current, fully-supported, post-stable** versions as of May 2026. Every pin below has been verified against NuGet.org or the official vendor docs. Two pivots are required vs. older code patterns:
 
@@ -44,17 +47,385 @@ PostgreSQL 17 is the right Docker pin: 18 is GA (May 2026) but the Npgsql 8.x pr
 | **Testcontainers.PostgreSql** | **4.11.0** | Spin up real Postgres for integration tests | When the test needs DB. Manages container lifecycle via `IAsyncLifetime`. Targets .NET 8. Optional companion: `Testcontainers.XunitV3` (shared-context fixture wrapper) — only useful if you have many test classes; raw `IAsyncLifetime` is fine for fewer. |
 | **Npgsql.OpenTelemetry** | **8.0.4** (paired to Npgsql 8.x) | DB-tracing instrumentation for Npgsql | Optional in v1 — locked requirement is logs + HTTP metrics, not DB traces. Add later if Postgres latency becomes a concern. Listed here to document the right version-pair if/when adopted. |
 
-### Development Tools
+(See full v3.2.0 baseline below in **Appendix A — v3.2.0 Locked Wiring Patterns** for `Directory.Packages.props`, csproj fragments, `global.json`, and FluentValidation 12 wiring.)
 
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| `dotnet-ef` global tool | EF Core migration CLI | Install: `dotnet tool install --global dotnet-ef --version 8.0.27`. Pin to match `Microsoft.EntityFrameworkCore.Design` patch. |
-| `global.json` | SDK pin | Required to prevent floating to .NET 9/10 SDKs on dev machines. Pin to `8.0.421` with `rollForward: latestFeature`. |
-| `.editorconfig` | Style + nullable enforcement | Enable nullable reference types project-wide (`<Nullable>enable</Nullable>` in csproj). |
-| `Directory.Packages.props` | Central package management | Recommended for monorepo with `BaseApi.Core` + `BaseApi.Service` to keep versions identical across projects. |
-| `docker-compose.yml` | Local dev | Postgres + service. Use `postgres:17-alpine`, mount data at `/var/lib/postgresql/data`. |
+---
+
+# Part B — v3.3.0 ADDITIONS (Redis L2 Projection)
+
+## Executive Summary (v3.3.0)
+
+v3.3.0 adds three NuGet packages, one Docker Compose service, and zero changes to the v3.2.0 stack. The Redis projection is **whole-document overwrite via MULTI/EXEC** — not partial-field updates, not Redis modules, not Lua. The choices below optimize for: (a) matching the v3.2.0 "no NuGet packaging gap" discipline, (b) mirroring the Phase 3 D-15 per-class throwaway-DB invariant for Redis, and (c) preserving the Phase 11 D-03 "no traces backend" posture insofar as possible.
+
+**Three NuGet pins:**
+1. `StackExchange.Redis 2.13.1` — client (de facto standard, RESP-compatible across servers).
+2. `OpenTelemetry.Instrumentation.StackExchangeRedis 1.15.1-beta.1` — OTel instrumentation (beta-pinned by upstream awaiting semantic-convention stabilization; this is the only OTel-blessed option).
+3. `Testcontainers.Redis 4.12.0` — per-class throwaway Redis containers for xUnit v3 integration tests.
+
+**One Docker Compose service:** `redis:7.4.2-alpine` — pinned to the 7.4.x line *deliberately* to avoid the AGPLv3 clause in Redis 8.0+. RSALv2/SSPLv1-only is acceptable for an internal service; AGPLv3's network-distribution copyleft would force legal review.
+
+**Zero NuGet additions** for graph cycle detection — hand-roll DFS in `OrchestrationService` (~40 LOC) rather than pull `CycleDetection` or `QuickGraph`. Matches the v3.2.0 minimal-dependency posture.
+
+**One open question** flagged as PITFALL: the OpenTelemetry Redis instrumentation is trace-side, but Phase 11 D-03 stripped `.WithTracing()`. Three options (re-add `.WithTracing()` no-exporter / wait for upstream Meter / defer Redis observability) need a roadmap-author decision.
+
+## Recommended Additions
+
+### Redis Client Library (Core)
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `StackExchange.Redis` | **2.13.1** | Redis client for the L2 projection | De facto standard for .NET, used by Stack Overflow at scale, multiplexed connection model, async-first. Underpins `Microsoft.Extensions.Caching.StackExchangeRedis`. Compatible with Redis server, Microsoft Garnet, Valkey, Azure Managed Redis (all RESP wire protocol). Last updated 2026-05-12, actively maintained. Context7-verified usage pattern (singleton `IConnectionMultiplexer`, thread-safe, `GetDatabase()` per-operation). |
+
+### Observability (OpenTelemetry)
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `OpenTelemetry.Instrumentation.StackExchangeRedis` | **1.15.1-beta.1** | Auto-instruments Redis client calls into OTel pipeline | Only OTel-blessed Redis instrumentation. Beta pin is **upstream-imposed** (semantic conventions for DB clients are formally `Experimental`); the API surface itself is stable — all 1.x betas are wire-compatible. Aligns with the existing `OpenTelemetry 1.15.x` versioning the v3.2.0 stack pins. **PITFALL: trace-side only — see "OTel wiring" notes below.** |
+
+### Test Infrastructure
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `Testcontainers.Redis` | **4.12.0** | Ephemeral Redis containers for xUnit integration tests | Mirrors the Phase 3 D-15 throwaway-Postgres pattern at the per-class granularity. Targets .NET 8. Same `Testcontainers` core as `Testcontainers.PostgreSql 4.11.0` (already on the v3.2.0 stack) — consistent fixture authoring style. Last updated 2026 — current and active. Ryuk-managed cleanup means the byte-identical psql-style snapshot invariant has a direct analog: `docker ps -a --filter "label=org.testcontainers" --format "{{.Names}}" | sort | sha256sum` BEFORE = AFTER. |
+
+### Local Dev Infrastructure
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| `redis:7.4.2-alpine` (Docker image) | **7.4.2-alpine** | Redis server for `compose.yaml` local dev | **7.4.x deliberately chosen over 8.0+** — 7.4.x is dual-licensed RSALv2/SSPLv1 (no AGPLv3 viral-network-distribution clause); 8.0+ adds AGPLv3 to the tri-license, which forces a copyleft posture for any networked modifications. The sk_p service has no need for 8.0 features (no JSON/Search modules used; vector search not in scope). 7.4.2 is a recent patch in the 7.4 line. Alpine variant matches the `postgres:17-alpine` / `elasticsearch:8.15.5` (full image, ES has no alpine) / `prom/prometheus:v3.11.3` pinning discipline. Resource footprint: ~30MB image vs ~110MB Debian-based. |
+
+### Graph Algorithms
+
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| **(none — hand-roll)** | n/a | DFS cycle detection in `OrchestrationService` | The traversal is ~40 LOC: `HashSet<Guid> visited`, `HashSet<Guid> recursionStack`, recursive DFS from each `Workflow.EntryStepIds[*]` via `StepEntity.NextStepIds`. Existing NuGet options (`CycleDetection 2.0.0`, `QuickGraph`) are heavyweight for this micro-use; both pull abstractions (general graph types, edge weighting, dependency-sort) the codebase will not reuse. Adding a dependency for ~40 LOC violates the "no NuGet packaging gap" discipline that held across v3.2.0's 11 phases. Hand-roll inside `OrchestrationService` as a private method; unit-test in isolation. |
+
+## v3.2.0 Locked Stack (DO NOT TOUCH — cross-reference only)
+
+These are **NOT** under review for v3.3.0 — listed only so roadmap authors can verify integration assumptions.
+
+| Category | Locked Tech | Version |
+|----------|-------------|---------|
+| Runtime | .NET | 8.0.421 (global.json) |
+| ORM | EF Core + Npgsql | EF Core 8.0.27 + Npgsql 8.0.10 (provider) / Npgsql 8.0.9 (client driver) |
+| Database | PostgreSQL | 17-alpine |
+| Validation | FluentValidation | 12.1.1 |
+| Mapping | Mapperly | 4.3.1 (source-generated) |
+| Observability SDK | OpenTelemetry .NET SDK | 1.15.3 |
+| HTTP Versioning | Asp.Versioning.Http | 8.1.0 |
+| JSON Schema | JsonSchema.Net | 9.2.1 (draft 2020-12, SSRF-disabled) |
+| Cron | Cronos | 0.13.0 (5-field) |
+| Test framework | xUnit v3 + WebApplicationFactory | 3.2.2 + 8.0.27 (per-class throwaway Postgres) |
+| Compose stack | Postgres 17-alpine + Elasticsearch 8.15.5 + Prometheus v3.11.3 + OTel Collector contrib 0.152.0 | (Redis 7.4.2-alpine joins this stack) |
+
+## Alternatives Considered (v3.3.0)
+
+| Category | Recommended | Alternative | Why Not |
+|----------|-------------|-------------|---------|
+| Client library | `StackExchange.Redis 2.13.1` | **Microsoft Garnet (server only)** | Garnet is a *server*, not a client. It speaks RESP, so `StackExchange.Redis` works against it. Garnet on the *server* side is interesting (3-10× throughput, .NET native, sub-300μs p99.9) but introduces a non-standard server image. Defer — revisit if/when L2 throughput proves to be a bottleneck. Swap is zero code change because both speak RESP. |
+| Client library | `StackExchange.Redis 2.13.1` | `StackExchange.Redis.Extensions.Core 12.2.0` | Higher-level wrapper adding pooling, complex-object helpers, compression. Adds an abstraction layer that hides the raw `IDatabase` API the orchestration code needs for `ITransaction`. Base library already does what v3.3.0 needs; the extensions package solves problems sk_p doesn't have (large object serialization, pub/sub patterns, geospatial). |
+| Client library | `StackExchange.Redis 2.13.1` | `NRedisStack 1.3.0` (official Redis client) | Targets Redis Stack server (modules: RedisJSON, RediSearch, RedisTimeSeries, RedisBloom). sk_p uses none of these modules. Adds infrastructure complexity (different Docker image: `redis/redis-stack:latest`) and a wrapper dependency on top of `StackExchange.Redis`. |
+| Serialization | **System.Text.Json strings on RedisString** | `RedisHash` (HSET per-field) | RedisHash gives field-level updates but the L2 DTOs are written **whole** in each Start call (idempotent overwrite, not field-level mutation). HSET adds complexity (multiple commands per record, no native nested-object support — `liveness{timestamp,interval,status}` would need flattening, manual field-typing) for zero benefit when the write pattern is "replace entire JSON document." |
+| Serialization | **System.Text.Json strings on RedisString** | RedisJSON module (`NRedisStack`) | RedisJSON requires the Redis Stack server build (or the JSON module loaded into vanilla Redis). Adds infrastructure complexity (different Docker image), adds a NuGet dep, and provides features sk_p doesn't need (JSONPath queries, atomic field updates, indexed search). Whole-document overwrite is exactly what RedisString does best with `SET`. **Also keeps the alpine image at ~30MB vs Redis Stack at ~400MB+.** |
+| Atomic write | **`ITransaction` (MULTI/EXEC)** | Pipelining via `IBatch` | `IBatch` reduces round-trips but provides **no atomicity** between commands. v3.3.0 needs all-or-nothing for a Start call's projection set so a crash mid-write doesn't leave half-projected workflows. `ITransaction` extends `IBatch` (inherits batching benefit) and adds MULTI/EXEC atomicity. |
+| Atomic write | **`ITransaction` (MULTI/EXEC)** | Lua scripts (`ScriptEvaluate`) | Lua wins when conditional read-then-write is needed (MULTI/EXEC cannot read intermediate results in the same transaction). v3.3.0 Start is unconditional overwrite — no read-then-decide logic — so Lua is over-engineered. Revisit if Stop ever needs "delete only if JobId matches" (CAS pattern). |
+| Atomic write | **`ITransaction` (MULTI/EXEC)** | RENAME-based atomic swap | Pattern: write to temp keys, RENAME atomically. Works for single-key replacement but breaks for the v3.3.0 multi-key projection — one Start creates N `{workflowId}` + M `{workflowId:stepId}` + K `{processorId}` keys; RENAME is per-key, not group. Would still need a transaction to make the renames atomic, defeating the simplification. |
+| Atomic write | **`ITransaction` (MULTI/EXEC)** | WATCH/MULTI/EXEC (optimistic concurrency) | The spec explicitly says "last-write-wins, no Redis lock" for concurrent Starts. WATCH adds retry-on-conflict logic that contradicts the requirement. |
+| Test isolation | **Per-class ephemeral container (Testcontainers.Redis)** | Shared container + `FLUSHDB` between tests | Shared+flush is faster but fragile: any test that forgets to flush leaks state into the next. The Phase 3 D-15 invariant (byte-identical psql `\l` snapshot proves zero leaked DBs) is the locked discipline; mirror it for Redis with ephemeral containers, not shared+flush. |
+| Test isolation | **Per-class ephemeral container** | Shared container + Redis DB index (SELECT 0..15) | Redis docs explicitly call multi-DB **an anti-pattern** for application data separation. All 16 indices share memory/CPU/connection pool. Test failure isolation is worse than ephemeral containers (a hung connection on DB 3 affects DB 4). Also: doesn't scale — 17th test class breaks. |
+| Test isolation | **Per-class ephemeral container** | Shared container + keyspace prefixing (`test_{guid}:*`) | Requires every test-touched code path to honor the prefix — high-friction discipline that's easy to violate accidentally (a missing prefix in the projection writer would silently corrupt other test runs). Ephemeral container forces isolation at the network level. |
+| Test isolation | **Per-class ephemeral container** | In-memory Redis emulator (e.g., `FakeItEasy` Redis mock, Microsoft.Extensions.Caching.Memory) | Doesn't test actual Redis behavior (MULTI/EXEC semantics, RESP wire format, network errors). The Phase 3 "real Postgres in tests" discipline applies here too — fake the I/O, fake the bugs. |
+| Graph cycle detection | **Hand-roll DFS in OrchestrationService** | `CycleDetection 2.0.0` NuGet | Tarjan's algorithm wrapped for general dependency-sort use cases. Pulls graph abstractions sk_p will not reuse. ~40 LOC of `OrchestrationService` private code is bisect-friendlier than a black-box dependency for a one-call use case. |
+| Graph cycle detection | **Hand-roll DFS** | `QuickGraph` | Mature general-purpose graph library; way over-scoped for one-DFS-per-workflow. ~500KB DLL for ~40 LOC of logic. |
+| Redis server version | **7.4.2-alpine** | 8.0+-alpine | Tri-license including AGPLv3 (8.0+) introduces a copyleft network-distribution clause. 7.4.x's RSALv2/SSPLv1 is restrictive but does not have the viral network-distribution clause. sk_p uses none of the 8.0+ new features (Vector Sets, time-series improvements, etc.). |
+| Redis server version | **7.4.2-alpine** | 7.2-alpine | Older, no licensing benefit, missing 7.4.x fixes/improvements (notably client-side caching v2, hash field expiration). |
+| Redis server version | **7.4.2-alpine** | **Valkey (BSD fork, Linux Foundation governed)** | Valkey is BSD-licensed (cleaner license posture than even 7.4.x) and Linux Foundation governed. Strong candidate **but** introduces an unfamiliar server image; the existing compose stack pins are all "official upstream" projects (Postgres official, ES official, Prom official, Collector contrib). Valkey breaks that "official upstream" pattern. **Flag as PITFALL/future-revisit** — if Redis licensing becomes a procurement blocker, swap is one-line in `compose.yaml` and zero code change (Valkey is RESP-compatible — `StackExchange.Redis` connects natively). |
+
+## What NOT to Use (v3.3.0)
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| `Microsoft.Extensions.Caching.StackExchangeRedis` | Wraps `StackExchange.Redis` as `IDistributedCache` — opaque byte-array interface. The L2 projection is not an opaque cache; consumers read typed JSON keys with specific schemas. | Direct `IConnectionMultiplexer` / `IDatabase` from `StackExchange.Redis` |
+| `ServiceStack.Redis` | Commercial license over the free quota (6000 requests/hour or 20 ops/hour limits depending on tier). | `StackExchange.Redis` (MIT) |
+| `BookSleeve` | Predecessor to `StackExchange.Redis` — abandoned in 2014. | `StackExchange.Redis` |
+| Redis Stack (`redis/redis-stack:*`) image | Adds RedisJSON / RediSearch / RedisTimeSeries / RedisBloom modules that v3.3.0 doesn't use. 10× the image size. | `redis:7.4.2-alpine` |
+| `redis:latest` floating tag | Violates the v3.2.0 pinning discipline (Postgres 17-alpine, ES 8.15.5, Prom v3.11.3, Collector 0.152.0 all explicitly pinned). Floats to 8.x and inherits AGPLv3. | `redis:7.4.2-alpine` explicit pin |
+| `FLUSHALL` / `FLUSHDB` in test teardown | Fragile across parallel test runs; doesn't isolate from concurrent test classes. | Per-class `Testcontainers.Redis` (one container per fixture; ephemeral) |
+| In-memory mock (e.g., `Moq<IConnectionMultiplexer>` returning canned `IDatabase`) | Doesn't exercise MULTI/EXEC semantics, RESP wire format, or actual reconnection behavior. Same anti-pattern as `UseInMemoryDatabase` was for EF Core. | Testcontainers.Redis (real Redis) |
+| `redis-cli MONITOR` for test assertions | Production-impacting in real Redis (blocks server); fragile and slow for tests. | Assert via `IDatabase.KeyExistsAsync` / `StringGetAsync` against the per-class container. |
+| `KEYS pattern` for Stop's "delete by prefix" | O(N) blocking command — explicitly forbidden by Redis docs for production. | `SCAN` cursor-based iteration + `KeyDelete` (in a transaction if atomicity needed) |
+| `WAIT` command for "wait for replication" | No replicas in v3.3.0 (single-node compose Redis). | Don't use; revisit if replication is added. |
 
 ## Installation
+
+### NuGet packages — add to `Directory.Packages.props` (extend the existing CPM file)
+
+Append these three entries to the existing `<ItemGroup>` in `Directory.Packages.props`:
+
+```xml
+<!-- v3.3.0 — Redis L2 projection -->
+<PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
+<PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.15.1-beta.1" />
+<PackageVersion Include="Testcontainers.Redis" Version="4.12.0" />
+```
+
+### csproj additions
+
+`src/BaseApi.Service/BaseApi.Service.csproj` (the OrchestrationService lives here per Phase 9):
+
+```xml
+<PackageReference Include="StackExchange.Redis" />
+<PackageReference Include="OpenTelemetry.Instrumentation.StackExchangeRedis" />
+```
+
+`tests/BaseApi.Tests/BaseApi.Tests.csproj`:
+
+```xml
+<PackageReference Include="Testcontainers.Redis" />
+```
+
+**Note:** `StackExchange.Redis` MAY also belong in `BaseApi.Core` if you anticipate the Redis-client lifetime extension (`AddBaseApiRedis(...)`) being a reusable base concern alongside `AddBaseApiObservability`. Reasonable either way; recommendation is **start in Service**, lift to Core only if a second service is ever spun up (which Option B locked out).
+
+### Docker Compose addition (`compose.yaml`)
+
+Add this service alongside Postgres / Elasticsearch / Prometheus / OTel Collector:
+
+```yaml
+redis:
+  image: redis:7.4.2-alpine
+  container_name: sk-redis
+  ports:
+    - "6379:6379"
+  healthcheck:
+    test: ["CMD", "redis-cli", "ping"]
+    interval: 5s
+    timeout: 3s
+    retries: 5
+    start_period: 5s
+  restart: unless-stopped
+  # Note: no volume mount — L2 is a materialized projection, not a source of truth.
+  # Restart from L3 (Postgres) is the recovery path; persistence is intentional waste.
+  command: ["redis-server", "--save", "", "--appendonly", "no"]
+```
+
+The `--save "" --appendonly no` disables RDB snapshots and AOF — the L2 projection is rebuildable from L3 (Postgres) on demand, so persistence is dead weight and slows startup.
+
+### appsettings.json / appsettings.Development.json addition
+
+```json
+{
+  "ConnectionStrings": {
+    "Redis": "localhost:6379,abortConnect=false,connectTimeout=5000,syncTimeout=5000"
+  }
+}
+```
+
+In Docker Compose / Production, override via env var: `ConnectionStrings__Redis=redis:6379,abortConnect=false`.
+
+## Integration Notes for Roadmap Authors
+
+### ConnectionMultiplexer DI lifetime (singleton, lazy-initialized)
+
+The `ConnectionMultiplexer` is the central thread-safe, multiplexed connection object — Context7-confirmed against `https://stackexchange.github.io/StackExchange.Redis/Basics`: *"is intended to be shared and reused throughout an application rather than created per operation. It is fully thread-safe."*
+
+**MUST be a singleton** — per-request construction defeats the multiplexing model, exhausts the file descriptor budget under load, and causes the "Multiple Connection Instances" pitfall reported by `StackExchange.Redis` issue #507.
+
+Recommended ASP.NET Core registration (mirrors the existing `AddBaseApi<TDbContext>` composition root style — add to a new `AddBaseApiRedis(...)` extension or inline in `Program.cs` under the existing 10-line cap):
+
+```csharp
+services.AddSingleton<IConnectionMultiplexer>(sp =>
+{
+    var connectionString = sp.GetRequiredService<IConfiguration>()
+        .GetConnectionString("Redis")
+        ?? throw new InvalidOperationException("ConnectionStrings:Redis is required");
+
+    var options = ConfigurationOptions.Parse(connectionString);
+    options.AbortOnConnectFail = false;   // resilient — let it reconnect in background
+    options.ClientName = "sk-api";         // shows up in CLIENT LIST for ops debugging
+    return ConnectionMultiplexer.Connect(options);
+});
+```
+
+Then inject `IConnectionMultiplexer` (or a thin wrapper like `IL2ProjectionStore`) into `OrchestrationService`. Call `_multiplexer.GetDatabase()` per operation — `IDatabase` is a lightweight wrapper over the multiplexer and should NOT be cached as a field.
+
+**Pitfalls to flag in PITFALLS.md:**
+1. **Synchronous `Connect()` in `ConfigureServices` blocks startup if Redis is unreachable.** `AbortOnConnectFail = false` fixes this (Connect returns even on failure; client retries in background). Without this flag, a Redis outage at boot kills the API.
+2. **Injecting `IDatabase` directly is OK but mildly fragile** — if you ever switch to RedisCluster (multiple multiplexers), an injected `IDatabase` will route to the wrong endpoint. Inject `IConnectionMultiplexer` and call `GetDatabase()` for future-proofing.
+3. **Singleton `OrchestrationService`?** Currently scoped (per the v3.2.0 service-layer convention). Scoped is fine — `IConnectionMultiplexer` is captured by reference, singleton-lifetimed underneath. Don't change to Singleton without thinking about other scoped deps (DbContext is scoped — Singleton would break the DbContext lifetime).
+4. **Liveness probe should NOT touch Redis** (Phase 5 D-15 / Pitfall 15 generalization — live never touches dependencies). Readiness probe MAY add a Redis ping; **recommendation: defer Redis readiness check** to avoid coupling readiness to a non-source-of-truth dependency. The system is correct without Redis (graceful degradation: Start fails 503, CRUD still works).
+
+### Atomic write primitive choice for v3.3.0
+
+For the "idempotent overwrite of N workflow projections in one Start call":
+
+```csharp
+var db = _multiplexer.GetDatabase();
+var tx = db.CreateTransaction();
+
+// Fire-and-don't-await — the inner Tasks complete after ExecuteAsync returns.
+// StackExchange.Redis idiom: discard return; values are queued, executed atomically on EXEC.
+foreach (var (workflowId, projection) in workflowProjections)
+{
+    _ = tx.StringSetAsync(workflowId.ToString(), JsonSerializer.Serialize(projection));
+}
+foreach (var (compoundKey, stepProj) in stepProjections)
+{
+    _ = tx.StringSetAsync(compoundKey, JsonSerializer.Serialize(stepProj));
+}
+foreach (var (processorId, procProj) in processorProjections)
+{
+    _ = tx.StringSetAsync(processorId.ToString(), JsonSerializer.Serialize(procProj));
+}
+
+bool committed = await tx.ExecuteAsync();
+if (!committed) throw new RedisException("L2 projection commit failed (transaction aborted)");
+```
+
+For Stop's delete-all-keys-for-workflow:
+
+```csharp
+var db = _multiplexer.GetDatabase();
+var server = _multiplexer.GetServer(_multiplexer.GetEndPoints().First());
+var keys = server.Keys(pattern: $"{workflowId}*").ToArray();  // SCAN-based, NOT KEYS
+if (keys.Length > 0)
+{
+    var tx = db.CreateTransaction();
+    _ = tx.KeyDeleteAsync(keys);
+    await tx.ExecuteAsync();
+}
+```
+
+**Idempotent overwrite semantics fall out naturally:** `StringSet` (the SET command) is unconditional replace by default. Re-running Start with the same WorkflowIds simply replaces the keys with identical-or-updated content. No need for SETNX / SETEX / EXISTS-checks.
+
+### OpenTelemetry wiring — PITFALL flag
+
+`OpenTelemetry.Instrumentation.StackExchangeRedis` 1.15.1-beta.1 adds instrumentation to the **`.WithTracing()`** pipeline — but Phase 11 D-03 **stripped `.WithTracing()` from `AddBaseApiObservability`** (no traces backend in v1).
+
+**Three options, must be decided in roadmap:**
+
+- **Option A (recommended for v3.3.0):** Re-add `.WithTracing()` to `AddBaseApiObservability` with **no exporter** (or `ConsoleExporter` in Dev only) purely to enable the Redis instrumentation hook. The instrumentation also surfaces some metrics under `db.client.*` that flow through the existing Prometheus exporter. **Cost:** revisits a locked Phase 11 decision; requires updating the rationale text in `REQUIREMENTS.md` (OBSERV-13/14 area).
+- **Option B (deferral):** Ship v3.3.0 without Redis observability. Add a `// TODO(v3.4): wire Redis OTel instrumentation` marker in `AddBaseApiObservability`. Acceptable because L2 is internal-only and the existing Postgres / HTTP server / collector metrics provide most observability needs.
+- **Option C (replace with custom):** Add `Activity` manually around L2 read/write code paths in `OrchestrationService` (no instrumentation package). Hand-roll OTel spans using `ActivitySource.StartActivity`. Heaviest manual lift but doesn't reopen Phase 11 D-03.
+
+**Recommendation:** Option B for v3.3.0 ship — observability is not a stated v3.3.0 requirement, and re-opening Phase 11 D-03 mid-milestone is a context-switch tax. Plan Option A for v3.4 explicitly.
+
+### Test infrastructure (Testcontainers.Redis fixture)
+
+Mirror the existing `Phase8WebAppFactory` pattern. Sketch (per-class fixture, xUnit v3 syntax):
+
+```csharp
+public sealed class RedisPerClassFixture : IAsyncLifetime
+{
+    private readonly RedisContainer _container = new RedisBuilder()
+        .WithImage("redis:7.4.2-alpine")
+        .Build();
+
+    public string ConnectionString => _container.GetConnectionString();
+
+    public async ValueTask InitializeAsync() => await _container.StartAsync();
+    public async ValueTask DisposeAsync()    => await _container.DisposeAsync();
+}
+
+[Collection(...)]  // or [Class] fixture in xUnit v3
+public sealed class StartOrchestrationL2Facts(RedisPerClassFixture redisFx, /* PostgresFx, */ ...)
+    : IClassFixture<RedisPerClassFixture>
+{
+    // tests use redisFx.ConnectionString to override DI in the WebAppFactory
+}
+```
+
+A `Phase12WebAppFactory : Phase8WebAppFactory` overrides `IConnectionMultiplexer` registration with `ConnectionMultiplexer.Connect(redisFixture.ConnectionString)` in `ConfigureWebHost`.
+
+**Snapshot invariant for the close gate** (analog of psql `\l` SHA-256):
+```powershell
+docker ps -a --filter "label=org.testcontainers" --format "{{.Names}}" | Sort-Object | Out-String | %{ [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($_))) }
+```
+Run BEFORE and AFTER the suite — should be byte-identical (Testcontainers self-cleans via Ryuk container, mirroring how the Postgres test class self-cleans).
+
+### Mapperly compatibility
+
+Mapperly is source-generated and operates on **C# type-shape mapping**. It will map your **L1 in-memory types → L2 DTOs** (the Redis-bound shapes) as usual. The L2 DTOs are then serialized via `System.Text.Json` (separate concern from Mapperly).
+
+**No new Mapperly attributes needed.** The existing `IEntityMapper<TEntity,TCreate,TUpdate,TRead>` contract is for **EF entities** and doesn't apply to L2 projection shapes. Write a separate Mapperly mapper (e.g., `IL2ProjectionMapper` with methods `ToWorkflowProjection(WorkflowL1 src)`, `ToStepProjection(StepL1 src)`, `ToProcessorProjection(ProcessorL1 src)`) following the same per-feature-folder convention. Promote the same RMG007/RMG012/RMG020/RMG089 build-error discipline.
+
+### System.Text.Json configuration
+
+Use the application's default `JsonSerializerOptions` from DI if possible (matches the ASP.NET Core HTTP-layer serialization for consistency). Recommended options:
+
+```csharp
+new JsonSerializerOptions
+{
+    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,   // matches HTTP API surface
+    DefaultIgnoreCondition = JsonIgnoreCondition.Never,  // L2 consumers want explicit nulls
+    WriteIndented = false                                 // compact storage
+}
+```
+
+**Naming critical:** the L2 DTO field names are locked to `inputDefinition` / `outputDefinition` (per CONTEXT — "NOT `definitionIn` / `definitionOut`"). Verify via a Mapperly attribute or test that the serialized output matches the spec.
+
+## Version Compatibility (v3.3.0 additions)
+
+| Package A | Compatible With | Notes |
+|-----------|-----------------|-------|
+| `StackExchange.Redis 2.13.1` | .NET Standard 2.0, .NET Framework 4.6.1+ | Targets .NET Standard 2.0 → works on .NET 8 transparently. No conflict with EF Core 8 / Npgsql 8.x. |
+| `StackExchange.Redis 2.13.1` | `redis:7.x` and `redis:8.x` servers (RESP2/RESP3) | Connects to anything that speaks RESP. Negotiates RESP3 on Redis 6+ for richer types. |
+| `OpenTelemetry.Instrumentation.StackExchangeRedis 1.15.1-beta.1` | `OpenTelemetry 1.15.x` | Matches the v3.2.0 OTel pin. Targets `StackExchange.Redis 2.x`. |
+| `OpenTelemetry.Instrumentation.StackExchangeRedis 1.15.1-beta.1` | OpenTelemetry SDK trace pipeline | **Requires `.WithTracing()` configured** — see Pitfall above. |
+| `Testcontainers.Redis 4.12.0` | .NET 8.0+, .NET Standard 2.0 | Same `Testcontainers` core as the v3.2.0 `Testcontainers.PostgreSql 4.11.0`. Docker daemon required (already required by v3.2.0). |
+| `redis:7.4.2-alpine` server | `StackExchange.Redis 2.x` client | Full RESP3 support, MULTI/EXEC, SCAN, all primitives v3.3.0 uses. |
+
+## Sources
+
+### Authoritative (HIGH confidence) — verified via Context7 or vendor docs
+
+- [StackExchange.Redis 2.13.1 — NuGet](https://www.nuget.org/packages/StackExchange.Redis/) — current version, .NET Standard 2.0, last updated 2026-05-12
+- [StackExchange.Redis Basics — official docs (Context7-verified `/websites/stackexchange_github_io_stackexchange_redis`)](https://stackexchange.github.io/StackExchange.Redis/Basics) — singleton pattern, thread-safety contract
+- [StackExchange.Redis Transactions — official docs](https://stackexchange.github.io/StackExchange.Redis/Transactions.html) — `CreateTransaction()` MULTI/EXEC semantics
+- [StackExchange.Redis Configuration — official docs](https://stackexchange.github.io/StackExchange.Redis/Configuration.html) — `AbortOnConnectFail`, `ClientName`, parse syntax
+- [OpenTelemetry.Instrumentation.StackExchangeRedis 1.15.1-beta.1 — NuGet](https://www.nuget.org/packages/OpenTelemetry.Instrumentation.StackExchangeRedis/) — current version, semantic conventions Experimental
+- [OpenTelemetry .NET Contrib — StackExchangeRedis CHANGELOG](https://github.com/open-telemetry/opentelemetry-dotnet-contrib/blob/main/src/OpenTelemetry.Instrumentation.StackExchangeRedis/CHANGELOG.md) — beta versioning rationale
+- [Testcontainers.Redis 4.12.0 — NuGet](https://www.nuget.org/packages/Testcontainers.Redis) — current version
+- [Testcontainers for .NET — xUnit integration](https://dotnet.testcontainers.org/test_frameworks/xunit_net/) — `IAsyncLifetime` fixture pattern (per-class isolation)
+- [Redis Official Docker Image — Docker Hub](https://hub.docker.com/_/redis) — 7.4-alpine tag chain
+- [Redis 8.0 tri-license announcement — Redis blog](https://redis.io/blog/agplv3/) — AGPLv3 addition in 8.0
+- [Redis license change — Percona analysis](https://www.percona.com/blog/the-redis-license-has-changed-what-you-need-to-know/) — RSALv2/SSPLv1 vs AGPLv3 implications
+- [Redis Returns to Open Source under AGPL — InfoQ](https://www.infoq.com/news/2025/05/redis-agpl-license/) — community context for license change
+
+### Verified secondary (MEDIUM confidence)
+
+- [Microsoft Garnet (server) — GitHub](https://github.com/microsoft/garnet) — RESP-compatible server, deferred alternative
+- [Garnet performance benchmarks](https://microsoft.github.io/garnet/docs/benchmarking/results-resp-bench) — informs "wait for bottleneck" deferral rationale
+- [NRedisStack 1.3.0 — NuGet](https://www.nuget.org/packages/NRedisStack/) — RedisJSON client (rejected for this milestone)
+- [Redis databases anti-pattern — SudoAll](https://sudoall.com/redis-databases-antipattern/) — rationale for rejecting SELECT-based test isolation
+- [Redis Best Practices for Connection Resilience — Azure docs](https://learn.microsoft.com/en-us/azure/azure-cache-for-redis/cache-best-practices-connection) — guidance applies regardless of hosting
+- [Connection Singleton Instance issue — StackExchange.Redis #507](https://github.com/StackExchange/StackExchange.Redis/issues/507) — DI pitfall documentation
+- [Redis Pipelining, Transactions, and Lua Scripts comparison](https://rafaeleyng.github.io/redis-pipelining-transactions-and-lua-scripts) — atomic-write primitive tradeoff analysis
+
+### Comparative / community (informs alternatives sections)
+
+- [Valkey (BSD fork) — valkey.io](https://valkey.io/) — Linux-Foundation-governed BSD alternative if licensing escalates
+- [Redis Stack Docker image](https://hub.docker.com/r/redis/redis-stack) — RedisJSON server alternative (rejected: 10× size, modules unused)
+- [Testcontainers Best Practices for .NET](https://www.milanjovanovic.tech/blog/testcontainers-best-practices-dotnet-integration-testing) — per-class fixture lifetime rationale
+- [Sharing a Redis Container with Testcontainers (Medium)](https://omerugi.medium.com/boost-your-integration-tests-sharing-a-redis-container-with-testcontainers-for-net-8fe8c01d98ec) — counterpoint (shared+flush — rejected for sk_p discipline)
+
+### Confidence assessment (v3.3.0 additions)
+
+| Item | Confidence | Notes |
+|------|------------|-------|
+| `StackExchange.Redis` 2.13.1 choice | HIGH | Context7-verified, NuGet-verified, de facto standard since 2014 |
+| `OpenTelemetry.Instrumentation.StackExchangeRedis` 1.15.1-beta.1 | MEDIUM-HIGH | Beta pin is upstream-imposed (semantic-convention experimental status), not API-stability concern. Only OTel-blessed option. |
+| `Testcontainers.Redis` 4.12.0 | HIGH | NuGet-verified, mirrors proven Postgres pattern with identical `IAsyncLifetime` shape |
+| `redis:7.4.2-alpine` server pin | MEDIUM-HIGH | 7.4 line confirmed extant on Docker Hub; verify exact 7.4.x patch (2/3/4) at implementation time — minor patch level is fluid |
+| System.Text.Json on RedisString choice | HIGH | Native to .NET 8, no dep, fits whole-document overwrite pattern exactly |
+| `ITransaction` (MULTI/EXEC) for atomic writes | HIGH | StackExchange.Redis docs explicit on this idiom; matches "idempotent overwrite of N keys" requirement |
+| Hand-roll DFS over NuGet | HIGH | Pragmatic call; aligns with v3.2.0 "no NuGet packaging gap" discipline; ~40 LOC is well under the bar for a dependency |
+| OTel `.WithTracing()` revival decision | LOW | Genuinely needs roadmap-author decision; recommendation is Option B (defer Redis observability to v3.4) |
+
+---
+
+# Appendix A — v3.2.0 Locked Wiring Patterns (preserved for reference)
+
+## Installation (v3.2.0 baseline — already in place)
 
 `global.json` (root of repo):
 
@@ -107,231 +478,35 @@ PostgreSQL 17 is the right Docker pin: 18 is GA (May 2026) but the Npgsql 8.x pr
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.7" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
+
+    <!-- v3.3.0 — Redis L2 projection (NEW) -->
+    <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.15.1-beta.1" />
+    <PackageVersion Include="Testcontainers.Redis" Version="4.12.0" />
   </ItemGroup>
 </Project>
 ```
 
-`src/BaseApi.Core/BaseApi.Core.csproj` — relevant fragments:
+## FluentValidation 12 Wiring Pattern (v3.2.0 locked)
 
-```xml
-<PropertyGroup>
-  <TargetFramework>net8.0</TargetFramework>
-  <Nullable>enable</Nullable>
-  <ImplicitUsings>enable</ImplicitUsings>
-  <LangVersion>12</LangVersion>
-</PropertyGroup>
+`services.AddValidatorsFromAssembly(typeof(BaseEntityValidator<>).Assembly, lifetime: ServiceLifetime.Scoped)` — scoped lifetime, no `AddFluentValidation`, manual `IValidator<T>.ValidateAsync` invocation in `BaseService<...>`. See v3.2.0 PROJECT.md for the locked pattern; v3.3.0 adds `WorkflowIdsValidator` (Phase 9) and may add new orchestration-related validators following the same pattern.
 
-<ItemGroup>
-  <PackageReference Include="Microsoft.EntityFrameworkCore" />
-  <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
-  <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
-  <PackageReference Include="FluentValidation" />
-  <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
-  <PackageReference Include="OpenTelemetry" />
-  <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
-  <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
-  <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
-  <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
-  <PackageReference Include="AspNetCore.HealthChecks.NpgSql" />
-</ItemGroup>
-```
+## Sources (v3.2.0 baseline)
 
-`src/BaseApi.Service/BaseApi.Service.csproj` — relevant fragments (the service adds Mapperly, JsonSchema.Net, Cronos, and the EF Core Design package for migrations):
-
-```xml
-<PropertyGroup>
-  <TargetFramework>net8.0</TargetFramework>
-  <Nullable>enable</Nullable>
-  <ImplicitUsings>enable</ImplicitUsings>
-  <LangVersion>12</LangVersion>
-</PropertyGroup>
-
-<ItemGroup>
-  <ProjectReference Include="..\BaseApi.Core\BaseApi.Core.csproj" />
-
-  <!-- Mapperly: source generator — exclude runtime + mark private -->
-  <PackageReference Include="Riok.Mapperly" PrivateAssets="all" ExcludeAssets="runtime" />
-
-  <!-- Domain validators -->
-  <PackageReference Include="JsonSchema.Net" />
-  <PackageReference Include="Cronos" />
-
-  <!-- Migrations tooling (Design package — for dotnet ef) -->
-  <PackageReference Include="Microsoft.EntityFrameworkCore.Design">
-    <PrivateAssets>all</PrivateAssets>
-    <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-  </PackageReference>
-</ItemGroup>
-```
-
-Install `dotnet-ef`:
-
-```powershell
-dotnet tool install --global dotnet-ef --version 8.0.27
-```
-
-## FluentValidation 12 Wiring Pattern (modern, non-deprecated)
-
-This is the highest-risk drift from training-data muscle memory. The legacy pattern from the .NET 6/7 era is **removed** in v12.
-
-**Do this in `BaseApi.Core` (in `AddBaseApi(IServiceCollection, ...)` extension):**
-
-```csharp
-using FluentValidation;
-
-services.AddValidatorsFromAssembly(
-    typeof(BaseEntityValidator<>).Assembly,
-    lifetime: ServiceLifetime.Scoped); // scans BaseApi.Core
-
-// In BaseApi.Service Program.cs, also scan the service assembly:
-services.AddValidatorsFromAssembly(typeof(Program).Assembly, ServiceLifetime.Scoped);
-```
-
-**Do NOT do this (all removed/deprecated in v12):**
-
-```csharp
-// REMOVED — package FluentValidation.AspNetCore is deprecated and no longer maintained
-services.AddFluentValidation(...);
-
-// REMOVED — the entire FluentValidation.AspNetCore auto-validation pipeline is gone
-// (it used to integrate with ModelState automatically)
-```
-
-**Invocation pattern — call validators explicitly from the Service layer (or a base controller filter):**
-
-```csharp
-// Option A — in BaseService<TEntity, TCreate, TUpdate, TRead>.CreateAsync:
-public async Task<TRead> CreateAsync(TCreate dto, CancellationToken ct)
-{
-    var validationResult = await _createValidator.ValidateAsync(dto, ct);
-    if (!validationResult.IsValid)
-        throw new ValidationException(validationResult.Errors); // mapped by RFC 7807 middleware to 400
-
-    var entity = _mapper.ToEntity(dto);
-    await _repository.AddAsync(entity, ct);
-    return _mapper.ToRead(entity);
-}
-```
-
-```csharp
-// Option B — IAsyncActionFilter in BaseApi.Core that runs before BaseController action methods
-// resolves IValidator<TDto> from DI and validates the bound model. Equivalent behavior to the
-// old auto-pipeline but explicit and under your control.
-```
-
-Either pattern is correct for v12. Option A is simpler and lives in the service layer where the locked layering specifies entity-specific logic belongs.
-
-## Alternatives Considered
-
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| Controllers (`BaseController<...>` inheritance) | Minimal APIs | Never for this project — Minimal APIs are functions, not classes; cannot inherit from a generic base. Reconsider only if the inheritance model is abandoned. |
-| EF Core 8 + Npgsql 8.x | EF Core 9 / 10 | If/when migrating to .NET 9/10 LTS. .NET 8 LTS ends Nov 2026, so this becomes the natural migration once SK_P is on the path to .NET 10 LTS (Nov 2025 release, Nov 2028 EOL). |
-| Mapperly | AutoMapper | **Never** for this project — explicitly locked out. AutoMapper has been licensed/commercial since late 2024 and remains slower (runtime reflection) and not AOT-safe. |
-| Mapperly | Manual `ToDto()` extension methods | Acceptable for entities with <5 properties or one-off DTOs. For the 5 entities here, Mapperly's source-gen is lower-friction than 15 hand-written methods. |
-| FluentValidation | DataAnnotations attributes | **Never** for this project — locked out. DataAnnotations cannot inherit cleanly into a `BaseEntityValidator<T>` pattern, and the SemVer regex / per-entity rules compose poorly with attributes. |
-| FluentValidation | MiniValidation (Minimal API helper) | Never — coupled to Minimal APIs. |
-| `postgres:17-alpine` | `postgres:18-alpine` | If the team wants async I/O and OAuth 2.0 features new in PG 18, and is willing to be the early adopter of Npgsql-on-PG18. Wait one Npgsql minor release before adopting. |
-| `postgres:17-alpine` | `postgres:16-alpine` | If staging/prod already runs PG 16 (its support extends to Nov 2028). Behavior is identical for this CRUD-only workload. |
-| JsonSchema.Net | NJsonSchema | If you also need C#/TypeScript code generation from a JSON Schema. NJsonSchema has wider draft v4+ support but ships with more dependencies and is slower at validation. |
-| JsonSchema.Net | Newtonsoft.Json.Schema | **Never** — commercial license over 10K validations/hour and ties you to Newtonsoft.Json. ASP.NET Core 8 is System.Text.Json by default. |
-| Cronos | NCrontab | If you only need the simplest 5-field cron without DST awareness. Cronos is strictly more capable. |
-| xUnit v3 | NUnit 4 | Both viable in 2026. Pick xUnit v3 for consistency with the ASP.NET Core / Microsoft.Testing.Platform default. |
-| xUnit v3 | xUnit v2 (2.x) | If a corporate template forces v2. v3 is the recommended line; v2 still receives critical fixes but no new features. |
-| Testcontainers | In-memory provider (`UseInMemoryDatabase`) | **Never** for integration tests — the in-memory provider doesn't enforce FK constraints, doesn't emit SQLSTATE 23503/23505 errors, and won't catch the locked decisions about Postgres-driven validation. Use Testcontainers OR an ephemeral local container. |
-| Testcontainers | `Microsoft.EntityFrameworkCore.Sqlite` for tests | Same problem — different dialect, no jsonb, no SQLSTATEs. |
-
-## What NOT to Use
-
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| `AutoMapper` | Locked out by Decision (runtime reflection, slower, licensed since late 2024, not AOT-safe). | Riok.Mapperly 4.3.1 |
-| `FluentValidation.AspNetCore` (any version) | **Deprecated and unmaintained.** The auto-validation pipeline was removed. Continuing to use it ties you to FluentValidation 11.x and blocks the v12 upgrade. | `FluentValidation.DependencyInjectionExtensions` 12.1.1 + manual `IValidator<T>` invocation |
-| `services.AddFluentValidation(...)` extension | Removed in v12. Was the entry point of the deprecated package. | `services.AddValidatorsFromAssembly(...)` |
-| `[Required]` / DataAnnotations attributes | Locked out by Decision. Doesn't compose with `BaseEntityValidator<T>` inheritance pattern. | FluentValidation per-entity validator classes that inherit from base validator |
-| `Microsoft.EntityFrameworkCore.InMemory` | Doesn't enforce FK constraints, no SQLSTATE behavior, no jsonb. Locked decisions depend on Postgres-specific error codes 23503/23505. | Testcontainers.PostgreSql 4.11.0 |
-| `Microsoft.EntityFrameworkCore.Sqlite` (for tests) | Different dialect, no jsonb, no SQLSTATE. Tests will pass but miss the error-mapping behavior the spec requires. | Testcontainers.PostgreSql 4.11.0 |
-| `Newtonsoft.Json` | ASP.NET Core 8 defaults to System.Text.Json. Adds a second JSON stack, hurts performance, blocks AOT. Required only if you adopt `Newtonsoft.Json.Schema` (don't). | System.Text.Json (in-box) + JsonSchema.Net for schema validation |
-| `Newtonsoft.Json.Schema` | Commercial license (>10K validations/hour). | JsonSchema.Net 9.2.1 |
-| `NCrontab` | Weaker than Cronos: no DST awareness, no L/W/# chars. Not actively maintained (last release older than Cronos's). | Cronos 0.13.0 |
-| `Hangfire` for cron scheduling | Out of scope — Workflow execution is external (orchestrator + scheduler). The API only validates the `CronExpression` string format. | Cronos for *parsing*; do not schedule. |
-| `Polly` HTTP resilience | No outbound HTTP in v1; only DB. Premature dependency. | Add when v2 introduces an outbound HTTP client. |
-| `MediatR` | 3-tier layering is already Controller → Service → Repository. MediatR adds a 4th hop with no benefit at this scope; also went commercial-license in late 2024. | Direct service-class injection into controllers. |
-| `MassTransit` / `RabbitMQ.Client` | No messaging in scope. CRUD only. | Add when async fan-out becomes a requirement. |
-| `Serilog` (as primary log sink) | OTel SDK already covers structured logging + console + OTLP. Adding Serilog duplicates pipelines and the locked decision says `Logging:LogLevel` is the single source of truth via MEL. | `Microsoft.Extensions.Logging` (in-box) + `OpenTelemetry.Extensions.Hosting` log provider. |
-| `Microsoft.AspNetCore.Diagnostics.HealthChecks` (legacy package) | Replaced by in-box `Microsoft.Extensions.Diagnostics.HealthChecks` since .NET 6. | Use the in-box namespace + Xabaril's `AspNetCore.HealthChecks.NpgSql` for the Postgres probe. |
-| `HealthChecks.UI` (Xabaril) | Adds a UI dashboard the locked spec doesn't ask for. Extra surface area. | Plain JSON `/health/live`, `/health/ready`, `/health/startup` endpoints. |
-| `Swashbuckle.AspNetCore` (Swagger) | Not in locked requirements. If documentation is added later, `Microsoft.AspNetCore.OpenApi` (in-box) is the .NET 8+ direction. | Defer; if added, prefer `Microsoft.AspNetCore.OpenApi`. |
-
-## Stack Patterns by Variant
-
-**If the project later splits `BaseApi.Core` into a NuGet package (currently locked out as Option B):**
-- Add `<IsPackable>true</IsPackable>` to `BaseApi.Core.csproj`
-- Add `PackageId`, `PackageVersion`, `Authors`, `RepositoryUrl`
-- Move `Microsoft.EntityFrameworkCore.Design` reference out of Core and only into Service (it's tooling-only)
-- Mark Mapperly reference in Core as `PrivateAssets="all"` so consumers don't transitively get the analyzer
-
-**If the project upgrades to .NET 10 LTS (Nov 2025 → Nov 2028):**
-- Bump all `8.0.x` packages to `10.0.x` in lockstep (EF Core, Npgsql.EntityFrameworkCore.PostgreSQL, Microsoft.AspNetCore.Mvc.Testing)
-- Bump OpenTelemetry instrumentation packages to their then-current versions
-- Bump Mapperly / FluentValidation / JsonSchema.Net / Cronos / Testcontainers independently — they version on their own cadence
-- `<TargetFramework>` → `net10.0`
-
-**If integration tests grow to >20 test classes:**
-- Add `Testcontainers.XunitV3` as a shared class fixture wrapper to reuse one container across multiple classes
-- Otherwise raw `IAsyncLifetime` per test class is fine
-
-**If outbound HTTP is introduced:**
-- The `OpenTelemetry.Instrumentation.Http 1.15.0` reference is already in place — it will auto-instrument `HttpClient`
-- Add `Microsoft.Extensions.Http.Resilience` for retries/circuit-breaker (in-box modern replacement for Polly)
-
-## Version Compatibility
-
-| Package A | Compatible With | Notes |
-|-----------|-----------------|-------|
-| `.NET 8.0.27` runtime | `Microsoft.EntityFrameworkCore 8.0.27` | Always pin EF Core patch to the matching .NET 8 patch — both ship together monthly. |
-| `Microsoft.EntityFrameworkCore 8.0.27` | `Npgsql.EntityFrameworkCore.PostgreSQL 8.0.10` | Npgsql provider 8.x targets EF Core 8.x. Do NOT pair EF Core 8 with Npgsql.EF 9 or 10. |
-| `Npgsql.EntityFrameworkCore.PostgreSQL 8.0.10` | PostgreSQL **14, 15, 16, 17** | 14 is the documented minimum. 17 is the recommended pin. 18 is GA but not yet validated against Npgsql 8.x. |
-| `OpenTelemetry 1.15.3` | `OpenTelemetry.Exporter.OpenTelemetryProtocol 1.15.3`, `OpenTelemetry.Extensions.Hosting 1.15.3` | Keep these three on identical versions. Instrumentation packages version independently (currently 1.15.0). |
-| `FluentValidation 12.1.1` | `FluentValidation.DependencyInjectionExtensions 12.1.1` | Always match major+minor between these two. |
-| `FluentValidation 12.x` | `FluentValidation.AspNetCore 11.3.1` | **INCOMPATIBLE** — `FluentValidation.AspNetCore` is pinned to FluentValidation 11.x and will not load against 12.x. This is the failure mode when migrating from older code. |
-| `Riok.Mapperly 4.3.1` | C# 9+, Roslyn 4.0+, .NET 5+ | All satisfied by .NET 8 / C# 12. Source generator runs at build time. |
-| `xunit.v3 3.2.2` | .NET 8.0+ | Compatible with `Microsoft.AspNetCore.Mvc.Testing 8.0.27` and `Testcontainers.PostgreSql 4.11.0`. |
-| `AspNetCore.HealthChecks.NpgSql 9.0.0` | `Microsoft.Extensions.Diagnostics.HealthChecks >= 8.0.11` | Satisfied transitively by .NET 8.0.27. Despite the "9.0.0" version number, the package runs fine on .NET 8 — Xabaril packages version on their own cadence. |
-| `JsonSchema.Net 9.2.1` | System.Text.Json (in-box .NET 8) | No conflict with ASP.NET Core 8's JSON stack. |
-
-## Sources
-
-### Official / NuGet (HIGH confidence)
-- [NuGet: Microsoft.EntityFrameworkCore](https://www.nuget.org/packages/Microsoft.EntityFrameworkCore) — verified 8.0.27 latest 8.0.x (2026-05-12)
-- [NuGet: Microsoft.AspNetCore.Mvc.Testing](https://www.nuget.org/packages/Microsoft.AspNetCore.Mvc.Testing) — verified 8.0.27 latest 8.0.x (2026-05-12)
+### Official / NuGet (HIGH confidence) — verified 2026-05-26 for v3.2.0 baseline
+- [NuGet: Microsoft.EntityFrameworkCore](https://www.nuget.org/packages/Microsoft.EntityFrameworkCore) — 8.0.27 latest 8.0.x (2026-05-12)
+- [NuGet: Microsoft.AspNetCore.Mvc.Testing](https://www.nuget.org/packages/Microsoft.AspNetCore.Mvc.Testing) — 8.0.27 latest 8.0.x (2026-05-12)
 - [NuGet: Npgsql.EntityFrameworkCore.PostgreSQL 8.0.10](https://www.nuget.org/packages/Npgsql.EntityFrameworkCore.PostgreSQL/8.0.10)
 - [NuGet: Riok.Mapperly 4.3.1](https://www.nuget.org/packages/Riok.Mapperly)
 - [NuGet: FluentValidation 12.1.1](https://www.nuget.org/packages/fluentvalidation/)
-- [NuGet: FluentValidation.DependencyInjectionExtensions 12.1.1](https://www.nuget.org/packages/fluentvalidation.dependencyinjectionextensions/)
 - [NuGet: OpenTelemetry 1.15.3](https://www.nuget.org/packages/OpenTelemetry)
-- [NuGet: AspNetCore.HealthChecks.NpgSql 9.0.0](https://www.nuget.org/packages/AspNetCore.HealthChecks.NpgSql/)
 - [NuGet: JsonSchema.Net 9.2.1](https://www.nuget.org/packages/JsonSchema.Net)
 - [NuGet: Cronos 0.13.0](https://www.nuget.org/packages/Cronos)
 - [NuGet: Testcontainers.PostgreSql 4.11.0](https://www.nuget.org/packages/Testcontainers.PostgreSql)
 - [NuGet: xunit.v3 3.2.2](https://www.nuget.org/packages/xunit.v3)
-- [.NET 8.0 SDK 8.0.421 / Runtime 8.0.27 (May 12, 2026)](https://github.com/dotnet/core/blob/main/release-notes/8.0/8.0.26/8.0.126.md)
-- [.NET 8 LTS support policy (through Nov 2026)](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core)
-- [FluentValidation 12 upgrade guide — confirms .AspNetCore deprecation](https://docs.fluentvalidation.net/en/latest/upgrading-to-12.html)
-- [FluentValidation ASP.NET Core docs — confirms manual IValidator<T> pattern](https://docs.fluentvalidation.net/en/latest/aspnet.html)
-- [Mapperly installation docs — confirms PrivateAssets/ExcludeAssets pattern](https://mapperly.riok.app/docs/getting-started/installation/)
-- [Npgsql 8.0 release notes — confirms PG 14 minimum](https://www.npgsql.org/efcore/release-notes/8.0.html)
-- [Npgsql compatibility docs](https://www.npgsql.org/doc/compatibility.html)
-- [postgres official Docker image](https://hub.docker.com/_/postgres) — confirms 17-alpine tag availability
-- [Cronos GitHub releases](https://github.com/HangfireIO/Cronos/releases) — confirms 0.13.0 (2026-04-29) and DST/timezone advantage over NCrontab
-- [PostgreSQL 18 release announcement (May 2026)](https://www.postgresql.org/about/news/postgresql-18-released-3142/)
-- [Testcontainers for .NET — PostgreSQL module](https://dotnet.testcontainers.org/modules/postgres/)
-- [xUnit v3 NuGet packages guide](https://xunit.net/docs/nuget-packages-v3)
-
-### Comparative / community (MEDIUM confidence)
-- [Cronos vs NCrontab — LibHunt comparison](https://dotnet.libhunt.com/compare-cronos-vs-ncrontab) — confirms Cronos's DST/timezone superiority
-- [JSON Schema implementations performance comparison (.NET, 2025)](https://medium.com/@lateapexearlyspeed/performance-comparison-of-json-schema-implementations-for-net-ead3d092a473) — informs JsonSchema.Net vs NJsonSchema pick
+- [postgres official Docker image](https://hub.docker.com/_/postgres) — 17-alpine tag chain
+- [FluentValidation 12 upgrade guide](https://docs.fluentvalidation.net/en/latest/upgrading-to-12.html)
 
 ---
-*Stack research for: .NET 8 Web API modular monolith (BaseApi.Core + BaseApi.Service) on PostgreSQL + OTel*
-*Researched: 2026-05-26*
+*v3.2.0 baseline researched: 2026-05-26 — preserved verbatim for traceability*
+*v3.3.0 additions researched: 2026-05-28 — Redis L2 projection (3 NuGet pins + 1 compose service + 0 graph deps)*

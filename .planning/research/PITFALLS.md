@@ -1,740 +1,1187 @@
-# Pitfalls Research
+# Pitfalls Research — Milestone v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline)
 
-**Domain:** .NET 8 Web API modular monolith — EF Core 8 + Npgsql + OpenTelemetry + FluentValidation + Mapperly + Postgres + RFC 7807
-**Researched:** 2026-05-26
-**Confidence:** HIGH — Most pitfalls verified against official docs, GitHub issues, and recent ecosystem write-ups. A few items (compose-v2 nuances, Cronos/NCrontab edge cases) are MEDIUM where ecosystem patterns are well-known but version-specific behavior may shift.
+**Domain:** .NET 8 Web API adding Redis-backed L2 materialized projection + transient in-memory L1 build pipeline + JSON-Schema validation gates on top of a hardened v3.2.0 base (EF Core 8 + Npgsql + OTel-logs-to-ES + OTel-metrics-to-Prom + NO traces backend + RFC 7807 + X-Correlation-Id middleware + 142/142 GREEN cadence + per-class throwaway Postgres + Mapperly RMG codes promoted to errors).
+**Researched:** 2026-05-28
+**Confidence:** HIGH — All claims verified against (a) the prior v3.2.0 PITFALLS.md inventory (39 pitfalls already mitigated), (b) StackExchange.Redis official docs + GitHub issues #2537/#1169/#885, (c) OpenTelemetry.Instrumentation.StackExchangeRedis README + issues #1301/#674/#3257, (d) JsonSchema.Net (gregsdennis/json-everything) SchemaRegistry docs + 2025 perf work, (e) Redis canonical commands docs (RENAME, SCAN, MULTI/EXEC), (f) AspNetCore.HealthChecks.Redis 9.0.0 package surface. MEDIUM only where Cluster-mode or Azure-Managed-Redis edge-case behavior may vary by deployment posture (sk_p targets single-node Redis in Compose for v3.3.0).
 
-Pitfalls are organized by subsystem to map cleanly onto roadmap phases. Each pitfall lists the failure mode, root cause, prevention strategy with concrete code/config, detection signal, and target phase. Suggested phase names referenced below:
+This file is **the v3.3.0 delta**. It does NOT re-list the 39 pitfalls already locked in the prior v3.2.0 PITFALLS.md (Postgres timestamptz UTC, DbContext lifetime, snake_case migrations, xmin token, FluentValidation auto-validation deprecation, MEL→OTLP wiring, AspNet probe filtering, SQLSTATE → HTTP mapping, JSON Schema draft 2020-12 + SSRF disabled at Phase 8, Compose healthcheck ordering, etc.). Where this milestone is at risk of regressing one of those v3.2.0 invariants, the pitfall here calls it out explicitly (see Pitfalls 7, 11, 14, 15, 31 — each lists the originating v3.2.0 invariant it guards).
 
-- **P0 — Repository scaffold & solution structure** (`BaseApi.Core` + `BaseApi.Service` projects)
-- **P1 — Postgres + Docker Compose + connection plumbing**
-- **P2 — EF Core base infra** (`BaseDbContext`, conventions, audit, migrations on startup)
-- **P3 — Cross-cutting middleware** (correlation, problem details, error handling)
-- **P4 — Observability** (OTel logs + metrics, health checks)
-- **P5 — Validation & mapping base** (FluentValidation + Mapperly wiring + base validators)
-- **P6 — Abstract generic controllers + service/repository base + DI extension**
-- **P7 — Entity build-out** (Schema → Processor → Step → Assignment → Workflow)
-- **P8 — Test stack** (Testcontainers + WebApplicationFactory + Respawn)
+Phase-name placeholders used below — these are *suggested* phase names that `/gsd-plan-milestone` will refine:
+
+- **R0 — Redis infrastructure** (`compose.yaml` Redis service, `StackExchange.Redis` package, `ConnectionMultiplexer` DI wiring, `appsettings` connection string + `AbortOnConnectFail=false`)
+- **R1 — L1 build pipeline** (transient `Dictionary<Guid, EntityDto>` populated inside `OrchestrationService.StartAsync`, scoped lifetime, try/finally teardown)
+- **R2 — Workflow graph traversal** (iterative DFS with cycle detection, schema-edge compatibility gate)
+- **R3 — Payload↔ConfigSchema validation gate** (JsonSchema.Net 2020-12, cached per ConfigSchemaId, SSRF stays disabled)
+- **R4 — L2 Redis writer** (3 key spaces, idempotent overwrite semantics, last-write-wins)
+- **R5 — Stop endpoint** (idempotent L2 eviction, key-chain walk vs SCAN tradeoff)
+- **R6 — Observability extension** (Redis instrumentation discipline given NO traces backend; healthcheck tag discipline; correlation propagation through Redis async ops; startup-probe extension)
+- **R7 — Test fixtures** (per-class Redis isolation matching the Postgres `stepsdb_test_*` discipline)
 
 ---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Writing non-UTC DateTime to Postgres `timestamptz` columns
+### Pitfall 1: `ConnectionMultiplexer` registered Scoped (or worse, Transient) — connection storm on startup
 
 **What goes wrong:**
-At runtime, the first INSERT/UPDATE that touches `CreatedAt` or `UpdatedAt` throws `InvalidCastException: Cannot write DateTime with Kind=Unspecified to PostgreSQL type 'timestamp with time zone', only UTC is supported.` Audit columns either save successfully but are wrong, or every write blows up.
+First request after deploy works. Second request opens another TCP connection. Tenth concurrent request opens 10. Redis hits `maxclients` and the API logs `RedisConnectionException: No connection is active/available to service this operation` and starts returning 500s. Restarting the API "fixes" it for 30 seconds.
 
-**Why it happens:**
-Starting in Npgsql 6.0 (and unchanged through Npgsql 8 / EF Core 8 used here), `DateTime` properties map to `timestamptz` by default and Npgsql refuses any `DateTime` whose `Kind` is `Local` or `Unspecified`. Reading back returns `Kind=Utc`. Developers default-construct `DateTime.Now` or hydrate from JSON (which parses to `Kind=Unspecified`) and don't realize the kind matters.
+**Why it bites (root cause):**
+`StackExchange.Redis.ConnectionMultiplexer` is explicitly designed to be a **process-wide singleton** that multiplexes all callers through a single set of TCP connections. The class is thread-safe; `IDatabase` instances obtained from `.GetDatabase()` are cheap handles into the multiplexer and are also safe to share or recreate per-call. Registering the multiplexer as Scoped means one new TCP handshake per HTTP request; Transient means one per resolution. Neither matches the multiplexer's design contract.
 
-**How to avoid:**
-- In `AuditInterceptor`, **always** stamp with `DateTime.UtcNow`, never `DateTime.Now`.
-- Decide deliberately whether `BaseEntity.CreatedAt`/`UpdatedAt` are `DateTime` (UTC-only by convention) or `DateTimeOffset` (forced to offset 0). Recommend `DateTime` UTC for simplicity since Npgsql 8 reads `timestamptz` as `Kind=Utc`.
-- Do **NOT** flip the legacy switch (`AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true)`) — it papers over the bug and will be removed in a future Npgsql.
-- For any DTOs containing dates, document that callers must send UTC ISO-8601 (`...Z`); validate at the validator layer if needed.
-- Configure `System.Text.Json` to round-trip with `JsonSerializerOptions.PropertyNamingPolicy` and ensure date deserialization preserves UTC.
+In the sk_p codebase this is a **new dependency** — there is no existing pattern to copy; the path of least resistance is `services.AddScoped<IConnectionMultiplexer>(...)` because every other infrastructure dependency in `BaseApi.Core` is Scoped or Transient. That's the exact wrong choice.
 
-**Warning signs:**
-- Any string like `DateTime.Now`, `DateTime.Today`, or `new DateTime(...)` (no `DateTimeKind`) appearing in domain code, interceptors, seeders, or migrations.
-- Tests that pass on Windows dev box but fail in containers (timezone mismatches).
-- Audit columns reading back at wrong hour offset.
+**Which phase addresses it:**
+**R0 — Redis infrastructure.** First file in the milestone that touches DI must encode the singleton.
 
-**Phase to address:**
-**P2 — EF Core base infra.** Encode in `AuditInterceptor` and document the rule in `BaseEntity` XML doc. Add a unit test that round-trips an entity through `AppDbContext` and asserts `Kind == Utc`.
-
----
-
-### Pitfall 2: `DbContext` lifetime mistakes in DI
-
-**What goes wrong:**
-Registering `AppDbContext` as `Singleton` (e.g., to "cache" it) corrupts state across requests, causes random `InvalidOperationException: A second operation was started on this context instance before a previous operation completed`, and leaks change tracker entries forever. Registering as `Transient` leaks connections and breaks unit-of-work semantics.
-
-**Why it happens:**
-`AddDbContext<T>()` defaults to `Scoped` for a reason: one context per HTTP request matches EF Core's unit-of-work model. Developers who came from `IDbConnection`/Dapper sometimes set it to `Transient`; developers worried about "startup cost" sometimes set it to `Singleton`.
-
-**How to avoid:**
-- Use `services.AddDbContext<AppDbContext>(...)` (scoped by default) — do not override the lifetime.
-- For the `AuditInterceptor`, register it as `Singleton` only if it has no scoped dependencies; otherwise use `AddDbContext` overload that takes `IServiceProvider` and resolve scoped services per request.
-- Inject `AppDbContext` directly into scoped services (`BaseService<T>` / `Repository<T>`); never store it in a static field, singleton, or background hosted service without `IServiceScopeFactory`.
-
-**Warning signs:**
-- "A second operation was started on this context instance" exceptions under load.
-- Memory profile shows change-tracker entries growing without bound.
-- `IServiceScope` references in singletons (a smell, but sometimes correct — verify).
-
-**Phase to address:**
-**P2 — EF Core base infra** (registration) and **P6 — Abstract generic controllers + service/repository base** (consumption).
-
----
-
-### Pitfall 3: Migrations on startup with multiple service instances — race + restart loop
-
-**What goes wrong:**
-Two instances boot simultaneously, both call `dbContext.Database.MigrateAsync()`, the second fails midway (or hits a duplicate constraint), exits non-zero, the orchestrator restarts it, and the service flaps. Even when EF Core's migration advisory lock prevents corruption, the failed instance still terminates and loops.
-
-**Why it happens:**
-EF Core takes a Postgres advisory lock around migrations, so corruption is unlikely — but a non-acquiring instance does not gracefully wait by default in some failure modes (see efcore#34439). Beyond that, a *failed* migration (bad SQL, constraint conflict) leaves the service unable to start, with no operator signal beyond a restart loop.
-
-**How to avoid:**
-- Run migrations from `Program.cs` in a clearly bracketed block with explicit start/finish log lines so it shows up in OTel logs:
+**Prevention strategy (concrete):**
+- DI registration:
   ```csharp
-  using (var scope = app.Services.CreateScope())
+  services.AddSingleton<IConnectionMultiplexer>(sp =>
   {
-      var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-      logger.LogInformation("migrations.start");
-      await db.Database.MigrateAsync();
-      logger.LogInformation("migrations.complete");
+      var cfg = sp.GetRequiredService<IConfiguration>();
+      var opts = ConfigurationOptions.Parse(cfg.GetConnectionString("Redis")!);
+      opts.AbortOnConnectFail = false;        // see Pitfall 2
+      opts.ClientName = "sk-api";              // shows up in CLIENT LIST for ops
+      return ConnectionMultiplexer.Connect(opts);
+  });
+  ```
+- Add an xUnit fact in `tests/BaseApi.Tests/Composition/RedisLifetimeFacts.cs` that resolves `IConnectionMultiplexer` from the root `IServiceProvider` and from a created scope, asserts reference-equality (`Assert.Same(rootMux, scopedMux)`). This makes a regression to Scoped registration a red test.
+- Add an architectural fact that loads `ServiceCollection` descriptors via `services.BuildServiceProvider()` and asserts `IConnectionMultiplexer`'s descriptor has `ServiceLifetime.Singleton` — defense in depth.
+
+**Warning signs (code review):**
+- `services.AddScoped<IConnectionMultiplexer>` or `services.AddTransient<IConnectionMultiplexer>` — must be Singleton.
+- `using (var mux = ConnectionMultiplexer.Connect(...))` in a controller/service/handler — disposes the multiplexer at end of request.
+- Redis ops log `Timeout`/`No connection` that disappear after API restart (connection-leak symptom).
+- `CLIENT LIST` against Redis shows ≥1 connection per request (should be ≤ a handful per API instance).
+
+---
+
+### Pitfall 2: `AbortOnConnectFail` not explicitly set — startup gate fails when Redis is briefly unavailable
+
+**What goes wrong:**
+StackExchange.Redis's default `AbortOnConnectFail=true` makes the singleton factory throw `RedisConnectionException` if Redis isn't reachable at first connect. `Program.cs` propagates the throw; the process crashes; K8s/Compose restarts the container; Redis takes 2 more seconds to be ready; crash again. Restart loop until Redis stabilizes (30-90 seconds), and during that window `/health/live` is also down (process isn't running), which violates the v3.2.0 Phase 5 HEALTH-01 contract ("live never depends on external state").
+
+**Why it bites (root cause):**
+`AbortOnConnectFail=true` is appropriate for short-lived CLI tools (fail fast at startup) but wrong for long-lived services where Redis is a runtime dependency. Azure Managed Redis and most managed providers set `abortConnect=false` by default in generated connection strings; local-dev / non-cloud Redis does NOT. The sk_p stack is local-Compose-first; without explicit configuration the local default bites.
+
+This pitfall also interacts with the v3.2.0 PITFALLS.md Pitfall 15 ("liveness probe must not touch external state"). If Redis is briefly down at startup and the multiplexer throws, the whole process dies — *strictly worse* than a 503 on `/health/ready`.
+
+**Which phase addresses it:**
+**R0 — Redis infrastructure.**
+
+**Prevention strategy (concrete):**
+- Always parse the connection string into `ConfigurationOptions` and explicitly set:
+  ```csharp
+  opts.AbortOnConnectFail = false;
+  opts.ConnectRetry = 3;
+  opts.ConnectTimeout = 5000;
+  opts.SyncTimeout = 5000;
+  opts.AsyncTimeout = 5000;
+  opts.KeepAlive = 60;
+  ```
+- Subscribe to `ConnectionFailed` and `ConnectionRestored` in the singleton factory and log via `ILogger<ConnectionMultiplexer>` so OTel → ES carries the events with the v3.2.0 `service.name=sk-api` resource tag intact.
+- The integration-test `RedisFixture` MUST start the Redis container **before** `WebApplicationFactory.CreateClient()` is called — otherwise the test process itself hits the same race.
+- Document in the connection-string section of `appsettings.json` (via a comment in `appsettings.README.md` since STJ is strict per v3.2.0 PITFALLS Pitfall 30) that `AbortOnConnectFail=false` is intentional.
+
+**Warning signs (code review):**
+- `ConnectionMultiplexer.Connect("localhost:6379")` (raw string overload — defaults apply).
+- API container restart-loops during `docker compose up` while Redis is still in `starting` state.
+- Logs show `RedisConnectionException: It was not possible to connect to the redis servers; to create a disconnected multiplexer, disable AbortOnConnectFail`.
+
+---
+
+### Pitfall 3: TLS / SSL not configured for non-local Redis — silent plaintext leak or handshake failure
+
+**What goes wrong:**
+Local-dev Redis runs plaintext on `:6379`. Staging/prod migrates to TLS-only Redis (Azure Managed Redis, Redis Enterprise Cloud, AWS ElastiCache in-transit-encrypted). The connection string isn't updated for TLS, and either (a) handshake fails with a cryptic `SocketException` that looks like a network issue, or (b) — on a misconfigured server — the connection downgrades to plaintext on the wrong port and Redis credentials cross the network in the clear.
+
+**Why it bites (root cause):**
+StackExchange.Redis's `Ssl` and `SslHost` options must be set explicitly; they are NOT auto-inferred from port number. The Redis protocol does not negotiate TLS in-band — the client must commit to plaintext or TLS before any bytes are exchanged.
+
+Compounding factor: v3.2.0 has zero TLS config anywhere in the stack (Postgres also runs plaintext in Compose). The team has no muscle memory for TLS knobs in this codebase.
+
+**Which phase addresses it:**
+**R0 — Redis infrastructure.**
+
+**Prevention strategy (concrete):**
+- `ConfigurationOptions.Parse` understands `ssl=true` in the connection string. Use `,ssl=true,sslprotocols=tls12|tls13` for prod connection strings. Validate at startup that if the host is NOT `localhost` / `127.0.0.1` / a Compose service name, then `opts.Ssl == true` — fail fast on the inverse.
+- The `appsettings.{Environment}.json` matrix should make this explicit:
+  - `appsettings.Development.json`: `"Redis": "localhost:6379,abortConnect=false"` (plaintext OK locally)
+  - `appsettings.Production.json`: `"Redis": "{HOST}:6380,ssl=true,abortConnect=false,sslProtocols=tls12|tls13"`
+- Set `opts.CertificateValidation += (sender, cert, chain, errors) => { /* log + return errors == None */ };` so cert errors are observable, not silently bypassed.
+
+**Warning signs (code review):**
+- Connection strings without `ssl=true` for non-localhost hosts.
+- `opts.CertificateValidation = (_, _, _, _) => true;` (accepts ANY cert — defeats TLS).
+- Plaintext `:6379` in a production environment-variable.
+
+---
+
+### Pitfall 4: MULTI/EXEC misunderstood as a transactional read-modify-write — silent data loss
+
+**What goes wrong:**
+Developer thinks `ITransaction.Execute()` provides ACID-like isolation around reads and writes:
+```csharp
+var tx = db.CreateTransaction();
+var current = await tx.HashGetAsync(key, "version");   // returns default — see below
+if ((int)current < newVersion)
+    tx.HashSetAsync(key, "version", newVersion);
+await tx.ExecuteAsync();
+```
+`await tx.HashGetAsync(...)` does NOT execute the GET against Redis — it **queues** it. The result inside the transaction is unavailable until `ExecuteAsync()` completes. The `if` branch reads `null`/`0`, the SET always runs, and concurrent writers all overwrite each other unconditionally.
+
+**Why it bites (root cause):**
+Redis MULTI/EXEC queues commands and executes them atomically as a batch — but **the result of each queued command is not known until the batch completes**. StackExchange.Redis's transaction object exposes only async methods that return `Task<T>` which **completes after `ExecuteAsync`** — reading mid-transaction returns default. This is documented in [StackExchange.Redis Transactions.md](https://github.com/StackExchange/StackExchange.Redis/blob/main/docs/Transactions.md): "you can't make decisions inside the transaction."
+
+For optimistic concurrency, the correct primitive is `Condition.HashEqual(...)` / `Condition.KeyExists(...)` added via `tx.AddCondition(...)` before `ExecuteAsync` — these translate to WATCH and the transaction aborts (returns `false` from `ExecuteAsync`) if any watched key was modified.
+
+Related trap: a transaction with **zero queued commands** is a no-op that returns `true` — code that conditionally adds commands inside an `if` can ship a phantom "succeed even though I did nothing" path.
+
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
+
+**Prevention strategy (concrete):**
+- For v3.3.0 the explicit decision is **"last-write-wins, no Redis lock"** (PROJECT.md line 22). Therefore: **do not use MULTI/EXEC at all in this milestone.** Use plain `IDatabase` pipelined writes via `db.CreateBatch()` for grouping multiple SETs into one round-trip; do not request transactional semantics you have explicitly opted out of.
+- If a *future* milestone needs read-modify-write, use `Condition.HashEqual(...)` or a Lua script via `db.ScriptEvaluateAsync(...)` — never the queue-then-await-the-Task pattern above.
+- Add a code-search guard in CI for the v3.3.0 branch: grep for `CreateTransaction` in `src/` and flag any introduction for review.
+
+**Warning signs (code review):**
+- Any `var tx = db.CreateTransaction();` in v3.3.0 source.
+- `await tx.GetAsync(...)` whose result is read before `await tx.ExecuteAsync()`.
+- A transaction that conditionally queues commands inside an `if`.
+- Reads of `Task<T>.Result` from a transaction-returned task before `Execute` has been awaited.
+
+---
+
+### Pitfall 5: DEL-then-SET (or SET-then-DEL-old) atomic-overwrite anti-pattern — readers see missing or stale-mixed state
+
+**What goes wrong:**
+The v3.3.0 contract is "Start is idempotent (PUT-like); a second Start for the same WorkflowIds re-runs the pipeline and replaces L2 keys" (PROJECT.md line 22). Naive implementation:
+```csharp
+await db.KeyDeleteAsync(workflowKey);                              // window opens
+await db.StringSetAsync(workflowKey, JsonSerialize(newDto));       // window closes
+```
+Between the two awaits — typically 1-5ms, unbounded under network delay — any external consumer reading `{workflowId}` gets `nil` and may interpret it as "workflow was stopped," triggering corrective action (alert, page, retry storm).
+
+Mirror anti-pattern:
+```csharp
+await db.StringSetAsync(workflowKey, JsonSerialize(newDto));       // overwrite root
+await db.KeyDeleteAsync(oldStepIdKeys);                            // children for OLD step list
+await db.StringSetAsync(newStepIdKeys, JsonSerialize(newChildren)); // children for NEW list
+```
+Readers see new root pointing at new entryStepIds, but new `{workflowId:stepId}` children don't exist yet — chain navigation hits `nil` partway through.
+
+**Why it bites (root cause):**
+Redis is single-threaded per node, so each individual command is atomic — but a sequence of commands is NOT. Any non-atomic transition leaves a visible inconsistent state. The user explicitly accepted "last-write-wins on concurrent Starts" (PROJECT.md line 22), but that's a *concurrent-write* concern; the *single-write* atomic-overwrite hole is a separate, fixable bug.
+
+The canonical safer pattern is **stage-then-RENAME**: build the new value under a temp key (`{workflowId}.staging.{guid}`), then `RENAME` it onto the production key. RENAME is atomic per [Redis docs](https://redis.io/docs/latest/commands/rename/): readers see either the old complete value or the new complete value, never `nil` or partial.
+
+RENAME traps:
+- `RENAME nonexistent_key target` raises an error ("no such key"). Code must check existence or use `RENAMENX` semantics carefully.
+- Staging key prefix matters: in Redis Cluster (not v3.3.0's target but a documented future risk), staging and target keys must hash to the same slot via `{hashtag}` braces. The existing key shape `{workflowId}` and `{workflowId:stepId}` is hashtag-compatible; the staging key MUST preserve the same hashtag (`{workflowId}.staging` not `staging.{workflowId}`).
+
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
+
+**Prevention strategy (concrete):**
+- For the single `{workflowId}` root key: stage-then-RENAME pattern:
+  ```csharp
+  var stagingKey = $"{{{workflowId:N}}}.staging.{Guid.NewGuid():N}";
+  await db.StringSetAsync(stagingKey, JsonSerialize(newDto));
+  await db.KeyRenameAsync(stagingKey, $"{{{workflowId:N}}}");  // atomic overwrite
+  ```
+- For the N `{workflowId:stepId}` children: independent keys; for "replace all children for a workflow" semantics:
+  1. SET all new child keys under staging names.
+  2. Determine the set of OLD child keys to delete (needs `allStepIds[]` on the root — see Pitfall 12).
+  3. Use an `IBatch` to issue RENAME-new + DEL-old in one round-trip. Atomicity per-key still holds; cross-key atomicity does not — but the inconsistency window is bounded to a single RTT instead of the full pipeline duration.
+- Document in the PR that "concurrent Starts can interleave per-key writes; reader may see a `{workflowId}` root that mismatches its `{workflowId:stepId}` children — this is the accepted last-write-wins surface." Add a code comment referencing this PITFALLS entry (and Pitfall 20 below).
+- Do NOT use a global lock to serialize Starts; the user has explicitly chosen lock-free semantics.
+
+**Warning signs (code review):**
+- `KeyDeleteAsync(key); StringSetAsync(key, ...);` (the canonical bug).
+- Any L2 write that takes more than one RTT between "old visible" and "new visible" without staging + RENAME.
+- Hash-tag-incompatible staging key names (e.g., `staging:{workflowId}` instead of `{workflowId}.staging`).
+
+---
+
+### Pitfall 6: Per-request state on a singleton `OrchestrationService` — L1 dictionary leaks across concurrent Starts
+
+**What goes wrong:**
+v3.2.0's `OrchestrationService` (created in Phase 9) is registered Scoped. A developer adding the L1 dictionary as a class-level field (`private readonly Dictionary<Guid, EntityDto> _l1 = new();`) inadvertently switches the service to Singleton "because the dictionary shouldn't be re-created per request." Two concurrent `POST /api/v1/orchestration/start` calls now share the same dictionary instance; entities from request A leak into request B's traversal; cycle detection produces phantom cycles or misses real ones; schema-edge gate misfires; payload validation runs against the wrong schema.
+
+**Why it bites (root cause):**
+The L1 dictionary IS per-request state by contract (PROJECT.md line 24: "explicit teardown of the in-memory dictionary + temp traversal lists at the end of `StartAsync` (success or failure path)"). It must NOT be shared. v3.2.0's `OrchestrationService` is correctly Scoped per Phase 9 wiring, but the convenience of "store it as a field" leads to the wrong lifetime change.
+
+The safer pattern: L1 dictionary is a **local variable** inside `StartAsync`, passed by reference (or wrapped in a small `OrchestrationContext` record) into helper methods. Structurally impossible to leak regardless of service lifetime.
+
+**Which phase addresses it:**
+**R1 — L1 build pipeline.**
+
+**Prevention strategy (concrete):**
+- L1 dictionary is a local variable in `OrchestrationService.StartAsync`:
+  ```csharp
+  public async Task<IActionResult> StartAsync(List<Guid> workflowIds, CancellationToken ct)
+  {
+      var l1 = new Dictionary<Guid, BaseEntity>(capacity: 64);
+      try
+      {
+          await HydrateL1Async(workflowIds, l1, ct);
+          var l2Writes = await TraverseAndValidateAsync(l1, ct);
+          await WriteL2Async(l2Writes, ct);
+          return new NoContentResult();
+      }
+      finally
+      {
+          l1.Clear();
+      }
   }
   ```
-- For v1 (single-instance deployment), document that horizontal scaling requires either (a) a pre-deploy migration job, or (b) wrapping the migration call in a Postgres `pg_advisory_lock(<bigint>)` explicitly so non-winners wait instead of racing.
-- **Do not** swallow exceptions during migration — let the process exit so the operator sees the failure; but make sure the exit is logged via OTel before shutdown.
-- The startup health probe must report "not ready" until migrations complete (not just "DI built").
+- Keep `OrchestrationService` lifetime **Scoped** (consistent with v3.2.0 Phase 9 + v3.2.0 PITFALLS Pitfall 2 on DbContext lifetime — same reasoning).
+- Add `tests/BaseApi.Tests/Composition/OrchestrationServiceLifetimeFacts.cs` asserting `services.GetServiceDescriptor(typeof(IOrchestrationService)).Lifetime == ServiceLifetime.Scoped`.
+- Add a concurrency fact: spin 8 parallel `StartAsync` calls against disjoint `WorkflowId` sets, assert each traversal sees ONLY its own entities. This catches a regression to Singleton.
 
-**Warning signs:**
-- Restart-loop in container logs with no clear error.
-- `__EFMigrationsHistory` shows partial rows after a failed deploy.
-- Two instances logging "Applying migration X" in the same second.
-
-**Phase to address:**
-**P2 — EF Core base infra** (the on-startup runner with logging) and **P4 — Observability** (startup probe gating).
+**Warning signs (code review):**
+- `private readonly Dictionary<Guid, ...> _l1` (or any per-Start state) as an instance field on `OrchestrationService`.
+- `services.AddSingleton<IOrchestrationService>(...)`.
+- Any helper method that reads from a `static` field of the service.
+- `Dictionary<...>` instances stored on `HttpContext.Items` (works, but obscures lifecycle — keep it local).
 
 ---
 
-### Pitfall 4: `EFCore.NamingConventions` mangles `__EFMigrationsHistory`
+### Pitfall 7: Cleanup-on-throw using finalizers / `IDisposable` instead of `try/finally` — leaks under exception paths
 
 **What goes wrong:**
-After adding `UseSnakeCaseNamingConvention()`, the first migration succeeds against an empty DB but a second deployment to a DB created without the convention fails because the package snake_cases the `__EFMigrationsHistory` table's columns (`MigrationId` → `migration_id`, `ProductVersion` → `product_version`) — EF can't find its history rows and tries to re-apply migrations.
+Developer wraps the L1 dictionary in a `class L1Scope : IDisposable` whose `Dispose` clears the dictionary, and writes:
+```csharp
+using var scope = new L1Scope();
+await HydrateAsync(scope.Dictionary);
+await TraverseAsync(scope.Dictionary);   // throws ValidationException for cycle
+await WriteL2Async(scope.Dictionary);
+```
+This LOOKS clean, but if `TraverseAsync` throws and the exception flows through v3.2.0's Phase 4 `IExceptionHandler` chain that catches and maps the exception, `Dispose` still runs — but timing across the async pipeline can be subtle. Worse failure mode: developer uses a finalizer (`~L1Scope`). Finalizers run on the GC finalizer thread, no `AsyncLocal` flow, no `HttpContext`, no correlation ID, unpredictable timing.
 
-**Why it happens:**
-The package applies snake_case to all schema artifacts, including the history table columns. If migrations were ever generated/applied with the convention off, upgrading is destructive. (efcore/EFCore.NamingConventions#1)
+**Why it bites (root cause):**
+`try/finally` is the .NET-idiomatic way to guarantee cleanup runs in both success and exception paths on the same thread / async context. `using` is sugar over `try/finally` for `IDisposable`. Finalizers are an unmanaged-resource escape hatch, not a domain-cleanup primitive.
 
-**How to avoid:**
-- Add `UseSnakeCaseNamingConvention()` **before the first migration is ever generated** — bake it into `BaseDbContext`'s `OnConfiguring`/`OnModelCreating` from day one.
-- Document this in `BaseApi.Core` README: "If you swap convention later, you own a manual ALTER script."
-- Avoid PascalCase column names > 55 characters (Postgres truncates at 63; snake_casing pushes you over silently — see efcore/EFCore.NamingConventions#289). Keep `BaseEntity` field names short.
-- Never use ASP.NET Identity tables with the snake convention without overriding the Identity DbContext mappings (efcore/EFCore.NamingConventions#300). Not relevant here (auth out of scope), but document it.
+For the L1 dictionary specifically, cleanup is "drop the reference" — managed memory; GC handles it. Explicit `Clear()` is purely a hint for large dictionaries to release the internal entry array sooner. No `IDisposable` needed.
 
-**Warning signs:**
-- Migrations reapply on every startup.
-- Errors like `column "migration_id" does not exist`.
+**Which phase addresses it:**
+**R1 — L1 build pipeline.**
 
-**Phase to address:**
-**P2 — EF Core base infra.** Add the snake_case convention and generate the **first** initial migration in the same commit.
+**Prevention strategy (concrete):**
+- Use the pattern in Pitfall 6: local variable + `try/finally` + `l1.Clear()` in the finally block.
+- Do NOT introduce an `IDisposable` wrapper for the L1 dictionary unless it owns an unmanaged or pooled resource.
+- If pooling becomes a need (e.g., large workflow graphs allocate 10k entries per Start), use `System.Buffers.ArrayPool<T>` or `Microsoft.Extensions.ObjectPool` — both have explicit return-on-finally patterns.
+- Document in writer XML doc: "Cleanup is via local-variable scope + `try/finally l1.Clear()`. Do not introduce IDisposable; do not use finalizers."
+
+**Warning signs (code review):**
+- `class L1Scope : IDisposable` or any helper wrapping L1 in disposable semantics.
+- `~L1Scope()` or any finalizer in v3.3.0 source.
+- `using var l1 = new L1Container();` — wrong pattern; use `try/finally`.
+- Missing `try/finally` in `StartAsync` (cleanup only on success path).
 
 ---
 
-### Pitfall 5: Many-to-many "skip navigation" misconfiguration on junction tables
+### Pitfall 8: Recursive DFS — `StackOverflowException` on deep workflow graphs (uncatchable crash)
 
 **What goes wrong:**
-The roadmap demands no nav properties between bounded contexts but does require junction tables (`StepNextSteps`, `WorkflowEntrySteps`, `WorkflowAssignments`). Configuring these with `HasMany().WithMany()` skip navigations creates "shadow" join entities EF can't see in the model. Updates either silently no-op, or EF generates DELETE+INSERT on every save instead of diffing.
+Natural way to write DFS cycle detection:
+```csharp
+void Visit(Guid stepId, HashSet<Guid> visited, HashSet<Guid> inStack)
+{
+    if (inStack.Contains(stepId)) throw new CycleException(stepId);
+    if (!visited.Add(stepId)) return;
+    inStack.Add(stepId);
+    foreach (var next in GetNextStepIds(stepId))
+        Visit(next, visited, inStack);
+    inStack.Remove(stepId);
+}
+```
+On a 5-step workflow, fine. On a 5000-step chain, exceeds the .NET default stack (~1 MB ≈ 10-15k frames Release, half in Debug). Process dies with `StackOverflowException` — **uncatchable**: no `IExceptionHandler` from v3.2.0 Phase 4 sees it; no RFC 7807 response emitted; request hangs until connection times out; OTel may or may not capture the exit depending on timing. Hard crash.
 
-**Why it happens:**
-EF Core 8's default many-to-many uses a generated join entity. The project explicitly wants **explicit junction tables** with their own configuration (since FK columns are scalar `Guid`s, no nav properties). Mixing these models leads to two different join behaviors in the same DbContext.
+**Why it bites (root cause):**
+`StackOverflowException` is one of three .NET exceptions the runtime cannot recover from (others: `OutOfMemoryException`, `ExecutionEngineException`). Once raised, process exits. K8s liveness probe (correctly tagged "self" per v3.2.0 Pitfall 15) doesn't fire; container just dies. Restart loop ensues.
 
-**How to avoid:**
-- Define each junction explicitly as a non-keyed entity (or compound-keyed) and configure in `OnModelCreating`:
+User has no bound on workflow depth (no SQL constraint, no validator). Any user — or any test fixture — can submit a 10k-step chain.
+
+**Which phase addresses it:**
+**R2 — Workflow graph traversal.**
+
+**Prevention strategy (concrete):**
+- **Always use iterative DFS** with an explicit `Stack<>` (or `List<>` used as a stack). Never write recursive graph traversal in production code regardless of perceived "reasonable" depth:
   ```csharp
-  modelBuilder.Entity<StepNextSteps>(b =>
+  void DetectCycleAndCollectEdges(Guid entry, Dictionary<Guid, StepEntity> steps, List<(Guid parent, Guid child)> edges)
   {
-      b.ToTable("step_next_steps");
-      b.HasKey(x => new { x.StepId, x.NextStepId });
-      b.HasOne<StepEntity>().WithMany().HasForeignKey(x => x.StepId)
-          .OnDelete(DeleteBehavior.Cascade);
-      b.HasOne<StepEntity>().WithMany().HasForeignKey(x => x.NextStepId)
-          .OnDelete(DeleteBehavior.Restrict); // avoid multiple cascade paths
-  });
+      var visited = new HashSet<Guid>();
+      var inPath = new HashSet<Guid>();
+      var stack = new Stack<(Guid step, IEnumerator<Guid> children)>();
+      stack.Push((entry, steps[entry].NextStepIds.GetEnumerator()));
+      inPath.Add(entry);
+      while (stack.Count > 0)
+      {
+          var (current, it) = stack.Peek();
+          if (it.MoveNext())
+          {
+              var child = it.Current;
+              if (inPath.Contains(child)) throw new CycleException(current, child);
+              edges.Add((current, child));
+              if (visited.Add(child))
+              {
+                  if (!steps.TryGetValue(child, out var childEntity))
+                      throw new MissingStepException(current, child);
+                  stack.Push((child, childEntity.NextStepIds.GetEnumerator()));
+                  inPath.Add(child);
+              }
+          }
+          else
+          {
+              inPath.Remove(current);
+              stack.Pop();
+          }
+      }
+  }
   ```
-- Use `DeleteBehavior.Restrict` (or `NoAction`) on the second FK to avoid Postgres "multiple cascade paths" errors.
-- M2M sync (add/remove) lives in the entity-specific `Service`, not the generic `Repository<T>`.
-- Write an explicit unit test for each junction: add, remove, re-add, ensure single row in DB after `SaveChanges`.
+- White/gray/black coloring encoded as: `visited` (black + gray) vs `inPath` (gray only). Node in `inPath` = back-edge = cycle. Node in `visited` but not `inPath` = shared DAG node — NOT a cycle.
+- Add a fact in `tests/BaseApi.Tests/Features/Orchestration/CycleDetectionFacts.cs` that constructs a 50,000-step chain in-memory and asserts traversal completes without StackOverflow.
+- Add a fact for shared-DAG-node graphs (A→B, A→C, B→D, C→D) — must NOT be flagged as a cycle. **This is the discriminating test.**
 
-**Warning signs:**
-- "Introducing FOREIGN KEY constraint ... may cause cycles or multiple cascade paths" at migration time.
-- M2M updates issue many DELETE+INSERT statements (visible in SQL log).
-- "Cannot insert duplicate key" on junction rows.
-
-**Phase to address:**
-**P2 — EF Core base infra** (the cascade pattern) and **P7 — Entity build-out** (per-entity junction wiring).
+**Warning signs (code review):**
+- Any recursive method in `OrchestrationService` whose recursion is over user-supplied graph data (`NextStepIds`, `EntryStepIds`).
+- Use of `Visit(...)` / `Dfs(...)` method that calls itself.
+- Test fixtures that only use small (5-10 node) graphs — no large-graph fact.
 
 ---
 
-### Pitfall 6: `xmin` concurrency token configured wrong (or not at all)
+### Pitfall 9: Visited-set semantics confused — "shared node in DAG" misclassified as cycle, OR real cycle missed
 
 **What goes wrong:**
-Concurrent PUTs to the same entity both succeed silently (last-write-wins), corrupting state. Or `xmin` is configured but as a regular column, so EF tries to SET it on UPDATE and Postgres errors out (`xmin` is a system column).
+Developer uses a single `HashSet<Guid> visited`:
+```csharp
+void Visit(Guid id) {
+    if (!visited.Add(id)) throw new CycleException(id);  // BUG
+    foreach (var next in GetNext(id)) Visit(next);
+}
+```
+Rejects the legitimate DAG `A→B, A→C, B→D, C→D` because `D` is visited twice — but it's NOT a cycle, just a shared descendant. 422 fires on a valid workflow.
 
-**Why it happens:**
-Postgres's `xmin` is a hidden system column that changes on every UPDATE. Npgsql supports it as an EF concurrency token via `.IsRowVersion()` on a `uint` property mapped to `"xmin"`, but it needs `ValueGeneratedOnAddOrUpdate()` and to be treated as readonly.
+Mirror bug:
+```csharp
+void Visit(Guid id) {
+    if (visited.Contains(id)) return;  // BUG: returns without distinguishing in-path
+    visited.Add(id);
+    foreach (var next in GetNext(id)) Visit(next);
+}
+```
+Misses cycles entirely — once in `visited`, never revisited even when currently on active path.
 
-**How to avoid:**
-- In `BaseEntity` (or `BaseDbContext.OnModelCreating`), wire xmin generically for every entity:
+**Why it bites (root cause):**
+Cycle detection needs TWO sets with different semantics:
+- **`visited`** (black): subtree fully traversed — never re-traverse, NOT a cycle marker.
+- **`inPath`** (gray): nodes currently on active DFS path. Back-edge to `inPath` IS a cycle.
+
+A single set conflates the two. Textbook DAG-traversal subtlety, easy to forget under time pressure.
+
+**Which phase addresses it:**
+**R2 — Workflow graph traversal.**
+
+**Prevention strategy (concrete):**
+- Use the two-set pattern from Pitfall 8. Comment in code:
   ```csharp
-  modelBuilder.Entity<T>()
-      .Property<uint>("xmin")
-      .HasColumnName("xmin")
-      .HasColumnType("xid")
-      .ValueGeneratedOnAddOrUpdate()
-      .IsConcurrencyToken();
+  // CYCLE DETECTION INVARIANT:
+  //   visited = nodes whose subtree is fully explored ("black")
+  //   inPath  = nodes on the current DFS path  ("gray")
+  // A child already in inPath = cycle.
+  // A child in visited but not in inPath = shared DAG node, NOT a cycle.
   ```
-- Use a shadow property (no CLR field on `BaseEntity`) so the model stays clean.
-- Map `DbUpdateConcurrencyException` to HTTP 409 in the problem-details middleware, with a useful detail message.
-- For v1 (CRUD only, no expected high contention) document that 409 is the expected behavior for concurrent edits; do not silently retry.
+- Test matrix in `CycleDetectionFacts.cs`:
+  1. Linear chain (A→B→C) — no cycle.
+  2. Self-loop (A→A) — cycle.
+  3. Short cycle (A→B→A) — cycle.
+  4. Deep cycle (A→B→C→D→B) — cycle.
+  5. Diamond DAG (A→B, A→C, B→D, C→D) — no cycle. **Discriminating test.**
+  6. Multiple entry points sharing descendants — no cycle.
+  7. Cycle in branch unreachable from `EntryStepIds[*]` — silently ignored per current contract; document the choice.
+- Error response on cycle (422) must include the offending `(parentStepId, childStepId)` pair — same format as v3.2.0 Phase 4 PostgresExceptionMapper field-name convention.
 
-**Warning signs:**
-- "Database operation expected to affect 1 row(s) but actually affected 0 row(s)" — but only intermittently.
-- Two PUT requests in close succession with the second's data being silently dropped (no 409).
-
-**Phase to address:**
-**P2 — EF Core base infra** (the shadow xmin convention) and **P3 — Cross-cutting middleware** (concurrency exception → 409 mapping).
+**Warning signs (code review):**
+- Only one `HashSet<Guid>` in the traversal.
+- Test suite without a diamond-DAG fact.
+- 422 errors on valid DAGs in production reports.
 
 ---
 
-### Pitfall 7: Using deprecated `FluentValidation.AspNetCore` auto-validation
+### Pitfall 10: JsonSchema.Net schema re-parsed per validation — order-of-magnitude perf hit + GC pressure
 
 **What goes wrong:**
-Devs `dotnet add package FluentValidation.AspNetCore` and call `services.AddFluentValidationAutoValidation()`. It "works" in v1 but:
-- The package is **deprecated** and removed in FluentValidation 12.
-- Auto-validation runs in MVC's sync model-binding pipeline, so `ValidateAsync` rules silently won't run async logic correctly.
-- Hides where validators actually execute, making debugging painful.
-- Locks the project to MVC controller projects (won't work for Minimal APIs if ever migrated).
+The Payload↔ConfigSchema validation gate (closing v3.2.0's deferred VALID-21) is the perf-critical path of Start — every Assignment requires one schema validation. Naive code:
+```csharp
+foreach (var assignment in workflowAssignments)
+{
+    var schemaJson = l1[GetConfigSchemaId(assignment)].Definition;
+    var schema = JsonSchema.FromText(schemaJson);            // RE-PARSES every iteration
+    var result = schema.Evaluate(JsonNode.Parse(assignment.Payload));
+    if (!result.IsValid) throw new ValidationException(...);
+}
+```
+A workflow with 100 assignments referencing 5 distinct ConfigSchemaIds parses the schema 100 times instead of 5. JsonSchema.Net's per-parse cost (draft detection, `$ref` resolution, anchor identification, base-URI propagation) is non-trivial. At 100 assignments × 1ms parse, the endpoint adds 100ms unnecessary latency.
 
-**Why it happens:**
-Every tutorial older than 2024 still shows the auto-validation flow. It's the most ergonomic-looking option.
+Second order: each parse allocates a `JsonSchema` object graph (constraint tree, options, registry) that immediately becomes garbage. On a hot path, stresses Gen0 GC and contributes to p99 spikes.
 
-**How to avoid:**
-- Install `FluentValidation` and `FluentValidation.DependencyInjectionExtensions` only — **not** `FluentValidation.AspNetCore`.
-- Register: `services.AddValidatorsFromAssembly(typeof(BaseEntityValidator<>).Assembly);` (and per-entity assemblies).
-- Validate **inside `BaseController<>`** (or a shared service method) explicitly:
+**Why it bites (root cause):**
+`JsonSchema.FromText` is designed for one-shot parsing. The [json-everything docs](https://docs.json-everything.net/schema/basics/) recommend registering once in a `SchemaRegistry` (or caching the parsed `JsonSchema` in an app-level dictionary) and reusing. The library's 2025 perf work explicitly moved analysis to registration time so reuse is fast and one-shot parsing is the slow path (see [json-everything refactoring blog](https://blog.json-everything.net/posts/refactoring-with-purpose/)).
+
+**Which phase addresses it:**
+**R3 — Payload↔ConfigSchema validation gate.**
+
+**Prevention strategy (concrete):**
+- Inside `OrchestrationService.StartAsync`, build a per-Start `Dictionary<Guid, JsonSchema>` keyed by `SchemaEntity.Id`, populated lazily:
   ```csharp
-  var validationResult = await validator.ValidateAsync(dto, ct);
-  if (!validationResult.IsValid)
-      return ValidationProblem(validationResult.ToValidationProblemDetails());
-  ```
-- This gives you control over status code (RFC 7807 says 400 for validation by ASP.NET convention; don't use 422 here — it's a different category).
-- Validator lifetime: register as **transient** (default) — they are stateless; making them scoped/singleton causes captured-state bugs with `ChildRules` and `When` closures.
-
-**Warning signs:**
-- `FluentValidation.AspNetCore` in `.csproj`.
-- `AddFluentValidationAutoValidation()` in `Program.cs`.
-- Validators that "don't run" on `IFormFile`, query parameters, or minimal API endpoints.
-
-**Phase to address:**
-**P5 — Validation & mapping base.** Wire FluentValidation correctly from the start. Add an ADR ("we do explicit validation, not auto-validation") in the repo so the deprecated path doesn't get reintroduced.
-
----
-
-### Pitfall 8: OTel logging provider wired wrong — MEL pipeline doesn't reach the OTLP exporter
-
-**What goes wrong:**
-Developers call `builder.Services.AddOpenTelemetry().WithLogging(...)` and assume `ILogger<T>` logs flow to OTLP. They don't — because that overload registers OpenTelemetry's *standalone* `LoggerProvider`, not a MEL `ILoggerProvider`. Production traffic logs do not appear in the Collector. Or the inverse: they wire **both** paths, get duplicate log entries, and burn CPU/network.
-
-**Why it happens:**
-There are genuinely two APIs:
-1. `builder.Logging.AddOpenTelemetry(o => { o.AddOtlpExporter(); })` — hooks into MEL, so `ILogger<T>.LogInformation(...)` flows out to OTLP. **This is what you want.**
-2. `builder.Services.AddOpenTelemetry().WithLogging(...)` — sets up OTel's own logging API (`LoggerProvider`) for direct calls; useful for non-MEL emitters, often misunderstood.
-
-The naming is genuinely confusing (see open-telemetry/opentelemetry-dotnet#4653).
-
-**How to avoid:**
-- Use exactly this shape for MEL → OTLP:
-  ```csharp
-  builder.Logging.AddOpenTelemetry(o =>
+  var schemaCache = new Dictionary<Guid, JsonSchema>(capacity: 16);
+  JsonSchema GetSchema(Guid schemaId)
   {
-      o.IncludeFormattedMessage = true;
-      o.IncludeScopes = true;
-      o.ParseStateValues = true;
-      o.SetResourceBuilder(ResourceBuilder.CreateDefault()
-          .AddService(serviceName: "sk-api", serviceVersion: "3.2.0"));
-      o.AddOtlpExporter();
-  });
-
-  builder.Services.AddOpenTelemetry()
-      .ConfigureResource(r => r.AddService("sk-api", serviceVersion: "3.2.0"))
-      .WithMetrics(m => m.AddAspNetCoreInstrumentation().AddOtlpExporter());
-      // NOTE: NOT calling .WithLogging() here — MEL path above handles it.
+      if (!schemaCache.TryGetValue(schemaId, out var s))
+      {
+          s = JsonSchema.FromText(l1[schemaId].Definition);
+          schemaCache[schemaId] = s;
+      }
+      return s;
+  }
   ```
-- Set `IncludeFormattedMessage = true` (default is `false`, which sends only the template + parameters; many backends render this poorly).
-- Set `IncludeScopes = true` so the correlation-id scope gets exported.
-- Verify by sending a known log line and checking the Collector — do this in P4 as an explicit acceptance test.
+- Cache is **per-Start** (local to `StartAsync`) for v3.3.0. A future milestone may promote to process-wide `IMemoryCache<Guid, JsonSchema>` keyed on `(SchemaId, xmin)` for cross-Start reuse — out of scope here (requires invalidation logic).
+- Reuse the same `EvaluationOptions` instance across all validations (it's also heavy to construct — see Pitfall 11).
+- **Do not** call `JsonSchema.FromText` more than once per `(SchemaId, Start request)`.
+- Perf fact: 1000-assignment workflow → assert `p95 < 500ms` (parallels the v3.2.0 `<500ms` SSRF regression assertion).
 
-**Warning signs:**
-- Logs visible in console but absent from the Collector.
-- Logs duplicated in the Collector (both paths active).
-- Log records arrive but `Body` is empty or just the template string.
-
-**Phase to address:**
-**P4 — Observability.** Add an integration smoke test that emits a log line via `ILogger<T>` and asserts the OTLP exporter received it.
+**Warning signs (code review):**
+- `JsonSchema.FromText(...)` inside a `foreach` over assignments — must lift above or cache.
+- Construction of `EvaluationOptions` inside the loop.
+- No perf assertion on the validation gate (silent regression hazard).
 
 ---
 
-### Pitfall 9: `Logging:LogLevel` not filtering before OTel exporter — wasted CPU/network
+### Pitfall 11: JsonSchema.Net SSRF defense regressed — new validator paths bypass the Phase 8 lockdown
 
 **What goes wrong:**
-`appsettings.json` `Logging:LogLevel:Default = "Warning"` is set, but Debug/Information logs are still serialized, batched, and sent to the Collector — because `AddOpenTelemetry` on the logging builder runs *after* MEL filters by default, but devs sometimes override the level on the provider or build filters incorrectly. CPU and network costs balloon under load.
+v3.2.0 Phase 8 explicitly disabled remote `$ref` fetching on the `SchemaEntity.Definition` validator with a `<500ms` regression assertion (PROJECT.md line 187). v3.3.0 adds a SECOND validator (Payload↔ConfigSchema gate) using JsonSchema.Net. If the new validator is constructed with fresh `EvaluationOptions` and the SSRF-disabling configuration is not re-applied, a malicious `Schema.Definition` registered earlier (or maliciously crafted by an authenticated caller in a future auth-enabled milestone) can include `$ref: "http://attacker.example/schema.json"` that the second validator dutifully fetches — exfiltrating internal network topology or pivoting to internal services.
 
-**Why it happens:**
-MEL filtering is per-provider. The OTel provider name is `"OpenTelemetry"`. If `Logging:LogLevel:OpenTelemetry` is set to `"Trace"` (or anyone calls `builder.Logging.SetMinimumLevel(LogLevel.Trace)` without thinking), the exporter receives everything.
+**Why it bites (root cause):**
+SSRF defenses live on `EvaluationOptions` (or via global `SchemaRegistry` setup). Each new validator instantiation re-creates options unless they explicitly inherit. The Phase 8 lockdown lives in the SchemaEntity validator's setup; nothing automatically propagates that decision to the new Orchestration-gate validator.
 
-**How to avoid:**
-- Single source of truth: `Logging:LogLevel:Default` only. Do **not** set per-provider overrides under `Logging:LogLevel:OpenTelemetry` or `Logging:LogLevel:Console`.
-- Do not call `builder.Logging.SetMinimumLevel(...)` in code; rely entirely on configuration.
-- Add a startup log line that emits the effective minimum level so you can verify in production logs.
-- Document in `appsettings.json` comments (yes, the .NET config system allows comments in `appsettings.json` despite STJ defaults — see Pitfall 30).
+JsonSchema.Net's `EvaluationOptions.AllowReferencesIntoUnknownKeywords` and the registry's `SchemaResolver` configuration are the relevant knobs — both need explicit configuration to refuse network fetches.
 
-**Warning signs:**
-- Collector ingestion volume disproportionate to traffic.
-- `Logging:LogLevel:Default = "Information"` yet trace-level events arriving downstream.
+**Which phase addresses it:**
+**R3 — Payload↔ConfigSchema validation gate.**
 
-**Phase to address:**
-**P4 — Observability.** Add an acceptance test asserting that with `Default = "Warning"`, an Information log does not appear in a captured OTLP export.
-
----
-
-### Pitfall 10: AspNetCoreInstrumentation reporting health probe traffic
-
-**What goes wrong:**
-Kubernetes / Docker compose hits `/health/live` and `/health/ready` every few seconds. Every probe creates a span and an HTTP metrics histogram entry. The Collector and downstream Loki/Prometheus are flooded with noise; the p99 RED metrics get skewed by the cheap health endpoints.
-
-**Why it happens:**
-`AddAspNetCoreInstrumentation()` instruments **every** endpoint by default. Devs forget to filter.
-
-**How to avoid:**
-- Filter at the instrumentation level:
+**Prevention strategy (concrete):**
+- Extract a shared factory in `BaseApi.Core` (or co-located with the existing Schema validator):
   ```csharp
-  .WithMetrics(m => m.AddAspNetCoreInstrumentation(o =>
+  public static class JsonSchemaConfig
   {
-      o.Filter = ctx => !ctx.Request.Path.StartsWithSegments("/health");
-  }))
+      public static EvaluationOptions DefaultOptions { get; } = new()
+      {
+          OutputFormat = OutputFormat.List,
+          // ... SSRF lockdown: configure SchemaRegistry to refuse non-local resolution
+          // per the same approach Phase 8 took for the Schema validator
+      };
+  }
   ```
-- For tracing (if added later), same filter pattern.
-- Also exclude `/metrics`, `/swagger`, `/openapi`, and the Problem Details endpoint if you have one.
-- Note: `.DisableHttpMetrics()` on the endpoint is .NET 9+; for .NET 8, use the filter.
+- BOTH validators (existing SchemaEntity setup + new Orchestration gate) MUST use `JsonSchemaConfig.DefaultOptions` — not construct their own.
+- The v3.2.0 `<500ms` SSRF regression test stays; ADD an equivalent test for the new gate: construct a Payload-validation flow with a malicious `$ref` in the cached schema, assert evaluation completes in `<500ms` and returns a validation error (no network call).
+- Document in `JsonSchemaConfig.cs` XML doc: "DO NOT bypass this factory. SSRF defense is in here; bypassing is a security regression."
 
-**Warning signs:**
-- HTTP server metrics histogram dominated by very-fast (sub-millisecond) requests.
-- Loki shows steady-state log spam at probe interval.
-
-**Phase to address:**
-**P4 — Observability.** Wire the filter when adding instrumentation and verify by hitting `/health/live` 10 times and checking export.
+**Warning signs (code review):**
+- Any `new EvaluationOptions()` outside `JsonSchemaConfig.DefaultOptions`.
+- Direct `JsonSchema.FromText(...).Evaluate(payload)` without passing options (uses library defaults — explicit is safer).
+- Removal or weakening of the Phase 8 `<500ms` SSRF regression assertion.
 
 ---
 
-### Pitfall 11: Correlation-Id scope lost across async boundaries
+### Pitfall 12: Stop endpoint must SCAN to evict children — O(N) keyspace blocking + cross-test interference
 
 **What goes wrong:**
-Middleware reads `X-Correlation-Id`, calls `_logger.BeginScope(new { CorrelationId = id })`, and then everything logged inside the same request shows the id — until code goes through `Task.Run`, a captured lambda, a background `IHostedService`, or any code that doesn't flow `AsyncLocal`. Now logs from the actual work have no correlation id.
+Stop says "delete all L2 keys created by Start for the given WorkflowIds." For the `{workflowId}` root, deletion is trivial: `db.KeyDeleteAsync(rootKey)`. For the N `{workflowId:stepId}` children, the implementer reaches for `db.KeyDeleteAsync(server.Keys(pattern: $"{workflowId}:*"))`. Under the hood, `IServer.Keys` calls **KEYS** by default on small datasets and **SCAN** on larger ones — Redis-side cost is still O(N) over the entire keyspace, and if multiple test classes share one Redis container (Pitfall 16), Stop in test A latency-spikes test B's writes.
 
-**Why it happens:**
-`ILogger.BeginScope` stores in `AsyncLocal<T>` and flows with the execution context. `Activity.Current` (the OTel/W3C tracing context) is separate. Code that fires-and-forgets work, or libraries that use `ThreadPool.UnsafeQueueUserWorkItem`, can drop both.
+Worse: the `{workflowId:stepId}` chain may follow `nextStepId` through steps NOT in `entryStepIds[]` (PROJECT.md line 19 — chain form, one nextStepId per record). If Stop only deletes keys reachable from `entryStepIds[]`, it leaks the deeper chain. If Stop SCANs by prefix, it picks up everything but blocks Redis.
 
-**How to avoid:**
-- Set correlation id on **both** the log scope **and** `Activity.Current?.SetBaggage("correlation.id", id)` (so tracing propagation carries it too).
-- The middleware must:
-  1. Read `X-Correlation-Id` header; if missing, generate `Guid.NewGuid().ToString("N")`.
-  2. Set `HttpContext.TraceIdentifier = id` (so default ASP.NET logs pick it up too).
-  3. Push `_logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = id })` for the rest of the pipeline.
-  4. Set `Activity.Current?.AddTag("correlation.id", id)`.
-  5. Write the header to the **response** before any other middleware can short-circuit (use `httpContext.Response.OnStarting(...)` or set it immediately).
-- Header name: standardize as `X-Correlation-Id` (case-insensitive in HTTP, but always emit in that exact form for grep-ability).
-- Add the correlation id into every Problem Details response body explicitly — see Pitfall 14.
+**Why it bites (root cause):**
+Redis SCAN is incremental and non-blocking per-call, but total work is O(N) over the keyspace. KEYS is O(N) AND blocking — every other op queues behind it. Neither is acceptable for routine teardown on shared infrastructure.
 
-**Warning signs:**
-- Half of logs for a single request have a correlation id, the other half don't.
-- Logs from background `IHostedService` work or `Task.Run(...)` paths never have ids.
-- The id in the response header differs from the id in the logs.
+The correct pattern depends on whether the writer stores enough metadata for direct deletion:
+- **Option A:** `{workflowId}` root stores `allStepIds[]` (not just `entryStepIds[]`) — Stop reads root, deletes each child by exact key, deletes root. O(stepCount) targeted ops; no SCAN.
+- **Option B:** Walk the chain at Stop — read root for `entryStepIds[]`, read each entry's `{workflowId:stepId}` to find `nextStepId`, recurse. Same O(stepCount), more round-trips.
+- **Option C:** SCAN by prefix — O(keyspace), unacceptable.
 
-**Phase to address:**
-**P3 — Cross-cutting middleware.**
+Option A is cleanest, but requires the **writer side (Start)** to populate `allStepIds[]` on the root. The milestone roadmap must encode this upfront.
 
----
+**Which phase addresses it:**
+**R4 — L2 Redis writer** (must write `allStepIds[]`) and **R5 — Stop endpoint** (must use it).
 
-### Pitfall 12: Generating correlation id too late (after another middleware logged)
-
-**What goes wrong:**
-Correlation middleware is registered after `UseExceptionHandler` / `UseRouting` / etc. A request fails in earlier middleware → the exception is logged without a correlation id → the response body shows id `X`, but logs show no id at all.
-
-**Why it happens:**
-ASP.NET Core middleware order matters; `app.Use*` is sequential. Devs paste correlation middleware near where they put logging or auth, which is usually too deep.
-
-**How to avoid:**
-- Register correlation-id middleware **as the first** app-level middleware (after `UseForwardedHeaders` if used, before everything else):
+**Prevention strategy (concrete):**
+- The `{workflowId}` root DTO must include `allStepIds[]` that enumerates every step key written by Start. The existing user-specified shape includes `entryStepIds[]` but NOT `allStepIds[]` — the roadmap needs an explicit decision: (a) extend the root DTO with `allStepIds[]`, OR (b) accept the chain-walk at Stop time. **Recommend (a)** for simplicity and minimum Stop-time RTTs.
+- The writer's traversal already enumerates every step (for cycle detection); collecting them into `allStepIds[]` is essentially free.
+- Stop implementation:
   ```csharp
-  app.UseMiddleware<CorrelationIdMiddleware>();   // FIRST
-  app.UseExceptionHandler("/error");              // problem-details handler
-  app.UseRouting();
-  app.UseAuthorization(); // when added later
-  app.MapControllers();
+  var rootJson = await db.StringGetAsync($"{{{workflowId:N}}}");
+  if (rootJson.IsNullOrEmpty)
+      return new NoContentResult();  // idempotent: nothing to do
+  var root = JsonDeserialize<L2RootDto>(rootJson);
+  var batch = db.CreateBatch();
+  var deletes = new List<Task>(capacity: root.AllStepIds.Count + 1);
+  foreach (var stepId in root.AllStepIds)
+      deletes.Add(batch.KeyDeleteAsync($"{{{workflowId:N}:{stepId:N}}}"));
+  deletes.Add(batch.KeyDeleteAsync($"{{{workflowId:N}}}"));
+  batch.Execute();
+  await Task.WhenAll(deletes);
+  return new NoContentResult();
   ```
-- Document the order in `BaseApi.Core`'s `AddBaseApi(...)` extension method via the order of `Use*` calls inside it.
-- The `BaseApi.Core` extension method should bundle the order so consumers can't get it wrong.
+- Stop MUST return 204 even when root doesn't exist — idempotency contract (PROJECT.md line 23).
+- **Never** call `server.Keys(pattern: ...)` in v3.3.0 production code. If it appears, it's a bug.
 
-**Warning signs:**
-- Exception logs without correlation ids while response bodies have them.
-- First few log entries of a request lack the id.
-
-**Phase to address:**
-**P3 — Cross-cutting middleware.** Bake the order into `AddBaseApi(...)`.
-
----
-
-### Pitfall 13: Leaking stack traces / internal details into Problem Details responses
-
-**What goes wrong:**
-A `NullReferenceException` from the service layer surfaces in the JSON response body's `detail` field complete with source paths, environment usernames, and (in worst cases) connection-string fragments. Anyone with cURL has a roadmap of your internals.
-
-**Why it happens:**
-ASP.NET Core's `DeveloperExceptionPage` is on in `Development`; the `UseExceptionHandler` lambda may pass `Exception.ToString()` or `Exception.Message` into `ProblemDetails.Detail` without thinking about prod.
-
-**How to avoid:**
-- The exception handler middleware (custom or `UseExceptionHandler`):
-  - In **all** environments, never put `Exception.ToString()` into the response.
-  - Set `ProblemDetails.Detail = "An unexpected error occurred."`
-  - Set `ProblemDetails.Extensions["correlationId"] = correlationId` so the operator can grep logs.
-  - Log the full exception (with stack) via `ILogger.LogError(ex, "unhandled.exception")`.
-- For known exceptions (DbUpdateException, FluentValidationException, KeyNotFoundException, DbUpdateConcurrencyException), map to specific status codes and safe detail messages.
-- Test in P3 with an endpoint that throws — assert the response body does not contain the word "Exception" or any path fragment.
-
-**Warning signs:**
-- `Detail` field contains file paths, line numbers, or class names in 500 responses.
-- `application/problem+json` body grows > 2KB for a simple error.
-
-**Phase to address:**
-**P3 — Cross-cutting middleware.** Add a "no internals leaked" test in P3.
+**Warning signs (code review):**
+- `IServer.Keys(...)` or `server.KeysAsync(...)` in `OrchestrationService` or any L2-related code.
+- `KEYS` command in Lua scripts (same hazard).
+- Stop logic that doesn't read the root first — implies SCAN-by-prefix.
+- Missing `allStepIds[]` (or equivalent enumeration field) on the `{workflowId}` root DTO.
 
 ---
 
-### Pitfall 14: Postgres SQLSTATE → HTTP mapping miss-mapping or incomplete coverage
+### Pitfall 13: OTel Redis instrumentation enabled → traces emitted with no backend → SDK-side dropped silently OR accidental traces-pipeline revival
 
 **What goes wrong:**
-The team maps `23503` (FK violation) and `23505` (unique violation), and forgets `23502` (NOT NULL violation) or `23514` (check constraint). Or maps `23503` to 409 (it's actually 422 per the spec). Or doesn't extract the offending field name from the constraint name, so the response says only "FK violation" with no actionable detail.
+Developer adds `services.AddOpenTelemetry().WithTracing(t => t.AddRedisInstrumentation(...));` — they "want Redis observability." Two failure modes:
 
-**Why it happens:**
-SQLSTATE codes are not memorized; the mapping is invisible until production traffic hits an edge case.
+1. **No backend, silent drop:** v3.2.0 Phase 11 D-03 explicitly stripped `.WithTracing(...)` from `AddBaseApiObservability` and deleted the collector traces pipeline (PROJECT.md line 115). The new `AddRedisInstrumentation` call re-enables traces collection in the SDK; spans are generated, batched, queued — and dropped at the OTLP exporter (no traces endpoint). Memory pressure (small but real), CPU cost (sampling, attribute serialization), worst case a queue-overflow log. The team sees no Redis spans anywhere and concludes "Redis instrumentation doesn't work" — actually they accidentally turned the traces pipeline back on.
 
-**How to avoid:**
-- Centralize the mapping in a single class (`PostgresErrorMapper`) in `BaseApi.Core`:
-  - `23503` (foreign_key_violation) → **422 Unprocessable Entity**, detail mentions the referenced table/column from `PostgresException.ConstraintName`.
-  - `23505` (unique_violation) → **409 Conflict**, detail names the unique column(s) from the constraint.
-  - `23502` (not_null_violation) → **400 Bad Request**, detail names the column from `PostgresException.ColumnName`.
-  - `23514` (check_violation) → **400 Bad Request**, detail names the constraint.
-  - `23P01` (exclusion_violation) → **409 Conflict**.
-  - Any other `23xxx` → **400 Bad Request** with generic message and `sqlstate` in `extensions`.
-- Catch `DbUpdateException` in the error middleware, unwrap the `InnerException as PostgresException`, route through the mapper.
-- Add `sqlstate` to Problem Details `extensions` so operators can cross-reference.
+2. **Accidental revival:** A well-meaning PR re-adds `.WithTracing(...)` to `AddBaseApiObservability` AND adds an OTLP traces endpoint to the collector. Phase 11 D-03 reversed without the team noticing. Traces storage costs spike, no sampling tuning, volume catastrophic.
 
-**Warning signs:**
-- Unique-constraint hits returning 500 instead of 409.
-- FK violation messages saying "duplicate key" (you mapped the wrong code).
-- Postgres-specific text appearing verbatim in client responses.
+**Why it bites (root cause):**
+StackExchange.Redis's instrumentation is tracing-only — it does NOT emit metrics (separate Redis metrics story via `INFO` or server-exposed metrics). Calling `AddRedisInstrumentation` commits to a traces pipeline.
 
-**Phase to address:**
-**P3 — Cross-cutting middleware.** Verify against the project's explicit table of mappings.
+Also: OpenTelemetry.Instrumentation.StackExchangeRedis has a [historical duplicate-span issue](https://github.com/open-telemetry/opentelemetry-dotnet/issues/1301) in some versions where the internal profiler races and emits duplicate spans — another reason to avoid enabling unless required. The instrumentation also has a [known baggage non-propagation bug](https://github.com/open-telemetry/opentelemetry-dotnet-contrib/issues/674) (no logic to copy baggage from parent activity to child Redis activity).
+
+**Which phase addresses it:**
+**R6 — Observability extension.**
+
+**Prevention strategy (concrete):**
+- **Do NOT add `OpenTelemetry.Instrumentation.StackExchangeRedis` to the project in v3.3.0.** Redis observability rides on the existing logs pipeline: structured `ILogger<OrchestrationService>` events (`redis.l2.write.start`, `redis.l2.write.complete`, `redis.l2.write.error`) flow through MEL → OTel → ES with the v3.2.0 `service.name=sk-api` resource tag intact (PROJECT.md line 114, `resource_to_telemetry_conversion` preserves the label).
+- For Redis-specific metrics (write count, write latency), use the .NET 8 `Meter` API directly:
+  ```csharp
+  private static readonly Meter Meter = new("sk-api.orchestration");
+  private static readonly Counter<long> L2Writes = Meter.CreateCounter<long>("orchestration.l2_writes");
+  private static readonly Histogram<double> L2WriteLatencyMs = Meter.CreateHistogram<double>("orchestration.l2_write_latency_ms");
+  ```
+  Flows through v3.2.0 Phase 11 Prometheus pipeline automatically.
+- ADD a build guard fact in `tests/BaseApi.Tests/Composition/NoTracesBackendFacts.cs`:
+  - Assert no `.csproj` references `OpenTelemetry.Instrumentation.StackExchangeRedis`.
+  - Assert `AddBaseApiObservability` does NOT call `.WithTracing(...)`.
+  - Regression guard for the Phase 11 D-03 invariant.
+- Future milestones may add Redis tracing with a documented decision; v3.3.0 keeps the traces backend dark.
+
+**Warning signs (code review):**
+- `<PackageReference Include="OpenTelemetry.Instrumentation.StackExchangeRedis" />` in any `.csproj`.
+- `.AddRedisInstrumentation(...)` anywhere.
+- `.WithTracing(...)` re-introduced into `AddBaseApiObservability`.
+- Collector config file gaining a `traces` pipeline.
 
 ---
 
-### Pitfall 15: Liveness probe checking the database
+### Pitfall 14: Redis healthcheck added without tag discipline — `/health/live` flaps when Redis blips (regresses v3.2.0 Phase 5 HEALTH-01)
 
 **What goes wrong:**
-The liveness probe queries Postgres. Postgres has a transient blip. Kubernetes kills the pod. The pod restarts. Postgres is still blippy. The pod is killed again. Cascading restarts; the service oscillates while Postgres is fine 5 seconds later.
+Developer adds `services.AddHealthChecks().AddRedis(connStr);` and calls it done. By default, `AddRedis` registers a check with **no tags**. v3.2.0 Phase 5 health-endpoint wiring uses tag-based predicates:
+- `/health/live` → `Predicate = c => c.Tags.Contains("live")`
+- `/health/ready` → `Predicate = c => c.Tags.Contains("ready")`
+- `/health/startup` → `Predicate = c => c.Tags.Contains("startup")`
 
-**Why it happens:**
-Devs treat "is this thing working" as one question. It's two: *can this process accept work* (liveness) vs *can this process serve traffic* (readiness).
+An untagged check is NOT picked up by any predicate — it appears nowhere. Worse, an inexperienced operator "fixes" this by changing the predicate to `Predicate = _ => true` for `/health/live`. Now any Redis hiccup → 503 on `/health/live` → K8s kills the pod → cascading restart loop. This is **exactly** the failure mode v3.2.0 PITFALLS Pitfall 15 was written to prevent for Postgres; the Redis equivalent is just as dangerous.
 
-**How to avoid:**
-- **Liveness** (`/health/live`): only the process being alive — return 200 always once started. **Do not** check DB.
-- **Readiness** (`/health/ready`): check DB connectivity, OTLP endpoint reachability (optional), any other deps. If a dep is down, return 503 — orchestrator stops routing traffic but does **not** kill the pod.
-- **Startup** (`/health/startup`): completes once DI is built and migrations have run; never re-evaluates after that.
-- Use `Microsoft.Extensions.Diagnostics.HealthChecks` with tags:
+**Why it bites (root cause):**
+v3.2.0 Phase 5 locked the "live never touches external state" contract. Adding any new dependency requires applying the same tag discipline. The `AddRedis` extension's default of "no tags" makes the wrong configuration the path of least resistance.
+
+**Which phase addresses it:**
+**R6 — Observability extension.**
+
+**Prevention strategy (concrete):**
+- Redis healthcheck registration MUST explicitly tag `ready` only:
   ```csharp
   services.AddHealthChecks()
-      .AddNpgSql(connStr, tags: new[] { "ready" })
-      .AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" });
-
-  app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = c => c.Tags.Contains("live") });
-  app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") });
-  app.MapHealthChecks("/health/startup", new HealthCheckOptions { Predicate = c => c.Tags.Contains("startup") });
+      .AddRedis(
+          redisConnectionString: cfg.GetConnectionString("Redis")!,
+          name: "redis",
+          failureStatus: HealthStatus.Unhealthy,
+          tags: new[] { "ready" });
   ```
-- Tag the startup check separately and flip it healthy from the migration runner (Pitfall 3).
+- Extend v3.2.0's existing "live doesn't touch DB" acceptance test:
+  - Stop the Redis container.
+  - Hit `/health/live` → must return 200.
+  - Hit `/health/ready` → must return 503.
+  - Hit `/health/startup` → must return 200 (migrations completed before Redis went away).
+- Document in v3.3.0 PR that Redis follows Postgres's tag discipline (forward-reference v3.2.0 PITFALLS.md Pitfall 15).
+- Avoid `AddRedis(...).AddCheck("redis-ping", ...)` patterns that double-register.
 
-**Warning signs:**
-- Pods restarting during Postgres failover instead of just losing traffic temporarily.
-- Liveness probe latency > 100ms (it's calling the DB).
-
-**Phase to address:**
-**P4 — Observability.** Wire all three probes with correct tag predicates.
+**Warning signs (code review):**
+- `AddRedis(...)` without an explicit `tags:` argument.
+- Predicate change on `/health/live` (or any mapping with `Predicate = _ => true`).
+- New healthcheck endpoint without tag filtering.
+- Missing acceptance test for "Redis down → /health/live still 200."
 
 ---
 
-### Pitfall 16: Mapperly compile-time pitfalls — wrong project setup or partial class shape
+### Pitfall 15: X-Correlation-Id scope lost across `IConnectionMultiplexer` async ops — Redis log events have no correlation ID (regresses Phase 11 E2E)
 
 **What goes wrong:**
-Build succeeds but `Mapper.MapToDto(entity)` throws `NullReferenceException` at runtime because the source generator didn't run. Or the build fails with `MP0001: Mapping not possible` because nullability mismatches. Or the mapper class is `public partial class Mapper` (not `static partial class`) and source-gen produces methods on an instance type that's never registered in DI.
+v3.2.0 Phase 4 set up `CorrelationIdMiddleware` to push `_logger.BeginScope({ CorrelationId = id })` for the request duration. The scope flows via `AsyncLocal<T>`. For Postgres ops issued through `AppDbContext` (which flows through awaits cleanly), the scope is intact in all related log lines. Phase 11 E2E test (`SchemasLogsE2ETests`) round-trips the correlation ID through OTel to ES and asserts it.
 
-**Why it happens:**
-- The `Riok.Mapperly` package must be referenced with `PrivateAssets="all"` and `OutputItemType="Analyzer"` (or via the `Riok.Mapperly` PackageReference using its `analyzers` asset by default — but some templates strip it).
-- C# language version must be 11+ (default in .NET 8: yes).
-- The class must be marked `[Mapper]` and be `partial`. For dependency-free mappers, mark it `static partial class` for least surprise; otherwise, the generated methods are instance methods needing DI registration.
+Redis ops issued via `db.StringGetAsync(...)` SHOULD also flow the scope (`AsyncLocal` carries through `await` by default), BUT:
+- StackExchange.Redis's internal completion handling sometimes runs on threads completed by the network listener. `AsyncLocal` survives `ConfigureAwait(false)` (unlike `SynchronizationContext`), but **only if continuations are awaited normally**. Code that does fire-and-forget (`_ = db.StringSetAsync(...);` without `await`) drops the scope outright.
+- Custom test fakes for `IConnectionMultiplexer` (used in tests that don't want real Redis) often spawn their own `Task.Run`, which captures the current `AsyncLocal` snapshot — usually fine, but `Task.Factory.StartNew(... TaskCreationOptions.LongRunning)` preserves the snapshot differently.
+- Adding Redis writes inside the Start endpoint must NOT regress the Phase 11 E2E contract — the log line "wrote {workflowId} root to L2" must carry the same correlation ID as the inbound HTTP request.
 
-**How to avoid:**
-- Standard template in `BaseApi.Service` for entity mappers:
+**Why it bites (root cause):**
+`AsyncLocal<T>` flow is fragile under fire-and-forget patterns, custom task schedulers, and `ThreadPool.UnsafeQueueUserWorkItem`. Fix is structural (always `await`), not mechanical. The [OTel baggage parallel-tasks issue #3257](https://github.com/open-telemetry/opentelemetry-dotnet/issues/3257) documents an analogous AsyncLocal sharing surprise in OTel itself.
+
+**Which phase addresses it:**
+**R6 — Observability extension** (and **R4 — L2 Redis writer** for the always-await discipline).
+
+**Prevention strategy (concrete):**
+- **Always `await` Redis ops.** No `_ = db.StringSetAsync(...);` patterns; no `Task.Run(() => db.StringSetAsync(...))` for "background" writes. The v3.3.0 Start endpoint is synchronous-by-contract: returns 204 ONLY after all L2 writes complete.
+- Use `IBatch.Execute() + Task.WhenAll(batchTasks)` for parallel pipelined writes — preserves scope on the awaiter.
+- ADD a fact to the existing Phase 11 E2E test (or sibling): submit a Start, force the writer to emit a known log line (`"orchestration.l2.write.complete"`), poll ES for that log line, assert it carries the `CorrelationId` field matching the inbound HTTP `X-Correlation-Id` header.
+- Custom `IConnectionMultiplexer` fakes for unit tests must complete tasks on the same execution context — simplest: return `Task.FromResult(...)` synchronously rather than spawning.
+- Document in `OrchestrationService.cs`: "All Redis ops must be awaited within the request's execution context. Fire-and-forget Redis ops break correlation-id propagation and the Phase 11 E2E contract."
+
+**Warning signs (code review):**
+- `_ = db.SomeAsyncOp();` (fire-and-forget) anywhere in v3.3.0 source.
+- `Task.Run(() => db.SomeAsyncOp())` for Redis ops.
+- Custom multiplexer fakes that use `Task.Run` internally.
+- Phase 11 E2E test passing for Postgres-related log lines but no equivalent assertion for Redis-related log lines.
+
+---
+
+### Pitfall 16: xUnit v3 per-class Redis isolation — `FLUSHDB` on teardown nukes other concurrent classes; `KEYS pattern` blocks shared Redis
+
+**What goes wrong:**
+v3.2.0's per-class Postgres pattern (Phase 3 D-15, `stepsdb_test_*` throwaway DBs, SHA-256 baseline snapshot `0d98b0de…0aac127` proving zero leaks, honored 11×) sets a high bar for v3.3.0 Redis isolation. Naive approach: every test class connects to Redis DB 0, runs asserts, calls `db.Execute("FLUSHDB")` in `DisposeAsync`. xUnit v3 `[assembly: AssemblyFixture]` shares one Redis container across the suite (only one Compose service), and xUnit v3 runs collections in parallel by default. Class A's `FLUSHDB` deletes Class B's mid-test data. Random failures.
+
+"Fix" that's worse: each class iterates `IServer.Keys(pattern: $"test_{className}:*")` and deletes — `KEYS` is O(N) over the whole DB and blocks Redis, latency-spiking other concurrent tests.
+
+Second-order: Redis logical DB indices (`SELECT 0..15`) are **not supported in Redis Cluster**. sk_p's v3.3.0 is single-node Redis (per the new `compose.yaml` service), so SELECT works. But documenting the constraint matters for any future Cluster migration.
+
+**Why it bites (root cause):**
+v3.2.0's psql `\l` SHA-256 cadence is enforced; equivalent Redis discipline is missing by default. Without explicit prevention, the test-isolation bar for Redis is "0 keys at suite-end" — but the techniques to achieve that (FLUSHDB, KEYS) are themselves anti-patterns.
+
+**Which phase addresses it:**
+**R7 — Test fixtures.**
+
+**Prevention strategy (concrete):**
+- **Key-prefix isolation, not DB-index isolation, not FLUSHDB.** Each test class generates a unique prefix at fixture-setup:
   ```csharp
-  [Mapper]
-  public static partial class SchemaMapper
+  public class OrchestrationStartFixture : IAsyncLifetime
   {
-      public static partial SchemaReadDto ToReadDto(SchemaEntity entity);
-      public static partial SchemaEntity ToEntity(SchemaCreateDto dto);
-      public static partial void ApplyUpdate(SchemaUpdateDto dto, SchemaEntity entity); // [MappingTarget] inferred from 2nd param? — see Pitfall 17
+      public string KeyPrefix { get; } = $"test_{Guid.NewGuid():N}_";
+      public ConnectionMultiplexer Mux { get; private set; } = default!;
   }
   ```
-- Verify by inspecting `obj/.../generated/Riok.Mapperly` for the actual generated code on first build.
-- CI should fail the build on Mapperly diagnostics: `<TreatWarningsAsErrors>true</TreatWarningsAsErrors>` or specifically `<WarningsAsErrors>MP0001;MP0011;MP0020;MP0021</WarningsAsErrors>`.
-
-**Warning signs:**
-- Build "succeeds" but no generated files in `obj/`.
-- Methods declared `partial` but never implemented at runtime.
-- Suppressed warnings about unmapped properties.
-
-**Phase to address:**
-**P5 — Validation & mapping base.** Establish the template and CI warning-promotion rule in P5; entity-specific mappers in P7 follow it.
-
----
-
-### Pitfall 17: Mapperly Update mapping — overwriting server-controlled fields
-
-**What goes wrong:**
-The Update mapper takes `UpdateDto` and writes to the existing entity. If the dto accidentally has an `Id` field (e.g., devs copy `CreateDto` to make `UpdateDto`), Mapperly happily overwrites the entity's `Id`. Worse, if `UpdateDto` includes `CreatedAt`, `CreatedBy`, or `Version` (when not intended as user-settable), the user can rewrite audit fields and primary keys.
-
-**Why it happens:**
-Mapperly maps by property name. If the DTO has a field with the same name as a server-controlled field, it gets mapped. Source generators don't know "this is audit data."
-
-**How to avoid:**
-- `UpdateDto` shape must *intentionally* omit `Id`, `CreatedAt`, `CreatedBy`, `UpdatedAt`, `UpdatedBy`, and any system-managed field. Treat the DTO as the security boundary.
-- Use `[MapperIgnoreSource]` or `[MapperIgnoreTarget]` to be explicit in the mapper when there's ever a question:
+- The Start/Stop endpoints already read a key shape from the writer config — make the prefix injectable so tests scope themselves.
+- Teardown: SCAN (not KEYS) with the prefix:
   ```csharp
-  [Mapper]
-  public static partial class SchemaMapper
+  public async Task DisposeAsync()
   {
-      [MapperIgnoreTarget(nameof(SchemaEntity.Id))]
-      [MapperIgnoreTarget(nameof(SchemaEntity.CreatedAt))]
-      [MapperIgnoreTarget(nameof(SchemaEntity.CreatedBy))]
-      public static partial void ApplyUpdate(SchemaUpdateDto dto, [MappingTarget] SchemaEntity entity);
+      var server = Mux.GetServer(Mux.GetEndPoints()[0]);
+      await foreach (var key in server.KeysAsync(pattern: $"{KeyPrefix}*", pageSize: 250))
+          await db.KeyDeleteAsync(key);
   }
   ```
-- Add a code review checklist item: "Does the UpdateDto contain any server-controlled fields?"
-- Mapperly emits `MP0011` for unmapped target properties — promote it to error in CI; it's your safety net for missing fields, but not for server-controlled fields.
+  `IServer.KeysAsync` uses SCAN under the hood — non-blocking and incremental.
+- Add a Redis equivalent of v3.2.0's psql `\l` SHA-256 snapshot for the AssemblyFixture suite-end:
+  - BEFORE suite: `redis-cli --scan --pattern 'test_*' | wc -l` → expect 0
+  - AFTER suite: same — expect 0
+  - Assert equality (analogous to the v3.2.0 Phase 3 D-15 invariant).
+- Document in test README: "Redis tests use key-prefix isolation. Never `FLUSHDB`. Never `KEYS *` (use `KeysAsync(pattern)`)."
 
-**Warning signs:**
-- Audit columns reset to default values after PUT.
-- `Id` columns changing under PUT (catastrophic — but actually possible if DTOs are wrong).
-
-**Phase to address:**
-**P5 — Validation & mapping base** (set the pattern + add the linter) and **P7 — Entity build-out** (apply per entity).
-
----
-
-### Pitfall 18: SemVer regex too loose or too strict for `BaseEntity.Version`
-
-**What goes wrong:**
-The project locks in `^\d+\.\d+\.\d+$`. This accepts:
-- `0.0.0` ✅ (allowed — but is that valid?)
-- `01.02.03` ✅ (technically allowed by regex; **not valid SemVer 2.0** — leading zeros forbidden)
-- It rejects `1.0.0-alpha`, `1.0.0+build.1`, `1.0.0-rc.1+build.42` ❌
-
-Documentation says "SemVer" but the regex only accepts the major.minor.patch subset. Users send `1.0.0-beta`, get 400, file bug reports.
-
-**Why it happens:**
-The regex was a quick sanity-check, not a SemVer 2.0 implementation. The full SemVer 2.0 regex is much longer (see semver.org).
-
-**How to avoid:**
-- **Pick a position and document it.** Two valid choices:
-  - **Option A — "Strict numeric triple":** `^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$` (rejects leading zeros, rejects prerelease/build metadata). Document as "We use the SemVer 2.0 *core* version only."
-  - **Option B — "Full SemVer 2.0":** Use the official regex from semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string.
-- Put the validator + regex literal in `BaseEntityValidator<T>` with a unit test table covering both accepted and rejected inputs.
-- Document the choice in `BaseEntity.Version` XML doc.
-
-**Warning signs:**
-- Bug reports about `1.0.0-alpha` being rejected.
-- Devs writing case-by-case workarounds in entity-specific validators.
-
-**Phase to address:**
-**P5 — Validation & mapping base.** Lock the regex in `BaseEntityValidator<T>` and document.
+**Warning signs (code review):**
+- `db.Execute("FLUSHDB")` or `db.Execute("FLUSHALL")` in test code.
+- `server.Keys(...)` (synchronous, KEYS-backed) in test code.
+- Test classes that don't scope keys to a unique prefix.
+- Missing BEFORE/AFTER Redis-keyspace assertion in the suite-cleanup fixture.
 
 ---
 
-### Pitfall 19: SHA-256 regex case-sensitivity for `Processor.SourceHash`
+## Moderate Pitfalls
+
+### Pitfall 17: Mapperly used for entity → bytes serialization — wrong tool for the job
 
 **What goes wrong:**
-The validator uses `^[0-9a-f]{64}$`. A caller computes the hash and converts to uppercase hex (Microsoft's `BitConverter.ToString(...).Replace("-","")` returns uppercase). The string is a valid SHA-256 hex; the validator says 400. Bug.
+Developer reads "Mapperly is for DTO↔DTO source-gen mapping" and tries to extend it to serialize the L2 DTO to a `byte[]` for Redis:
+```csharp
+[Mapper]
+public static partial class L2WorkflowMapper
+{
+    public static partial byte[] ToRedisBytes(L2WorkflowRootDto dto);  // WRONG
+}
+```
+Build fails with Mapperly diagnostics (`RMG020` or similar — no obvious mapping from object → bytes). Developer adds workaround attributes, fights the generator, eventually inlines `System.Text.Json` calls — but now there's a half-built mapper class polluting the codebase.
 
-**Why it happens:**
-SHA-256 is binary; "hex" representation has no canonical case. Different stdlibs/languages emit different cases.
+**Why it bites (root cause):**
+Mapperly is a property-to-property mapper. Serialization (object → bytes / bytes → object) is a distinct concern. v3.2.0's Mapperly setup (RMG007/RMG012/RMG020/RMG089 promoted to errors per PROJECT.md line 83) is configured for DTO↔DTO and produces noisy build errors for anything else.
 
-**How to avoid:**
-- Validator regex: `^[0-9A-Fa-f]{64}$` (accept both cases) **and** normalize to lowercase before persisting / before uniqueness check (otherwise `ABC...` and `abc...` are two rows for the same hash).
-- Normalization happens in the mapper / service before save: `entity.SourceHash = dto.SourceHash.ToLowerInvariant();`.
-- Unique index on the column is case-sensitive by default in Postgres — that's fine since you normalized.
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
 
-**Warning signs:**
-- 400 errors on hashes that "look right."
-- Two rows with hashes differing only in case (uniqueness check failed because you didn't normalize before insert).
-
-**Phase to address:**
-**P5 — Validation & mapping base** (regex + normalization helper) and **P7 — Entity build-out** (ProcessorEntity specifically).
-
----
-
-### Pitfall 20: JSON Schema validator: draft mismatch for `Schema.Definition`
-
-**What goes wrong:**
-The validator uses `JsonSchema.Net` or `NJsonSchema` configured to assume `draft-07`. A user posts a schema with `"$schema": "https://json-schema.org/draft/2020-12/schema"`. The validator either ignores the `$schema` keyword and forces draft-07 (passing invalid 2020-12 constructs), or fails on legitimate 2020-12 idioms (`$defs` vs `definitions`).
-
-**Why it happens:**
-JSON Schema has been through several drafts; libraries default to whatever was current at their last update. Drafts vary in keyword sets meaningfully.
-
-**How to avoid:**
-- **Pick a single draft and document it.** Recommend **2020-12** (current spec, broader keyword support).
-  - Library: `JsonSchema.Net` (a.k.a. `Json.Schema` from `gregsdennis/json-everything`) — actively maintained, supports 2020-12.
-  - Alternative: `NJsonSchema` if generating C# from schemas later.
-- Validator code:
+**Prevention strategy (concrete):**
+- Two-step pipeline: EntityFromL1 → L2DTO (Mapperly), then L2DTO → `string` (System.Text.Json):
   ```csharp
-  var schemaJson = JsonNode.Parse(dto.Definition);
-  var schema = JsonSchema.FromText(dto.Definition);
-  // If user supplied $schema, validate against that; else against 2020-12.
+  var l2Dto = L2WorkflowMapper.ToL2RootDto(workflowEntity, entryStepIds, allStepIds, cron, jobId, liveness);
+  var json = JsonSerializer.Serialize(l2Dto, JsonOptions);
+  await db.StringSetAsync(key, json);
   ```
-- Reject schemas whose `$schema` doesn't match the project's supported draft, with a clear error.
-- Add unit tests against a known-good and known-bad schema for each draft.
+- JSON-as-string is canonical for the v3.3.0 contract (readability + external-consumer interop).
+- Share `JsonSerializerOptions` as a `static readonly` field (see Pitfall 18).
 
-**Warning signs:**
-- Schemas containing `$defs` failing where they should pass (or vice versa).
-- Validators silently passing malformed schemas.
-
-**Phase to address:**
-**P5 — Validation & mapping base** (decide draft + library) and **P7 — Entity build-out** (SchemaEntity specifically).
+**Warning signs (code review):**
+- Mapperly `[Mapper]` classes with non-object return types (bytes, strings, RedisValue).
+- Mapperly methods accepting `string` or `byte[]` as input.
+- Linter warnings RMG020 / RMG089 spiking on the new L2 mapper.
 
 ---
 
-### Pitfall 21: Cron expression validation — Cronos vs NCrontab differ on edge cases
+### Pitfall 18: `JsonSerializerOptions` constructed per-call — measurable allocation + perf hit
 
 **What goes wrong:**
-The validator uses NCrontab and accepts `0 0 * * * *` (six fields). Cronos (used elsewhere, or in a future scheduler) rejects it because it expects 5 or 6 fields with a different convention. Or vice versa: Cronos accepts `0 0 12 ? * MON` (Quartz-style `?`) and NCrontab doesn't.
+Developer writes `JsonSerializer.Serialize(dto, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase });` inside the L2 write loop. Every call allocates `JsonSerializerOptions` and (worse) triggers re-derivation of the per-type converter metadata cache. The perf cost is real and is a standard .NET 8 perf-review finding.
 
-**Why it happens:**
-"Cron" is not a standard. Implementations differ on:
-- 5-field (POSIX) vs 6-field (seconds) cron
-- `?` placeholder (Quartz) vs `*`
-- Day-of-week numbering (0=Sun vs 1=Mon)
-- Special tokens (`@yearly`, `L`, `W`, `#`)
+**Why it bites (root cause):**
+`JsonSerializerOptions` is documented as "expensive to create; safe to share." Each new instance triggers metadata derivation; sharing one instance amortizes across all calls.
 
-**How to avoid:**
-- **Pick the library that matches the consumer.** Since the orchestrator/scheduler is external and out of scope, this project must:
-  - Either: standardize on **Cronos** (stricter, predictable, widely used in .NET) and document "5-field UTC cron, no Quartz extensions."
-  - Or: standardize on whatever the external scheduler uses, and validate using the same library it does.
-- Validator code (Cronos):
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
+
+**Prevention strategy (concrete):**
+- One `static readonly JsonSerializerOptions L2Json` per relevant assembly, configured once:
   ```csharp
-  RuleFor(x => x.CronExpression)
-      .Must(BeValidCron)
-      .When(x => !string.IsNullOrEmpty(x.CronExpression))
-      .WithMessage("CronExpression must be a valid 5-field cron expression.");
-
-  static bool BeValidCron(string? expr)
-      => Cronos.CronExpression.TryParse(expr, out _);
-  ```
-- Document the chosen format in `WorkflowEntity.CronExpression` XML doc and the OpenAPI description.
-
-**Warning signs:**
-- Workflows that "validate fine" but the external scheduler rejects.
-- Bug reports about `?` or `@hourly` not working.
-
-**Phase to address:**
-**P5 — Validation & mapping base** (library choice) and **P7 — Entity build-out** (WorkflowEntity specifically).
-
----
-
-### Pitfall 22: `Assignment.Payload` JSON validation — STJ default rejects comments / trailing commas
-
-**What goes wrong:**
-The validator parses `Assignment.Payload` as JSON to confirm syntactic validity. `JsonDocument.Parse(payload)` with default options throws on `// comment`, trailing commas, or `NaN`. Users (or upstream tools) send "JSON" that has these conveniences; the validator says 400; the user is confused because Postman accepts it.
-
-**Why it happens:**
-`System.Text.Json` is strict by default. Newtonsoft.Json is lenient. Some upstream systems emit JSON5-style or have comments.
-
-**How to avoid:**
-- **Decide and document the JSON dialect.** Recommend **strict RFC 8259** (no comments, no trailing commas) — that's what's actually portable.
-- Validator code:
-  ```csharp
-  RuleFor(x => x.Payload)
-      .Must(BeValidJson)
-      .WithMessage("Payload must be syntactically valid JSON (RFC 8259, no comments).");
-
-  static bool BeValidJson(string payload)
+  public static readonly JsonSerializerOptions L2Json = new(JsonSerializerDefaults.Web)
   {
-      try { using var _ = JsonDocument.Parse(payload); return true; }
-      catch (JsonException) { return false; }
+      Converters = { new JsonStringEnumConverter() },  // see Pitfall 28
+  };
+  ```
+- If using source-generated `JsonSerializerContext` (recommended for AOT + perf), same advice: one context instance per assembly.
+
+**Warning signs (code review):**
+- `new JsonSerializerOptions { ... }` inside a method body (not a `static readonly` field).
+- Inconsistent naming/casing across L2 writes (sign of multiple ad-hoc options).
+
+---
+
+### Pitfall 19: Validation order silently violated — DB load happens before existence check, or L2 write happens before validation
+
+**What goes wrong:**
+PROJECT.md line 30 locks the validation order: **existence → cycles → schema-edge compatibility → Payload↔ConfigSchema → L1 build → L2 write → cleanup**. A refactor that "moves L2 writes earlier for parallelism" or "lazy-loads L1 inside the traversal" silently violates this contract:
+- L2 write before Payload validation → bad-payload Start corrupts L2 with stale entries that Stop must clean up.
+- L1 lazy-loaded during traversal → existence check never fires for entities not reached (e.g., orphaned Assignment whose StepId points to a missing step) — silent acceptance of invalid state.
+
+**Why it bites (root cause):**
+Order is a contract that's invisible at the type level. Without enforcement (tests + comments), it drifts under perf or refactoring pressure.
+
+**Which phase addresses it:**
+**R1 — L1 build pipeline** (orchestrate the order) and across **R2/R3/R4**.
+
+**Prevention strategy (concrete):**
+- `StartAsync` is a linear sequence of named methods, in this order, no branching:
+  ```csharp
+  await VerifyExistenceAsync(workflowIds, l1, ct);   // 1
+  await DetectCyclesAsync(l1, ct);                    // 2
+  await VerifySchemaEdgesAsync(l1, ct);               // 3
+  await ValidatePayloadConformanceAsync(l1, ct);      // 4
+  // L1 is fully built by step 1; nothing else builds L1
+  await WriteL2Async(l1, ct);                         // 5+6
+  // implicit cleanup in finally
+  ```
+- Each method takes the full `l1` dictionary (already populated) — none populate it lazily.
+- Add ONE xUnit fact per validation step that fails at that step and asserts L2 is NOT written. Cleanest assertion: count Redis keys with the test prefix before-and-after; must be equal on failure.
+- Comment in `StartAsync`: "VALIDATION ORDER IS A CONTRACT. Do not reorder; do not add work outside this sequence; see .planning/research/PITFALLS.md Pitfall 19."
+
+**Warning signs (code review):**
+- `WriteL2Async` called outside `StartAsync` or before all validation methods.
+- Lazy population of `l1` (e.g., `l1.TryGetValue(id, out var ent) ?? await db.Set<>().FindAsync(id)`).
+- Any branching that conditionally skips a validation step.
+
+---
+
+### Pitfall 20: Idempotent-Start race window narrative undocumented — operators see "impossible" inconsistencies and chase ghosts
+
+**What goes wrong:**
+Two concurrent Start requests for the same `[WorkflowId]` interleave their per-key writes. Reader between the writes sees:
+- `{workflowId}` root = Start2's data (entryStepIds = [B, C])
+- `{workflowId:A}` child = Start1's data (predates A being removed from entryStepIds)
+- `{workflowId:B}` child = Start2's data
+
+Reader reasonably concludes "the system is in a broken state" and files a P0 incident. On-call engineer debugs for hours, discovers the interleave, and is told "yes, that's accepted behavior" — frustration ensues.
+
+**Why it bites (root cause):**
+The accepted last-write-wins-no-lock semantics has real visible consequences. Without explicit documentation of WHAT inconsistencies a reader can see, every observed inconsistency looks like a new bug.
+
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
+
+**Prevention strategy (concrete):**
+- Add a section to v3.3.0 `REQUIREMENTS.md` (or a separate `ORCHESTRATION-SEMANTICS.md`) titled "L2 Consistency Model":
+  - Per-key writes are atomic (Redis single-threaded property).
+  - Cross-key writes are NOT atomic; concurrent Starts may interleave.
+  - **Accepted reader-visible inconsistencies:** (a) `{workflowId}` root reflects Start2 while one or more `{workflowId:stepId}` children reflect Start1; (b) `{workflowId:stepId}` for a stepId no longer in entryStepIds may briefly exist after Start2 if Start1 was still mid-write.
+  - **NOT accepted (would be bugs):** (a) `{workflowId}` root exists but ALL `{workflowId:stepId}` children are missing (single-Start atomicity violation — must use Pitfall 5's stage-then-RENAME to prevent); (b) half-written values (impossible because per-key writes are atomic — document the invariant).
+- Operators get a runbook entry: "If you see a `{workflowId}` root pointing at stepIds that don't have child keys, check Redis write logs for two overlapping Start requests with the same WorkflowId — accepted interleave."
+- Add a stress test: run 50 concurrent Starts on the same WorkflowId; assert (a) eventually consistent within N seconds; (b) no half-written or corrupt values at any point.
+
+**Warning signs (code review):**
+- No documentation of the consistency model in milestone artifacts.
+- A "fix" PR that adds a Redis lock around Start — contradicts the accepted contract; discuss before merging.
+- Stop logic assuming root and children are always consistent (fails under interleaved Start).
+
+---
+
+### Pitfall 21: Cancellation tokens not propagated to Redis ops — request cancel doesn't stop in-flight writes
+
+**What goes wrong:**
+Client cancels Start (closes connection, Ctrl+C, K8s shutdown). ASP.NET Core propagates `CancellationToken` to controller → service. Postgres reads via EF Core honor the token. But `IDatabase.StringSetAsync(key, value)` does NOT accept a `CancellationToken` in standard overloads — the operation continues to completion regardless. For a workflow with 1000 children, the cancelled request still writes all 1000 keys.
+
+**Why it bites (root cause):**
+StackExchange.Redis's API predates `CancellationToken` ubiquity. Some newer overloads accept tokens (or use `CommandFlags.FireAndForget`), but most don't. The multiplexer batches and pipelines commands; cancellation mid-batch is complex and not exposed in the standard API.
+
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
+
+**Prevention strategy (concrete):**
+- Check the token BEFORE each major chunk of work, not inside individual Redis calls:
+  ```csharp
+  ct.ThrowIfCancellationRequested();
+  var batch = db.CreateBatch();
+  var tasks = childWrites.Select(w => batch.StringSetAsync(w.Key, w.Value)).ToArray();
+  batch.Execute();
+  await Task.WhenAll(tasks).WaitAsync(ct);  // .WaitAsync(ct) IS cancellable at the awaiter
+  ```
+- `.WaitAsync(CancellationToken)` is a .NET 8 `Task` extension that completes early on cancel even if the underlying Redis op continues — in-flight writes complete eventually, but the request returns early.
+- Document that a cancelled Start may leave a PARTIAL L2 projection. A subsequent Start (idempotent) overwrites; a subsequent Stop (idempotent) cleans up.
+- For Stop specifically, same applies: cancellation early-returns; next Stop is idempotent and finishes cleanup.
+
+**Warning signs (code review):**
+- No `ct.ThrowIfCancellationRequested()` calls in `StartAsync` or `WriteL2Async`.
+- `await Task.WhenAll(...)` without `.WaitAsync(ct)`.
+- Documentation promising "Start is fully cancellable" — it isn't, due to library design.
+
+---
+
+### Pitfall 22: Deeply recursive JSON payload causes uncatchable StackOverflow during JsonSchema evaluation
+
+**What goes wrong:**
+A `Schema.Definition` is legitimately recursive (describes a tree-shaped type):
+```json
+{
+  "$defs": {
+    "Node": { "type": "object", "properties": { "child": { "$ref": "#/$defs/Node" } } }
+  },
+  "$ref": "#/$defs/Node"
+}
+```
+v3.2.0 SchemaEntity validator already validates Schema.Definition AS valid; new failure mode is at evaluation time of a deep PAYLOAD against a recursive schema. JsonSchema.Net is generally well-engineered, but version drift or future-milestone schema evolution can introduce stack-blowing code paths.
+
+**Why it bites (root cause):**
+Same hazard as Pitfall 8 — StackOverflow is uncatchable. Defense in depth: bound payload depth before invoking the validator.
+
+**Which phase addresses it:**
+**R3 — Payload↔ConfigSchema validation gate.**
+
+**Prevention strategy (concrete):**
+- Bound payload depth in the validator BEFORE calling `schema.Evaluate(...)`:
+  ```csharp
+  static int MaxJsonDepth(JsonNode? node, int currentDepth = 0)
+  {
+      if (currentDepth > 100) return int.MaxValue;  // short-circuit, bound depth
+      // ... iterative walk of node tree, return max depth observed
   }
   ```
-- Do **not** set `JsonDocumentOptions.CommentHandling = Skip` or `AllowTrailingCommas = true` unless explicitly required.
-- For `Schema.Definition` (JSON Schema): same rule — must be strict JSON.
+  Reject payloads with depth > 100 (or whatever the project's policy is) with 422.
+- Pin JsonSchema.Net to a known-good version range; do not auto-upgrade across major versions.
+- Add a fact constructing a recursive schema + 50-deep payload, assert evaluation completes (proves current library handles it). Add another with a 500-deep payload, assert rejected with 422 due to depth limit.
 
-**Warning signs:**
-- Validation errors for "obviously valid" JSON (it had a comment).
-- Users requesting comment support.
-
-**Phase to address:**
-**P5 — Validation & mapping base** (helper + rule) and **P7 — Entity build-out** (AssignmentEntity + SchemaEntity).
-
----
-
-### Pitfall 23: Postgres connection pool starvation — long-running operations holding connections
-
-**What goes wrong:**
-A request opens a transaction, calls an external API mid-transaction, the external API takes 30 seconds, the Postgres connection sits idle inside the pool's `MaxPoolSize` budget. A burst of requests exhausts the pool. New requests block on `NpgsqlConnection.Open()` until timeout, returning 500s. Postgres itself is fine; the connection pool is the bottleneck.
-
-**Why it happens:**
-Npgsql's default `Maximum Pool Size = 100` per process, with `Connection Idle Lifetime = 300s`. Holding connections across `await` boundaries that involve non-DB I/O burns the budget.
-
-**How to avoid:**
-- **Architectural rule:** never call non-DB I/O (HTTP, file system, message queue) inside a `using` of `IDbContextTransaction` or with an open `DbContext` in scope.
-- Document the rule in `BaseApi.Core` repository pattern: services do single-unit-of-work transactions only.
-- For v1 (CRUD only), this is naturally enforced by the controller → service → repository shape. Add the rule to `CONTRIBUTING.md` so it doesn't drift later.
-- Configure conservative pool size in connection string and document it: `Maximum Pool Size=20;Timeout=15;` for the API service.
-
-**Warning signs:**
-- 500s under load with `NpgsqlException: The connection pool has been exhausted` or `Timeout while getting a connection from pool`.
-- Postgres `pg_stat_activity` shows many `idle in transaction` connections.
-
-**Phase to address:**
-**P1 — Postgres + connection plumbing** (sensible pool size) and **P6 — Abstract generic controllers + service/repository base** (transaction shape).
+**Warning signs (code review):**
+- Schema.Definition with `$ref` cycles not flagged for review.
+- No depth limit on payload validation.
+- Recent JsonSchema.Net upgrade without re-running the recursive-schema fact.
 
 ---
 
-### Pitfall 24: Docker compose v2 — `depends_on` without `condition: service_healthy`
+### Pitfall 23: `IDatabase` cached at construction — stale handle across Redis failover (low risk in v3.3.0, set the discipline now)
 
 **What goes wrong:**
-The API container starts before Postgres is accepting connections. Migrations fail. Container exits. Compose restarts it. After a few retries it works (or doesn't). On CI, race-condition test failures.
+Developer "optimizes" by caching `IDatabase` at construction:
+```csharp
+public class L2Writer
+{
+    private readonly IDatabase _db;
+    public L2Writer(IConnectionMultiplexer mux) => _db = mux.GetDatabase();  // cached
+}
+```
+Under steady-state, fine. During Redis failover (cluster reconfiguration, primary swap), the multiplexer may internally rebind endpoints. Cached `IDatabase` behavior across failover is library-specific; documented best practice is to call `mux.GetDatabase()` per operation (or per method entry).
 
-**Why it happens:**
-Compose v1's `depends_on: [postgres]` only waits for the container to **start**, not to be **ready**. Compose v2 added the `condition` syntax but devs often copy old examples.
+**Why it bites (root cause):**
+`IDatabase` is documented as cheap to create — canonical pattern is per-use. Caching introduces tiny risk for tiny benefit. v3.3.0 isn't running Cluster, so this is moderate (not critical) — but it's a low-cost discipline to set early.
 
-**How to avoid:**
-- Postgres service needs a `healthcheck`:
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
+
+**Prevention strategy (concrete):**
+- Resolve `IDatabase` per-method, not per-construction:
+  ```csharp
+  public class L2Writer
+  {
+      private readonly IConnectionMultiplexer _mux;
+      public L2Writer(IConnectionMultiplexer mux) => _mux = mux;
+      public Task WriteRootAsync(...) {
+          var db = _mux.GetDatabase();
+          return db.StringSetAsync(...);
+      }
+  }
+  ```
+- Cost is negligible; safety against future-failover regression is worth it.
+
+**Warning signs (code review):**
+- `IDatabase` stored as a class field on long-lived services.
+- `IDatabase` injected via DI (it's not designed to be — inject the multiplexer).
+
+---
+
+## Minor Pitfalls
+
+### Pitfall 24: `IConnectionMultiplexer` fakes in tests don't implement the full surface — silent NREs at runtime
+
+**What goes wrong:**
+Test author hand-rolls an `IConnectionMultiplexer` fake to avoid spinning up Redis. The fake throws `NotImplementedException` on `GetSubscriber()`, `RegisterProfiler()`, or other rarely-used members. v3.3.0's writer doesn't call those, so tests pass. A future PR adds `Subscribe(...)` for some new feature, unit tests pass (don't exercise the new path), but runtime NREs.
+
+**Why it bites (root cause):**
+`IConnectionMultiplexer` has a large surface; hand-rolled fakes are always incomplete.
+
+**Which phase addresses it:**
+**R7 — Test fixtures.**
+
+**Prevention strategy (concrete):**
+- **Don't fake `IConnectionMultiplexer`. Use real Redis** (the Compose service, or a Testcontainer in CI). sk_p already pays for a real Postgres in tests; adding real Redis is the same posture.
+- If a fake is unavoidable (truly unit-level test), use NSubstitute/Moq in strict mode so unmocked members fail loudly.
+
+**Warning signs (code review):**
+- Hand-rolled `class FakeMultiplexer : IConnectionMultiplexer` with throw-NotImplemented members.
+- Unit tests for Redis-dependent code that don't spin up Redis.
+
+---
+
+### Pitfall 25: Logical DB index (`SELECT 0..15`) used for test isolation — documented Cluster incompatibility
+
+**What goes wrong:**
+Test author isolates each class to a different Redis logical DB (`opts.DefaultDatabase = 5;`). Works on single-node Redis. Future infra migration to Cluster fails because Cluster does not support `SELECT` (everything is DB 0). Fix is a test refactor that should have been the original design (key-prefix isolation per Pitfall 16).
+
+**Why it bites (root cause):**
+Logical DBs are an older Redis feature widely deprecated in modern guidance; Cluster removes them entirely.
+
+**Which phase addresses it:**
+**R7 — Test fixtures.**
+
+**Prevention strategy (concrete):**
+- Use key-prefix isolation (Pitfall 16). Document: "Do not use Redis logical DBs for isolation; use key prefixes. Cluster compatibility is a future invariant."
+- If a developer asks "why not just use DB 1 for tests?" — point at this pitfall.
+
+**Warning signs (code review):**
+- `opts.DefaultDatabase = N;` for any N > 0.
+- `db.Execute("SELECT", "N")` calls.
+
+---
+
+### Pitfall 26: `RedisValue.HasValue` vs `RedisValue.IsNullOrEmpty` confused — false negatives on empty-string writes
+
+**What goes wrong:**
+Writer SETs a key to `""` (intentionally, maybe a stub). Stop reads back with `IsNullOrEmpty` check, sees `true`, returns 204 with "nothing to do" — but the key DOES exist with an empty value, and Stop should have deleted it.
+
+**Why it bites (root cause):**
+`RedisValue.IsNullOrEmpty` returns `true` for both "key doesn't exist" and "key exists with empty value." `RedisValue.HasValue` is the inverse but has the same conflation. To distinguish, use `db.KeyExistsAsync(key)` separately.
+
+**Which phase addresses it:**
+**R5 — Stop endpoint.**
+
+**Prevention strategy (concrete):**
+- Stop uses `db.KeyExistsAsync(rootKey)` (not `IsNullOrEmpty` on a GET) to decide short-circuit:
+  ```csharp
+  if (!await db.KeyExistsAsync(rootKey)) return new NoContentResult();
+  ```
+- L2 root DTO contract should never serialize to empty string — but defending costs one extra round-trip.
+
+**Warning signs (code review):**
+- Stop logic that checks `IsNullOrEmpty` on a GET to decide existence.
+- Writer code that SETs a key to `""` (suspect — verify intent).
+
+---
+
+### Pitfall 27: `Guid` formatting drift in Redis keys — `D` vs `N` vs `B` format produces different keys
+
+**What goes wrong:**
+Writer formats `workflowId` with `Guid.ToString("D")` (`6f9619ff-8b86-d011-b42d-00c04fc964ff`). Reader formats with `Guid.ToString("N")` (`6f9619ff8b86d011b42d00c04fc964ff`). Same Guid; different Redis keys. Reader sees nothing.
+
+v3.2.0 locked the convention: `X-Correlation-Id` uses `Guid.NewGuid().ToString("N")` per Phase 4. Redis keys must follow the same convention.
+
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
+
+**Prevention strategy (concrete):**
+- All Guid→string in Redis key construction uses `.ToString("N")`. Lock in a helper:
+  ```csharp
+  internal static class L2KeyShape
+  {
+      public static string Root(Guid workflowId) => $"{{{workflowId:N}}}";
+      public static string Child(Guid workflowId, Guid stepId) => $"{{{workflowId:N}:{stepId:N}}}";
+      public static string Processor(Guid processorId) => $"{{{processorId:N}}}";
+  }
+  ```
+- All key construction goes through `L2KeyShape`. Code review fails any inline string interpolation that builds a key.
+- Add a fact: write with one format, read with the helper, assert key is found.
+
+**Warning signs (code review):**
+- `$"{workflowId}:..."` (uses default "D" format) anywhere.
+- Mixed Guid formats across writer and reader.
+
+---
+
+### Pitfall 28: `entryCondition` enum serialized as int — external consumer parses wrong
+
+**What goes wrong:**
+L2 child DTO carries `entryCondition` from existing `StepEntity.EntryCondition` enum (PreviousProcessing/Completed/Failed/Cancelled/Always/Never per PROJECT.md line 27). System.Text.Json default serializes enums as int values. External consumers reading L2 see `"entryCondition": 0` and have to know the underlying enum order — fragile and version-coupled.
+
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
+
+**Prevention strategy (concrete):**
+- Use `JsonStringEnumConverter` so the value serializes as the enum name (`"PreviousProcessing"`). Configure on the shared options (Pitfall 18):
+  ```csharp
+  public static readonly JsonSerializerOptions L2Json = new(JsonSerializerDefaults.Web)
+  {
+      Converters = { new JsonStringEnumConverter() },
+  };
+  ```
+- Document in the L2 DTO XML doc: "enum fields serialized by name, not int."
+
+**Warning signs (code review):**
+- L2 DTOs with enum-typed fields and no `JsonStringEnumConverter` in options.
+- External-consumer integration tests reading Redis and asserting int values.
+
+---
+
+### Pitfall 29: 422 error responses don't include offending IDs — debugging hostile
+
+**What goes wrong:**
+PROJECT.md line 15: "missing next-step ids (422)" — implementation throws `ValidationException("Missing next step id")` with no IDs in the message. RFC 7807 response shows generic text. User can't debug.
+
+**Which phase addresses it:**
+**R2 — Workflow graph traversal.**
+
+**Prevention strategy (concrete):**
+- All cycle / missing-step / schema-edge / payload-validation errors include offending IDs in `ProblemDetails.Extensions`:
+  ```csharp
+  throw new OrchestrationValidationException("missing_next_step", new
+  {
+      ParentStepId = current,
+      MissingNextStepId = child,
+  });
+  ```
+- v3.2.0 Phase 4's exception handler maps to RFC 7807; extend to populate `Extensions` from this shape.
+- Test matrix in `ValidationFacts.cs`: one fact per failure mode (cycle, missing step, schema mismatch, payload mismatch), assert `Extensions` includes the relevant IDs.
+
+**Warning signs (code review):**
+- Validation exceptions thrown with bare strings, no structured payload.
+- 422 responses without `Extensions` data.
+
+---
+
+### Pitfall 30: L2 DTO field-shape drift — `inputDefinition` vs `definitionInput` regression
+
+**What goes wrong:**
+PROJECT.md line 33 locks: "L2 DTO field names: `inputDefinition` / `outputDefinition` (NOT `definitionIn` / `definitionOut` or `definitionInput` / `definitionOutput`)." A PR adds the writer with `definitionInput` — build passes (it's a string DTO field), tests pass (test uses the writer's own DTO), but external consumers break.
+
+**Which phase addresses it:**
+**R4 — L2 Redis writer.**
+
+**Prevention strategy (concrete):**
+- Lock field names with a contract fact:
+  ```csharp
+  [Fact]
+  public void L2ProcessorDto_field_names_match_contract()
+  {
+      var props = typeof(L2ProcessorDto).GetProperties().Select(p => p.Name).ToHashSet();
+      Assert.Contains("InputDefinition", props);
+      Assert.Contains("OutputDefinition", props);
+      Assert.DoesNotContain("DefinitionInput", props);
+      Assert.DoesNotContain("DefinitionOutput", props);
+  }
+  ```
+- Contract test that serializes the DTO and asserts JSON keys (`"inputDefinition"`, `"outputDefinition"`).
+- Similar fact for the `liveness` shape: must have `timestamp`, `interval`, `status`.
+
+**Warning signs (code review):**
+- Field name discussions in PR comments (drift signal).
+- DTO rename PRs without corresponding contract-test update.
+
+---
+
+### Pitfall 31: `StartupCompletionService` doesn't probe Redis — startup probe passes before Redis is ready
+
+**What goes wrong:**
+v3.2.0 Phase 8 wired `StartupCompletionService.ExecuteAsync` to run `MigrateAsync` and mark startup ready. v3.3.0 adds Redis as a runtime dep but doesn't add a "Redis is reachable" check. Startup probe goes healthy before Redis is up; first Start request blows up; K8s already routed traffic in.
+
+**Why it bites (root cause):**
+v3.2.0's startup gate model: "do all critical init synchronously, then mark ready." Redis is now critical (Start endpoint fails without it).
+
+**Which phase addresses it:**
+**R6 — Observability extension** (specifically the startup-completion-service extension).
+
+**Prevention strategy (concrete):**
+- Extend `StartupCompletionService.ExecuteAsync` to PING Redis (or check `mux.IsConnected`) AFTER migrations and BEFORE marking startup ready:
+  ```csharp
+  await dbContext.Database.MigrateAsync(ct);
+  var mux = scope.ServiceProvider.GetRequiredService<IConnectionMultiplexer>();
+  // wait up to N seconds for initial connect (AbortOnConnectFail=false means async retry in background)
+  var sw = Stopwatch.StartNew();
+  while (!mux.IsConnected && sw.Elapsed < TimeSpan.FromSeconds(30))
+      await Task.Delay(500, ct);
+  if (!mux.IsConnected)
+      _logger.LogCritical("startup.redis.not_ready");  // same try/catch/no-rethrow contract as migration (PERSIST-10)
+  _startupGate.MarkReady();
+  ```
+- Same v3.2.0 contract: try / catch / LogCritical / NO rethrow (matches Phase 5 IStartupGate + Phase 8 PERSIST-10).
+- Add a fact: start with Redis down, assert `/health/startup` returns 503 for the wait period.
+
+**Warning signs (code review):**
+- `StartupCompletionService` modifications that add Redis init but rethrow on failure (violates v3.2.0 contract).
+- Missing startup-probe coverage for Redis.
+
+---
+
+### Pitfall 32: Compose service ordering — API container starts before Redis is ready (mirror of v3.2.0 PITFALLS Pitfall 24)
+
+**What goes wrong:**
+Mirror of v3.2.0 PITFALLS.md Pitfall 24 (Compose `depends_on` without `condition: service_healthy`), but for Redis. The new Redis service needs a `healthcheck` and the `api` service's `depends_on` needs the condition.
+
+**Which phase addresses it:**
+**R0 — Redis infrastructure.**
+
+**Prevention strategy (concrete):**
+- Redis Compose service:
   ```yaml
-  postgres:
-    image: postgres:16
+  redis:
+    image: redis:7-alpine
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
-      timeout: 5s
+      timeout: 3s
       retries: 10
       start_period: 5s
-    environment:
-      POSTGRES_DB: steps
-      POSTGRES_USER: steps
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
     ports:
-      - "5433:5432"  # avoid 5432 host conflict — see Pitfall 25
+      - "6380:6379"   # host port 6380 avoids clashes (mirrors v3.2.0 Pitfall 25's Postgres 5433:5432 pattern)
   ```
 - API service:
   ```yaml
@@ -742,644 +1189,72 @@ Compose v1's `depends_on: [postgres]` only waits for the container to **start**,
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
   ```
-- Use `pg_isready` (not `nc` or `psql -c "SELECT 1"` — `pg_isready` is the canonical readiness check shipped with the image).
-- Double-`$$` escapes compose's variable interpolation so the env var is expanded inside the container.
+- Pin the Redis image tag (`redis:7.4-alpine` not `redis:latest`).
 
-**Warning signs:**
-- Migration errors on first `docker compose up` after `down`.
-- CI flakes only on the first run of a job.
-
-**Phase to address:**
-**P1 — Postgres + Docker Compose.**
+**Warning signs (code review):**
+- New `redis:` service without `healthcheck:`.
+- `api.depends_on: [redis]` (old syntax) without `condition: service_healthy`.
 
 ---
 
-### Pitfall 25: Host port 5432 already taken — silent dev confusion
-
-**What goes wrong:**
-Developer has a local Postgres (or another project's Postgres) bound to 5432. Compose starts; the port binding silently maps to the wrong service or fails. Developer's `psql -h localhost -p 5432` connects to the wrong database; they "see" data that isn't really there or destroy data they didn't expect.
-
-**Why it happens:**
-Postgres on the dev host defaults to 5432. Compose's port binding gives a clear error if 5432 is busy, but it's a common surprise.
-
-**How to avoid:**
-- In `docker-compose.yml`, bind to a non-default host port: `ports: ["5433:5432"]`.
-- Document the choice in the repo README: "Connect locally via `psql -h localhost -p 5433`."
-- The API's connection string (in `appsettings.Development.json`) uses `Host=localhost;Port=5433` for direct dev runs, **but** when running inside Docker Compose, the API container reaches Postgres via the service name and the **internal** port: `Host=postgres;Port=5432`. Two configs.
-
-**Warning signs:**
-- "It works for me" but the dev was looking at a different DB.
-- `docker compose up` errors with "bind: address already in use."
-
-**Phase to address:**
-**P1 — Postgres + Docker Compose.**
-
----
-
-### Pitfall 26: Volume persistence — destroying dev data on `docker compose down`
-
-**What goes wrong:**
-Developer runs `docker compose down -v` (or even `down` if volumes are anonymous), all dev data vanishes, migrations replay, seeded test data is gone.
-
-**Why it happens:**
-Volumes are named explicitly (good) or anonymous (bad). `-v` removes all of them. Anonymous volumes for Postgres data are easy to lose.
-
-**How to avoid:**
-- Always use a **named** volume for Postgres data:
-  ```yaml
-  volumes:
-    pgdata:
-  services:
-    postgres:
-      volumes:
-        - pgdata:/var/lib/postgresql/data
-  ```
-- Document in README: "`docker compose down -v` wipes the dev database. Use `docker compose down` (without -v) for normal restarts."
-- For CI/test runs, use throwaway databases (Testcontainers — Pitfall 33).
-
-**Warning signs:**
-- Dev complaints about losing data after restart.
-- Migration runs every startup as if from scratch.
-
-**Phase to address:**
-**P1 — Postgres + Docker Compose.**
-
----
-
-### Pitfall 27: Postgres locale / encoding mismatch on volume reuse
-
-**What goes wrong:**
-First run created the database with the image's default locale (`en_US.utf8`). Dev re-creates the volume from a different OS/image and the locale differs. Migrations succeed but text comparisons sort differently in tests; `ORDER BY name` returns different orders on dev vs CI.
-
-**Why it happens:**
-`initdb` runs once when the volume is empty. The collation is baked in at that point.
-
-**How to avoid:**
-- Pin in compose: `POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"` (or `en_US.UTF-8` if collation matters).
-- Pin the image tag, not `:latest`: `image: postgres:16.4` (or whatever LTS is current).
-- For text comparison/sorting determinism, prefer `COLLATE "C"` on columns that need it (e.g., `Name`).
-
-**Warning signs:**
-- CI sort-order flakes that don't reproduce locally.
-- Different Postgres versions in dev vs prod.
-
-**Phase to address:**
-**P1 — Postgres + Docker Compose.**
-
----
-
-### Pitfall 28: Tests slow because Testcontainers starts a new container per test
-
-**What goes wrong:**
-Each test in an integration test suite spins up a new Postgres container. 50 tests × 5 seconds container startup = 4+ minutes per run. CI times out; devs run tests less; bugs accumulate.
-
-**Why it happens:**
-Default xUnit creates a new test class instance per test method. If `Testcontainers` startup is in the constructor or `IAsyncLifetime.InitializeAsync` per-test, you pay the cost N times.
-
-**How to avoid:**
-- Use **xUnit class fixtures** or **collection fixtures** to share one container across many tests:
-  ```csharp
-  public class PostgresFixture : IAsyncLifetime
-  {
-      public PostgreSqlContainer Container { get; } =
-          new PostgreSqlBuilder().WithImage("postgres:16.4").Build();
-
-      public async Task InitializeAsync() => await Container.StartAsync();
-      public async Task DisposeAsync() => await Container.DisposeAsync();
-  }
-
-  [CollectionDefinition("Database")]
-  public class DatabaseCollection : ICollectionFixture<PostgresFixture> { }
-
-  [Collection("Database")]
-  public class SchemaTests
-  {
-      private readonly PostgresFixture _fixture;
-      public SchemaTests(PostgresFixture fixture) => _fixture = fixture;
-  }
-  ```
-- Reset DB state **between tests** with **Respawn** (delete table rows; ~10ms) instead of restarting the container.
-- For WebApplicationFactory: subclass and override the connection string to point at the container's exposed port.
-
-**Warning signs:**
-- Test suite takes > 1 minute for < 100 tests.
-- `docker ps` during test run shows dozens of `postgres:...` containers.
-
-**Phase to address:**
-**P8 — Test stack.**
-
----
-
-### Pitfall 29: WebApplicationFactory not honoring Testcontainers connection string
-
-**What goes wrong:**
-Test runs `WebApplicationFactory<Program>` but the API still connects to the dev `appsettings.Development.json` Postgres (or fails because no DB is up). The factory builds `Program.cs`'s DI which reads `IConfiguration` at startup time — the override happens too late.
-
-**Why it happens:**
-`WebApplicationFactory.ConfigureWebHost` runs after `Program.cs` builds the host. To override config used by `AddDbContext`, you must intercept `IConfiguration` before it's bound, or replace the registered DbContextOptions after.
-
-**How to avoid:**
-- Use `WithWebHostBuilder` and `ConfigureAppConfiguration` to **add an in-memory config source** that overrides the connection string **before** `AddDbContext` sees it:
-  ```csharp
-  public class TestWebAppFactory : WebApplicationFactory<Program>, IAsyncLifetime
-  {
-      private readonly PostgreSqlContainer _container = new PostgreSqlBuilder().Build();
-
-      public async Task InitializeAsync() => await _container.StartAsync();
-      public new async Task DisposeAsync() { await _container.DisposeAsync(); await base.DisposeAsync(); }
-
-      protected override void ConfigureWebHost(IWebHostBuilder builder)
-      {
-          builder.ConfigureAppConfiguration(cfg =>
-          {
-              cfg.AddInMemoryCollection(new Dictionary<string, string?>
-              {
-                  ["ConnectionStrings:Default"] = _container.GetConnectionString()
-              });
-          });
-      }
-  }
-  ```
-- Alternative: replace the DbContextOptions registration in `ConfigureTestServices`, but the config-override approach is cleaner and exercises the real `AddDbContext` path.
-
-**Warning signs:**
-- Tests succeed locally only because dev Postgres is up.
-- Tests connect to the dev database (and modify it!).
-
-**Phase to address:**
-**P8 — Test stack.**
-
----
-
-### Pitfall 30: `appsettings.json` comments and `Logging:LogLevel` discoverability
-
-**What goes wrong:**
-A developer adds a comment to `appsettings.json` explaining a setting. The default `ConfigurationBuilder` in .NET 8 parses JSON strictly; `//` is rejected; the service fails to start with an unhelpful "JSON parse error at line N."
-
-**Why it happens:**
-The default `Json.NET`-era convention allowed comments; .NET 8 uses `System.Text.Json` which is strict.
-
-**How to avoid:**
-- Don't put comments in `appsettings.json`. If documentation is needed, put it in a sibling `appsettings.README.md` or in the loader (`Program.cs` comments).
-- Alternative: use `AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)` with the `JsonConfigurationProvider` configured to allow comments — but this requires plumbing and is more trouble than it's worth.
-- Don't rely on environment-variable-only config in dev (harder to debug).
-
-**Warning signs:**
-- Service fails on startup with "JSON" errors after a config edit.
-- Operators add `# explanation` thinking it's like YAML.
-
-**Phase to address:**
-**P0 — Repository scaffold.** Set the convention and document.
-
----
-
-### Pitfall 31: OTLP exporter timeouts/batching defaults mask Collector downtime
-
-**What goes wrong:**
-The Collector is down for 5 minutes. The default OTLP batch exporter buffers up to 2048 spans/log records and retries with backoff. Buffer fills, oldest get dropped silently. When the Collector comes back, logs/metrics for that window are gone — no warning in the app's own logs.
-
-**Why it happens:**
-The exporter is intentionally non-blocking; failures don't propagate to the app to avoid taking down the service. But the silence is deceiving.
-
-**How to avoid:**
-- Set explicit exporter options and log internal failures:
-  ```csharp
-  o.AddOtlpExporter((exporterOpts, processorOpts) =>
-  {
-      exporterOpts.Endpoint = new Uri(otlpEndpoint);
-      exporterOpts.TimeoutMilliseconds = 5000;
-      processorOpts.BatchExportProcessorOptions.MaxQueueSize = 4096;
-      processorOpts.BatchExportProcessorOptions.MaxExportBatchSize = 512;
-      processorOpts.BatchExportProcessorOptions.ScheduledDelayMilliseconds = 5000;
-  });
-  ```
-- Enable OTel's **self-diagnostics** via env var (`OTEL_DOTNET_AUTO_LOG_DIRECTORY` or `OTEL_LOG_LEVEL`) so internal exporter errors are visible.
-- Add a Collector reachability check to the readiness probe (optional; some teams treat it as non-critical).
-- Document expected backpressure: "If OTLP is down for >N minutes, logs from that window will be dropped."
-
-**Warning signs:**
-- Gaps in the Collector that don't correspond to gaps in console logs.
-- No app-side warning when OTLP exporter fails.
-
-**Phase to address:**
-**P4 — Observability.**
-
----
-
-### Pitfall 32: Unbounded `ActivitySource` / counters causing memory growth
-
-**What goes wrong:**
-A counter or histogram is tagged with high-cardinality values (e.g., the entity `Id` itself, or the raw request path including `Guid`s). Each unique tag combination creates a new metric series. Memory grows linearly; Prometheus/Collector ingestion explodes.
-
-**Why it happens:**
-Devs tag metrics with "useful" identifiers that are unbounded in cardinality.
-
-**How to avoid:**
-- Hard rule: **never tag metrics with `Guid` / user-supplied strings / full request paths**.
-- For HTTP server metrics, the AspNetCore instrumentation uses **route templates** (e.g., `/api/schemas/{id}`), not raw paths — this is correct by default. Verify by checking exported metrics.
-- For custom counters added later, document the allowed tag set. Aim for tags with bounded cardinality (entity type, status code, error code) — not entity-specific.
-- For high-cardinality dimensions, use logs/traces (where each event is its own unit), not metrics.
-
-**Warning signs:**
-- Collector memory growing without bound.
-- Prometheus `series count` growing linearly with traffic.
-
-**Phase to address:**
-**P4 — Observability.** Document the rule when wiring instrumentation.
-
----
-
-### Pitfall 33: Server-controlled fields in `CreateDto` — silent privilege escalation
-
-**What goes wrong:**
-`SchemaCreateDto` is generated by copy-paste from `SchemaEntity` and accidentally includes `Id`, `CreatedAt`, `CreatedBy`. A client POSTs `{"id": "00000000-...", "createdBy": "admin", ...}` — the mapper happily assigns those values, and the entity is created with a chosen ID and forged `CreatedBy`.
-
-**Why it happens:**
-DTOs aren't intentionally minimal. Devs lazily mirror the entity shape.
-
-**How to avoid:**
-- **CreateDto rule:** never include `Id`, `CreatedAt`, `CreatedBy`, `UpdatedAt`, `UpdatedBy`. The service / interceptor / framework owns these.
-- **UpdateDto rule:** never include the above either; also never include immutable fields (the entity's identity).
-- **ReadDto rule:** include all audit fields (it's read-only, observability matters).
-- Add a unit test per entity: deserialize a `CreateDto` from a JSON containing `id`, `createdAt`, `createdBy` — assert these fields are NOT settable (either ignored by STJ or rejected by the validator).
-- The Mapperly mapper from `CreateDto` → `Entity` simply cannot map `Id` if `CreateDto` doesn't have it — Mapperly's `MP0020`/`MP0021` warnings flag unmapped target properties; promote to errors so missing fields are visible.
-
-**Warning signs:**
-- `CreateDto` and `ReadDto` are structurally identical (suspicious).
-- Tests don't cover "client sends id" case.
-
-**Phase to address:**
-**P5 — Validation & mapping base** (DTO conventions) and **P7 — Entity build-out** (per-entity DTOs).
-
----
-
-### Pitfall 34: `[ApiController]` model validation triggering before FluentValidation runs
-
-**What goes wrong:**
-The base controller has `[ApiController]` (gives automatic 400 on model-binding errors, useful). But `[ApiController]` also runs DataAnnotations and reports its own ValidationProblemDetails — bypassing the project's custom error shape and FluentValidation results. The two coexist confusingly: model-binding errors → ASP.NET's shape; FluentValidation errors → project's shape.
-
-**Why it happens:**
-`[ApiController]` adds automatic 400 handling for invalid `ModelState`. FluentValidation in the project is invoked manually inside actions. The two paths produce different response bodies.
-
-**How to avoid:**
-- Keep `[ApiController]` (still want auto-400 for model-binding / JSON-shape errors).
-- Customize the response factory to match the project's RFC 7807 + correlationId shape:
-  ```csharp
-  services.Configure<ApiBehaviorOptions>(options =>
-  {
-      options.InvalidModelStateResponseFactory = context =>
-      {
-          var problem = new ValidationProblemDetails(context.ModelState)
-          {
-              Status = StatusCodes.Status400BadRequest,
-              Type = "https://example.com/probs/validation",
-          };
-          problem.Extensions["correlationId"] = context.HttpContext.TraceIdentifier;
-          return new BadRequestObjectResult(problem) { ContentTypes = { "application/problem+json" } };
-      };
-  });
-  ```
-- Document: model-binding errors and FluentValidation errors share the same response contract (status, type, errors map, correlationId).
-
-**Warning signs:**
-- "Same" validation failure returns different JSON shapes depending on which code path triggered.
-- Missing `correlationId` in 400s from model-binding (vs present in FluentValidation 400s).
-
-**Phase to address:**
-**P5 — Validation & mapping base.**
-
----
-
-### Pitfall 35: Hard delete cascading unexpectedly through junctions
-
-**What goes wrong:**
-DELETE `/steps/{id}` succeeds. Postgres cascades to `step_next_steps` (good) and to `workflow_entry_steps` (bad — silently removing the step from workflows that reference it, possibly invalidating workflows). No application-level check that the step is unreferenced.
-
-**Why it happens:**
-DB-level cascade was set to `Cascade` on every FK by EF Core's default for required relationships, or by a copy-paste in `OnModelCreating`.
-
-**How to avoid:**
-- Be explicit per FK about delete behavior. Default to `Restrict` (DB raises FK violation if referenced; surfaces as 422 per Pitfall 14):
-  ```csharp
-  modelBuilder.Entity<WorkflowEntrySteps>()
-      .HasOne<StepEntity>().WithMany().HasForeignKey(x => x.StepId)
-      .OnDelete(DeleteBehavior.Restrict);
-  ```
-- Only use `Cascade` where the relationship semantically owns (e.g., `step_next_steps` rows when their parent step is deleted — that's housekeeping, not data loss).
-- Document the cascade table per junction in `BaseDbContext`.
-
-**Warning signs:**
-- DELETE on a referenced entity returns 200 instead of 422.
-- Workflows mysteriously "lose" entry steps after step deletion.
-
-**Phase to address:**
-**P7 — Entity build-out** (per-relationship cascade decisions).
-
----
-
-### Pitfall 36: Empty `BaseEntity.Description` round-tripping as `null` vs `""`
-
-**What goes wrong:**
-A user POSTs without `description`. The entity stores `null`. GET returns `"description": null`. Next caller PUTs back the same object with `null`; mapper or validator complains because `null` is treated differently from missing-from-payload by STJ. Or worse: the validator says "Description must not be empty," which conflicts with the documented "Description is optional."
-
-**Why it happens:**
-STJ JSON `null` and missing-property are not distinguished in the deserialized object (both yield `null`). Validators conflate "missing" and "explicitly null."
-
-**How to avoid:**
-- `Description` is `string?` in `BaseEntity` (nullable).
-- Validator rule: `RuleFor(x => x.Description).MaximumLength(2000).When(x => x.Description != null);` — no `.NotEmpty()`.
-- Mapper: nullable property maps as-is; no transformation.
-- Document: `null` and missing are equivalent for `Description`. Empty string `""` is invalid (validator should reject it; or normalize empty → null in service).
-
-**Warning signs:**
-- Round-trip GET → PUT with the same body returns 400.
-- Database has both `NULL` and `''` values in the same column.
-
-**Phase to address:**
-**P5 — Validation & mapping base** (description rule consistent everywhere).
-
----
-
-### Pitfall 37: Decimal precision in jsonb columns (future-proofing)
-
-**What goes wrong:**
-Not directly applicable to v1 (the project's only jsonb fields are `Schema.Definition` and `Assignment.Payload`, both arbitrary user JSON). But if/when domain DTOs are stored as jsonb later, .NET `decimal` round-trips through System.Text.Json as `Number` and Postgres jsonb stores it as JSON number (`numeric` precision via JSONB) — Postgres `numeric` has effectively unlimited precision, but Postgres jsonb stores as numeric internally and precision is preserved; but JSON parsers downstream may downgrade to IEEE-754 double, losing precision for >15-digit decimals.
-
-**Why it happens:**
-Cross-system serialization of numbers is hostile. Postgres preserves precision in jsonb; JavaScript clients silently truncate.
-
-**How to avoid:**
-- For v1, the user-supplied JSON in `Payload`/`Definition` is stored verbatim — no concern.
-- **Document the rule**: if domain numeric data is ever added to jsonb-backed fields, serialize as strings, not numbers, to preserve precision.
-- For Postgres `numeric` columns (none in v1), use EF Core's `HasPrecision(18, 6)` on `decimal` properties.
-
-**Warning signs:**
-- N/A for v1; flag for future milestones if money/quantity fields appear.
-
-**Phase to address:**
-**P7 — Entity build-out** (no current entity needs this; flag in PROJECT.md if added later).
-
----
-
-### Pitfall 38: Async exception handling — `ExceptionDispatchInfo` swallowing original stack
-
-**What goes wrong:**
-Custom error middleware catches an exception, logs it, then either rethrows (losing original stack info if done via `throw ex;` instead of `throw;`) or wraps it in a new exception (losing inner context). Investigations later have stack traces pointing at the middleware, not the original failure site.
-
-**Why it happens:**
-`throw ex;` resets the stack. The fix is `throw;` or `ExceptionDispatchInfo.Capture(ex).Throw();` for cross-method preservation.
-
-**How to avoid:**
-- In the error middleware, **never** rethrow — handle and return a Problem Details response.
-- Log with the full exception: `_logger.LogError(ex, "unhandled exception in {Path}", context.Request.Path);` — the `ex` parameter preserves the stack.
-- If exceptions need to cross async boundaries while preserving stack, use `ExceptionDispatchInfo.Capture(ex)`.
-
-**Warning signs:**
-- Stack traces in logs all point to the middleware file/line.
-- Inner exceptions missing or set to the wrapping exception.
-
-**Phase to address:**
-**P3 — Cross-cutting middleware.**
-
----
-
-### Pitfall 39: Connection string secrets in `appsettings.json`
-
-**What goes wrong:**
-`appsettings.json` contains `"ConnectionStrings:Default": "Host=localhost;Username=steps;Password=devpassword"`. Committed to git. The dev password becomes the prod password through "we just changed the value but the structure stayed." Pen test finds it.
-
-**Why it happens:**
-The path of least resistance is to put the connection string in JSON. Many tutorials do this.
-
-**How to avoid:**
-- `appsettings.json` contains the connection string **shape** (host, db name) but **not** the password.
-- Password supplied via:
-  - Local dev: User Secrets (`dotnet user-secrets set "ConnectionStrings:Default" "..."`)
-  - CI / prod: environment variable `ConnectionStrings__Default` (double underscore = config-section separator)
-  - Or via `OTEL_EXPORTER_OTLP_ENDPOINT`-style explicit env vars
-- Document the supply chain in `README.md`. Reject PRs containing secrets in committed JSON.
-- Compose file uses `${POSTGRES_PASSWORD:?required}` so a missing var fails compose-up loudly.
-
-**Warning signs:**
-- `git log -p | grep -i password` finds anything.
-- The same password works in dev and prod.
-
-**Phase to address:**
-**P0 — Repository scaffold** (User Secrets + .gitignore rules) and **P1 — Postgres + compose**.
-
----
-
-## Technical Debt Patterns
-
-Shortcuts that look reasonable in v1 but cost later.
-
-| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| `MigrateAsync()` on startup as the only deploy mechanism | Zero ops setup; single artifact | Multi-instance race risk; failed migrations cause restart loop; no rollback path | v1 single-instance only; document the upgrade path |
-| Generic `Repository<T>` with no compile-time per-entity hooks | Less code per entity | Hides entity-specific logic in services; can leak `IQueryable<T>` shape to controllers if not careful | Always — but pair with explicit `Service<T>` per entity |
-| 5 entities in one `AppDbContext` | Simpler DI; cross-entity FKs trivially | If a bounded context ever splits into its own service, every migration touches the shared schema | v1 by design; split via "AppDbContext partial classes" pattern if scaling |
-| Hard delete only | Simpler to implement | Audit trail loss; "deleted" records can't be recovered; FK cascades are scarier | v1 explicitly out of scope (PROJECT.md); add soft-delete in `BaseEntity` later as a column + filter |
-| No pagination on list endpoints | Simpler controllers | Will OOM the service when a table has 100k rows | v1 explicitly out of scope; add when first table approaches 1k rows |
-| `(Name, Version)` not unique | Matches business rules; no schema work | Future searches by `(Name, Version)` may return multiples; consumers must handle | Per PROJECT.md decision; document for consumers |
-| FK pre-validation deferred to DB | One round-trip; reliable | Error messages are less actionable to clients without good SQLSTATE mapping (Pitfall 14) | Per PROJECT.md decision; depends on the SQLSTATE mapping being thorough |
-| No `Payload`-vs-`Schema` conformance check | Saves a JSON Schema dynamic-validation pass per Assignment write | Garbage payloads accepted silently | Per PROJECT.md decision (N2); add as opt-in feature later |
-| Snake_case convention added later | "We'll convert when we need to" | Migration nightmare (Pitfall 4) | **Never** — add at first migration or never |
-| Single shared `appsettings.json` with envs as overrides | One config to grok | Easy to leak prod values into dev or vice versa | Always, but enforce secrets-out via User Secrets / env vars |
-
----
-
-## Integration Gotchas
-
-| Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| Postgres (Npgsql) | Storing local-time `DateTime` in `timestamptz` columns | Always UTC; document in `BaseEntity` |
-| Postgres (Npgsql) | Pool size = 100 default, holding connections across non-DB I/O | Pool size ≤ 20 for API service; no I/O inside transactions |
-| Postgres (Npgsql) | SQLSTATE codes mapped incompletely | Central `PostgresErrorMapper`; cover 23502/23503/23505/23514 explicitly |
-| OTel Collector (OTLP) | Wiring `WithLogging` instead of `Logging.AddOpenTelemetry` | Use `builder.Logging.AddOpenTelemetry(...)` for MEL flow |
-| OTel Collector (OTLP) | No filter on AspNetCore instrumentation → health probes flood metrics | Filter `/health*`, `/metrics`, `/swagger` paths |
-| OTel Collector (OTLP) | Silent buffer drops when Collector is down | Enable self-diagnostics; document the buffer behavior |
-| Docker Compose v2 | `depends_on` without `condition: service_healthy` | Use `pg_isready` healthcheck + `service_healthy` |
-| Docker Compose | Anonymous volumes; data lost on `down -v` | Named volume `pgdata`; document `-v` warning |
-| Docker Compose | Host port 5432 conflicts with local Postgres | Use `5433:5432` host mapping; document |
-| FluentValidation | Using deprecated `FluentValidation.AspNetCore` auto-validation | Explicit `ValidateAsync` in controllers |
-| Mapperly | `partial class` without `[Mapper]` attribute → no generated code | Standard template: `[Mapper] static partial class` |
-| Mapperly | `UpdateDto` writes server fields silently | `[MapperIgnoreTarget]` + warnings-as-errors |
-| JSON Schema validation | Draft mismatch | Pin draft 2020-12; reject mismatched `$schema` |
-| Cron validation | Library disagreement with downstream consumer | Standardize on Cronos 5-field; document |
-| Testcontainers | New container per test | Class/collection fixture + Respawn between tests |
-| WebApplicationFactory | Config override too late for `AddDbContext` | Override `ConfigureAppConfiguration` with in-memory source |
-
----
-
-## Performance Traps
-
-Patterns that work for v1's expected scale but degrade with growth.
-
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| `GET /entity` returns all rows | Slow list responses, OOM on huge tables | Pagination (deferred per PROJECT.md, but **add the pagination interface to base controller now** to defer impl, not interface) | ~10k rows |
-| EF Core change tracker keeping every queried entity | Memory growth per request | Use `AsNoTracking()` in `Repository<T>.GetById` for read-only paths; tracking only when needed for updates | ~100 entities per request, persistently held |
-| OTel batch buffer too large in memory-constrained containers | Container OOM-killed | Set explicit `MaxQueueSize` (Pitfall 31) | When Collector latency rises under load |
-| Health probe hitting DB every second | Connection pool partly burned by readiness checks | Cache readiness result for 5s (`AddCheck` with `failureStatus + caching` pattern) | Probe frequency × replicas > available connections |
-| Validator instantiation per request | GC pressure | Transient lifetime is fine; FluentValidation validators are cheap to construct | Doesn't break; non-issue |
-| `_dbContext.Set<T>().Where(...).ToList()` without `.AsNoTracking()` on hot paths | Slow reads, memory growth | Audit each read path; tracking off by default in `Repository.GetAll` | ~1k entities per request |
-| Hot-loop calls to `AppDbContext` in the same request without `await using` | Connection leaks | Standard EF patterns with `using` block; never inject `AppDbContext` into singletons | Any | 
-
----
-
-## Security Mistakes
-
-Domain-specific issues beyond OWASP basics. (Auth itself is out of scope per PROJECT.md, but other security concerns apply.)
-
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| Server-controlled fields in `CreateDto`/`UpdateDto` (Pitfall 33) | Forged audit trail; client-chosen IDs | Strict DTO conventions; Mapperly warnings as errors |
-| Stack traces in error responses (Pitfall 13) | Information disclosure | Always sanitize `Detail`; log full stack server-side only |
-| Connection-string secrets in committed `appsettings.json` (Pitfall 39) | Credential exposure in git history | User Secrets in dev; env vars in prod; CI scans for secrets |
-| `Schema.Definition` being executed by a downstream tool | If any consumer evaluates the JSON Schema as code (e.g., loading remote `$ref`), SSRF possible | Document: this service does **not** dereference remote `$ref`s; validator config disables network access |
-| `Assignment.Payload` size unbounded | DoS via 1 GB payload | Set `Kestrel.Limits.MaxRequestBodySize` + explicit max length validator on `Payload` (e.g., 1 MB) |
-| `CronExpression` evaluated by external scheduler | A malicious cron could starve the scheduler if scheduler doesn't validate | Validate cron at the API boundary even though the scheduler is the executor; cap "max iterations per second" downstream |
-| `X-Correlation-Id` accepted unfiltered | Log injection via newlines / huge ids | Validate as `^[A-Za-z0-9\-]{1,64}$` in the correlation middleware; reject malformed and generate fresh |
-| Postgres user has too many privileges | Migrations succeed because the API user has DDL; runtime SQLi (theoretical) could DROP tables | Document migration-user vs runtime-user split as a future enhancement; v1 single user is acceptable but flag for prod hardening |
-| Verbose Problem Details leaking entity field names client doesn't own | Schema enumeration | Map errors using stable, public field names — not raw DB column names |
-
----
-
-## UX Pitfalls
-
-Domain UX concerns (for API consumers — the orchestrator/scheduler is the "user").
-
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-----------------|
-| Inconsistent error shape between model-binding and FluentValidation (Pitfall 34) | Two ways to parse errors | Unified RFC 7807 with `errors` map + `correlationId` for all 400s |
-| Missing `correlationId` in error responses | Operators can't grep logs from a client-reported issue | Mandatory in every error body (Pitfall 13) |
-| Vague Postgres-derived error details ("FK violation") | Consumer can't identify which FK failed | Parse `PostgresException.ConstraintName` → human-readable field (Pitfall 14) |
-| OpenAPI spec mismatches actual response shape | Consumer code-gen breaks | Generate OpenAPI from the API itself (built-in in .NET 8) and snapshot in CI |
-| `null` vs missing `Description` causing 400 (Pitfall 36) | Round-trip GET → PUT fails | Validator treats `null` and missing as equivalent |
-| `CronExpression` validation differs from external scheduler's | Workflows accepted by API fail at scheduler time | Validate using the same library the scheduler uses (Pitfall 21) |
-| List endpoint returns 10k items in one response | Slow / OOM clients | Pagination interface in base; per PROJECT.md, full impl deferred but `GET ?limit=100` returning first N is a cheap precaution |
-
----
-
-## "Looks Done But Isn't" Checklist
-
-Things that appear complete but are missing critical pieces.
-
-- [ ] **Audit interceptor:** Verify `UpdatedAt` actually updates on UPDATE (only `CreatedAt` is set on insert — many implementations get this wrong).
-- [ ] **Audit interceptor:** Verify `CreatedBy`/`UpdatedBy` are populated when `HttpContext.User.Identity.Name` is available (auth out of scope, but the wiring should exist for when auth is added).
-- [ ] **Audit interceptor:** Verify `Kind == Utc` on every `DateTime` it sets (Pitfall 1).
-- [ ] **Correlation middleware:** Verify the id appears in **error** responses, not just success responses.
-- [ ] **Correlation middleware:** Verify the id flows through `Task.Run`-style fire-and-forget (Pitfall 11).
-- [ ] **Health probes:** Verify three distinct endpoints respond correctly under DB-down, DB-blip, and DB-up scenarios (Pitfall 15).
-- [ ] **OTel logs:** Verify `IncludeFormattedMessage = true` and that a real log line arrives at the Collector with the formatted text (Pitfall 8).
-- [ ] **OTel logs:** Verify `Logging:LogLevel:Default = "Warning"` actually filters out Information at the exporter (Pitfall 9).
-- [ ] **OTel metrics:** Verify `/health` traffic is filtered out (Pitfall 10).
-- [ ] **Problem Details:** Verify 500 responses do not contain stack traces, file paths, or "Exception" text (Pitfall 13).
-- [ ] **Problem Details:** Verify FK violation → 422, unique → 409, not-null → 400 with correct field names (Pitfall 14).
-- [ ] **Migrations:** Verify the startup log lines (`migrations.start` / `migrations.complete`) appear in OTel logs.
-- [ ] **Migrations:** Verify `__EFMigrationsHistory` columns are intact after first migration (Pitfall 4).
-- [ ] **FluentValidation:** Verify `FluentValidation.AspNetCore` is **NOT** in the dependency tree (Pitfall 7).
-- [ ] **Mapperly:** Verify the build emits no `MP0001`/`MP0011`/`MP0020`/`MP0021` warnings (or fails on them per Pitfall 16).
-- [ ] **DTOs:** Verify `CreateDto` and `UpdateDto` do NOT contain `Id`/`CreatedAt`/`CreatedBy`/`UpdatedAt`/`UpdatedBy` (Pitfall 33).
-- [ ] **DTOs:** Verify a POST with `{"id": ..., "createdBy": ...}` ignores those fields (test).
-- [ ] **Postgres compose:** Verify `pg_isready` healthcheck passes before the API tries to connect (Pitfall 24).
-- [ ] **Postgres compose:** Verify the API container connects to `Host=postgres;Port=5432` (internal), not the host port (Pitfall 25).
-- [ ] **Postgres compose:** Verify named volume `pgdata` persists across `docker compose down` (Pitfall 26).
-- [ ] **Concurrency (xmin):** Verify a concurrent PUT actually returns 409 (Pitfall 6).
-- [ ] **Validators:** Verify SemVer regex matches the documented draft (strict triple vs full SemVer 2.0) (Pitfall 18).
-- [ ] **Validators:** Verify SHA-256 regex accepts mixed case AND normalization happens before persist (Pitfall 19).
-- [ ] **Validators:** Verify JSON Schema validation correctly identifies draft (Pitfall 20).
-- [ ] **Validators:** Verify cron validation matches the format documented to consumers (Pitfall 21).
-- [ ] **Tests:** Verify Testcontainers + WebApplicationFactory + Respawn pattern is used (Pitfalls 28, 29).
-- [ ] **Tests:** Verify the test suite runs in under 60s for the v1 entity count.
-- [ ] **Secrets:** Verify `appsettings.json` contains no passwords; verify CI fails if it does (Pitfall 39).
-- [ ] **Junctions:** Verify cascade behavior per FK is intentional, not defaulted (Pitfall 35).
-
----
-
-## Recovery Strategies
-
-When pitfalls occur despite prevention, the cost of recovery.
-
-| Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Snake_case convention added after first migration (Pitfall 4) | HIGH | Manual ALTER scripts to snake_case existing columns; re-baseline migrations history; coordinate downtime |
-| Non-UTC DateTime stored in `timestamptz` (Pitfall 1) | MEDIUM | UPDATE columns to `AT TIME ZONE 'UTC'`; deploy fixed AuditInterceptor; verify in next migration |
-| FluentValidation.AspNetCore in dependency tree (Pitfall 7) | LOW | Remove package; convert auto-validation sites to explicit `ValidateAsync`; usually < 1 day |
-| Mapperly generates nothing (Pitfall 16) | LOW | Fix project setup (`PrivateAssets="all"` or correct package reference); rebuild |
-| Server-controlled fields in DTOs (Pitfall 33) | MEDIUM | Audit all DTOs; deploy fix; any data created with forged audits stays corrupted unless re-derived from logs |
-| Stack traces leaking (Pitfall 13) | LOW | Patch error middleware to sanitize; deploy; assess any exploit window |
-| Connection pool exhaustion (Pitfall 23) | MEDIUM | Identify the holding code path; refactor to release connections; tune pool size; document the rule |
-| Liveness probe killing pods during DB blip (Pitfall 15) | LOW | Change probe wiring to use `live` tag only; redeploy |
-| Migrations race-loop across instances (Pitfall 3) | MEDIUM | Move migrations to a pre-deploy job; remove from API startup; ship as separate container |
-| Hard-coded passwords in git (Pitfall 39) | HIGH | Rotate credentials in all environments; rewrite git history (controversial); audit downstream systems; assume compromise |
-| Wrong cron library accepting strings the scheduler rejects (Pitfall 21) | LOW | Replace validator library; reject existing bad records via background reconciliation if scheduler can't handle them |
-| Cascading delete destroying workflow references (Pitfall 35) | HIGH | Backfill from backups or audit logs; switch DELETE policy to `Restrict`; introduce soft-delete |
-
----
-
-## Pitfall-to-Phase Mapping
-
-How roadmap phases should address these pitfalls.
-
-| # | Pitfall | Prevention Phase | Verification |
-|---|---------|------------------|--------------|
-| 1 | Non-UTC DateTime → timestamptz | **P2** EF Core base infra | Unit test: round-trip `BaseEntity` through DbContext, assert `Kind == Utc` |
-| 2 | DbContext lifetime | **P2** + **P6** | DI registration review; load test for "second operation" exception |
-| 3 | Migrations race / restart loop | **P2** + **P4** | Log lines `migrations.start/complete` visible in OTel; startup probe gated on completion |
-| 4 | NamingConventions mangles `__EFMigrationsHistory` | **P2** | First migration generated after convention is wired; manual inspection of `__EFMigrationsHistory` schema |
-| 5 | M2M junction misconfig | **P2** + **P7** | Per-junction unit test: add/remove/re-add yields single row |
-| 6 | xmin concurrency token | **P2** + **P3** | Integration test: concurrent PUT returns 409 |
-| 7 | FluentValidation.AspNetCore deprecated | **P5** | Dependency tree contains only `FluentValidation` + `FluentValidation.DependencyInjectionExtensions` |
-| 8 | OTel logger provider wiring | **P4** | Smoke test: `ILogger<T>` log appears in OTLP export |
-| 9 | LogLevel filter not effective | **P4** | Test with `Default = "Warning"`; assert Information log not exported |
-| 10 | Health probes spam metrics | **P4** | After 100 probe hits, exported HTTP metric count for `/health` is 0 |
-| 11 | Correlation id lost across async | **P3** | Test: id present in logs from a `Task.Run` continuation |
-| 12 | Correlation middleware ordering | **P3** | `AddBaseApi(...)` enforces order; integration test of exception path includes id |
-| 13 | Stack traces in 500 responses | **P3** | Endpoint that throws; assert response body has no "Exception"/path text |
-| 14 | Postgres SQLSTATE mapping | **P3** | Per-code integration test (23503, 23505, 23502, 23514) |
-| 15 | Liveness probe checks DB | **P4** | Three-endpoint test under DB-up / DB-blip / DB-down scenarios |
-| 16 | Mapperly project setup | **P5** | Inspect `obj/.../generated`; CI fails on MP* warnings |
-| 17 | Mapper writes server-controlled fields | **P5** + **P7** | Unit test: `ApplyUpdate` does not modify `Id`/`CreatedAt`/`CreatedBy` |
-| 18 | SemVer regex | **P5** | Validator table-test covering accepted/rejected SemVer strings |
-| 19 | SHA-256 case | **P5** + **P7** | Unit test: uppercase and lowercase both accepted; uniqueness on lowercase only |
-| 20 | JSON Schema draft | **P5** + **P7** | Validator test against known-good draft-2020-12 schemas; rejects draft-07-only constructs (or vice versa per choice) |
-| 21 | Cron library mismatch | **P5** + **P7** | Cron validation matches documentation; cross-check against scheduler's library if known |
-| 22 | STJ strict JSON | **P5** + **P7** | Validator rejects payloads with `//` comments and trailing commas |
-| 23 | Connection pool starvation | **P1** + **P6** | Pool size set in connection string; code review forbids non-DB I/O inside transactions |
-| 24 | Compose `depends_on` healthcheck | **P1** | `docker compose up` from cold start: API doesn't error on connection |
-| 25 | Host port 5432 conflict | **P1** | README documents `5433:5432`; compose uses non-default port |
-| 26 | Volume persistence | **P1** | Named `pgdata` volume; README documents `-v` semantics |
-| 27 | Locale/encoding | **P1** | `POSTGRES_INITDB_ARGS` pinned; image tag pinned |
-| 28 | Testcontainers per-test | **P8** | Test suite runs in <60s; `docker ps` shows ≤1 container during run |
-| 29 | WebAppFactory config override | **P8** | Tests connect to Testcontainers DB, not dev DB |
-| 30 | `appsettings.json` comments | **P0** | Convention documented; no comments in JSON; CI lints |
-| 31 | OTLP exporter silent drops | **P4** | Self-diagnostics enabled; explicit batch options |
-| 32 | Unbounded metric cardinality | **P4** | Documented rule; AspNetCore instrumentation uses route templates |
-| 33 | DTO server-controlled fields | **P5** + **P7** | Per-entity unit test: POSTing `{id, createdBy}` ignores those fields |
-| 34 | `[ApiController]` vs FluentValidation error shape | **P5** | `InvalidModelStateResponseFactory` aligned with custom shape; correlation id present in both |
-| 35 | Cascade delete unexpected | **P7** | Per-FK explicit `OnDelete()` call; integration test of DELETE under FK references |
-| 36 | `null` Description round-trip | **P5** | Round-trip test: GET → PUT same body succeeds |
-| 37 | Decimal precision in jsonb | (future) | Flag in PROJECT.md if numeric data is added to jsonb |
-| 38 | `throw ex` losing stack | **P3** | Code review rule; static analyzer rule (CA2200) enabled |
-| 39 | Secrets in `appsettings.json` | **P0** + **P1** | User Secrets in dev; compose uses `${POSTGRES_PASSWORD:?required}`; CI secret scan |
-
----
+## Phase-Specific Warnings
+
+| Phase | Likely Pitfall(s) | Mitigation Summary |
+|-------|-------------------|--------------------|
+| R0 — Redis infrastructure | 1, 2, 3, 32 | DI lifetime fact + AbortOnConnectFail explicit + TLS env matrix + Compose healthcheck |
+| R1 — L1 build pipeline | 6, 7, 19 | Local-variable L1 + try/finally + ordered StartAsync sequence |
+| R2 — Workflow graph traversal | 8, 9, 29 | Iterative DFS + two-set cycle detection + structured-error Extensions |
+| R3 — Payload↔ConfigSchema validation gate | 10, 11, 22 | Per-Start schema cache + shared SSRF-locked options + payload depth bound |
+| R4 — L2 Redis writer | 4, 5, 15, 17, 18, 20, 21, 23, 27, 28, 30 | No MULTI/EXEC + stage-then-RENAME + always-await + Mapperly→DTO/STJ→bytes split + shared JsonSerializerOptions + consistency model doc + .WaitAsync(ct) + per-call IDatabase + ToString("N") + JsonStringEnumConverter + field-name contract fact |
+| R5 — Stop endpoint | 12, 21, 26 | allStepIds[] on root + cancellation tokens + KeyExistsAsync over IsNullOrEmpty |
+| R6 — Observability extension | 13, 14, 15, 31 | No-traces-backend regression fact + Redis healthcheck tagged "ready" + correlation-id E2E extended for Redis + StartupCompletionService Redis probe |
+| R7 — Test fixtures | 16, 24, 25 | Key-prefix isolation + real Redis (no hand-rolled fakes) + no DB-index isolation |
+
+## Integration with v3.2.0 Disciplines (Regression Guards)
+
+Each of the following v3.2.0 invariants is at risk in v3.3.0; the corresponding pitfall above is the regression guard:
+
+| v3.2.0 Invariant | Risk in v3.3.0 | Guard |
+|------------------|-----------------|-------|
+| 142/142 GREEN × 3 cadence (Phase 3 D-18) | New Redis dep may flake | Pitfall 16 (key-prefix isolation), Pitfall 24 (real Redis in tests) |
+| Per-class throwaway Postgres + SHA-256 snapshot (Phase 3 D-15) | Equivalent needed for Redis | Pitfall 16 (BEFORE/AFTER Redis-keyspace snapshot) |
+| TreatWarningsAsErrors + Mapperly RMG codes (Phase 6) | New L2 mapper may trigger RMG020 | Pitfall 17 (DTO/STJ split — don't push Mapperly past its scope) |
+| Phase 11 D-03: NO traces backend | OTel Redis instrumentation re-enables traces | Pitfall 13 (build-guard fact in NoTracesBackendFacts) |
+| Phase 5 HEALTH-01: live never touches DB | AddRedis defaults to no tags → operator drift | Pitfall 14 (explicit tags + Redis-down E2E fact) |
+| X-Correlation-Id end-to-end through OTel to ES (Phase 4 + Phase 11 E2E) | Redis async ops drop AsyncLocal | Pitfall 15 (always-await + extended E2E fact) |
+| StartupCompletionService LogCritical/no-rethrow contract (Phase 5 + Phase 8 PERSIST-10) | Redis startup probe must follow same contract | Pitfall 31 (same try/catch/no-rethrow shape) |
+| RFC 7807 with offending field names (Phase 4 PostgresExceptionMapper) | New 422 paths must populate Extensions | Pitfall 29 (structured-error fact per failure mode) |
+| JSON Schema draft 2020-12 + SSRF disabled (Phase 8) | New Payload-validation gate may bypass SSRF lockdown | Pitfall 11 (shared JsonSchemaConfig factory + extended SSRF regression test) |
+| L2 DTO field names (PROJECT.md line 33) | Drift to definitionInput / definitionIn | Pitfall 30 (contract fact on JSON keys) |
 
 ## Sources
 
-- Npgsql DateTime/UTC breaking change: [Date and Time Handling — Npgsql Documentation](https://www.npgsql.org/doc/types/datetime.html) — HIGH confidence (official docs)
-- Npgsql DateTimeOffset breaking change: [Issue #2108 — npgsql/efcore.pg](https://github.com/npgsql/efcore.pg/issues/2108) — HIGH confidence
-- FluentValidation.AspNetCore deprecation: [Issue #1960 — Deprecation of the FluentValidation.AspNetCore package](https://github.com/FluentValidation/FluentValidation/issues/1960) and [FluentValidation 12 Upgrade Guide](https://docs.fluentvalidation.net/en/latest/upgrading-to-12.html) — HIGH confidence
-- OpenTelemetry .NET logging wiring: [Getting started with logs — ASP.NET Core](https://opentelemetry.io/docs/languages/dotnet/logs/getting-started-aspnetcore/) and [WithLogging() discussion #4653](https://github.com/open-telemetry/opentelemetry-dotnet/discussions/4653) — HIGH confidence
-- Mapperly existing target object: [Existing target object — Mapperly docs](https://mapperly.riok.app/docs/configuration/existing-target/) and [Mapper configuration](https://mapperly.riok.app/docs/configuration/mapper/) — HIGH confidence
-- EF Core migration race + advisory locks: [Issue #34439 — efcore migration lock](https://github.com/dotnet/efcore/issues/34439) and [The Reformed Programmer — safely apply EF Core migrate on startup](https://www.thereformedprogrammer.net/how-to-safely-apply-an-ef-core-migrate-on-asp-net-core-startup/) — MEDIUM confidence (well-known pattern, version-specific details may shift)
-- EFCore.NamingConventions pitfalls: [Issue #1](https://github.com/efcore/EFCore.NamingConventions/issues/1), [#289](https://github.com/efcore/EFCore.NamingConventions/issues/289), [#300](https://github.com/efcore/EFCore.NamingConventions/issues/300) — HIGH confidence
-- Testcontainers + WebApplicationFactory + Respawn: [Testcontainers + Respawn for integration testing](https://medium.com/@hiddenhenry/simple-integration-testing-in-net-with-respawn-testcontainers-39f5de21740c) and [Testing an ASP.NET Core web app](https://testcontainers.com/guides/testing-an-aspnet-core-web-app/) — HIGH confidence
-- OTel health-check filtering: [Filtering Telemetry in .NET](https://blog.marcelmichau.dev/filtering-telemetry-in-net), [Issue #3420 — open-telemetry/opentelemetry-dotnet](https://github.com/open-telemetry/opentelemetry-dotnet/issues/3420) — HIGH confidence
-- RFC 7807 Problem Details, ASP.NET Core: training-data + verified pattern against ASP.NET Core 8 docs — HIGH confidence
+- StackExchange.Redis Basic Usage (singleton multiplexer): https://stackexchange.github.io/StackExchange.Redis/Basics.html
+- StackExchange.Redis Transactions docs (MULTI/EXEC gotchas): https://github.com/StackExchange/StackExchange.Redis/blob/main/docs/Transactions.md
+- StackExchange.Redis Issue #2537 (DI guidance + connection multiplexing): https://github.com/StackExchange/StackExchange.Redis/issues/2537
+- StackExchange.Redis Issue #1169 (AbortOnConnectFail on Azure): https://github.com/StackExchange/StackExchange.Redis/issues/1169
+- StackExchange.Redis Issue #885 (optimistic locking + WATCH): https://github.com/StackExchange/StackExchange.Redis/issues/885
+- Redis RENAME canonical docs (atomic key replacement): https://redis.io/docs/latest/commands/rename/
+- Redis antirez Atomic Update Patterns: https://redis.antirez.com/fundamental/atomic-updates.html
+- Redis SCAN vs KEYS production guidance: https://redis.io/blog/faster-keys-and-scan-optimized/
+- Redis Anti-Patterns (incl. KEYS in production): https://redis.io/tutorials/redis-anti-patterns-every-developer-should-avoid/
+- Redis Transactions (MULTI/EXEC/WATCH semantics): https://redis.io/docs/latest/develop/using-commands/transactions/
+- JsonSchema.Net SchemaRegistry docs: https://docs.json-everything.net/api/JsonSchema.Net/SchemaRegistry/
+- JsonSchema.Net release notes (2025 perf work — analysis at registration time): https://docs.json-everything.net/rn-json-schema/
+- json-everything blog (refactoring with purpose — perf + registry): https://blog.json-everything.net/posts/refactoring-with-purpose/
+- OpenTelemetry.Instrumentation.StackExchangeRedis README (tracing-only nature): https://github.com/open-telemetry/opentelemetry-dotnet-contrib/blob/main/src/OpenTelemetry.Instrumentation.StackExchangeRedis/README.md
+- OpenTelemetry.Instrumentation.StackExchangeRedis duplicate-spans issue #1301: https://github.com/open-telemetry/opentelemetry-dotnet/issues/1301
+- OpenTelemetry Redis baggage non-propagation issue #674: https://github.com/open-telemetry/opentelemetry-dotnet-contrib/issues/674
+- OpenTelemetry Baggage parallel-tasks issue #3257: https://github.com/open-telemetry/opentelemetry-dotnet/issues/3257
+- AspNetCore.HealthChecks.Redis (tags guidance): https://www.nuget.org/packages/AspNetCore.HealthChecks.Redis/
+- ASP.NET Core Health Checks (liveness/readiness separation, anti-flap): https://daily-devops.net/posts/health-checks-operational-monitoring/
+- Iterative DFS production guidance: https://www.lodely.com/blog/dfs-iterative-vs-recursive
+- sk_p `.planning/PROJECT.md` (v3.2.0 invariants + v3.3.0 contract): local
+- sk_p prior `.planning/research/PITFALLS.md` (v3.2.0 — 39 pitfalls already mitigated): local (now superseded by this v3.3.0-focused file; v3.2.0 mitigations are encoded in the v3.2.0 phase implementations)
 
 ---
-*Pitfalls research for: .NET 8 Web API + EF Core 8 + Npgsql + OTel + FluentValidation + Mapperly + Postgres + RFC 7807*
-*Researched: 2026-05-26*
+*Pitfalls research for: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — delta on top of v3.2.0 (Steps API MVP)*
+*Researched: 2026-05-28*

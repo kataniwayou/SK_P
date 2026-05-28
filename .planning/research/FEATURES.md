@@ -1,509 +1,383 @@
-# Feature Research
+# Feature Research — v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline
 
-**Domain:** .NET 8 Web API base library + service (controller-based, CRUD over 5 entities, modular monolith)
-**Researched:** 2026-05-26
-**Confidence:** HIGH (cross-checked against PROJECT.md locked decisions + current .NET 8/9 ecosystem patterns)
+**Domain:** Workflow / data-pipeline orchestration projection layer — a materialized read model in Redis (L2) built from a relational source-of-truth (L3 Postgres) via a transient in-memory compile step (L1), feeding external Orchestrator + Scheduler consumers.
+**Researched:** 2026-05-28
+**Confidence:** HIGH on ecosystem patterns (cross-referenced across Temporal / Argo / Airflow / generic Redis materialized-view literature); MEDIUM on exact DTO shape preferences (consumer-dependent, but converged conclusions are well-supported); HIGH on Stop/Start mechanics (clear ecosystem precedent).
 
 ---
 
 ## How to Read This Document
 
-Three categories drive v1 requirements writing:
+Categories drive what lands in v3.3.0 requirements vs. defers to v3.4+:
 
-- TABLE STAKES — must ship in v1. Missing = operators/consumers reject the service. Complexity rated LOW/MEDIUM/HIGH.
-- DIFFERENTIATOR — adds material value, may include in v1 if cheap; otherwise v1.x.
-- ANTI-FEATURE — appears valuable but is explicitly out-of-scope for v1, either by PROJECT.md decision or by ecosystem evidence that it costs more than it returns at this stage.
+- **TABLE STAKES** — Must ship in v3.3.0. Missing = external Orchestrator/Scheduler cannot consume the projection or cannot reason about correctness after a Start call.
+- **DIFFERENTIATOR** — Adds material value, may include in v3.3.0 if cheap; otherwise defer to v3.4+. Optional for ship.
+- **ANTI-FEATURE** — Looks attractive (often suggested by external operators or appears in adjacent workflow systems) but is explicitly OUT-OF-SCOPE for v3.3.0, either by milestone scope or by ecosystem evidence that the cost exceeds the value at this stage.
 
-Anti-feature anchors are cited as `[OOS:<topic>]` when PROJECT.md's "Out of Scope" section is the source.
+PROJECT.md / MILESTONES.md anchors are cited as `[LOCKED:<topic>]` when the v3.3.0 milestone scope text or v3.2.0 invariants are the source.
 
 ---
 
-## 1. Infrastructure Features
+## 1. L3 Fetch + L1 Build (Transient In-Memory Materialization)
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| `AddBaseApi(IServiceCollection, IConfiguration)` extension as composition root | Whole point of `BaseApi.Core` is to be wired in one call from `BaseApi.Service/Program.cs`; the consumer should not know which middlewares/services exist | LOW | One extension method + one `UseBaseApi(IApplicationBuilder)` for middleware pipeline. Mirrors `AddControllers`, `AddHealthChecks` idiom. Internal subgroupings: `AddBaseApiPersistence`, `AddBaseApiObservability`, `AddBaseApiErrorHandling`. |
-| Configuration via `IOptions<T>` pattern (Options pattern) | Idiomatic .NET 8; testable; supports per-section binding with `ValidateDataAnnotations` / `ValidateOnStart` | LOW | Use `services.AddOptions<TOpts>().BindConfiguration("Section").ValidateOnStart()`. One `BaseApiOptions` (DB conn string section, service name/version, OTel endpoint). |
-| `IOptionsSnapshot<T>` for per-request scoped config | Required for any options consumed inside request scope that might change (logging level reads happen via MEL, not this) | LOW | Default to `IOptions<T>` (singleton); use `IOptionsSnapshot<T>` only where rebinding matters. None of our cases truly need it in v1. |
-| Connection string from configuration with environment override | Postgres conn string lives in `appsettings.json` and `ConnectionStrings:DefaultConnection`; overridable by `ConnectionStrings__DefaultConnection` env var | LOW | Standard .NET config provider chain (json → env → CLI). Document in README. |
-| EF Core migrations applied on startup | PROJECT.md explicitly locks this: "Migrations owned by the service, applied on startup" | MEDIUM | Apply inside `IHostedService` (`MigrationHostedService`) or right before `app.Run()` via scoped `serviceProvider.GetRequiredService<AppDbContext>().Database.Migrate()`. **Pitfall flag (see PITFALLS.md):** multi-instance deployments risk concurrent migration; v1 runs single instance per Docker Compose, so deferred — but call out the limitation explicitly. |
-| Database health check on readiness probe | PROJECT.md: "Readiness probe — service can reach Postgres" | LOW | `AspNetCore.HealthChecks.NpgSql` package + `MapHealthChecks("/health/ready", new { Predicate = check => check.Tags.Contains("ready") })`. |
-| Startup / Liveness / Readiness probes (3 separate endpoints) | PROJECT.md explicit. K8s/Docker convention: liveness for restart, readiness for traffic, startup for slow boot | LOW | `/health/live`, `/health/ready`, `/health/startup`. Liveness = `() => Healthy()`. Startup = "migrations done + DI built" (flip a flag in a hosted service). Readiness = liveness + Postgres reachable. |
-| Graceful shutdown (default host behavior + drain time) | Standard .NET Generic Host gives this; need only to ensure no `Environment.Exit` and no long-running tasks block shutdown | LOW | Set `HostOptions.ShutdownTimeout` (default 30s) explicitly to e.g. 15s. EF Core `DbContext` disposed via DI scope. |
-| Single shared `AppDbContext` registered as `AddDbContext<AppDbContext>` (scoped lifetime) | PROJECT.md locked: "Single shared database, single shared AppDbContext" | LOW | `services.AddDbContext<AppDbContext>(opts => opts.UseNpgsql(connStr).AddInterceptors(auditInterceptor))`. Resolve `AuditInterceptor` from DI. |
-| `BaseDbContext` in `BaseApi.Core`, `AppDbContext : BaseDbContext` in `BaseApi.Service` | Base owns audit interceptor wire-up + common conventions; service owns entity registrations | LOW | Base class only wires conventions and interceptors; doesn't know about entities. |
+| **Bounded fetch scoped to requested `WorkflowIds`** | Consumers send a finite list; loading every workflow into memory would scale-bomb the API as the catalog grows | LOW | Single `WHERE WorkflowId = ANY(@ids)` per entity table (5 SELECTs total). Reuse existing `BaseDbContext.Set<TEntity>()`. `[LOCKED: L1 transient]` |
+| **Flat `Dictionary<Guid, EntityDto>` per entity type** | Compile step needs O(1) lookup by id when walking edges; nested-object trees force re-traversal | LOW | Five dictionaries (Workflows, Assignments, Steps, Processors, Schemas). Use existing Mapperly mappers to convert Entity → ReadDto. |
+| **Existence validation before traversal** | Walking edges into missing ids is the most common bug in graph compilers — silent skip vs. loud failure is a correctness choice; loud is the only safe one for a projection consumers will rely on | LOW | After fetch, for each requested WorkflowId not present → 422 with id list. For each `Workflow.EntryStepIds[*]` not present → 422. `[LOCKED: validation order]` |
+| **Explicit teardown contract (try/finally)** | A request-scoped dictionary leaked across requests is invisible until OOM at 3am. Explicit `.Clear()` in finally makes the lifetime visible in the code | LOW | `try { ... } finally { dict.Clear(); visited.Clear(); }`. .NET GC will eventually collect, but explicit Clear() makes ownership obvious in code review. `[LOCKED: L1 cleanup]` |
+| **Single transactional snapshot of L3 reads** | A Start that reads Schema, then Processor, then Step from a mutating database can build a self-inconsistent L1 (e.g., Processor references a Schema that was deleted between the two reads) | LOW | Wrap all 5 fetches in a single `using var tx = await ctx.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead)` (or rely on Postgres MVCC + a single round-trip per entity). Reuse v3.2.0 `BaseDbContext`. |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| `IOptionsMonitor<T>` for hot-reload of `appsettings.json` | Operators can change log levels without redeploy (already free via MEL `LoggerFilterOptions`, but extending to custom options is the differentiator) | LOW | Free in MEL for `Logging:LogLevel`. **Do not** add custom hot-reload for other options in v1 — adds reasoning overhead. |
-| Composition root validation: fail fast on missing config | `ValidateOnStart()` + DataAnnotations on options classes prevents "service starts then 500s on first request" | LOW | Cheap, high-value. Include in v1. |
-| Migration locking (distributed lock or `pg_advisory_lock`) | Safety net for the day someone scales to N>1 replicas | MEDIUM | Defer to v1.x — single replica today. Note in PITFALLS.md. |
+| **Parallel fetch of independent entity tables** | Schema/Processor/Step/Assignment/Workflow have no fetch-order dependency; `await Task.WhenAll(...)` shaves ~5× the per-query latency at scale | LOW | Free; just `await Task.WhenAll(loadSchemas, loadProcessors, ...)`. Risk: shared `DbContext` is NOT thread-safe — must spin up scoped contexts or serialize. Defer unless profiling shows latency pain. |
+| **L1 build telemetry counters** | Operators want to know "compile took N ms for M steps across K workflows" without scraping per-request logs | LOW | One Histogram + 3 Counters on the existing OTel `Meter`. Reuse Phase 5 metric pipeline; add `orchestration.compile.duration_ms`, `orchestration.compile.steps_walked`, `orchestration.compile.errors_total`. |
 
-### Anti-Features (v1)
+### Anti-Features (v3.3.0)
 
 | Feature | Why Tempting | Why Out of Scope | Alternative |
 |---------|--------------|------------------|-------------|
-| Migrations via external CLI / init container / Flyway / DbUp | "Production-grade" guidance says don't migrate on startup | PROJECT.md explicitly chose startup migration. Single deployable service, single replica, milestone speed prioritized. Re-evaluate when scaling to multi-replica. | Document the limitation; ensure migrations are short and idempotent; ship `dotnet ef migrations script --idempotent` as a fallback in repo. |
-| Secrets Manager / Vault / Azure Key Vault integration | Production secret hygiene | No auth/secrets boundary defined in v1 [OOS: Authentication] | Use environment variables + .gitignored `appsettings.Development.json`. Document hand-off to a secrets provider as a v2 concern. |
-| Multiple `DbContext`s per bounded context | "Clean architecture" textbook guidance | PROJECT.md locked: single `AppDbContext` (cross-entity FKs force it). | n/a |
-| Feature flags / LaunchDarkly / `Microsoft.FeatureManagement` | Toggling features in flight | No multi-tenant or experimentation surface in v1 | Defer. |
+| **Long-lived in-memory cache of L1 between requests** | "Why rebuild the same workflow's L1 on every Start?" | The whole point of v3.3.0 is that L2 (Redis) is the cache. L1 is a per-Start scratchpad; caching it adds invalidation logic (an entire CRUD-side cache-busting surface) that v3.2.0 deliberately avoided | Make L1 short-lived; if consumers want a snapshot, they read L2. |
+| **Lazy fetching during traversal** | "Don't load steps we don't walk" | Lazy fetching during DFS leaks `DbContext` into the traversal layer, breaks the "fetch → validate → build → write" phase model, and N+1s under concurrent load | Eager-fetch all 5 entity tables up front; traversal works against memory only. |
 
 ---
 
-## 2. HTTP / CRUD Features
+## 2. Workflow-Graph Traversal & Validation Gates
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| Abstract generic `BaseController<TEntity, TCreateDto, TUpdateDto, TReadDto>` | PROJECT.md locked: "One controller per entity, each derived from abstract generic `BaseController<...>`" | MEDIUM | Generic on 4 type params; protected virtual methods for `MapToEntity`, `MapToRead`, `MapPatchOntoEntity` (or via injected `IEntityMapper<T,C,U,R>` interface from Mapperly partials). Public CRUD verbs: `[HttpGet]`, `[HttpGet("{id:guid}")]`, `[HttpPost]`, `[HttpPut("{id:guid}")]`, `[HttpDelete("{id:guid}")]`. |
-| Three DTOs per entity (Create / Update / Read) | PROJECT.md locked. Separates server-controlled fields (`Id`, `CreatedAt`, `CreatedBy`) from client input | LOW | Just record types or POCOs. Enforce by base controller signature. |
-| `GET` (list-all) returns all rows | PROJECT.md: "basic GET returns all" [OOS: pagination] | LOW | `Repository.ListAsync(CancellationToken)` → `IReadOnlyList<TEntity>`. Add hard cap (e.g., 1000) to prevent accidental table scan blowups — document the cap. |
-| `GET /{id:guid}` → 200 or 404 | RFC convention; PROJECT.md error mapping | LOW | Use `id:guid` route constraint so malformed IDs return 400 from MVC binding, not 404. |
-| `POST` → 201 Created with `Location` header | Standard REST; clients (Orchestrator/Scheduler) likely follow `Location` | LOW | `return CreatedAtAction(nameof(GetById), new { id = entity.Id }, readDto);` |
-| `PUT /{id:guid}` → 204 NoContent on success, 404 if missing | PROJECT.md: standard CRUD verbs. Full-replace semantics on PUT (matches DTO shape) | LOW | DTO shape ensures PUT is replace, not patch. No PATCH in v1 per PROJECT.md verb list. |
-| `DELETE /{id:guid}` → 204 NoContent (hard delete) | PROJECT.md: "CRUD DELETE is a hard delete" [OOS: soft delete] | LOW | DB-level FK constraints will surface dependent rows as 422 via SQLSTATE `23503` mapping — that's intentional and correct behavior. |
-| Generic `Repository<TEntity>` in `BaseApi.Core` | PROJECT.md locked: 3-tier layering, generic repository | MEDIUM | `IRepository<T> where T : BaseEntity` with `GetByIdAsync`, `ListAsync`, `AddAsync`, `UpdateAsync`, `DeleteAsync`, `SaveChangesAsync`. **Don't** add `IQueryable` leakage — keep the surface tight. |
-| Service layer per entity (e.g., `ProcessorService`) | PROJECT.md: "service holds entity-specific logic + M2M sync" | MEDIUM | Base has no service abstraction (services are concrete); only repository + controller are generic. Service is the seam for junction-table sync (`StepNextSteps`, `WorkflowEntrySteps`, `WorkflowAssignments`). |
-| OpenAPI / Swagger UI | Operators & external consumers need a contract; Swagger UI also serves as smoke-test surface | LOW | **Swashbuckle.AspNetCore** (more mature ecosystem, FluentValidation integration, versioning integration). Alternative `Microsoft.AspNetCore.OpenApi` (new in .NET 9) is the future but the FluentValidation/versioning integration story isn't as mature in .NET 8. Stick with Swashbuckle for v1. |
-| `[ApiController]` attribute on concrete controllers | Auto model validation → 400 ValidationProblemDetails (compatible with our error contract); attribute routing required | LOW | Apply once on the concrete classes (or on the base; the attribute is inherited). |
-| Route convention `[Route("api/[controller]")]` | Standard, predictable URL shape | LOW | Apply on base controller; `[controller]` resolves to derived class name ("Schemas", "Processors", etc.). |
-| Content-type negotiation: JSON in/out | Default in ASP.NET Core; no XML | LOW | Free out of the box. `System.Text.Json` not Newtonsoft. |
-| `DateTime` / `Guid` JSON conventions | `Guid` round-trips fine; `DateTime` should be UTC and ISO 8601 | LOW | Use `DateTime.UtcNow` in `AuditInterceptor`. JSON serializer treats DateTime as ISO 8601 by default. |
-| CORS — permissive policy for local dev, configurable in prod | Browser-based consumers (admin UIs eventually) need it; Orchestrator/Scheduler are server-to-server but a permissive dev policy avoids friction | LOW | `AddCors` with named policy "BaseApi" reading allowed origins from config. Empty list = no CORS headers; `["*"]` = AllowAnyOrigin. |
-| Cancellation token propagation | All async controller actions and repository methods accept `CancellationToken` and pass it through to EF Core | LOW | Standard hygiene. Skipping causes cancel-on-disconnect to leak DB connections under load. |
-| `id:guid` route constraint everywhere | Prevents string-vs-Guid route ambiguity, returns 400 for non-Guid input | LOW | Apply uniformly in `BaseController`. |
+| **DFS from every `Workflow.EntryStepIds[*]`** | Workflow is a DAG with possibly multiple entry points; missing an entry = silent-incomplete projection | LOW | Standard iterative DFS with a `Stack<Guid>` + a per-traversal `HashSet<Guid> visited`. Walks `StepEntity.NextStepIds` via the existing `StepNextSteps` junction (already loaded as part of Step DTO). `[LOCKED: traversal scope]` |
+| **Cycle detection with explicit 422** | A → B → A loops the projection writer forever; consumers cannot reason about a cyclic graph; even one-step self-loops must be caught | LOW | Standard DFS three-color (white/gray/black) or per-path `HashSet` — if next step is already in current-path set → cycle. Return 422 with the offending `(parentStepId, childStepId)` pair. `[LOCKED: cycle 422]` |
+| **Missing `NextStepId` is 422 (not silent skip)** | A Step pointing to a deleted child is a data-integrity bug, not "the graph ends here" | LOW | Lookup in `Steps` dict; absent → 422 with `(parentStepId, childStepId)`. **Distinction:** `NextStepIds` collection that's empty/null = terminal step (legal). `NextStepIds` containing an id that resolves to no Step = error. |
+| **Strict Schema-edge compatibility gate** | An external consumer that reads `(processorId → outputDefinition)` and the downstream processor's `inputDefinition` will assume they're compatible because the projection said the workflow compiled. Silent acceptance = type-unsafe pipeline at runtime | MEDIUM | For each edge `(parent → child)` walked: compare `parent.Processor.OutputSchemaId` vs `child.Processor.InputSchemaId`. Strict Guid equality; either-side null passes (Phase 10 source/sink semantics). 422 with offending `(parentStepId, childStepId)`. `[LOCKED: strict equality, null passes]` |
+| **Payload ↔ ConfigSchema validation gate** | Closes v3.2.0-deferred VALID-21; validating Payload at Assignment-PUT was rejected (N2) because the Payload may legitimately predate the Processor; validating at orchestration-start is the right ratchet | MEDIUM | For each Assignment: resolve `Step.ProcessorId → Processor.ConfigSchemaId → Schema.Definition`. Run existing v3.2.0 JSON Schema validator (draft 2020-12, SSRF-disabled). 422 with offending `assignmentId` on failure. `[LOCKED: VALID-21 closes here]` |
+| **Mandatory validation order** | Reordering gates produces different error messages for the same broken input — a consumer correcting issues will hit a different 422 next time, with no clear sense of progress | LOW | Lock the order: **existence → cycles → schema-edge compat → Payload↔ConfigSchema → L1 build → L2 write → cleanup**. Order is explicit in service code; integration tests assert it. `[LOCKED: mandatory order]` |
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| OpenAPI examples + descriptions populated from XML doc comments | Better Swagger UX; documents intent for consumers | LOW | Enable `<GenerateDocumentationFile>true` in `.csproj`, point Swashbuckle at the XML. Cheap. Include in v1. |
-| Swagger UI grouped by entity (default tag = controller name) | Already free with Swashbuckle | LOW | Free. |
-| FluentValidation → Swagger schema rules via `MicroElements.Swashbuckle.FluentValidation` | Surfaces validation constraints in OpenAPI without re-declaring them on DTOs | MEDIUM | Cheap win if Swashbuckle is in. Include in v1 if integration is one package + one line. |
-| Idempotency-Key header on POST | Safe retries for clients | MEDIUM | Skip v1. Add when consumers demonstrate need. |
-| API versioning via `Asp.Versioning.Http` | Future-proof URL shape (`api/v1/processors`) | LOW-MEDIUM | **Recommended for v1** — adding versioning later requires URL changes that break consumers. Use URL-segment versioning (`api/v{version:apiVersion}/[controller]`), default version `1.0`. Single one-liner per concrete controller: `[ApiVersion(1.0)]`. |
+| **Aggregate-error mode (return all failures, not first)** | Consumer fixing 12 schema-edge mismatches gets all 12 at once vs. one-at-a-time | LOW-MEDIUM | Collect all gate failures into a `List<ProblemDetail>` per gate; emit 422 with `errors[]` array. Mirrors FluentValidation's behavior at the DTO layer. Increases test surface ~2×. Defer if not asked for. |
+| **Structural Schema compatibility (vs. strict Id equality)** | Two distinct Schema rows with byte-identical Definitions should be considered compatible | HIGH | Requires canonical JSON Schema diffing — entire research milestone of its own. `[LOCKED: defer to v3.4+ candidate]` |
+| **Per-step compile metadata stamped into L2** | Consumer wants to know "which Schema.Id validated this edge" for audit | LOW | Add `compileMetadata { schemaEdge: { parentOutputSchemaId, childInputSchemaId } }` to the chain record. Cheap; defer unless audit consumer asks for it. |
 
-### Anti-Features (v1)
+### Anti-Features (v3.3.0)
 
 | Feature | Why Tempting | Why Out of Scope | Alternative |
 |---------|--------------|------------------|-------------|
-| Pagination on list endpoints (Sieve / Gridify / OData / custom skip-take) | "Production REST" guidance | PROJECT.md: "basic GET returns all; complex query is out of v1. Defer until proven needed." [OOS: pagination/filtering/sorting] | Hard cap row count (e.g., 1000) in `Repository.ListAsync` to bound worst-case memory; document the cap. |
-| Filtering/sorting on list endpoints | Same as above | Same [OOS] | Same |
-| OData (`Microsoft.AspNetCore.OData`) | Powerful filtering | Heavy framework; couples API shape to a query language; harder to reason about [OOS] | If pagination is ever added, prefer Sieve or Gridify (lightweight) over OData. |
-| Soft delete (`IsDeleted` flag + global query filter) | "Just in case" recovery | PROJECT.md: "CRUD DELETE is a hard delete" [OOS: soft delete] | Reintroduce as a base concern in `BaseEntity` later if a use case appears. Note that DB-FK constraint on hard delete naturally surfaces dependents (422). |
-| Bulk operations (`POST /array`, `PATCH /array`) | Reduce round trips | Not in PROJECT.md's verb list; adds transaction-scope and partial-failure semantics complexity | Single-item CRUD only. Clients loop. |
-| PATCH (`HttpPatch` with JSON Patch or JSON Merge Patch) | Partial updates | Not in PROJECT.md's verb list ("GET, GET/{id}, POST, PUT /{id}, DELETE /{id}") | PUT does full-replace via UpdateDto. Add PATCH only when consumers prove they need it. |
-| ETags / `If-Match` optimistic concurrency | Concurrent-edit safety | Not in PROJECT.md; no concurrent-edit signal from user; adds version-token plumbing on every entity | EF Core has `[Timestamp]` / `xmin` concurrency tokens if needed later. Postgres `xmin` system column maps cleanly. |
-| HATEOAS / hypermedia links | "RESTful purity" | Massive complexity, low consumer adoption (Orchestrator/Scheduler unlikely to follow links) | Plain JSON resource representations. |
-| Rate limiting (`Microsoft.AspNetCore.RateLimiting`) | DDoS / runaway-client protection | No auth boundary, no public exposure stated, no client-id signal to key on [OOS: authentication implies] | Add when service is internet-facing. |
-| Authentication (JWT bearer / API keys) | Production hygiene | PROJECT.md explicit [OOS: authentication] | `CreatedBy`/`UpdatedBy` populated only when `HttpContext.User.Identity.Name` is available; defaults to null. |
-| Authorization (policies / roles) | Same | Same [OOS] | Same |
-| GraphQL endpoint (HotChocolate) | "Modern API" | Adds parallel transport surface, query-cost reasoning, N+1 risk against EF Core | REST only. |
-| gRPC endpoints alongside HTTP | Server-to-server perf | Not requested; doubles surface area | REST only. |
+| **Auto-fix or auto-propose corrections** | "If parent.Output is null and child.Input is X, suggest setting parent.Output to X" | Adds an entire repair-recommendation engine to a milestone whose scope is "validate and project." Couples the projection layer to entity-edit logic | Return clear 422; let the operator decide. |
+| **Validation gates running in parallel** | "Run all 4 gates concurrently to lower latency" | Each gate's failure mode is different; running in parallel makes the error surface non-deterministic and reorders error messages between runs | Sequential, ordered, deterministic. Latency is fine — these are in-memory passes. |
+| **Validating at Assignment-PUT instead of (or in addition to) at Start** | "Catch errors at write-time, not at orchestration-time" | v3.2.0 N2 explicitly chose Assignment-PUT = "valid JSON only." Adding Schema-aware validation at PUT breaks that contract and re-opens the choice. v3.3.0 closes VALID-21 at Start only. | Document the asymmetry in the OpenAPI spec; the Start endpoint is the type-safety gate. |
 
 ---
 
-## 3. Validation Features
+## 3. L2 (Redis) Materialized Projection — DTO Shape & Write Semantics
 
 ### Table Stakes
 
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| FluentValidation registered + auto-validating | PROJECT.md locked tech stack | LOW | `services.AddFluentValidationAutoValidation()` (from `SharpGrip.FluentValidation.AutoValidation.Mvc` — the maintained successor to the deprecated `FluentValidation.AspNetCore`) + `services.AddValidatorsFromAssemblyContaining<TMarker>()`. Or wire explicitly via filter / middleware. **Decide explicitly** (see PITFALLS.md). |
-| `BaseEntityValidator<T> where T : BaseEntity` with `Name`, `Version`, `Description` rules | PROJECT.md: "Per-entity validators inherit base rules" | LOW | `RuleFor(x => x.Name).NotEmpty().MaximumLength(200)`, `RuleFor(x => x.Version).NotEmpty().Matches("^\\d+\\.\\d+\\.\\d+$")`, `RuleFor(x => x.Description).MaximumLength(2000).When(x => x.Description is not null)`. Concrete validators inherit and add. |
-| Validator inheritance: concrete validator constructor calls base | Standard FluentValidation pattern | LOW | `public ProcessorCreateDtoValidator() : base() { RuleFor(x => x.SourceHash)...; }` — requires Create/Update DTOs to share base shape OR use composition via `Include(new BaseValidator())`. **Decide explicitly** which pattern. |
-| Per-entity custom rules: SemVer regex, SHA-256 hex regex, JSON syntactic validity, JSON Schema validity | PROJECT.md locked: per-entity rules listed | LOW-MEDIUM | SemVer: regex on base. SHA-256: regex on `ProcessorCreateDto.SourceHash` (`^[a-f0-9]{64}$`, case-insensitive). JSON validity: `System.Text.Json.JsonDocument.Parse` in a `Must` rule. JSON Schema validity: **Json.Schema (NJsonSchema or JsonSchema.Net)** — pick **JsonSchema.Net** (modern, AOT-friendly, MIT). |
-| Validation failure → 400 ValidationProblemDetails with field-keyed errors | PROJECT.md: "FluentValidation failures → 400 with field-level errors map" | LOW | If using `[ApiController]` + auto-validation, this is automatic via ASP.NET Core's `InvalidModelStateResponseFactory`. Customize to emit RFC 7807 shape with `correlationId`. |
-| Cross-field validation in custom rules | E.g., for future scenarios — minimal in v1 (Processor's `InputSchemaId` != `OutputSchemaId`? Not stated. Defer.) | LOW | Use `RuleFor(x => x).Must(...)` for cross-field; not heavily needed in v1. |
+| **Three key spaces with clear, hierarchical naming** | Consumers need to know what to read where without out-of-band knowledge; Redis-community convention is colon-delimited hierarchical keys (e.g., `{workflowId}`, `{workflowId}:{stepId}`, `{processorId}`) | LOW | The `:` separator is the universal convention (Redis docs, every client library). Use bare UUID-N (no hyphens — matches the Guid `"N"` format used by `CorrelationIdMiddleware` in v3.2.0 — for symmetry and grep-ability). `[LOCKED: 3 key spaces]` |
+| **Per-record reads (no projection-wide scan required for consumer hot path)** | Consumers reading `{workflowId:stepId}` billions of times per day cannot SCAN; the key shape must support direct `GET` / `HGETALL` | LOW | The chain-form `{workflowId:stepId}` shape already supports this — caller knows both ids from their context. Confirmed against orchestrator-side reading patterns. |
+| **JSON-string-value-in-string-key (single `SET`) for each record** | Hash data type has per-field overhead and a >1-level depth restriction Redis itself documents; serializing the DTO as JSON in a single STRING value avoids both | LOW | `SET key json-payload`. Single round-trip read = `GET key` → deserialize. Aligns with how RedisJSON markets itself for partial-read workloads, but using plain STRING + System.Text.Json keeps the deps minimal. **See section 4 for the hash-vs-JSON tradeoff explicitly.** |
+| **Idempotent Start = full replace of all 3 key spaces for the workflow(s) involved** | Consumer must never read a half-rebuilt projection where some chain records point to a Processor that no longer exists in the projection | MEDIUM | Two viable approaches — both ship a deterministic post-condition. See "How idempotent Start is implemented" subsection below. `[LOCKED: PUT-like, last-write-wins]` |
+| **Idempotent Stop = delete all 3 key spaces for given WorkflowIds, 204 even when empty** | A 404-on-empty-Stop forces consumers to handle the "already gone" race; 204 makes Stop a true idempotent verb | LOW | Track or compute the key set per WorkflowId; issue `UNLINK` (non-blocking DEL); return 204. `[LOCKED: 204 always]` |
+| **Liveness as a stored DTO field (timestamp + interval + status)** | The v3.3.0 contract is "liveness is a stored field shape" — not a Redis TTL, not a computation. Consumers read the field and decide aliveness themselves | LOW | DTO: `{ timestamp: DateTime, interval: int (seconds), status: string }`. Writer (this milestone) stamps `timestamp = utcNow`, `interval = configured`, `status = "Active"` at Start time. **Scheduler integration that updates these is deferred.** `[LOCKED: stored field, not computation]` |
+| **`JobId` as a stored Guid field (not Hangfire/Quartz integration)** | The v3.3.0 contract is "JobId is an L2 DTO field shape only" — write semantics deferred. Reserve the field shape now so consumers can read it later without a projection-shape migration | LOW | DTO: `jobId: Guid`. Writer stamps `jobId = Guid.Empty` (or omits / nulls — TBD) at Start time. **Scheduler integration that writes the real JobId is deferred.** `[LOCKED: field shape, not behavior]` |
+| **Field-name discipline: `inputDefinition` / `outputDefinition`** | Tiny detail with consumer-contract weight: drift between docs and code is a real source of integration breaks | LOW | Lock the names in DTO classes; integration test asserts the serialized JSON contains exactly these keys. `[LOCKED: input/output Definition exact spelling]` |
+
+### How idempotent Start is typically implemented (canonical patterns)
+
+Three options found in the ecosystem; each ships the same post-condition but with different read-during-rebuild semantics:
+
+| Pattern | How it works | Read-during-rebuild semantics | When to choose |
+|---------|--------------|-------------------------------|----------------|
+| **A. Per-key `SET` (overwrite-in-place)** | For each key in the new projection, issue `SET key newValue` overwriting any old value. Pre-existing keys not in the new projection are deleted by name. | Reader can briefly see a mix of old and new records during the write window (each key flips atomically, but the set of keys doesn't). | **Recommended for v3.3.0.** Simple, no Lua, no naming dance. Acceptable because the milestone is single-replica and Start is human-triggered (Orchestrator service) — not a hot loop. Consumers read entire chain in a fresh call; in-flight reads naturally tolerate per-key freshness. |
+| **B. Stage-then-rename (atomic swap)** | Build the new projection under a staging prefix (e.g., `staging:{workflowId}:...`); when complete, `RENAME` each staging key to the live key. Pre-Redis 7 has limited multi-key RENAME atomicity; Redis 8 cluster-aware RENAME works only within a single hash slot. | Reader sees old projection until the swap, then new. Cleaner consistency window. | Defer to v3.4+ if/when consumers complain about read-during-rebuild artifacts. Adds key-naming complexity and cluster-slot constraints. |
+| **C. MULTI/EXEC over all keys** | Wrap all SETs + DELs in a single transaction. | Atomic from server's POV (commands queued, executed contiguously). | Works but is ugly at scale: every workflow rebuild crams N steps × M assignments worth of commands into one EXEC; blocks server during execution; loses pipelining benefits. Anti-pattern at high projection sizes. |
+
+**Recommendation for v3.3.0:** Pattern A (per-key SET + targeted DEL of removed keys). Cheapest, no Lua dependency, consumer-acceptable. Document the read-during-rebuild window in the milestone's PITFALLS.md. Upgrade to Pattern B if/when projection size or consumer SLAs demand it.
+
+### How Stop is typically implemented (DEL strategies)
+
+| Strategy | Tradeoffs | Recommendation |
+|----------|-----------|----------------|
+| **Compute key set in code + `UNLINK key1 key2 ...`** | Requires knowing all keys (workflow key + N chain keys + M processor keys). The L1 build can produce this list as a side effect of compilation; cache it once at Start, look it up at Stop. **Cleanest.** | **Recommended for v3.3.0.** Use `UNLINK` not `DEL` (non-blocking; frees memory asynchronously; supported since Redis 4.0). |
+| **`SCAN` for matching keys, then `UNLINK`** | Pattern: `SCAN cursor MATCH workflowId:*` then DEL. Works without bookkeeping. | Acceptable fallback for unknown-key Stops (e.g., projection-cleanup admin tool). Per-Start Stop should not need SCAN — we know the keys. Avoid in the hot Stop path. |
+| **`KEYS pattern` + `DEL`** | `KEYS` is blocking on the server; explicitly contraindicated in production by Redis docs (despite Redis 8 single-slot optimization). | **Anti-pattern.** Never use in v3.3.0. |
+| **TTL-based expiry (no explicit delete)** | Set TTL at Start = max-expected-Stop-window; let Redis evict | Couples Stop semantics to wall-clock TTL — fragile; an extended workflow run becomes a "where did my projection go?" mystery. Anti-pattern for an L2 that's the consumer's authoritative read model. |
+| **Status flag flip (write `status = "Stopped"`)** | Mark each record with a status field; consumer filters on it; physical delete deferred | Defers a cleanup problem; means consumers must always check status; doubles read cost. Anti-pattern unless audit-trail of stopped workflows is required (it isn't in v3.3.0). |
+
+**Recommendation for v3.3.0:** Compute the key set at L1 build time, persist it transiently for Stop, issue a single `UNLINK key1 key2 ...` per workflow at Stop. Return 204 unconditionally.
+
+### Liveness — typical field shapes
+
+| Field shape | Pros | Cons | Recommendation |
+|-------------|------|------|----------------|
+| `{ timestamp, interval, status }` | Minimal; matches v3.3.0 locked shape | No causality / no fencing token | **The locked v3.3.0 shape.** Sufficient for v3.3.0 because no concurrent writer races exist yet (Scheduler integration deferred). |
+| `{ timestamp, interval, status, sequenceNumber }` | Monotonic seqnum lets consumers detect missed updates / out-of-order | Requires monotonic-counter source (Redis INCR or DB sequence) | Differentiator: add when Scheduler integration arrives. |
+| `{ timestamp, interval, status, generationId }` | A generation/epoch token (regenerated on each Start) lets consumers reject stale liveness writes from a prior Start | Couples liveness write path to Start lifecycle | Differentiator: add when multi-writer concurrency becomes real. |
+| `{ timestamp, interval, status, causalityToken }` | Full causal-consistency vector | Overkill for a single-writer projection | Anti-feature for v3.3.0. |
+
+**Recommendation:** Keep the locked `{ timestamp, interval, status }` shape for v3.3.0. Reserve `sequenceNumber` and `generationId` as named v3.4+ candidates — they're additive to the DTO so future addition doesn't break existing consumers.
 
 ### Differentiators
 
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| Custom JSON Schema validator rule that's reusable across entities (`MustBeValidJsonSchema()` extension) | Encapsulates third-party library in one place; testable independently | LOW | Add as `RuleBuilderExtensions` in `BaseApi.Core/Validation/`. Include in v1 — the rule lives somewhere; better in one named extension. |
-| Cron expression validity rule (for `Workflow.CronExpression`) | Service can refuse malformed cron at write time vs. surfacing later in the external scheduler | LOW | `Cronos` library (https://github.com/HangfireIO/Cronos) — actively maintained, supports 5- and 6-field cron. `RuleFor(x => x.CronExpression).Must(BeValidCron).When(x => x.CronExpression is not null)`. Include in v1 — cheap and prevents bad data in `WorkflowEntity`. |
-| Validation pipeline behavior via MediatR | Decoupled validation/handler separation | MEDIUM | **No.** PROJECT.md doesn't include MediatR. Don't introduce CQRS in v1 — three-tier layering is already locked in. |
+| **`X-Projection-Version` / `generation` field on the `{workflowId}` root record** | Consumer can detect "this projection was rebuilt since my last read" without diffing every chain record | LOW | Stamp `generationId = Guid.NewGuid()` (or a monotonic counter) into `{workflowId}` root at every Start. Cheap; high audit value. |
+| **Projection size telemetry** | Operators want to know "this workflow projects to N keys, M bytes" before it bloats Redis | LOW | One Histogram on the existing OTel Meter — `orchestration.projection.bytes`, `orchestration.projection.keys_total`. Defer if not asked for. |
+| **Dry-run Start (`?dryRun=true`)** | Operator can validate a Workflow's compilability without touching Redis. Useful for CI / pre-prod gates | MEDIUM | Implement the full L1 build pipeline and report what *would* be written; skip the L2 write step. Common pattern in dbt / Snakemake / KubeVela ecosystems. Defer unless operator asks for it. |
+| **Projection-diff between current and proposed Start** | "What's about to change?" output — useful for change-management workflows | HIGH | Requires reading current L2, computing diff vs. proposed projection. Defer to v3.4+; not needed when Start is idempotent and last-write-wins. |
+| **Audit trail of Start invocations** | Compliance / debugging — "who started workflow X at time Y?" | MEDIUM | Append-only log table or Redis stream of `(workflowId, timestamp, correlationId, userId)`. v3.2.0 already has `CreatedBy` plumbing; reuse for the audit row. Defer unless audit is a v3.3.0 requirement. |
+| **Pre-warm Strategy (Background Service)** | At startup, replay last-known-good Start for every workflow with non-null cron — projection is hot from second 0 | HIGH | Couples startup ordering to projection state; requires a "last successful Start" persistence mechanism (currently not in L3 schema). **Defer** — risks startup-probe regressions on the v3.2.0 health-probe contract. |
 
-### Anti-Features (v1)
-
-| Feature | Why Tempting | Why Out of Scope | Alternative |
-|---------|--------------|------------------|-------------|
-| Dynamic `Assignment.Payload` validation against the referenced `Schema.Definition` | "Naturally" expected | PROJECT.md explicit: N2 = No [OOS: payload-vs-schema conformance] | Payload validated as syntactic JSON only. Document the gap; downstream consumers may enforce. |
-| Pre-validation that FK targets exist (HTTP GET to verify before insert) | Faster error feedback for clients | PROJECT.md: "no upfront EntityBApi GET" (Option 1 chosen) [OOS: FK pre-validation] | Rely on Postgres FK constraint → SQLSTATE 23503 → 422 mapping. |
-| DataAnnotations on DTOs alongside FluentValidation | Belt-and-suspenders | Double source of truth; confuses readers; one wins silently | FluentValidation only. Strip DataAnnotations from DTOs. |
-| MediatR + validation behavior + CQRS | "Clean architecture" pattern | Adds dispatcher + handler classes for trivial CRUD; PROJECT.md locks 3-tier | Direct service calls from controller. |
-| Validators auto-registered from assembly scan and then conflicting validators present | Convenience | Two validators for the same type silently overlap; debug hours | Single named validator per DTO. Assembly scan from one marker type only. |
-
----
-
-## 4. Observability Features
-
-### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| OpenTelemetry SDK wired for logs + HTTP server metrics | PROJECT.md locked | MEDIUM | `OpenTelemetry.Extensions.Hosting` + `OpenTelemetry.Exporter.OpenTelemetryProtocol` + `OpenTelemetry.Instrumentation.AspNetCore`. **Note:** PROJECT.md mentions logs + HTTP metrics. **Traces are not explicitly listed.** Recommend including traces too (minimal extra cost; instrumentation is the same package set) — surface as differentiator below. |
-| OTLP exporter to external Collector with `OTEL_EXPORTER_OTLP_ENDPOINT` honored | PROJECT.md locked | LOW | OTLP exporter respects standard env vars (`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_PROTOCOL`) out of the box. Default protocol `grpc`; can be `http/protobuf`. Document both. |
-| Service resource attributes from config (`service.name`, `service.version`) | PROJECT.md locked: `sk-api` / `3.2.0` | LOW | `ResourceBuilder.CreateDefault().AddService(serviceName: cfg["Service:Name"], serviceVersion: cfg["Service:Version"])`. |
-| Single `Logging:LogLevel` source of truth for console + OTel sinks | PROJECT.md locked | LOW | Both console (`AddConsole()`) and OTel (`AddOpenTelemetry(o => o.AddOtlpExporter())`) hang off MEL's `ILoggerFactory`, so `Logging:LogLevel` filters apply uniformly **before** the sink. Confirm by writing a smoke test that flips a category to `Warning` and verifies neither sink emits `Information`. |
-| `X-Correlation-Id` middleware: read header or generate UUID; attach to log scope; echo on every response (success and error) | PROJECT.md locked | LOW | Custom middleware (~30 LOC). `ILogger.BeginScope(new Dictionary<string,object> { ["CorrelationId"] = id })` propagates to all logs in that request. Stash id in `HttpContext.Items` for the error middleware and ProblemDetails customizer to read. |
-| Default ASP.NET Core HTTP request logging at `Information` | Standard `Microsoft.AspNetCore.HttpLogging` or built-in default | LOW | The default `Microsoft.AspNetCore.Hosting.Diagnostics` logger emits request started/completed events. Don't add `HttpLogging` middleware unless body logging needed (it's not). |
-
-### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| OpenTelemetry traces (in addition to logs + metrics) | Full three-pillar observability for negligible extra config | LOW | Add `WithTracing(t => t.AddAspNetCoreInstrumentation().AddHttpClientInstrumentation().AddNpgsql().AddOtlpExporter())`. **Recommend including in v1** — same packages, same Collector. PROJECT.md only mandates logs + HTTP metrics, but traces are cheap and immediately useful for debugging cross-call latency. |
-| EF Core / Npgsql tracing via `Npgsql.OpenTelemetry` | DB call spans nested under HTTP spans → instantly see slow queries | LOW | `Npgsql.OpenTelemetry` package, one line: `.AddNpgsql()`. Include in v1 alongside traces. |
-| Custom metrics via `System.Diagnostics.Metrics.Meter` | Domain-specific counters (e.g., `entity.created` by entity type) | MEDIUM | Defer to v1.x. ASP.NET's built-in HTTP server metrics + EF Core metrics cover the v1 needs. |
-| Correlation ID propagation to outgoing HTTP via `HttpClient` `DelegatingHandler` | Distributed tracing across services | LOW | Defer — service makes no outgoing HTTP calls in v1 (Postgres is the only dependency, and EF Core spans cover it). |
-| `DiagnosticSource` events for domain events | Decoupled observability | MEDIUM | Defer — over-engineering for CRUD. |
-| Structured logging conventions document (which fields to log on which events) | Lower cognitive load for new logs | LOW | Write a one-page doc in `docs/observability.md` once base library is in. Include in v1. |
-
-### Anti-Features (v1)
+### Anti-Features (v3.3.0)
 
 | Feature | Why Tempting | Why Out of Scope | Alternative |
 |---------|--------------|------------------|-------------|
-| Serilog as the logging library | Familiar, popular | PROJECT.md doesn't require it; .NET 8's MEL + OTel are sufficient; one fewer dependency | Use `ILogger<T>` (MEL) + `AddOpenTelemetry()`. If structured-logging UX of Serilog is wanted, can layer Serilog **as a provider** behind MEL, but unnecessary in v1. |
-| Direct vendor SDK (Datadog/New Relic/Application Insights) | Vendor's "easy" SDK | PROJECT.md: "OTLP exporter to external OTel Collector; Collector handles backend fan-out" — locked | Collector is the single egress point; vendor SDKs would bypass it. |
-| Body logging on requests/responses | "I want to see everything" | High-cardinality, PII risk, log volume explosion | Log validation errors and exceptions; trust the framework to log status + path + latency. |
-| Custom log levels / non-standard severity | Familiarity from other ecosystems | MEL has Trace/Debug/Info/Warning/Error/Critical — sufficient | Stay with MEL defaults. |
-| Prometheus scrape endpoint via `/metrics` | "Standard" Prometheus pattern | Collector is the egress; Prometheus can pull from Collector or Collector can push remote-write | OTLP → Collector → wherever. |
+| **Lua scripts encoding compile/validation logic** | "Run the whole projection write as one atomic Lua block" | Redis docs and community explicitly warn against business logic in Lua: blocks the server during execution, hard to debug (SHA-1 digests are opaque), forces all client instances to maintain the script copy, dynamic-script-generation is an anti-pattern (script cache poisoning). All v3.3.0 logic is in .NET — Lua adds a second language and a second test harness for zero benefit. | Pattern A (per-key SET) requires no Lua. Keep all business logic in `OrchestrationService.StartAsync`. |
+| **Read-through cache semantics (lazy fill on miss)** | "If consumer reads a missing key, build the projection on demand" | Mixes the materialized-view semantic ("writer materializes, reader reads") with cache semantics ("reader triggers build on miss"). Double the failure modes; consumer reads become unbounded-latency; cache stampede on cold start. The whole point of the L1→L2 pipeline is that writes materialize once at Start; reads are always pre-built | If consumer reads a miss, return 404 / let Orchestrator-side handle it. Don't auto-rebuild on read. |
+| **Eager invalidation of L2 on CRUD writes to L3** | "If someone edits a Step in L3, invalidate the affected projections in L2" | Re-opens the entire CRUD surface to "which L2 keys does this L3 entity touch?" tracking. A v3.3.0 maintenance hellscape. The contract is explicit: L2 is rebuilt by Start; CRUD does not touch L2 | Document explicitly: L3 edits do not invalidate L2. Operators must re-Start. |
+| **Mixing flat HASH and nested JSON in the same key space** | "Use HSET for top-level fields and JSON for nested ones" | Splits the read path: consumers need 2 commands per record (HGETALL + GET). Doubles round-trips at billions-of-reads-per-day scale. Redis-community guidance is: pick one shape per key space and stay there | Pick JSON-string-in-STRING for all 3 key spaces. Single GET per record. |
+| **`KEYS pattern` in Stop** | "Easiest way to find all of this workflow's keys" | KEYS is blocking on the server; production-contraindicated by Redis docs across all major versions | Compute key set in code from L1; UNLINK explicitly. |
+| **TTL-based expiry on projection keys** | "Auto-cleanup if Stop is never called" | Couples projection lifetime to wall-clock; a long workflow run becomes a "where did my projection go?" mystery; Stop becomes optional which removes its audit weight | No TTL. Stop is the explicit teardown. |
+| **Status-flag flip instead of physical delete on Stop** | "Keep the projection for audit; just mark it Stopped" | Doubles read cost on the hot path (consumer must filter every chain record); requires consumer cooperation; defers a cleanup problem | Physical UNLINK on Stop. Audit goes in the audit log (separate, deferred). |
+| **Redis distributed lock around the Start operation** | "Prevent concurrent Starts from racing" | The locked v3.3.0 contract is "last-write-wins, no Redis lock." A lock creates a "what if the lock owner dies?" failure mode (lease renewal, fencing tokens, the full RedLock saga). v3.3.0 is single-replica; concurrent Start collisions are operator-triggered and rare | Last-write-wins is acceptable. Document the semantics in the milestone. |
 
 ---
 
-## 5. Error Handling Features
+## 4. Expected DTO Shapes — Hash vs. JSON, Flat vs. Nested
 
-### Table Stakes
+### Recommendation Matrix
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Global exception-handling middleware | PROJECT.md: "Unhandled exception → 500 with generic message + correlationId; full stack to logs only" | LOW-MEDIUM | Prefer ASP.NET Core 8's `IExceptionHandler` interface (new in .NET 8) over the older `UseExceptionHandler` lambda — registered via `services.AddExceptionHandler<TBaseApiExceptionHandler>()` and `app.UseExceptionHandler()`. Chainable. |
-| RFC 7807 ProblemDetails on every error response | PROJECT.md: "All failures return RFC 7807 Problem Details JSON" | LOW | `services.AddProblemDetails(o => o.CustomizeProblemDetails = ctx => { ctx.ProblemDetails.Extensions["correlationId"] = ctx.HttpContext.Items["CorrelationId"]; })`. .NET 8 first-class support. |
-| FluentValidation failures → 400 ValidationProblemDetails with `errors` field-map | PROJECT.md locked | LOW | `[ApiController]` auto-emits `ValidationProblemDetails` for ModelState failures. Customize `InvalidModelStateResponseFactory` to inject `correlationId`. |
-| Postgres SQLSTATE → HTTP status mapping | PROJECT.md locked: 23503→422 (FK), 23505→409 (unique) | LOW | Catch `DbUpdateException` whose inner is `PostgresException`, switch on `SqlState`. Offending column extractable from `PostgresException.ColumnName` (sometimes null — fall back to constraint name parsing). |
-| Domain exceptions: `NotFoundException`, `ConflictException`, `ValidationException` (FluentValidation has its own) | Lets service layer throw semantically; mapping centralized in middleware | LOW | Define in `BaseApi.Core/Exceptions/`. `IExceptionHandler` maps each to status + ProblemDetails. |
-| 404 with id detail for resource-not-found | PROJECT.md locked | LOW | `NotFoundException(typeof(ProcessorEntity), id)` → 404 with `detail: "Processor with id {id} not found"`. |
-| Every error response carries `correlationId` | PROJECT.md locked | LOW | Hooked via `CustomizeProblemDetails` callback reading from `HttpContext.Items`. |
-| Generic 500 message that doesn't leak internals; full stack to logs | PROJECT.md locked | LOW | ProblemDetails `detail` = `"An unexpected error occurred. Reference correlationId for support."`. `_logger.LogError(ex, "Unhandled exception")` writes the full exception. |
+| Key space | Recommended shape | Storage type | Reason |
+|-----------|-------------------|--------------|--------|
+| `{workflowId}` | Single JSON object, JSON-encoded | Redis STRING (`SET`/`GET`) | One read per workflow; small payload; nested array (`entryStepIds[]`) + nested object (`liveness{}`) don't fit cleanly in a flat HASH |
+| `{workflowId:stepId}` | Single JSON object, JSON-encoded | Redis STRING (`SET`/`GET`) | The hot read path. Consumers read this billions of times per day. Single GET, single deserialization. Payload is small (~few hundred bytes). |
+| `{processorId}` | Single JSON object, JSON-encoded | Redis STRING (`SET`/`GET`) | Includes `inputDefinition` / `outputDefinition` (JSON Schema documents — can be large, often >1KB, deeply nested). HASH is contraindicated by Redis docs for >1-level depth |
 
-### Differentiators
+### Hash vs. JSON tradeoff (ecosystem evidence)
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| `Activity.Current?.TraceId` also embedded in error body | Lets you find the OTel trace for a failed request directly | LOW | Single line in `CustomizeProblemDetails`. Include in v1 if OTel traces are on (we recommend they are). |
-| `type` URIs in ProblemDetails point to a docs page per error type | Self-describing API | MEDIUM | Defer — docs pages don't exist yet. Use the default `type` URIs (`https://tools.ietf.org/html/rfc7231#section-6.5.4` etc.) for v1. |
-| Postgres exception → user-friendly field name (not the raw column name) | Better client UX | LOW | If we standardize FK / unique constraint names (`fk_processor_input_schema_id`, `uq_processor_source_hash`), the middleware can derive a friendly field. Include in v1 if naming convention is adopted. |
+- **Hashes** are simple field-value pairs, "default recommendation" for shallow flat records (Redis docs). But they degrade for nested data; the JSON object should not be deeper than one level to maintain HASH optimization.
+- **JSON-as-STRING** (this milestone's recommendation) keeps the value serialized; access requires deserialization but a single `GET` returns the entire record in one round-trip. Matches consumer pattern of "read whole step record, decide next action."
+- **RedisJSON module** offers partial-field retrieval and in-place updates, advertised as ~90× lower latency than MongoDB for nested-JSON workloads. Overkill for v3.3.0: requires a Redis module dependency in the compose stack, and v3.3.0 doesn't have a partial-read use case (consumer always reads the full chain record).
 
-### Anti-Features (v1)
+**Conclusion:** Plain STRING + `System.Text.Json` for all 3 key spaces. Defer RedisJSON to v3.4+ only if a partial-update use case emerges.
 
-| Feature | Why Tempting | Why Out of Scope | Alternative |
-|---------|--------------|------------------|-------------|
-| Return raw exception messages or stack traces in 500 responses | "Easier debugging" | Leaks internals; security smell; consumers couple to them | Generic message + correlationId; full detail in logs only. |
-| Throwing `HttpResponseException` from controllers | "Convenient" | Type doesn't exist in ASP.NET Core; relics from Web API 2 | Throw domain exceptions; let middleware map. |
-| `IActionResult` returns of `Problem(...)` scattered through services / repositories | "Inline" error responses | Couples non-HTTP layers to HTTP types | Throw domain exceptions; HTTP shape only at the middleware boundary. |
-| HTML error pages on 500 | Old MVC convention | API consumers want JSON | ProblemDetails only. |
-| Different error envelope (e.g., `{ "error": { "code", "message" } }` instead of ProblemDetails) | Familiar from other ecosystems | PROJECT.md locks RFC 7807 | n/a |
+### Field shape — exact contracts
 
----
-
-## 6. Mapping Features
-
-### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Mapperly partial mapper class per entity | PROJECT.md locked | LOW | `[Mapper] public partial class ProcessorMapper { public partial ProcessorEntity ToEntity(ProcessorCreateDto dto); public partial ProcessorReadDto ToRead(ProcessorEntity entity); public partial void Apply(ProcessorUpdateDto dto, ProcessorEntity entity); }`. Registered as singleton via `services.AddSingleton<ProcessorMapper>()`. Mappers are stateless. |
-| Mapperly excludes audit fields on Create (`Id`, `CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`) | These are server-controlled; CreateDto must not carry them | LOW | Use `[MapperIgnoreTarget(nameof(BaseEntity.CreatedAt))]` etc., or just don't include them on `CreateDto`/`UpdateDto`. Cleaner: structure DTOs to omit the fields — then no ignore needed. |
-| Nullability flows through mappers (nullable reference types enabled project-wide) | Catches null mismatches at compile time | LOW | `<Nullable>enable</Nullable>` in `Directory.Build.props`. Mapperly respects nullability annotations. |
-
-### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Generic `IEntityMapper<TEntity, TCreate, TUpdate, TRead>` interface implemented by each Mapperly partial | Lets `BaseController` resolve mapper generically without knowing the concrete type | LOW | Implement the interface explicitly in each `partial class`. Then `BaseController` does `private readonly IEntityMapper<TEntity, TCreate, TUpdate, TRead> _mapper`. **Recommend in v1** — otherwise every concrete controller has to override mapping methods. |
-| Mapperly verification in tests (mappers don't drop fields silently) | Catches "added a property, forgot to map" | LOW | Round-trip test: `Read(ToEntity(create))` and assert no nulls in expected fields. |
-
-### Anti-Features (v1)
-
-| Feature | Why Tempting | Why Out of Scope | Alternative |
-|---------|--------------|------------------|-------------|
-| AutoMapper | Familiar | Runtime reflection; not AOT-safe; PROJECT.md explicitly chose Mapperly | Mapperly. |
-| Manual mapping in controllers / services | "Don't add a library" | Mapperly is source-gen → zero runtime cost; manual mapping is just bugs waiting | Mapperly. |
-| Generic auto-mapping via reflection in `BaseController` | "DRY" | Defeats the AOT-safe / source-gen goal; mappers are entity-specific anyway (M2M sync, junction tables) | Per-entity Mapperly mappers behind `IEntityMapper<,,,>` interface. |
-
----
-
-## 7. Testing Features
-
-### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| `xUnit` as test runner | De facto .NET standard | LOW | `xunit`, `xunit.runner.visualstudio`, `Microsoft.NET.Test.Sdk`. |
-| `WebApplicationFactory<Program>` for integration tests | Standard ASP.NET Core integration test harness | LOW | Requires `Program.cs` to use top-level statements + `public partial class Program`. Trivial. |
-| Testcontainers for Postgres in integration tests | Real DB calls without polluting dev env; tests run on every CI | MEDIUM | `Testcontainers.PostgreSql` package. One `IAsyncLifetime` fixture per test collection; container reused across tests in the same collection. Requires Docker available on CI. |
-| Unit tests for validators (FluentValidation has a test extension) | Validators are pure logic; cheap to test | LOW | `FluentValidation.TestHelper` package: `validator.TestValidate(dto).ShouldHaveValidationErrorFor(x => x.Name)`. |
-| Unit tests for mappers | Catch silent field drops | LOW | Hand-rolled assertions over each `ToEntity`/`ToRead`/`Apply`. |
-
-### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Integration test: `POST /api/v1/processors` round-trip with Testcontainers Postgres | High-fidelity smoke test for every CRUD path | MEDIUM | One golden-path test per entity is enough to catch wiring regressions. Include in v1. |
-| Integration test: Postgres FK violation → 422 mapping | Verifies the SQLSTATE mapping end-to-end | MEDIUM | One test per error class (FK violation, unique violation, not-found). Include in v1 — these are the contract. |
-| Snapshot tests for ProblemDetails JSON shape | Locks the error contract | LOW | `Verify.Xunit` or similar. Defer — v1's contract is small enough to assert per field. |
-| Architecture tests (`NetArchTest` or `ArchUnitNET`) | Enforces layering rules (controllers don't reference repositories directly, etc.) | MEDIUM | Defer to v1.x. |
-
-### Anti-Features (v1)
-
-| Feature | Why Tempting | Why Out of Scope | Alternative |
-|---------|--------------|------------------|-------------|
-| `InMemoryDatabase` provider for tests | Fast, no Docker required | Doesn't enforce FKs the same way Postgres does; doesn't surface SQLSTATE; PROJECT.md's error contract depends on real Postgres behavior | Testcontainers Postgres. |
-| `SQLite` in-memory for tests | Same | Same; also lacks `jsonb` | Testcontainers Postgres. |
-| Mocks for `DbContext` / `IRepository<T>` in integration tests | "Unit-test all the things" | Tests the mock, not the system | Real Postgres via Testcontainers for integration; pure-function unit tests for validators and mappers. |
-| 100% code coverage gate | "Quality" | Forces tests against trivial code; doesn't catch wiring bugs | Coverage as a signal, not a gate. Focus on golden-path + error-mapping tests. |
-
----
-
-## Feature Dependencies
-
-```
-[Correlation ID Middleware] (Observability)
-    └── feeds ──> [Log Scope] (Observability)
-    └── feeds ──> [ProblemDetails CustomizeProblemDetails] (Error Handling)
-    └── feeds ──> [Response Header echo on every response] (HTTP)
-
-[ProblemDetails (services.AddProblemDetails)] (Error Handling)
-    └── required by ──> [Global IExceptionHandler] (Error Handling)
-    └── required by ──> [FluentValidation auto-validation → 400] (Validation)
-    └── required by ──> [Postgres SQLSTATE mapping → 409/422] (Error Handling)
-
-[FluentValidation registration] (Validation)
-    └── required by ──> [BaseEntityValidator<T>] (Validation)
-    └── required by ──> [Concrete validators per entity] (Validation)
-    └── enhances ──> [Swagger via MicroElements.Swashbuckle.FluentValidation] (HTTP/Diff.)
-
-[AppDbContext (single, shared)] (Infrastructure)
-    └── required by ──> [Repository<T>] (HTTP/CRUD)
-    └── required by ──> [AuditInterceptor] (Infrastructure)
-    └── required by ──> [Postgres health check] (Infrastructure)
-    └── required by ──> [EF Core migrations on startup] (Infrastructure)
-
-[OpenTelemetry SDK wiring] (Observability)
-    └── required by ──> [OTLP exporter to Collector] (Observability)
-    └── required by ──> [HTTP server metrics] (Observability)
-    └── enhances ──> [EF Core / Npgsql tracing] (Observability/Diff.)
-    └── enhances ──> [Activity.Current.TraceId in error body] (Error Handling/Diff.)
-
-[Mapperly partial mapper per entity] (Mapping)
-    └── implements ──> [IEntityMapper<TEntity,TCreate,TUpdate,TRead>] (Mapping/Diff.)
-        └── consumed by ──> [BaseController<TEntity,TCreate,TUpdate,TRead>] (HTTP/CRUD)
-
-[Asp.Versioning.Http] (HTTP/Diff., recommended for v1)
-    └── feeds ──> [Swagger version grouping] (HTTP)
-    └── feeds ──> [Route prefix /api/v{version}/] (HTTP)
-
-[WebApplicationFactory<Program>] (Testing)
-    └── required by ──> [Integration tests] (Testing)
-    └── consumes ──> [Testcontainers Postgres] (Testing)
-
-[CONFLICT] [Pagination] vs [GET returns all]
-    → PROJECT.md locks "GET returns all"; pagination is anti-feature for v1.
-
-[CONFLICT] [Soft delete] vs [DB FK constraints on hard delete]
-    → Soft delete would mean `IsDeleted = true` doesn't trigger FK cascade; hard delete + FK surfaces dependents naturally; PROJECT.md locks hard delete.
-
-[CONFLICT] [DataAnnotations on DTOs] vs [FluentValidation]
-    → Pick one; PROJECT.md says FluentValidation.
+```jsonc
+// {workflowId} — STRING value:
+{
+  "entryStepIds": ["<guidN>", "<guidN>"],
+  "cron": "0 */5 * * *",            // nullable; mirrors v3.2.0 Workflow.CronExpression
+  "jobId": "<guidN>",                // Guid; v3.3.0 = Guid.Empty (scheduler-write deferred)
+  "liveness": {
+    "timestamp": "2026-05-28T00:00:00Z",
+    "interval": 60,                  // seconds
+    "status": "Active"
+  }
+}
 ```
 
-### Critical Dependency Notes
+```jsonc
+// {workflowId:stepId} — STRING value (chain form, one nextStepId per record):
+{
+  "entryCondition": "PreviousProcessing", // existing StepEntity.EntryCondition enum
+  "processorId": "<guidN>",
+  "payload": { /* arbitrary JSON from Assignment.Payload */ },
+  "nextStepId": "<guidN>"                  // single id; null = terminal
+}
+```
 
-- **Correlation ID is upstream of error responses.** The error middleware and ProblemDetails customizer read `correlationId` from `HttpContext.Items`. Therefore correlation-ID middleware **must** be registered **before** `UseExceptionHandler` in the pipeline.
-- **`services.AddProblemDetails()` is required for `IExceptionHandler` to produce ProblemDetails responses** (otherwise the framework falls back to text/html or empty body on some error paths).
-- **`[ApiController]` controllers automatically produce `ValidationProblemDetails` on ModelState invalid** — but only if `services.AddProblemDetails()` is called.
-- **EF Core migrations must complete before readiness probe returns Healthy.** Apply migrations in a hosted service that flips a "startup complete" flag the readiness probe reads, OR apply synchronously before `app.Run()` so the listener doesn't open until done.
-- **API versioning, if added, must be in v1.** Retrofitting versioning after consumers exist requires URL changes — breaks consumers.
+```jsonc
+// {processorId} — STRING value:
+{
+  "inputDefinition": { /* full JSON Schema from Processor.InputSchema.Definition; may be null */ },
+  "outputDefinition": { /* full JSON Schema from Processor.OutputSchema.Definition; may be null */ },
+  "liveness": {
+    "timestamp": "2026-05-28T00:00:00Z",
+    "interval": 60,
+    "status": "Active"
+  }
+}
+```
 
----
-
-## MVP Definition
-
-### Launch With (v1)
-
-Per PROJECT.md's Active requirements plus our recommended differentiators:
-
-**Infrastructure (Table Stakes)**
-- [ ] `AddBaseApi(...)` extension + `UseBaseApi(...)` pipeline extension
-- [ ] Options pattern + `ValidateOnStart()`
-- [ ] EF Core migrations applied on startup (single-replica caveat documented)
-- [ ] Three health probes (live / ready / startup)
-- [ ] Postgres reachability check on readiness
-- [ ] Single `AppDbContext` with `AuditInterceptor` wired
-
-**HTTP/CRUD (Table Stakes)**
-- [ ] `BaseController<TEntity, TCreate, TUpdate, TRead>` with 5 verbs
-- [ ] Generic `Repository<T>` with hard row cap on `ListAsync`
-- [ ] Per-entity Service class for M2M sync
-- [ ] Swashbuckle OpenAPI + Swagger UI (XML docs enabled)
-- [ ] CORS configurable via options
-- [ ] `id:guid` route constraint
-- [ ] CancellationToken plumbed end-to-end
-
-**HTTP/CRUD (Differentiators recommended for v1)**
-- [ ] Asp.Versioning.Http with `/api/v1/...` (avoids breaking URL change later)
-- [ ] FluentValidation rules surfaced in OpenAPI (`MicroElements.Swashbuckle.FluentValidation`)
-- [ ] `IEntityMapper<,,,>` interface implemented by Mapperly partials
-
-**Validation (Table Stakes)**
-- [ ] FluentValidation registered + auto-validating
-- [ ] `BaseEntityValidator<T>` with Name/Version/Description rules
-- [ ] Per-entity validators inheriting base
-- [ ] JSON validity + JSON Schema validity custom rules (JsonSchema.Net)
-- [ ] SHA-256 regex rule
-- [ ] Cron expression validity rule (Cronos) **[differentiator, recommended]**
-
-**Observability (Table Stakes)**
-- [ ] OTel SDK + OTLP exporter to Collector via env var
-- [ ] Service resource attributes from config
-- [ ] Single `Logging:LogLevel` source for console + OTel
-- [ ] `X-Correlation-Id` middleware → log scope → response header
-- [ ] OTel traces + Npgsql instrumentation **[differentiator, recommended — same packages, immediately useful]**
-
-**Error Handling (Table Stakes)**
-- [ ] Global `IExceptionHandler` (.NET 8 style)
-- [ ] `services.AddProblemDetails()` with `correlationId` extension
-- [ ] FluentValidation → 400 ValidationProblemDetails
-- [ ] SQLSTATE 23503 → 422, 23505 → 409
-- [ ] Domain exceptions (`NotFoundException`, `ConflictException`)
-- [ ] Generic 500 + correlation id; full stack to logs only
-- [ ] `traceId` in error body when OTel traces on **[differentiator, recommended]**
-
-**Mapping (Table Stakes)**
-- [ ] Mapperly per-entity partial mapper
-- [ ] DTOs structured to omit server-controlled fields (no `MapperIgnoreTarget` gymnastics)
-
-**Testing (Table Stakes for v1)**
-- [ ] xUnit test projects
-- [ ] WebApplicationFactory integration host
-- [ ] Testcontainers Postgres fixture
-- [ ] One golden-path integration test per entity (POST → GET → PUT → DELETE)
-- [ ] One error-mapping test per error class (404, 409 unique, 422 FK, 400 validation)
-- [ ] Validator unit tests (FluentValidation.TestHelper)
-- [ ] Mapper unit tests
-
-### Add After Validation (v1.x)
-
-- [ ] Pagination/filtering/sorting on list endpoints (Sieve or Gridify) — when a consumer demonstrates the table is large enough to need it
-- [ ] PATCH endpoints with JSON Merge Patch — when consumers ask for partial updates
-- [ ] Custom metrics via `Meter` (e.g., per-entity create/update/delete counters) — when dashboards need them
-- [ ] ETag / `If-Match` concurrency — when concurrent edits become a real concern
-- [ ] Architecture tests (NetArchTest) — when team grows beyond 1-2 contributors
-- [ ] Snapshot tests for ProblemDetails — when error contract stabilizes
-- [ ] Migration distributed lock — when scaling beyond 1 replica
-- [ ] Idempotency-Key header on POST — when clients implement retries
-- [ ] `type` URI documentation pages per error type — when public docs exist
-
-### Future Consideration (v2+)
-
-- [ ] Soft delete as a base concern (revisit if recovery needs emerge) [OOS today]
-- [ ] Authentication / authorization (when an auth boundary is defined) [OOS today]
-- [ ] Multi-tenant support
-- [ ] Bulk operations (POST/PATCH arrays) [OOS today]
-- [ ] HATEOAS / hypermedia (unlikely to be needed)
-- [ ] Rate limiting (when service becomes internet-facing)
-- [ ] GraphQL or gRPC surfaces (if consumer demand emerges)
-- [ ] CQRS / MediatR pipeline (if CRUD outgrows three-tier layering)
-- [ ] Multiple deployable services / NuGet packaging of `BaseApi.Core` [OOS today]
-- [ ] `WorkflowRunEntity` / execution result tracking [OOS — external responsibility]
+**Chain form note:** A Step with multiple `NextStepIds` produces multiple `{workflowId:stepId}` records, each with one `nextStepId`. This is the "fan-out flattening" the milestone scope already specifies and is consumer-friendly — readers walk one record per edge, never an array. `[LOCKED: chain form]`
 
 ---
 
-## Feature Prioritization Matrix
+## 5. Feature Dependencies
 
-| Feature | User Value | Implementation Cost | Priority |
-|---------|------------|---------------------|----------|
-| `AddBaseApi(...)` composition root | HIGH | LOW | P1 |
-| `BaseController<,,,>` generic CRUD | HIGH | MEDIUM | P1 |
-| Generic `Repository<T>` | HIGH | MEDIUM | P1 |
-| EF migrations on startup | HIGH | MEDIUM | P1 |
-| 3 Health probes (live/ready/startup) | HIGH | LOW | P1 |
-| `AuditInterceptor` | HIGH | LOW | P1 |
-| FluentValidation + `BaseEntityValidator<T>` | HIGH | LOW | P1 |
-| JSON Schema validation rule (JsonSchema.Net) | HIGH | LOW | P1 |
-| Cron validation rule (Cronos) | MEDIUM | LOW | P1 |
-| Correlation ID middleware | HIGH | LOW | P1 |
-| OTel SDK + OTLP exporter (logs + metrics) | HIGH | MEDIUM | P1 |
-| OTel traces + Npgsql instrumentation | MEDIUM | LOW | P1 |
-| Global `IExceptionHandler` + ProblemDetails | HIGH | LOW | P1 |
-| SQLSTATE → HTTP mapping | HIGH | LOW | P1 |
-| Domain exceptions (NotFound/Conflict) | HIGH | LOW | P1 |
-| Mapperly per-entity mappers | HIGH | LOW | P1 |
-| `IEntityMapper<,,,>` interface | MEDIUM | LOW | P1 |
-| Swashbuckle + XML docs | HIGH | LOW | P1 |
-| FluentValidation → Swagger schemas | MEDIUM | LOW | P1 |
-| Asp.Versioning.Http (v1 URL shape) | MEDIUM | LOW | P1 |
-| CORS configurable | MEDIUM | LOW | P1 |
-| Testcontainers Postgres integration tests | HIGH | MEDIUM | P1 |
-| Validator/mapper unit tests | MEDIUM | LOW | P1 |
-| Pagination/filtering/sorting | MEDIUM | MEDIUM | P3 |
-| ETag concurrency | MEDIUM | MEDIUM | P3 |
-| Custom metrics (Meter) | LOW | MEDIUM | P3 |
-| Authentication/Authorization | HIGH (future) | HIGH | P3 |
-| Soft delete | LOW | MEDIUM | P3 |
-| Bulk operations | LOW | HIGH | P3 |
-| HATEOAS | LOW | HIGH | P3 |
-| Rate limiting | LOW (today) | LOW | P3 |
-| Idempotency-Key | LOW | MEDIUM | P3 |
-| Architecture tests | LOW | MEDIUM | P3 |
+```
+[Bounded L3 fetch by WorkflowIds]
+    └──required-by──> [L1 Dictionary build]
+                          └──required-by──> [Existence validation]
+                                                └──required-by──> [Cycle detection (DFS)]
+                                                                      └──required-by──> [Schema-edge compat gate]
+                                                                                            └──required-by──> [Payload↔ConfigSchema gate]
+                                                                                                                  └──required-by──> [L2 projection write (3 key spaces)]
+                                                                                                                                        └──required-by──> [L1 cleanup (try/finally)]
+
+[Stop: compute key set] ── derives from ──> [L1 build artifact (key list cache)]
+[Stop: UNLINK] ── precondition ──> [Redis client (StackExchange.Redis) in compose stack]
+
+[Liveness DTO shape] ── shape-only-in-v3.3.0 ──> (Scheduler writes deferred)
+[JobId DTO shape] ── shape-only-in-v3.3.0 ──> (Hangfire/Quartz integration deferred)
+```
+
+### Dependency Notes
+
+- **L1 → L2 ordering is non-negotiable:** an L2 write before L1 is fully built risks projecting an incomplete graph. The "build → validate → write → cleanup" pipeline is sequential.
+- **Validation order (existence → cycles → schema-edge → payload→config) is consumer-facing:** swapping the order changes which 422 a broken workflow produces. Locked in milestone scope.
+- **Stop depends on L1's key-list output:** the cleanest implementation has Start return / cache the list of keys it wrote so Stop can UNLINK them without SCAN. Alternative is SCAN at Stop time (slower, has cursor semantics) — defer that to a v3.4+ admin-cleanup tool.
+- **Redis dependency is new in compose.yaml:** adds operational footprint (one more container, one more health probe). Document in PITFALLS.md as the v3.3.0 infrastructure delta.
+
+---
+
+## 6. MVP Definition — v3.3.0 Scope
+
+### Launch With (v3.3.0 — Table Stakes)
+
+- [ ] **Bounded L3 fetch + flat Dictionary L1 build** — 5 entity types loaded once per Start request, in-memory dicts, explicit teardown.
+- [ ] **DFS traversal with cycle detection + missing-next-step 422** — per-traversal `visited` set, deterministic error messages.
+- [ ] **Strict Schema-edge compatibility gate** — Guid equality, null passes, 422 on mismatch with `(parentStepId, childStepId)`.
+- [ ] **Payload↔ConfigSchema gate (closes VALID-21)** — reuses v3.2.0 JsonSchema.Net validator (draft 2020-12, SSRF-disabled), 422 on failure with offending `assignmentId`.
+- [ ] **3 Redis key spaces with locked DTO shapes** — `{workflowId}`, `{workflowId:stepId}`, `{processorId}`; STRING + JSON; exact field names (`inputDefinition` / `outputDefinition`, `liveness{timestamp,interval,status}`, `jobId`).
+- [ ] **Idempotent Start (Pattern A: per-key SET overwrite, targeted DEL of removed keys)** — last-write-wins on concurrent Starts; no Redis lock; 204 response.
+- [ ] **Idempotent Stop (compute-key-set + UNLINK)** — 204 even when no keys exist; never SCAN, never KEYS, never status-flag flip.
+- [ ] **Mandatory validation order** — existence → cycles → schema-edge → Payload↔Config → L1 build → L2 write → cleanup, asserted by integration tests.
+- [ ] **L1 cleanup contract** — explicit `.Clear()` in finally block, success or failure path.
+- [ ] **Redis client added to `compose.yaml`** — alongside Postgres/ES/Prom; v3.2.0 health-probe pattern extended to include Redis reachability in `/health/ready`.
+
+### Add After Validation (v3.4+ — Differentiators)
+
+- [ ] **Aggregate-error mode for validation gates** — return all 12 mismatches at once vs. first-failure-only.
+- [ ] **`generationId` on `{workflowId}` root** — consumer can detect rebuild without diffing chain records.
+- [ ] **Projection-size telemetry** — Histograms on `orchestration.projection.{bytes,keys_total}`.
+- [ ] **Dry-run Start (`?dryRun=true`)** — full validation pipeline, skip L2 write. Useful for CI / change-management.
+- [ ] **Audit trail of Start invocations** — `(workflowId, timestamp, correlationId, userId)` log row per Start.
+- [ ] **Scheduler integration** — who writes the real `JobId`; who emits `Liveness.timestamp` updates; Hangfire vs. Quartz vs. external Scheduler service decision.
+- [ ] **Compile metadata stamped into L2** — `compileMetadata.schemaEdge.{parentOutputSchemaId, childInputSchemaId}` per chain record for audit consumers.
+- [ ] **Stage-then-rename atomic swap (Pattern B)** — upgrade from per-key SET if consumers complain about read-during-rebuild artifacts.
+
+### Future Consideration (v3.5+ — Defer)
+
+- [ ] **Structural Schema compatibility** — canonical JSON Schema diffing instead of strict Guid equality. Entire research milestone of its own.
+- [ ] **Projection-diff between current and proposed Start** — "what's about to change" output for change-management consumers.
+- [ ] **RedisJSON module integration** — partial-read / in-place-update of nested fields; defer until a partial-read use case appears.
+- [ ] **Pre-warm strategy (background service replays last-known-good Start at API startup)** — risks startup-probe regression; defer until consumers demand cold-start latency improvements.
+- [ ] **Distributed lock around Start (RedLock or similar)** — only relevant once multi-replica is in play. v3.3.0 is single-replica.
+- [ ] **Sequence numbers / generation IDs / causal-consistency tokens in `Liveness`** — needed once Scheduler integration introduces multi-writer races.
+
+---
+
+## 7. Feature Prioritization Matrix
+
+| Feature | User Value (External Orchestrator + Scheduler) | Implementation Cost | Priority |
+|---------|------------------------------------------------|---------------------|----------|
+| Bounded L3 fetch + L1 build + cleanup | HIGH (correctness foundation) | LOW | **P1 — v3.3.0** |
+| DFS traversal + cycle detection | HIGH (consumer safety) | LOW | **P1 — v3.3.0** |
+| Strict Schema-edge gate | HIGH (type-safety contract) | MEDIUM | **P1 — v3.3.0** |
+| Payload↔ConfigSchema gate (closes VALID-21) | HIGH (closes deferred v3.2.0 debt) | MEDIUM | **P1 — v3.3.0** |
+| 3 Redis key spaces with locked DTO shapes | HIGH (consumer-contract surface) | LOW | **P1 — v3.3.0** |
+| Idempotent Start (Pattern A) | HIGH (operator-trigger semantics) | MEDIUM | **P1 — v3.3.0** |
+| Idempotent Stop (compute-key-set + UNLINK) | HIGH (operator-trigger semantics) | LOW | **P1 — v3.3.0** |
+| Mandatory validation order | MEDIUM (deterministic error messages) | LOW | **P1 — v3.3.0** |
+| `generationId` on workflow root | MEDIUM (rebuild detection) | LOW | **P2 — v3.4** |
+| Dry-run Start (`?dryRun=true`) | MEDIUM (CI gating) | MEDIUM | **P2 — v3.4** |
+| Aggregate-error mode | MEDIUM (DX) | LOW | **P2 — v3.4** |
+| Projection-size telemetry | MEDIUM (ops) | LOW | **P2 — v3.4** |
+| Audit trail of Start | MEDIUM (compliance) | MEDIUM | **P2 — v3.4** |
+| Scheduler integration (real JobId/Liveness writers) | HIGH (full system completeness) | HIGH | **P2 — v3.4** (separate milestone) |
+| Stage-then-rename swap (Pattern B) | LOW until consumer asks | HIGH | **P3 — v3.5+** |
+| Structural Schema compat | LOW until ecosystem matures | HIGH | **P3 — v3.5+** |
+| Projection diffing | LOW | HIGH | **P3 — v3.5+** |
+| RedisJSON module | LOW until partial-read use case | HIGH | **P3 — v3.5+** |
+| Pre-warm strategy | LOW (risk > value at this stage) | HIGH | **P3 — v3.5+** |
+| Distributed Start lock | LOW (single-replica) | HIGH | **P3 — v3.5+** |
 
 **Priority key:**
-- **P1** — Must have for v1
-- **P2** — Should have, add when possible
-- **P3** — Nice to have / future / OOS today
+- **P1**: Must have for v3.3.0 ship (consumer-contract or correctness)
+- **P2**: Should have, candidate for v3.4 milestone
+- **P3**: Nice to have, defer until trigger emerges
 
 ---
 
-## Reference Comparison: Modern .NET 8 Base API Templates
+## 8. Ecosystem Pattern Analysis (Comparable Systems)
 
-| Feature | clean-architecture-template (jasontaylordev) | FastEndpoints templates | Our Approach (BaseApi.Core) |
-|---------|--------------|--------------|--------------|
-| CRUD pattern | MediatR CQRS handlers | Endpoint classes (no controllers) | Generic abstract `BaseController<,,,>` (PROJECT.md locked) |
-| Validation | FluentValidation pipeline behavior (MediatR) | Built-in FluentValidation | FluentValidation auto-validation, no MediatR |
-| Mapping | AutoMapper | Manual or AutoMapper | Mapperly (source-gen, AOT-safe) |
-| Error handling | Behavior-based + ProblemDetails | Built-in ProblemDetails | `IExceptionHandler` + `services.AddProblemDetails()` (.NET 8 native) |
-| Observability | Not opinionated | Not opinionated | OTel SDK + OTLP to Collector (PROJECT.md locked) |
-| Migrations | Init container or design-time | App startup | App startup (PROJECT.md locked) |
-| Auth | Identity included | Pluggable | Out of scope v1 |
-| Versioning | Asp.Versioning | Built-in versioning | Asp.Versioning recommended for v1 |
+| Pattern | Temporal | Argo Workflows | Airflow | sk_p v3.3.0 (our approach) |
+|---------|----------|----------------|---------|---------------------------|
+| **How is the graph stored?** | Event-sourced history per workflow execution | YAML CRD in K8s etcd | Python DAG file parsed at scheduler-tick | Postgres L3 → projected to Redis L2 (this milestone) |
+| **Compile-time validation** | Workflow code is just Go/Java/TS — compile errors caught by language toolchain | YAML schema validated by k8s admission | DAG-bag parser at scheduler-tick (runtime error if broken) | Explicit gates at Start: existence, cycles, schema-edge, payload↔config |
+| **Cycle detection** | N/A (event-sourced, replays history; no compile-time graph) | YAML structural lint | Implicit (DAG = Directed *Acyclic* Graph; parser rejects cycles) | Explicit DFS at Start (LOCKED) |
+| **Idempotent start** | `WorkflowIdReusePolicy` enum (ALLOW_DUPLICATE / REJECT_DUPLICATE / TERMINATE_IF_RUNNING) | `kubectl apply` is idempotent by K8s convention | Trigger by `dag_id` + `execution_date` — date is the idempotency key | PUT-like idempotent Start; last-write-wins |
+| **Stop semantics** | `TerminateWorkflowExecution` API; durable state preserved | `argo terminate` — sets phase=Failed; CRD remains | `dag.set_dag_run_state(state=DagRunState.FAILED)` | DEL the L2 projection; 204 unconditionally |
+| **Projection / read model** | Visibility store (ES) for queries; primary store is event log | K8s API queries the CRD directly | Metadata DB queries (Postgres/MySQL) | Redis L2 — the consumer-facing read model |
 
-The conclusion: our stack is intentionally **leaner than Clean-Architecture and more controller-centric than FastEndpoints**. Three-tier layering + generic controllers is appropriate for CRUD-only scope; CQRS would be over-engineering.
+**Takeaway:** sk_p's L3→L1→L2 split mirrors a CQRS read-model pattern more than a Temporal-style event-sourced pattern. The L2 projection is the read model; L3 is the write model. v3.3.0 introduces the read-model materializer.
 
 ---
 
 ## Sources
 
-Validated against current .NET 8/9 ecosystem evidence:
+### Ecosystem patterns
+- [Workflow Orchestration Best Practices for ETL, ELT, and ML Pipelines (ml4devs)](https://www.ml4devs.com/what-is/workflow-orchestration/) — schema validation, separation of orchestration from business logic, treating DAGs as code
+- [Temporal vs Airflow vs Argo: Workflow Orchestration Guide (xgrid)](https://www.xgrid.co/resources/temporal-vs-airflow-vs-argo-workflow-orchestration/) — comparison of graph storage and validation approaches
+- [Workflow Engine design proposal (Architecture Weekly)](https://www.architecture-weekly.com/p/workflow-engine-design-proposal-tell) — graph compilation and projection patterns
+- [Idempotency when creating workflows · workflow-core #828](https://github.com/danielgerlag/workflow-core/issues/828) — WorkflowIdReusePolicy ecosystem precedent
+- [The Myths of Idempotent APIs in Practices](https://medium.com/@qlong/the-myths-of-idempotent-apis-in-practices-9025a94487f2) — Indeed Workflow Engine StartWorkflow idempotency pattern
 
-- [Microsoft Learn — Create a controller-based web API with ASP.NET Core 8](https://learn.microsoft.com/en-us/aspnet/core/tutorials/first-web-api?view=aspnetcore-8.0) — controller + DTO patterns (HIGH confidence)
-- [Microsoft Learn — Applying EF Core Migrations](https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying) — startup migration patterns and multi-instance caveats (HIGH confidence)
-- [The Reformed Programmer — How to safely apply an EF Core migrate on startup](https://www.thereformedprogrammer.net/how-to-safely-apply-an-ef-core-migrate-on-asp-net-core-startup/) — single-replica caveat (HIGH confidence — author Jon P Smith is canonical on EF Core)
-- [Code-Maze — ASP.NET Core Web API Best Practices](https://code-maze.com/aspnetcore-webapi-best-practices/) — DAL/IoC/error handling conventions (MEDIUM confidence)
-- [Mastering .NET API Versioning (2025 Guide)](https://developersvoice.com/blog/architecture/api-versioning-pattern/) — Asp.Versioning patterns (MEDIUM confidence)
-- [GitHub — Swashbuckle.AspNetCore](https://github.com/domaindrivendev/Swashbuckle.AspNetCore) — current Swagger generator status (HIGH confidence)
-- [GitHub — MicroElements.Swashbuckle.FluentValidation](https://github.com/micro-elements/MicroElements.Swashbuckle.FluentValidation) — FluentValidation → OpenAPI schema integration (HIGH confidence)
-- [GitHub — dotnet/aspnet-api-versioning](https://github.com/dotnet/aspnet-api-versioning/wiki/Swashbuckle-Integration) — versioning + Swagger integration patterns (HIGH confidence)
-- [Petabridge — The Easiest Way to Do OpenTelemetry in .NET: OTLP + Collector](https://petabridge.com/blog/easiest-opentelemetry-dotnet-otlp-collector/) — confirms OTLP-to-Collector as the canonical .NET 8 pattern (HIGH confidence)
-- [Cronos (HangfireIO/Cronos)](https://github.com/HangfireIO/Cronos) — cron parsing library (HIGH confidence)
-- [JsonSchema.Net (gregsdennis/json-everything)](https://github.com/gregsdennis/json-everything) — modern AOT-safe JSON Schema validator (HIGH confidence)
-- PROJECT.md — locked decisions and Out of Scope list (authoritative for this project)
+### Redis projection patterns
+- [Redis Atomic Update Patterns (Antirez)](https://redis.antirez.com/fundamental/atomic-updates.html) — atomic swap / RENAME patterns
+- [How to Use RENAME and RENAMENX in Redis (OneUptime, 2026)](https://oneuptime.com/blog/post/2026-03-31-redis-how-to-use-rename-and-renamenx-in-redis-to-rename-keys/view) — staging-key-then-rename pattern
+- [What is idempotency in Redis? (Redis blog)](https://redis.io/blog/what-is-idempotency-in-redis/) — SET NX vs Lua tradeoffs
+- [Faster KEYS and SCAN (Redis blog)](https://redis.io/blog/faster-keys-and-scan-optimized/) — Redis 8 single-slot optimization; production caveats
+- [Redis SCAN vs KEYS command (Medium)](https://medium.com/@shaskumar/redis-scan-vs-keys-command-9df7f51b7162) — production-safety guidance
+- [Redis Pattern Matching: How to Use KEYS and SCAN Effectively (DEV)](https://dev.to/rijultp/redis-pattern-matching-how-to-use-keys-and-scan-effectively-5dkp) — anti-pattern catalog
+- [Redis Key Design and Naming Conventions (OneUptime, 2026)](https://oneuptime.com/blog/post/2026-01-21-redis-key-design-naming/view) — colon-delimited hierarchical convention
+
+### Materialized view / projection theory
+- [Materialized View pattern (Azure Architecture Center)](https://learn.microsoft.com/en-us/azure/architecture/patterns/materialized-view) — work distribution: read-time vs. write-time; rebuild patterns
+- [Materialized Views: An alternative to full-blown cache systems (Distributed Computing Musings, 2022)](https://distributed-computing-musings.com/2022/11/materialized-views-an-alternative-to-full-blown-cache-systems/) — read-through vs. materialized; when not to mix
+
+### Redis Hash vs JSON
+- [Hash vs JSON Storage (Redis docs)](https://redis.io/docs/latest/develop/ai/redisvl/user_guide/hash_vs_json/) — depth-of-nesting tradeoff (HASH ≤ 1 level)
+- [RedisJSON: Performance Benchmarking (Redis blog)](https://redis.io/blog/redisjson-public-preview-performance-benchmarking/) — partial-read latency claims
+- [JSON Performance (Redis docs)](https://redis.io/docs/latest/develop/data-types/json/performance/) — when RedisJSON helps and when it doesn't
+
+### Lua-as-anti-pattern
+- [Scripting with Lua (Redis docs)](https://redis.io/docs/latest/develop/programmability/eval-intro/) — explicit warnings: dynamic script generation is an anti-pattern; debugging is hard; server blocks during execution; business logic in Lua leads to bad architecture
+- [Limitations of scripting with Lua in Redis (Boyner Tech, Medium)](https://medium.com/boyner-technology/limitations-of-scripting-with-lua-in-redis-b4381bd9629f) — maintainability constraints
+
+### Liveness / heartbeat shape
+- [HeartBeat (Martin Fowler, Patterns of Distributed Systems)](https://martinfowler.com/articles/patterns-of-distributed-systems/heartbeat.html) — canonical pattern, field shapes (timestamp + sequence + node_id)
+- [Heartbeats in Distributed Systems (Arpit Bhayani)](https://arpitbhayani.me/blogs/heartbeats-in-distributed-systems/) — interval selection vs. round-trip time
+- [Redis-Powered User Session Tracking with Heartbeat-Based Expiration (Tilt Engineering)](https://medium.com/tilt-engineering/redis-powered-user-session-tracking-with-heartbeat-based-expiration-c7308420489f) — stored-field vs. TTL-as-liveness tradeoffs
+
+### Dry-run pattern
+- [Dry Run (KubeVela docs)](https://kubevela.io/docs/tutorials/dry-run/) — workflow-system dry-run precedent
+- [A Guide to dbt Dry Runs (Towards Data Engineering)](https://medium.com/towards-data-engineering/a-guide-to-dbt-dry-runs-safe-simulation-for-data-engineers-7e480ce5dcf7) — data-pipeline dry-run idiom
+
+### Partial-failure / atomic batch
+- [AIP-233: Batch methods: Create (Google API Improvement Proposals)](https://google.aip.dev/233) — atomic vs. partial-success batch semantics
+- [How to Handle Partial Success in Bulk API Operations (OneUptime, 2026)](https://oneuptime.com/blog/post/2026-02-02-rest-bulk-api-partial-success/view) — response shape patterns
+- [Error handling in distributed systems (Temporal)](https://temporal.io/blog/error-handling-in-distributed-systems) — compensation / saga patterns
+
+### .NET Redis client
+- [Pipelines and transactions (Redis .NET docs)](https://redis.io/docs/latest/develop/clients/dotnet/transpipe/) — IDatabase batching, MULTI/EXEC, CreateBatch
+- [Pipelines and Multiplexers (StackExchange.Redis docs)](https://stackexchange.github.io/StackExchange.Redis/PipelinesMultiplexers.html) — auto-pipelining on async calls
+- [How to Use Redis Pipelining in C# (OneUptime, 2026)](https://oneuptime.com/blog/post/2026-03-31-redis-pipelining-csharp/view) — batch HashSetAsync patterns
 
 ---
-*Feature research for: .NET 8 Web API base library (BaseApi.Core) + service (BaseApi.Service)*
-*Researched: 2026-05-26*
+
+*Feature research scoped to milestone v3.3.0 — Orchestration L3 → L1 → L2 Build Pipeline*
+*Researched: 2026-05-28*
+*Confidence: HIGH on ecosystem patterns; MEDIUM on exact DTO shapes; HIGH on Stop/Start mechanics*

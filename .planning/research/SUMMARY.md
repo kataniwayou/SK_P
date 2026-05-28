@@ -1,205 +1,216 @@
-# Project Research Summary
+# Research Summary -- v3.3.0 Orchestration L3 to L1 to L2 Build Pipeline
 
 **Project:** Steps API (BaseApi.Core + BaseApi.Service)
-**Domain:** .NET 8 Web API modular monolith CRUD service over PostgreSQL with shared base library, OTel observability, RFC 7807 errors
-**Researched:** 2026-05-26
-**Confidence:** HIGH
+**Milestone:** v3.3.0 -- Orchestration L3 to L1 to L2 Build Pipeline
+**Domain:** Redis-backed materialized projection layer on a hardened .NET 8 modular monolith
+**Researched:** 2026-05-28
+**Confidence:** HIGH (stack + pitfalls); MEDIUM (DTO shape details; atomic-write pattern selection)
 
-## Executive Summary
+---
 
-This project is a greenfield .NET 8 controller-based Web API built as a modular monolith: a reusable infrastructure class library (BaseApi.Core) and a single runnable service (BaseApi.Service). The library provides abstract generic CRUD infrastructure (base entity, base controller, generic repository, base service, audit interceptor, correlation middleware, OTel wiring, health probes, RFC 7807 exception handler); the service plugs in five concrete entities (Schema, Processor, Step, Assignment, Workflow). The entire stack is locked by PROJECT.md -- .NET 8 LTS, EF Core 8 + Npgsql 8, Mapperly source-gen, FluentValidation 12, OpenTelemetry 1.15.x with OTLP to an external Collector, and PostgreSQL 17, all verified against current NuGet releases as of 2026-05-26.
+## Snapshot
 
-The recommended build order is strictly dependency-driven: solution skeleton, then persistence base (BaseEntity, DbContext, Repository), then cross-cutting concerns (correlation middleware, exception handler, health checks, OTel), then the generic HTTP base (BaseController, BaseService, base validator), then the composition root, then the five concrete entity feature slices, then migrations and Docker Compose, then the test layer. Each phase delivers a compilable increment. All five entity feature slices are parallelizable once the base is complete.
+v3.3.0 adds a Redis (L2) materialized projection pipeline driven by POST /api/v1/orchestration/start. On Start, the service fetches from Postgres (L3), builds a transient in-memory graph (L1), validates it through four sequential gates, writes it to Redis across three key spaces, then discards L1. Stop evicts all Redis keys for the given WorkflowIds. Both endpoints are idempotent (PUT-like); Start is last-write-wins with no Redis lock.
 
-The dominant risks are infrastructure-wiring mistakes that silently degrade correctness: using the deprecated FluentValidation.AspNetCore package (removed in v12); miswiring the OTel logging provider (WithLogging() vs builder.Logging.AddOpenTelemetry()) so logs never reach the Collector; storing non-UTC DateTime in Npgsql timestamptz columns causing InvalidCastException; and adding the EFCore.NamingConventions snake_case plugin after the first migration has run. All four change what must be built: they are requirements, not afterthoughts.
+The four research files reached broad agreement on the solution shape. Three decisions MUST be made at requirements-time before phase planning begins:
 
+1. **Redis health-check hard vs. soft dependency** -- ARCHITECTURE.md says hard (mirror Postgres ready-check); STACK.md says soft (CRUD survives Redis outage). Genuine tradeoff with operational consequences.
+2. **Atomic-overwrite write pattern for Start** -- FEATURES.md recommends Pattern A (per-key SET); PITFALLS.md recommends stage-then-RENAME for single-key atomicity; PROJECT.md locks last-write-wins but does not specify the per-key write mechanism.
+3. **allStepIds[] field on the {workflowId} root DTO** -- PITFALLS.md flags it as required for O(stepCount) Stop without SCAN; PROJECT.md locked DTO shape does not currently include it; requires explicit PROJECT.md amendment if adopted.
 ---
 
 ## Key Findings
 
-### Locked Stack -- Authoritative Version Table
+### Consolidated Stack Additions
 
-All versions verified against NuGet.org as of 2026-05-26. Copy this table into requirements as the definitive pin list.
+Three NuGet packages and one Docker Compose service. Zero changes to the v3.2.0 stack. Versions verified against NuGet.org as of 2026-05-28.
 
-| Package | Version | Notes |
-|---------|---------|-------|
-| .NET SDK | **8.0.421** | Pin via global.json. Runtime 8.0.27. LTS through Nov 2026. |
-| ASP.NET Core / EF Core | **8.0.27** | All Microsoft.EntityFrameworkCore.* packages. Match runtime patch monthly. |
-| Npgsql.EntityFrameworkCore.PostgreSQL | **8.0.10** | Targets EF Core 8.x. Do NOT mix with EF Core 9/10. |
-| PostgreSQL Docker image | **postgres:17-alpine** | Npgsql 8.x validated against PG 14-17. PG 18 is GA but not yet validated against Npgsql 8.x. |
-| Riok.Mapperly | **4.3.1** | Source generator. PrivateAssets=all + ExcludeAssets=runtime in csproj. |
-| FluentValidation | **12.1.1** | + FluentValidation.DependencyInjectionExtensions 12.1.1. Do NOT reference FluentValidation.AspNetCore. |
-| OpenTelemetry | **1.15.3** | Core + Extensions.Hosting + Exporter.OpenTelemetryProtocol all at 1.15.3. |
-| OTel Instrumentation | **1.15.0** | OpenTelemetry.Instrumentation.AspNetCore + .Http. Separate version cadence from core. |
-| JsonSchema.Net | **9.2.1** | For SchemaEntity.Definition validation. System.Text.Json native, supports draft 2020-12. |
-| Cronos | **0.13.0** | For WorkflowEntity.CronExpression validation. DST-aware, 5/6-field cron. |
-| AspNetCore.HealthChecks.NpgSql | **9.0.0** | Xabaril. Runs fine on .NET 8.0.27 despite the version number. |
-| Microsoft.AspNetCore.Mvc.Testing | **8.0.27** | Integration test host. Match runtime patch. |
-| xunit.v3 | **3.2.2** | Modern .NET 8+ compatible. |
-| Testcontainers.PostgreSql | **4.11.0** | Real Postgres for integration tests. |
-| EFCore.NamingConventions | latest 8.x | Snake_case for all DB identifiers. MUST be wired before the first migration. |
+**Add to Directory.Packages.props:**
 
-**Anti-stack (never use):**
-- FluentValidation.AspNetCore -- deprecated, removed in FV 12, blocks async validation
-- AutoMapper -- runtime reflection, commercial license, explicitly locked out by PROJECT.md
-- EF Core InMemory or SQLite for tests -- no FK enforcement, no SQLSTATE, invalid for this project
-- Newtonsoft.Json.Schema -- commercial license
-- MediatR -- went commercial 2024, adds dispatcher with no benefit to 3-tier CRUD
-- Serilog as primary sink -- duplicates MEL pipeline; use ILogger<T> + builder.Logging.AddOpenTelemetry()
+```xml
+<!-- v3.3.0 -- Redis L2 projection -->
+<PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
+<PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.15.1-beta.1" />
+<PackageVersion Include="Testcontainers.Redis" Version="4.12.0" />
+```
 
-**Tooling:** global.json pins SDK 8.0.421; Directory.Packages.props at repo root for central package management.
-### Must-Have v1 Feature Set
+Note: OpenTelemetry.Instrumentation.StackExchangeRedis is pinned but NOT referenced in any csproj in v3.3.0. STACK.md Option B and PITFALLS.md Pitfall 13 both agree: defer Redis OTel instrumentation to v3.4 (Contradiction 5 -- no conflict between files).
 
-**Infrastructure:** AddBaseApi<TDbContext> + UseBaseApi composition root extensions; Options pattern + ValidateOnStart(); EF Core migrations on startup (single-instance, document multi-replica limitation); three distinct health probes (/health/live process-alive-only, /health/ready DB reachable, /health/startup migrations complete); AppDbContext scoped with AuditInterceptor using DateTime.UtcNow.
+**Add to compose.yaml:** redis:7.4.2-alpine service. 7.4.x deliberately chosen -- RSALv2/SSPLv1 only, no AGPLv3 viral-network-distribution clause that Redis 8.0+ adds. redis-cli ping healthcheck, persistence disabled (L2 is rebuildable from L3 on demand), no volume mount, ~30MB Alpine image.
 
-**HTTP/CRUD:** BaseController<TEntity,TCreate,TUpdate,TRead> with 5 virtual verbs (GET list, GET /{id:guid}, POST->201+Location, PUT->200, DELETE->204); Repository<T> with no SaveChangesAsync inside ops (service owns commit); per-entity concrete service class; IEntityMapper<TEntity,TCreate,TUpdate,TRead> interface implemented by each Mapperly partial -- the key abstraction enabling the generic base controller to delegate mapping without knowing concrete types; id:guid route constraint; LowercaseUrls=true; hard row cap on ListAsync.
+**Connection string (appsettings.json):** localhost:6379,abortConnect=false,connectTimeout=5000,syncTimeout=5000. abortConnect=false is mandatory -- without it, a Redis outage at boot kills the API process (Pitfall 2).
 
-**Validation:** FluentValidation via AddValidatorsFromAssembly only (never AddFluentValidation or auto-validation); BaseEntityValidator<T> with Name/Version/Description rules; per-entity validators adding SHA-256 hex regex + lowercase normalization (Processor), JSON syntactic validity (Assignment.Payload + Schema.Definition), JSON Schema 2020-12 structural validity (Schema.Definition), Cronos cron validity when non-null (Workflow.CronExpression); InvalidModelStateResponseFactory aligned with RFC 7807 + correlationId shape.
+**Graph cycle detection:** hand-roll iterative DFS in OrchestrationService (~40 LOC). No new NuGet package. Matches v3.2.0 minimal-dependency posture.
 
-**Observability:** OTel wired via builder.Logging.AddOpenTelemetry(o => { o.IncludeFormattedMessage=true; o.IncludeScopes=true; o.AddOtlpExporter(); }) -- NOT AddOpenTelemetry().WithLogging(); ResourceBuilder.AddService from cfg[Service:Name]/cfg[Service:Version]; HTTP server metrics + traces via AddAspNetCoreInstrumentation() with /health* path filter; X-Correlation-Id middleware.
+### Feature Scope
 
-**Error Handling:** services.AddProblemDetails() + services.AddExceptionHandler<GlobalExceptionHandler>() -- BOTH required; SQLSTATE mapping 23503->422, 23505->409, 23502->400, 23514->400; unhandled->500 generic message; every error response includes correlationId; no stack traces in response bodies; middleware order: UseExceptionHandler first, UseCorrelationId second.
+**P1 Table Stakes -- 8 features, all mandatory for v3.3.0 ship:**
 
-**Mapping:** Mapperly [Mapper] public static partial class per entity; CreateDto/UpdateDto must not contain server-controlled fields (Id, CreatedAt, CreatedBy, UpdatedAt, UpdatedBy); Mapperly warnings MP0001/MP0011/MP0020/MP0021 promoted to errors in CI.
+| # | Feature | Notes |
+|---|---------|-------|
+| 1 | Bounded L3 fetch + flat Dictionary L1 build + explicit try/finally teardown | 5 entity tables, one request scope, .Clear() in finally |
+| 2 | DFS traversal (iterative only) with cycle detection + missing-next-step 422 | Two-set visited/inPath pattern; recursive DFS is a StackOverflow hazard |
+| 3 | Strict Schema-edge compatibility gate | parent.OutputSchemaId == child.InputSchemaId; either-side null passes; 422 with offending parentStepId/childStepId |
+| 4 | Payload vs ConfigSchema validation gate, closes VALID-21 | Reuses JsonSchema.Net 9.2.1 draft 2020-12 with Phase 8 SSRF lockdown extended |
+| 5 | Three Redis key spaces with locked DTO shapes | {workflowId}, {workflowId:stepId}, {processorId}; JSON strings; inputDefinition/outputDefinition field names |
+| 6 | Idempotent Start (per-key SET overwrite + targeted DEL of removed keys) | Last-write-wins; no Redis lock; 204 response |
+| 7 | Idempotent Stop (evict L2 keys + 204 always) | No KEYS command; no SCAN in hot path; 204 even when no keys exist |
+| 8 | Mandatory validation order | existence -> cycles -> schema-edge -> Payload/Config -> L1 build -> L2 write -> cleanup; asserted by integration tests |
 
-**Testing:** WebApplicationFactory<Program> with ConfigureAppConfiguration override (not ConfigureTestServices); shared PostgresFixture collection fixture (one container per collection, not per test class); Respawn between tests; golden-path + error-mapping integration tests per entity.
+**P2 Differentiators -- cheap enough to consider in milestone (USER DECIDES):**
 
-**Deferred to v1.x / v2+:** Pagination, PATCH, ETags, soft delete, auth, custom Meter metrics, bulk ops, MediatR/CQRS, NuGet packaging of BaseApi.Core.
-### Architecture Approach
+| Feature | Cost | Notes from FEATURES.md |
+|---------|------|------------------------|
+| generationId on {workflowId} root DTO | LOW | Consumer detects rebuild without diffing chain records. Additive field; no breaking change. |
+| Aggregate-error mode (all failures not first) | LOW-MEDIUM | Doubles test surface; DX improvement. Defer if not explicitly requested. |
+| Projection-size telemetry | LOW | orchestration.projection.bytes + keys_total Histograms on existing OTel Meter. |
+| Dry-run Start via ?dryRun=true | MEDIUM | Full L1 pipeline, skip L2 write. Common in dbt/KubeVela. Defer unless operator asks. |
 
-The service is a modular monolith in two projects. BaseApi.Core is organized by layer (Entities, Persistence, Services, Controllers, Validation, Middleware, ErrorHandling, Health, Telemetry, DependencyInjection). BaseApi.Service is organized by entity feature folder (Features/Schemas/, etc.) with a shared Persistence/Configurations/ folder. Core never references Service; Service concrete types flow into Core generic infrastructure via type parameters.
+All P2 features are additive and can be deferred to v3.4 without schema migration.
 
-**Load-bearing seams -- must be correct from the start:**
+**P3 Defer -- do not include in v3.3.0:** Stage-then-rename atomic swap, structural schema compatibility, projection-diff, RedisJSON, pre-warm background service, distributed Start lock, scheduler integration (real JobId/Liveness writers).
+### Architecture Seam Topology
 
-1. **IEntityMapper<TEntity,TCreate,TUpdate,TRead> interface** -- implemented by each Mapperly static partial class. Key abstraction letting BaseController and BaseService call mapper methods without knowing concrete entity types. Without it every concrete controller must override all mapping methods, defeating the base class.
-2. **IExceptionHandler + services.AddProblemDetails() pairing** -- AddExceptionHandler<T>() alone is insufficient; AddProblemDetails() must also be called or the framework falls back to HTML/empty bodies on some error paths.
-3. **builder.Logging.AddOpenTelemetry(...) not .WithLogging(...)** -- the MEL bridge for ILogger. WithLogging() sets up OTels own logging API, not the MEL bridge. Wrong choice: logs appear in console but never reach the Collector.
-4. **UseSnakeCaseNamingConvention() before the first migration** -- must be in BaseDbContext and the first migration generated in the same commit. Adding it after any migration requires destructive ALTER scripts.
-5. **UseExceptionHandler before UseCorrelationId in pipeline** -- both share HttpContext.Items so the handler reads the correlation id set by the correlation middleware.
+Four seams inside Features/Orchestration/. OrchestrationService shrinks to orchestrator calling seams in validation order. Seams kept internal to the feature folder; promote to BaseApi.Core only if a second consumer surfaces.
 
-| Component | Lives in | Responsibility |
-|-----------|----------|----------------|
-| BaseEntity (abstract, no table) | BaseApi.Core/Entities/ | Id, Name, Version, audit fields, Description? |
-| Concrete entities + junction classes | BaseApi.Core/Entities/ | Entities in Core so generic type constraints on Repository/Controller resolve |
-| BaseDbContext (abstract) | BaseApi.Core/Persistence/ | Conventions, interceptor wiring; no DbSets |
-| AppDbContext | BaseApi.Service/Persistence/ | All DbSets + junctions; single-line ApplyConfigurationsFromAssembly |
-| AuditInterceptor : ISaveChangesInterceptor | BaseApi.Core/Persistence/Interceptors/ | Stamps audit fields on Added/Modified; singleton |
-| IRepository<T> + Repository<T> | BaseApi.Core/Persistence/Repositories/ | Generic CRUD; caller owns SaveChanges |
-| IService<T,C,U,R> + BaseService<T,C,U,R> | BaseApi.Core/Services/ | Validate->map->repo->SyncJunctionsAsync (virtual)->SaveChanges |
-| BaseController<T,C,U,R> (abstract) | BaseApi.Core/Controllers/ | 5 virtual CRUD verbs; route from [controller] token |
-| GlobalExceptionHandler + PostgresErrorMapper | BaseApi.Core/ErrorHandling/ | SQLSTATE->HTTP; domain exceptions->ProblemDetails |
-| CorrelationIdMiddleware | BaseApi.Core/Middleware/ | Read/generate id; log scope; Activity tag; response header |
-| AddBaseApi<TDbContext> + UseBaseApi | BaseApi.Core/DependencyInjection/ | Single composition root for all cross-cutting concerns |
-| Per-entity feature folder | BaseApi.Service/Features/<Entity>/ | Controller, Service, Validator, Mapper, DTOs |
-| IEntityTypeConfiguration<T> per entity | BaseApi.Service/Persistence/Configurations/ | jsonb types, unique indexes, FK/cascade rules |
+| Seam | Interface | Lifetime | Responsibility |
+|------|-----------|----------|----------------|
+| Orchestrator | OrchestrationService (rewritten) | Scoped | Calls seams in order; owns try/finally L1 cleanup |
+| Loader | IWorkflowGraphLoader | Scoped | L3 batch-fetch (5 entity tables); builds flat Dictionary L1 |
+| Validator | IWorkflowGraphValidator | Singleton (stateless) | DFS cycle detect + schema-edge gate + Payload/ConfigSchema gate |
+| Writer | IRedisProjectionWriter | Scoped | Owns 3 key spaces; holds IConnectionMultiplexer; formats JSON |
 
-### Critical Pitfalls
+**Folder layout (from ARCHITECTURE.md Section 7):**
 
-**Pitfalls that change what must be built (requirements-altering):**
+```
+src/BaseApi.Service/Features/Orchestration/
+|-- OrchestrationController.cs                    (UNCHANGED)
+|-- OrchestrationService.cs                       (body rewrite -- orchestrator only ~80 LOC)
+|-- OrchestrationServiceCollectionExtensions.cs   (EXTEND -- registers 4 services + validators)
+|-- WorkflowIdsValidator.cs                       (UNCHANGED)
+|-- Loading/
+|   +-- WorkflowGraphLoader.cs                    (NEW)
+|-- Validation/
+|   |-- CycleDetector.cs                          (NEW)
+|   |-- SchemaEdgeValidator.cs                    (NEW)
+|   +-- PayloadConfigSchemaValidator.cs            (NEW)
++-- Projection/
+    |-- RedisProjectionWriter.cs                  (NEW -- owns 3 key spaces)
+    +-- RedisProjectionKeys.cs                    (NEW -- key constants; Guid via ToString("N"))
 
-1. **FluentValidation.AspNetCore deprecated and removed in v12.** Wire via AddValidatorsFromAssembly + ValidateAndThrowAsync explicitly in BaseService. The auto-validation pipeline no longer exists.
-2. **OTel logging provider miswiring.** Use builder.Logging.AddOpenTelemetry(o => { o.IncludeFormattedMessage=true; o.IncludeScopes=true; o.AddOtlpExporter(); }). NOT AddOpenTelemetry().WithLogging(). Wrong choice: logs appear in console but never reach the Collector.
-3. **Non-UTC DateTime rejected by Npgsql timestamptz.** AuditInterceptor must always use DateTime.UtcNow. Do not flip the legacy switch -- it will be removed.
-4. **EFCore.NamingConventions must be wired before the first migration.** Adding UseSnakeCaseNamingConvention() after migrations exist mangles __EFMigrationsHistory column names. Convention must be in BaseDbContext and initial migration generated in the same commit.
-5. **Explicit junction entities required -- not skip-navigation.** Use StepNextStep, WorkflowEntryStep, WorkflowAssignment classes with composite PKs and explicit DeleteBehavior. StepNextStep needs DeleteBehavior.Restrict on the second FK to avoid multiple cascade path errors.
-6. **Liveness probe must not check the database.** /health/live returns 200 always; /health/ready checks DB; /health/startup flips once migrations have run.
-7. **services.AddProblemDetails() is required alongside AddExceptionHandler<T>().** Without it IExceptionHandler falls back to HTML or empty bodies on some error paths.
-8. **SHA-256 hex: accept both cases, normalize to lowercase before persist.** Regex: ^[0-9A-Fa-f]{64}$. Normalize via ToLowerInvariant() before save.
-9. **WebApplicationFactory config override must use ConfigureAppConfiguration.** Add in-memory config source so AddDbContext itself uses the Testcontainers connection string.
-10. **Hard-delete cascade decisions must be explicit per FK.** WorkflowEntryStep.StepId and WorkflowAssignment.AssignmentId must use DeleteBehavior.Restrict.
+src/BaseApi.Core/DependencyInjection/
+|-- RedisServiceCollectionExtensions.cs           (NEW -- AddBaseApiRedis, chained as call #7)
++-- Configuration/RedisProjectionOptions.cs       (NEW)
 
+tests/BaseApi.Tests/Composition/
++-- RedisFixture.cs                               (NEW -- per-class isolation)
+```
+
+**DI placement:** AddBaseApiRedis(IServiceCollection) chained inside AddBaseApi<TDbContext> as call #7. NOT a separate IHostApplicationBuilder overload -- no ILoggingBuilder surface needed, unlike D-13 observability split.
+
+**IConnectionMultiplexer:** MUST be Singleton. IDatabase resolved per-operation via _multiplexer.GetDatabase() -- not a class field.
+
+**Data flow:** Redis is WRITE-ONLY from BaseApi.Service in v3.3.0. No cache-invalidation on CRUD. No IDistributedCache integration.
+### Suggested Phase Decomposition (Phases 12-16)
+
+Quoted verbatim from ARCHITECTURE.md Section 9:
+
+| Phase | Title | What lands |
+|-------|-------|------------|
+| 12 | Redis infra + composition + healthcheck + DI | compose.yaml redis service, AddBaseApiRedis, AspNetCore.HealthChecks.Redis, appsettings entries, RedisFixture test infra, RedisProjectionOptions, Redis-dead health test |
+| 13 | OrchestrationService split + L3 fetch + L1 build (no validation no Redis write) | WorkflowGraphSnapshot, WorkflowGraphLoader.LoadL1Async, OrchestrationService body shrunk, DI wiring, L1-snapshot-shape tests |
+| 14 | Validation gates -- DFS + schema-edge + payload-config-schema | CycleDetector, SchemaEdgeValidator, PayloadConfigSchemaValidator, DI wiring, StartAsync chains 3 validators, 422 error path, ~30 unit tests cycle detection, ~10 integration tests. Closes VALID-21. |
+| 15 | L2 (Redis) projection write + Stop endpoint | RedisProjectionKeys, 3 L2 DTOs (WorkflowL2Dto/StepL2Dto/ProcessorL2Dto with inputDefinition/outputDefinition), RedisProjectionWriter.UpsertAsync, DeleteAsync, OrchestrationService.StopAsync, 3-keyspace assertion tests |
+| 16 | Idempotency + concurrency + L1 cleanup + 3-GREEN closeout | Start-twice regression test, concurrent Start regression test, Stop-without-prior-Start test, finally-block cleanup verification, E2E with real Postgres + Redis, 3-consecutive-GREEN gate, psql l SHA-256 + redis-cli --scan SHA-256 snapshots |
+
+**Phase-close gate (all 5 phases):** 3-consecutive-GREEN, byte-identical psql l SHA-256, byte-identical redis-cli --scan SHA-256 (NEW for v3.3.0), bisect-friendly N-commit sequence.
+
+**Research flags:** All phases use well-documented patterns. Skip per-phase research during planning. Phase 14 requires explicit implementation note on SSRF lockdown extension (not a research gap).
+
+### Top 10 Highest-Stakes Pitfalls
+
+Drawn from PITFALLS.md 32 entries, prioritizing the 10 v3.2.0 regression guards and the R4 L2-writer cluster (11 pitfalls in R4 alone).
+
+| # | Pitfall | Problem | Mitigation | Phase |
+|---|---------|---------|-----------|-------|
+| 1 | ConnectionMultiplexer registered Scoped/Transient | One TCP connection per request; maxclients hit; 500 cascade | AddSingleton<IConnectionMultiplexer>; add lifetime-assertion fact | Phase 12 |
+| 2 | AbortOnConnectFail not set | Process crashes on startup if Redis briefly unreachable; HEALTH-01 violated | Always set AbortOnConnectFail=false in ConfigurationOptions | Phase 12 |
+| 3 | OTel Redis instrumentation re-enables traces pipeline | AddRedisInstrumentation revives Phase 11 D-03 stripped traces pipeline | Do NOT reference package in v3.3.0; use ILogger + custom Meter; build-guard fact in NoTracesBackendFacts | Phase 12/16 |
+| 4 | Redis healthcheck missing tag discipline | Untagged AddRedis puts Redis in live probe; Redis blip kills pod | .AddRedis(..., tags: [ready]) only; extend Redis-down -> /health/live=200 acceptance test | Phase 12 |
+| 5 | Recursive DFS -> StackOverflowException | Workflow >10k steps crashes process; uncatchable; bypasses Phase 4 exception handler | Always use iterative DFS with explicit Stack<>; add 50,000-node fact | Phase 14 |
+| 6 | Single HashSet in cycle detection | Diamond DAG (A->B, A->C, B->D, C->D) misclassified as cycle; OR real cycle missed | Two sets: visited (subtree done) + inPath (current path); add diamond-DAG discriminating fact | Phase 14 |
+| 7 | JsonSchema.Net SSRF defense regressed | New Payload gate uses fresh EvaluationOptions without Phase 8 SSRF lockdown | Shared JsonSchemaConfig.DefaultOptions factory; both gates must use it; extend <500ms regression test | Phase 14 |
+| 8 | JsonSchema.Net schema re-parsed per validation | 100 assignments x 5 distinct schemas = 100 parses; perf hit + GC pressure | Per-Start Dictionary<Guid, JsonSchema> lazy cache; shared EvaluationOptions instance | Phase 14 |
+| 9 | DEL-then-SET anti-pattern (nil window) | Reader sees nil between delete and set during Start | Use plain StringSetAsync (no preceding DEL) for overwrite; batch DEL removed children AFTER new SETs | Phase 15 |
+| 10 | allStepIds[] missing -> Stop forced to SCAN | Stop cannot find {workflowId:stepId} children without O(N) keyspace SCAN | Include allStepIds[] on root DTO; Stop reads root, issues targeted UNLINK; never use IServer.Keys() | Phase 15 |
+
+**v3.2.0 regression guards defended by PITFALLS.md:** 142/142 GREEN x3 (P16), psql l SHA-256 no-leak (P16), Mapperly RMG codes as build errors (P17), Phase 11 D-03 no traces backend (P13), HEALTH-01 live never touches external state (P14), X-Correlation-Id E2E through OTel to ES (P15), StartupCompletionService LogCritical/no-rethrow contract (P31), RFC 7807 with offending field names in Extensions (P29), JsonSchema.Net SSRF disabled (P11), L2 DTO field names inputDefinition/outputDefinition locked (P30).
 ---
 
-## Implications for Roadmap
+## Cross-File Contradictions
 
-### Suggested Phase Decomposition
+This is the most important synthesis output. Five items below surface conflicts between research files. Items 1-4 require user resolution at requirements-time. Item 5 is resolved (both files agree).
 
-8 phases based on the forced code-dependency graph from ARCHITECTURE.md.
+### Contradiction 1: Redis health-check hard vs. soft dependency
 
-### Phase 0: Repository Scaffold
-**Rationale:** Every subsequent phase depends on the solution compiling. Establish project layout, tooling pins, and dev-environment hygiene before writing any domain code.
-**Delivers:** SK_P.sln, project files for BaseApi.Core / BaseApi.Service / tests, global.json (SDK 8.0.421), Directory.Packages.props (all version pins), .editorconfig (nullable enable), User Secrets setup, no secrets in appsettings.json.
-**Avoids:** Pitfall 30 (JSON comments cause startup failures), Pitfall 39 (secrets in git), SDK float to .NET 9/10.
-**Research flag:** Standard patterns -- skip phase research.
+- ARCHITECTURE.md (Section 3): Redis MUST join /health/ready with tags: [ready] -- mirrors Postgres pattern; ensures operators know Redis is a runtime dependency.
+- STACK.md (Integration Notes): Recommend deferring Redis readiness check; CRUD continues to work when Redis is down; graceful degradation (Start fails 503, CRUD still works).
+- Conflict: Hard dependency (ARCHITECTURE) vs. soft dependency (STACK). Both are reasonable positions.
+- User must decide: Does a Redis outage constitute not-ready for the whole API, or does the API stay ready with only orchestration endpoints degraded?
+- Recommendation: Soft dependency is technically more accurate; hard dependency is operationally simpler. Either is defensible. Lock before Phase 12.
 
-### Phase 1: Postgres + Docker Compose
-**Rationale:** Establish the Postgres container with correct healthcheck before any EF work begins.
-**Delivers:** docker-compose.yml with postgres:17-alpine, named pgdata volume, pg_isready healthcheck, depends_on: service_healthy, host port 5433:5432, POSTGRES_INITDB_ARGS with UTF8 + C.UTF-8 locale, connection string shape with password via env var.
-**Avoids:** Pitfalls 24 (depends_on without condition), 25 (port 5432 conflict), 26 (volume loss on down -v), 27 (locale mismatch).
-**Research flag:** Standard patterns -- skip phase research.
+### Contradiction 2: Test isolation -- Testcontainers.Redis vs. host-side Redis with prefix scoping
 
-### Phase 2: EF Core Persistence Base
-**Rationale:** All entity and migration work depends on this. Snake_case convention and audit interceptor must exist before the first migration. Highest-density pitfall phase.
-**Delivers:** BaseEntity (abstract, no table), BaseDbContext (abstract, no DbSets) with UseSnakeCaseNamingConvention() wired, AuditInterceptor using DateTime.UtcNow, IRepository<T> + Repository<T> (no SaveChangesAsync inside ops), DbContext registered as scoped.
-**Critical constraint:** UseSnakeCaseNamingConvention() must be present before dotnet ef migrations add is ever run.
-**Avoids:** Pitfalls 1 (UTC DateTime), 2 (DbContext lifetime), 4 (NamingConventions before first migration), 5 (explicit junctions vs skip-nav).
-**Research flag:** Standard patterns -- skip phase research.
+- STACK.md: Per-class ephemeral Testcontainers.Redis 4.12.0. Ryuk-managed cleanup, mirrors Phase 3 D-15 throwaway-Postgres discipline exactly. Full RESP3 + MULTI/EXEC semantics tested.
+- ARCHITECTURE.md (Section 5): Single shared container + per-class GUID-prefix isolation + SCAN/DEL teardown. Per-class container boot (1-2s x N classes) adds ~30-60s to suite, violating the 163s/161s/162s cadence established at v3.2.0 close (142 facts).
+- Conflict: Isolation purity (STACK) vs. suite-speed discipline (ARCHITECTURE).
+- User must decide: Accept suite slowdown for container purity, or use prefix isolation to preserve cadence.
+- Recommendation: ARCHITECTURE reasoning is stronger given established cadence discipline. Use prefix isolation on a shared container; FLUSHDB and KEYS * are both forbidden; use IServer.KeysAsync(pattern) (SCAN-backed) for teardown. Revisit if suite exceeds 3x baseline.
 
-### Phase 3: Cross-Cutting Middleware and Error Handling
-**Rationale:** Error handling and correlation must be present before any HTTP endpoint is testable. The middleware order is load-bearing.
-**Delivers:** CorrelationIdMiddleware; GlobalExceptionHandler : IExceptionHandler; PostgresErrorMapper (23503->422, 23505->409, 23502->400, 23514->400); NotFoundException + ConflictException; services.AddProblemDetails + services.AddExceptionHandler paired; InvalidModelStateResponseFactory aligned with RFC 7807 + correlationId shape. Middleware order: UseExceptionHandler first, UseCorrelationId second.
-**Avoids:** Pitfalls 11 (correlation scope lost), 12 (correlation too late), 13 (stack trace leak), 14 (SQLSTATE mapping), 38 (rethrow loses stack).
-**Research flag:** Standard patterns -- skip phase research.
+### Contradiction 3: allStepIds[] extension to the {workflowId} root DTO
 
-### Phase 4: Observability (OTel + Health Probes)
-**Rationale:** Wiring must be correct before integration tests run. The MEL-vs-WithLogging pitfall is the most commonly misapplied wiring in this stack.
-**Delivers:** OTel SDK wired via builder.Logging.AddOpenTelemetry (NOT WithLogging); AddOpenTelemetry().WithMetrics with /health* path filter; ResourceBuilder.AddService from config; three health probe endpoints (live=no-DB, ready=DB check, startup=migration-complete flag); OTLP self-diagnostics enabled; explicit batch options.
-**Critical constraint:** Startup probe must not report healthy until migrations complete; flip the flag from the migration runner.
-**Avoids:** Pitfalls 8 (OTel logger wiring), 9 (LogLevel filter), 10 (health probes spam metrics), 15 (liveness checks DB), 31 (OTLP silent drops), 32 (metric cardinality).
-**Research flag:** Include a smoke-test assertion that a real ILogger<T>.LogInformation call appears in the OTLP export.
+- PITFALLS.md (Pitfall 12): allStepIds[] on the root DTO is REQUIRED for O(stepCount) Stop without SCAN. The milestone roadmap must encode this upfront.
+- PROJECT.md locked shape: { entryStepIds[], cron, jobId, liveness } -- does NOT include allStepIds[].
+- Conflict: PITFALLS says the field must exist on the root DTO; PROJECT.md locked shape does not include it.
+- User must decide:
+  - Option (a): Extend root DTO with allStepIds[] -- recommended; traversal already enumerates all steps for cycle detection; collecting into the DTO is essentially free. Requires PROJECT.md amendment.
+  - Option (b): In-memory key-list passed from Start to Stop -- fragile; process-restart loses it.
+  - Option (c): SCAN-based Stop -- O(keyspace); rejected by PITFALLS.md for production use.
+- Recommendation: Option (a). Requires explicit PROJECT.md amendment to the locked {workflowId} DTO shape.
 
-### Phase 5: Validation and Mapping Base
-**Rationale:** Base validator and Mapperly infrastructure must exist before any entity validator or mapper. FluentValidation wiring and Mapperly project setup made once here.
-**Delivers:** BaseEntityValidator<T> with Name/Version/Description rules (SemVer regex -- lock variant here); FluentValidation via AddValidatorsFromAssembly only; Mapperly project setup verified (MP warnings as errors in CI); IEntityMapper<TEntity,TCreate,TUpdate,TRead> interface defined; DTO convention enforced; Description null round-trip rule; [ApiController] auto-400 aligned with custom error shape.
-**Open decisions to lock here:** SemVer regex variant (strict triple vs full SemVer 2.0); JSON Schema draft version (recommend 2020-12).
-**Avoids:** Pitfalls 7, 16, 17, 18, 33, 34, 36.
-**Research flag:** No additional research needed -- open decisions above are the only items to lock.
+### Contradiction 4: Stage-then-RENAME vs. plain per-key SET for atomic overwrite
 
-### Phase 6: Generic HTTP Base and Composition Root
-**Rationale:** Abstract base controller and service are the last base components before concrete entities. Composition root brings everything from phases 2-5 together.
-**Delivers:** IService<T,C,U,R>; BaseService<T,C,U,R> (abstract map hooks + virtual SyncJunctionsAsync); BaseController<T,C,U,R> (5 virtual verbs, id:guid, lowercase routing); AddBaseApi<TDbContext> + UseBaseApi; Swagger/OpenAPI; open-generic IRepository<> DI registration.
-**Avoids:** Pitfall 2 (DbContext lifetime in service), Pitfall 23 (connection pool via transaction shape), anti-patterns (validation in controller, SaveChanges in repository).
-**Research flag:** Standard patterns -- skip phase research.
+- FEATURES.md (Pattern A): Per-key StringSetAsync (overwrite-in-place) recommended for v3.3.0. No nil window because SET replaces atomically. Acknowledges cross-key inconsistency window as accepted given last-write-wins semantics.
+- PITFALLS.md (Pitfall 5): Stage-then-RENAME recommended to prevent nil window. Calls DEL-then-SET the canonical bug.
+- Reconciliation: Contradiction dissolves on closer reading. FEATURES recommends SET (not DEL-then-SET). StringSetAsync unconditionally replaces with no nil window for in-place overwrites. PITFALLS targets DEL-then-SET specifically. Plain SET for existing-key overwrite is safe. The genuine open question is removed-child keys (steps in previous Start but not in new projection) -- those require a DEL after new SETs, creating the acknowledged cross-key window.
+- User must decide: Accept the cross-key interleave window (document per Pitfall 20), or require stage-then-RENAME for root key atomicity (defer to v3.4+).
+- Recommendation: Plain StringSetAsync (no preceding DEL) for all key overwrites; batch DEL removed children after new SETs; document accepted window. Stage-then-RENAME deferred to v3.4+ if consumers complain.
 
-### Phase 7: Concrete Entity Build-Out (5 entities -- parallelizable after Phase 6)
-**FK dependency order for migrations:** Schema (root) -> Processor (references Schema twice) -> Step (references Processor + self-ref M2M) -> Assignment (references Step + Schema) -> Workflow (references Step + Assignment via junctions).
-**Delivers per entity:** CreateDto, UpdateDto, ReadDto; [Mapper] public static partial class implementing IEntityMapper; entity-specific FluentValidation validator inheriting BaseEntityValidator<T>; concrete Service (overrides SyncJunctionsAsync for Step and Workflow); concrete Controller; IEntityTypeConfiguration<T>. AppDbContext with all DbSets. dotnet ef migrations add InitialCreate after all entities are in place.
-**Entity-specific rules:** Schema.Definition: JSON syntactic + JSON Schema 2020-12 validity; Processor.SourceHash: accept mixed case, normalize to lowercase, unique index; Step.NextStepIds: self-ref junction with DeleteBehavior.Restrict on second FK; Assignment.Payload: JSON syntactic only (PROJECT.md N2); Workflow.CronExpression: nullable, Cronos 5-field when non-null.
-**Avoids:** Pitfalls 5, 19, 20, 21, 22, 35.
-**Research flag:** Standard patterns -- skip phase research for all 5 entities.
+### Contradiction 5: OTel Redis instrumentation (not a contradiction -- both files agree)
 
-### Phase 8: Migrations, Docker Runtime, and Test Stack
-**Rationale:** Once all entities are in place, generate the single initial migration, wire the startup migration runner, build the Docker image, and establish the integration test harness.
-**Delivers:** InitialCreate migration; Program.cs migration runner with migrations.start/complete log lines + StopApplication() on failure; startup probe flag flipped after migrations; Dockerfile (multistage, aspnet:8.0, non-root user); docker-compose.yml with service_healthy gate; WebApplicationFactory<Program> with ConfigureAppConfiguration override; PostgresFixture collection fixture; Respawn between tests; golden-path + error-mapping integration tests per entity.
-**Avoids:** Pitfalls 3 (migration race), 24 (compose healthcheck), 28 (container per test class), 29 (WebAppFactory config override too late).
-**Research flag:** Standard patterns -- skip phase research.
-
+- STACK.md: Option B -- defer to v3.4; add TODO marker in AddBaseApiObservability.
+- PITFALLS.md (Pitfall 13): Do NOT reference the package in v3.3.0; use structured ILogger + custom Meter; add build-guard fact in NoTracesBackendFacts.
+- No contradiction. ARCHITECTURE.md is silent (consistent with deferral). Decision: defer Redis OTel instrumentation to v3.4. No user decision needed.
 ---
 
-### Phase Ordering Rationale
+## Open Questions for Requirements
 
-- Phases 0-1 are pre-code setup; without them nothing compiles or runs.
-- Phase 2 (EF base) must precede Phase 7 (entities): BaseEntity is the type constraint on Repository and Controller.
-- Phase 3 (error handling) must precede any testable HTTP endpoint.
-- Phase 4 (OTel) is cheapest to wire correctly once, before log assertions.
-- Phase 5 (validation/mapping) must precede Phase 6: BaseService injects IValidator<T> and the Mapperly interface.
-- Phase 6 (generic base) must precede Phase 7: concrete controllers and services derive from it.
-- Phase 7 entities must precede Phase 8 (migrations): EF needs the complete model to emit DDL.
-- Phase 8 test stack follows everything: integration tests require the full running application.
+Consolidated from all four research files, deduplicated:
 
-### Open Decisions That Must Be Locked Before Phase 5
-
-| Decision | Options | Recommendation |
-|----------|---------|----------------|
-| SemVer regex for BaseEntity.Version | Option A: strict triple (no prerelease); Option B: full SemVer 2.0 regex | Pick A and document as SemVer 2.0 core version only unless consumers have pre-release versions today |
-| JSON Schema draft for Schema.Definition | Draft 2019-09 or 2020-12 | Lock to 2020-12 (current spec); reject schemas whose dollar-schema does not match; document |
-| Cron expression format for Workflow.CronExpression | 5-field POSIX, 6-field with seconds, Quartz-style question-mark | Cronos 5-field standard; document no seconds field, no Quartz extensions; surface in OpenAPI description |
-| Assignment.Payload max size | Unbounded vs explicit cap | Add Kestrel MaxRequestBodySize + FluentValidation MaxLength on Payload (e.g., 1 MB) to prevent DoS |
-
-### Research Flags
-
-**Needs phase research during planning:** None -- all phases use well-documented patterns. Research is complete.
-**Skip per-phase research:** All 8 phases. Proceed directly to requirements definition.
+| # | Question | Source Files | Disposition |
+|---|----------|-------------|-------------|
+| 1 | Redis health-check hard vs. soft dependency? | ARCHITECTURE S3, STACK Integration Notes | Decide at requirements (Contradiction 1) |
+| 2 | Test isolation: Testcontainers.Redis vs. host-side prefix isolation? | STACK Test infra, ARCHITECTURE S5 | Decide at requirements (Contradiction 2) |
+| 3 | Add allStepIds[] to {workflowId} root DTO? | PITFALLS P12, FEATURES S3, PROJECT.md | Decide at requirements (Contradiction 3); PROJECT.md amendment required if yes |
+| 4 | Stage-then-RENAME vs. plain SET for writer? | FEATURES Pattern A/B, PITFALLS P5 | Decide at requirements (Contradiction 4); recommendation is plain SET with no prior DEL |
+| 5 | OTel Redis instrumentation in v3.3.0? | STACK, PITFALLS P13 | Decided: defer to v3.4 (both files agree) |
+| 6 | P2 differentiators include in v3.3.0? (generationId, aggregate-error, telemetry, dry-run) | FEATURES S7 P2 table | Decide at requirements; all are additive and deferrable to v3.4 |
+| 7 | L1Snapshot disposal: IDisposable+using vs. try/finally+.Clear()? | ARCHITECTURE open questions, PITFALLS P7 | Decide at Phase 13 planning; PITFALLS prefers try/finally for clarity |
+| 8 | Stop key strategy (tied to Question 3) | ARCHITECTURE open questions, PITFALLS P12, FEATURES S3 | Decide at requirements (follows from Contradiction 3) |
+| 9 | JobId initial value: Guid.Empty or null? | FEATURES S3 {workflowId} shape | Decide at requirements; Guid.Empty is more explicit for a typed field |
+| 10 | MULTI/EXEC vs. IBatch for L2 write? | STACK atomic write, PITFALLS P4 | Decide at Phase 15 planning; PITFALLS recommends plain IBatch (last-write-wins removes transaction need) |
+| 11 | Compose host port for Redis: 6379 or 6380? | STACK compose snippet (6379), PITFALLS P32 (6380) | Decide at Phase 12; PITFALLS recommends 6380:6379 mirroring v3.2.0 Postgres 5433:5432 |
+| 12 | Startup gate extended to probe Redis reachability? | PITFALLS P31 | Decide at Phase 12; PITFALLS strongly recommends adding Redis ping to StartupCompletionService before MarkReady() |
 
 ---
 
@@ -207,51 +218,47 @@ The service is a modular monolith in two projects. BaseApi.Core is organized by 
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All versions verified against NuGet.org as of 2026-05-26. EF Core + runtime patch alignment confirmed. Npgsql PG compatibility documented in release notes. |
-| Features | HIGH | Cross-checked against PROJECT.md locked decisions. Feature table mirrors Active requirements with ecosystem best-practice additions. |
-| Architecture | HIGH | Patterns verified against official EF Core / ASP.NET Core 8 docs. Build order derived from code dependency graph. |
-| Pitfalls | HIGH (most), MEDIUM (2) | Pitfalls 1, 4, 7, 8, 14, 15 verified against official docs and GitHub issues. Pitfalls 3 (migration race behavior) and 21 (cron library edge cases) are MEDIUM. |
+| Stack | HIGH | All NuGet pins verified against NuGet.org 2026-05-28. StackExchange.Redis 2.13.1 is Context7-verified de facto standard since 2014. Docker image licensing verified against Redis blog + Percona analysis + InfoQ. |
+| Features | HIGH on table stakes and mechanics; MEDIUM on exact DTO shape details | Table-stakes cross-referenced against Temporal/Argo/Airflow/Redis community. Exact DTO shapes MEDIUM (consumer-dependent); PROJECT.md locked shapes are authoritative. |
+| Architecture | HIGH for seam topology and DI placement; MEDIUM for test isolation tactic | Seam decomposition verified against actual v3.2.0 source files. Test isolation tactic is a genuine requirements tradeoff. |
+| Pitfalls | HIGH | 32 pitfalls verified against StackExchange.Redis docs + GitHub issues #2537/#1169/#885, OTel contrib issues #1301/#674/#3257, JsonSchema.Net docs, Redis canonical command docs. MEDIUM only for Cluster-mode edge cases (not relevant in v3.3.0 single-node). |
 
-**Overall confidence:** HIGH
+**Overall confidence:** HIGH on everything needed to proceed to requirements. The four open requirements-level decisions (Contradictions 1-4) are genuinely unresolved and require user input -- they are not research gaps.
 
 ### Gaps to Address
 
-- **Cron library match with external scheduler:** The external Orchestrator/Scheduler may use Quartz-style syntax or 6-field cron. Validate the external scheduler cron format before Phase 7 (WorkflowEntity). If it differs from Cronos 5-field, the validator will reject valid inputs.
-- **Schema.Definition remote ref policy:** JsonSchema.Net may attempt to dereference remote  URIs when validating a JSON Schema. This is an SSRF risk. Verify JsonSchema.Net 9.x behavior and configure to disable network access in Phase 5.
-- **Testcontainers + Windows Docker Desktop:** The project Windows 11 dev environment requires Docker Desktop with WSL2 backend for Testcontainers. Verify before Phase 8; no blocker expected, but confirm.
+- **allStepIds[] DTO field:** PROJECT.md must be amended explicitly if Contradiction 3 resolves to Option (a). The locked {workflowId} DTO shape does not currently include it.
+- **Compose host port for Redis:** PITFALLS recommends 6380; ARCHITECTURE and STACK examples use 6379. Decide before Phase 12 to avoid re-editing compose.yaml.
+- **Redis persistence policy documentation:** The compose service disables RDB + AOF intentionally (L2 is rebuildable from L3). Document in a compose comment to prevent a future operator from re-enabling persistence as a fix.
 
 ---
 
 ## Sources
 
-### Primary (HIGH confidence)
+Full source lists with URLs live in the individual research files (.planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md).
 
-- NuGet.org -- all package versions verified 2026-05-26 (see STACK.md for individual package links)
-- https://github.com/dotnet/core/blob/main/release-notes/8.0/8.0.26/8.0.126.md -- .NET 8 SDK 8.0.421 / Runtime 8.0.27
-- https://docs.fluentvalidation.net/en/latest/upgrading-to-12.html -- confirms FluentValidation.AspNetCore deprecation
-- https://www.npgsql.org/doc/types/datetime.html -- confirms UTC enforcement since Npgsql 6.0
-- https://github.com/efcore/EFCore.NamingConventions -- issues confirming MigrationHistory schema mangling
-- https://opentelemetry.io/docs/languages/dotnet/logs/getting-started-aspnetcore/ -- confirms builder.Logging.AddOpenTelemetry as the MEL path
-- https://learn.microsoft.com/en-us/aspnet/core/fundamentals/error-handling?view=aspnetcore-8.0 -- IExceptionHandler + AddProblemDetails pairing
-- https://learn.microsoft.com/en-us/ef/core/logging-events-diagnostics/interceptors -- EF Core interceptors
-- https://learn.microsoft.com/en-us/ef/core/modeling/relationships/many-to-many -- M2M explicit join entities
-- https://learn.microsoft.com/en-us/ef/core/managing-schemas/migrations/applying -- migration startup pattern
-- https://mapperly.riok.app/docs/getting-started/installation/ -- Mapperly project setup
-- https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks -- health probe patterns
+**Primary (HIGH confidence -- verified within 30 days):**
+- StackExchange.Redis 2.13.1 -- NuGet.org + official docs (singleton pattern, MULTI/EXEC semantics, Configuration docs) + GitHub issues #2537/#1169/#885
+- OpenTelemetry.Instrumentation.StackExchangeRedis 1.15.1-beta.1 -- NuGet.org + OTel contrib CHANGELOG + issues #1301/#674/#3257
+- Testcontainers.Redis 4.12.0 -- NuGet.org + Testcontainers .NET xUnit integration docs
+- Redis 7.4.2-alpine -- Docker Hub + Redis blog (AGPLv3 license change announcement) + Percona analysis + InfoQ
+- JsonSchema.Net 9.2.1 -- NuGet.org + json-everything docs (SSRF defense, SchemaRegistry, 2025 perf work)
+- Redis canonical command docs (RENAME, SCAN, MULTI/EXEC, KEYS) -- redis.io
+- AspNetCore.HealthChecks.Redis 9.0.0 -- Xabaril package surface
+- sk_p .planning/PROJECT.md -- locked constraints (authoritative; overrides research preferences)
+- sk_p v3.2.0 source files (verified live): BaseApiServiceCollectionExtensions.cs, ObservabilityServiceCollectionExtensions.cs, HealthServiceCollectionExtensions.cs, OrchestrationService.cs
 
-### Secondary (MEDIUM confidence)
-
-- https://www.thereformedprogrammer.net/how-to-safely-apply-an-ef-core-migrate-on-asp-net-core-startup/ -- single-replica migration pattern
-- https://github.com/dotnet/efcore/issues/34439 -- EF Core migration advisory lock behavior
-- https://github.com/open-telemetry/opentelemetry-dotnet/discussions/4653 -- confirms the two OTel logging API confusion
-- https://testcontainers.com/guides/testing-an-aspnet-core-web-app/ -- Testcontainers + Respawn guide
-- https://medium.com/@lateapexearlyspeed/performance-comparison-of-json-schema-implementations-for-net-ead3d092a473 -- JsonSchema.Net vs NJsonSchema
-- https://dotnet.libhunt.com/compare-cronos-vs-ncrontab -- Cronos vs NCrontab
-
-### Project-Authoritative
-
-- .planning/PROJECT.md -- locked decisions, Out of Scope, entity model (authoritative for this project; all research aligns against it)
+**Secondary (MEDIUM confidence):**
+- Temporal / Argo Workflows / Airflow pattern comparisons -- idempotent start, stop semantics, graph projection approaches
+- Azure Architecture Center Materialized View pattern -- read-time vs write-time materialization
+- Martin Fowler HeartBeat pattern -- liveness field shapes
+- Redis Hash vs JSON tradeoff -- Redis docs hash depth limit, RedisJSON perf benchmarks
+- Lua-as-anti-pattern -- Redis docs scripting warnings (no business logic in Lua)
+- Dry-run pattern -- KubeVela docs, dbt guide precedent
+- Redis database anti-pattern -- multi-DB for test isolation deprecated in Cluster mode
+- Valkey BSD fork -- future licensing fallback if Redis licensing escalates; not adopted in v3.3.0
 
 ---
-*Research completed: 2026-05-26*
-*Ready for roadmap: yes*
+*Research completed: 2026-05-28*
+*Synthesized: 2026-05-28*
+*Ready for requirements: yes -- pending 4 user decisions (Contradictions 1-4)*
