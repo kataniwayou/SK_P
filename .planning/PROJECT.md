@@ -9,20 +9,25 @@ On top of the v3.2.0 CRUD foundation, v3.3.0 added the orchestration build pipel
 
 v3.2.0 delivered the reusable `BaseApi.Core` library + runnable `BaseApi.Service` exposing CRUD over 5 entities (Schema, Processor, Step, Assignment, Workflow) + 3 junctions against Postgres 17 in Docker Compose; OpenTelemetry logs → Elasticsearch, metrics → Prometheus, no traces (Phase 11 D-03); RFC 7807 + `X-Correlation-Id` end-to-end; three K8s-style health probes with migration-gated readiness.
 
-_No active milestone — start the next cycle with `/gsd-new-milestone`._
+_Active milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30._
 
-## Next Milestone Goals
+## Current Milestone: v3.4.0 BaseConsole + Orchestrator Messaging
 
-No milestone is currently active. v3.3.0 shipped the L3→L1→L2 orchestration build pipeline; the natural follow-on candidates (all documented as deferred future requirements) are:
+**Goal:** Stand up a reusable `BaseConsole.Core` Generic-Host library (the console-side mirror of `BaseApi.Core`) and a first `Orchestrator` console that inherits it, connected to the web API over MassTransit/RabbitMQ, with automatic CorrelationId propagation proven end-to-end (HTTP → Redis L2 → fan-out message → orchestrator correlated log in Elasticsearch).
 
-- **FUTURE-SCHEDULER** — real `JobId` / `Liveness` write semantics; likely an external Scheduler service writes to L2 after Start (Hangfire/Quartz in-process or opaque).
-- **FUTURE-STOP-EVICTION** — full Stop-side L2 eviction with processor-key reference-counting / orphan cleanup.
-- **FUTURE-OTEL-REDIS** — re-add OTel Redis trace instrumentation once a traces backend exists (re-opens Phase 11 D-03).
-- **FUTURE-GENERATION-ID** — monotonic `generationId` on the L2 root DTO for stale-projection detection by external consumers.
-- **FUTURE-VALID-21-HTTP-WRITE** — close VALID-21 at Assignment-PUT/POST time (v3.3.0 closed it only at orchestration-start).
-- **v2 hardening** — TEST-03 (Testcontainers), TEST-04 (Respawn), INFRA-09 (advisory-lock startup migration), INFRA-10 (least-privilege Postgres roles); v2 querying HTTP-17/18/19 (pagination/filtering/sorting); authentication boundary.
+**Target features:**
+- **`BaseConsole.Core`** library — Generic Host bootstrap (`AddBaseConsole`/`RunAsync`), OTel logs+metrics to the collector (console-flavored: MEL-bridge logs + runtime + MassTransit instrumentation, no AspNetCore instrumentation), Redis client (lifted from `BaseApi.Core`), embedded minimal-Kestrel health probes (`/health/live|ready|startup`, ready flips when the MassTransit bus has started), and a MassTransit bus skeleton (`AddBaseConsoleMessaging`).
+- **Correlation propagation in `BaseConsole.Core`** — inbound consume filter (correlationId → AsyncLocal accessor + `"CorrelationId"` MEL log scope, reusing the OTel `IncludeScopes` key) **and** outbound send/publish filter (stamps the ambient correlationId onto every `ICorrelated` message). Outbound side exercised this milestone via a test-harness synthetic downstream send.
+- **`Messaging.Contracts`** shared assembly (referenced by WebApi + Orchestrator) — `StartOrchestration{WorkflowIds[]}` / `StopOrchestration{WorkflowIds[]}` control contracts (no correlationId on the wire), the `ICorrelated` mandatory-field vocabulary `{ CorrelationId, ExecutionId, WorkflowId, StepId, ProcessorId, EntryId }`, and the read-side L2 root shape extracted from `BaseApi.Service` so WebApi writes it and Orchestrator reads it from one source of truth.
+- **`Orchestrator`** console — inherits `BaseConsole.Core`; consumes Start/Stop on an instance-unique fan-out queue → reads the L2 root per WorkflowId → extracts the stored X-CorrelationId → establishes a correlated log scope → logs up to the "scheduler job start" seam → ack-on-success. No Redis writes, no Quartz this milestone (logs are the deliverable).
+- **WebApi messaging** — joins the bus; Start/Stop fan-out (publish to instance-unique queues) to all Orchestrator replicas (1 today, topology supports N); RabbitMQ is a hard dependency for the Start/Stop path only (CRUD surface unaffected).
+- **RabbitMQ** added to the compose stack.
 
-Start the next cycle with `/gsd-new-milestone` to scope and lock these into requirements.
+**Key context / locked decisions:**
+- Topology: fan-out (WebApi→Orchestrator control) = each replica binds an **instance-unique queue**; load-balanced send (`queue:processorId`, shared results queue) is future.
+- CorrelationId reconciliation: HTTP `X-Correlation-Id` (string) stays on the HTTP edge and inside the Redis L2 root value; the bus-world `Guid CorrelationId` is minted by the Quartz scheduler per trigger (**future**) — the two do not unify, they are linked via logs.
+- Out of scope this milestone (deferred to the **Processor milestone**): Quartz scheduler, the `Processor` concrete, the live orchestrator→processor→orchestrator round-trip, the concrete `JobTrigger`/`ExecutionResult` records, and the processor self-id-by-SourceHash request/response + its WebApi responder.
+- Still-deferred prior candidates (unchanged): FUTURE-STOP-EVICTION, FUTURE-OTEL-REDIS, FUTURE-GENERATION-ID, FUTURE-VALID-21-HTTP-WRITE, v2 hardening (TEST-03/04, INFRA-09/10, HTTP-17/18/19, auth boundary). FUTURE-SCHEDULER is partially addressed here (the Orchestrator scaffold) but the scheduler itself remains future.
 
 ## What This Is
 
@@ -125,7 +130,7 @@ A .NET 8 Web API platform that exposes CRUD over a workflow-engine data model �
 
 ### Active
 
-No active milestone. v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) shipped 2026-05-29 — all 64 requirements satisfied (audit PASSED). Next milestone requirements will be defined via `/gsd-new-milestone`. See the "Next Milestone Goals" section above for documented follow-on candidates (FUTURE-SCHEDULER, FUTURE-STOP-EVICTION, FUTURE-OTEL-REDIS, FUTURE-GENERATION-ID, FUTURE-VALID-21-HTTP-WRITE, v2 hardening).
+**Milestone v3.4.0 (BaseConsole + Orchestrator Messaging) — defining requirements (started 2026-05-30).** See the "Current Milestone" section above for goal, target features, and locked decisions. Requirements are being scoped into `.planning/REQUIREMENTS.md`; the roadmap continues phase numbering from v3.3.0 (last phase 16 → this milestone starts at phase 17).
 
 ### Out of Scope
 
@@ -223,7 +228,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 after v3.3.0 milestone — Orchestration L3 → L1 → L2 Build Pipeline shipped (5 phases / 26 plans / 64 requirements / 235 facts × 3 GREEN, dual-SHA BEFORE=AFTER; milestone audit PASSED, tagged `v3.3.0`). v3.2.0 (Steps API MVP) shipped 2026-05-28. See `milestones/v3.3.0-ROADMAP.md` and `milestones/v3.2.0-ROADMAP.md` for the full phase narratives; per-phase footers preserved below for git-blame continuity. No active milestone — next cycle via `/gsd-new-milestone`.*
+*Last updated: 2026-05-30 — milestone v3.4.0 (BaseConsole + Orchestrator Messaging) started; PROJECT.md updated with the Current Milestone section, requirements being defined. v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) shipped 2026-05-29 (5 phases / 26 plans / 64 requirements / 235 facts × 3 GREEN, dual-SHA BEFORE=AFTER; milestone audit PASSED, tagged `v3.3.0`). v3.2.0 (Steps API MVP) shipped 2026-05-28. See `milestones/v3.3.0-ROADMAP.md` and `milestones/v3.2.0-ROADMAP.md` for the full phase narratives; per-phase footers preserved below for git-blame continuity.*
 
 <details>
 <summary>Historical phase footers (Phases 1-11, v3.2.0)</summary>

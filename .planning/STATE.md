@@ -1,37 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.3.0
-milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: milestone_shipped
-stopped_at: v3.3.0 milestone archived and tagged (audit PASSED, 64/64 requirements satisfied)
-last_updated: "2026-05-29T20:30:00.000Z"
-last_activity: 2026-05-29
+milestone: v3.4.0
+milestone_name: BaseConsole + Orchestrator Messaging
+status: defining_requirements
+stopped_at: v3.4.0 milestone started — defining requirements
+last_updated: "2026-05-30T00:00:00.000Z"
+last_activity: 2026-05-30
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 26
-  completed_plans: 26
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-29 after v3.3.0 milestone completion)
+See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** No active milestone — start the next cycle with `/gsd-new-milestone`.
+**Current focus:** v3.4.0 — stand up `BaseConsole.Core` + `Orchestrator` console connected to the web API over MassTransit/RabbitMQ, with CorrelationId propagation proven end-to-end. Defining requirements.
 
 ## Current Position
 
-Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — SHIPPED 2026-05-29 (archived + tagged)
-Phase: — (between milestones)
+Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
+Phase: Not started (defining requirements)
 Plan: —
-Status: Milestone shipped — audit PASSED, 64/64 requirements satisfied
-Last activity: 2026-05-29
+Status: Defining requirements
+Last activity: 2026-05-30 — Milestone v3.4.0 started
 
-Progress: [██████████] 100% (5/5 phases)
+Progress: [          ] 0% (0 phases defined)
 
 ## Deferred Items
 
