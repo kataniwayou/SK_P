@@ -112,23 +112,51 @@ Which phases cover which requirements. Filled by the roadmapper.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MSG-CONTRACTS-01..04 | TBD | Pending |
-| CONSOLE-01..05 | TBD | Pending |
-| CONSOLE-HEALTH-01..04 | TBD | Pending |
-| MSG-WEBAPI-01..04 | TBD | Pending |
-| ORCH-CON-01..04 | TBD | Pending |
-| CORR-01..04 | TBD | Pending |
-| MSG-ACK-01..04 | TBD | Pending |
-| INFRA-RMQ-01..03 | TBD | Pending |
-| TEST-RMQ-01..05 | TBD | Pending |
+| MSG-CONTRACTS-01 | Phase 17 | Pending |
+| MSG-CONTRACTS-02 | Phase 17 | Pending |
+| MSG-CONTRACTS-03 | Phase 17 | Pending |
+| MSG-CONTRACTS-04 | Phase 17 | Pending |
+| INFRA-RMQ-01 | Phase 17 | Pending |
+| CONSOLE-01 | Phase 18 | Pending |
+| CONSOLE-02 | Phase 18 | Pending |
+| CONSOLE-03 | Phase 18 | Pending |
+| CONSOLE-04 | Phase 18 | Pending |
+| CONSOLE-05 | Phase 18 | Pending |
+| CONSOLE-HEALTH-01 | Phase 18 | Pending |
+| CONSOLE-HEALTH-02 | Phase 18 | Pending |
+| CONSOLE-HEALTH-03 | Phase 18 | Pending |
+| CONSOLE-HEALTH-04 | Phase 18 | Pending |
+| CORR-01 | Phase 18 | Pending |
+| CORR-02 | Phase 18 | Pending |
+| ORCH-CON-01 | Phase 19 | Pending |
+| ORCH-CON-02 | Phase 19 | Pending |
+| ORCH-CON-03 | Phase 19 | Pending |
+| ORCH-CON-04 | Phase 19 | Pending |
+| MSG-WEBAPI-01 | Phase 19 | Pending |
+| MSG-WEBAPI-02 | Phase 19 | Pending |
+| MSG-WEBAPI-03 | Phase 19 | Pending |
+| MSG-WEBAPI-04 | Phase 19 | Pending |
+| MSG-ACK-01 | Phase 19 | Pending |
+| MSG-ACK-02 | Phase 19 | Pending |
+| MSG-ACK-03 (P2) | Phase 19 | Pending |
+| MSG-ACK-04 (P2) | Phase 19 | Pending |
+| INFRA-RMQ-02 | Phase 19 | Pending |
+| INFRA-RMQ-03 | Phase 19 | Pending |
+| CORR-03 | Phase 20 | Pending |
+| CORR-04 | Phase 20 | Pending |
+| TEST-RMQ-01 | Phase 20 | Pending |
+| TEST-RMQ-02 | Phase 20 | Pending |
+| TEST-RMQ-03 | Phase 20 | Pending |
+| TEST-RMQ-04 | Phase 20 | Pending |
+| TEST-RMQ-05 | Phase 20 | Pending |
 
 **Coverage:**
 - Milestone requirements: 37 total — 35 P1 + 2 P2 (`MSG-ACK-03`, `MSG-ACK-04`)
-- Mapped to phases: 0 (roadmap pending)
-- Unmapped: 37 ⚠️ (roadmapper will resolve)
+- Mapped to phases: 37 (100% — Phase 17: 5 · Phase 18: 11 · Phase 19: 14 · Phase 20: 7)
+- Unmapped: 0 ✓ (every requirement maps to exactly one phase; no orphans, no duplicates)
 
 > By category: MSG-CONTRACTS 4 · CONSOLE 5 · CONSOLE-HEALTH 4 · MSG-WEBAPI 4 · ORCH-CON 4 · CORR 4 · MSG-ACK 4 · INFRA-RMQ 3 · TEST-RMQ 5 = 37. Future and Out-of-Scope items are not counted.
 
 ---
 *Requirements defined: 2026-05-30*
-*Last updated: 2026-05-30 at milestone v3.4.0 kickoff*
+*Last updated: 2026-05-30 — Traceability filled by roadmapper: 37/37 requirements mapped to Phases 17-20.*

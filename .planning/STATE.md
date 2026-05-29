@@ -2,16 +2,29 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: defining_requirements
-stopped_at: v3.4.0 milestone started — defining requirements
+status: roadmap_complete
+stopped_at: v3.4.0 roadmap created — 4 phases (17-20) defined, 37 requirements mapped
 last_updated: "2026-05-30T00:00:00.000Z"
 last_activity: 2026-05-30
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
+phases:
+  - number: 17
+    name: Messaging.Contracts + Shared L2 Root Extract
+    status: not_started
+  - number: 18
+    name: BaseConsole.Core Library
+    status: not_started
+  - number: 19
+    name: Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier
+    status: not_started
+  - number: 20
+    name: Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout
+    status: not_started
 ---
 
 # Project State
@@ -21,17 +34,28 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** v3.4.0 — stand up `BaseConsole.Core` + `Orchestrator` console connected to the web API over MassTransit/RabbitMQ, with CorrelationId propagation proven end-to-end. Defining requirements.
+**Current focus:** v3.4.0 — stand up `BaseConsole.Core` + `Orchestrator` console connected to the web API over MassTransit/RabbitMQ, with CorrelationId propagation proven end-to-end. Roadmap created: 4 phases (17-20), 37 requirements mapped. Ready to plan Phase 17.
 
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: Not started (defining requirements)
+Phase: 17 (Messaging.Contracts + Shared L2 Root Extract) — not started
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-30 — Milestone v3.4.0 started
+Status: Roadmap complete (4 phases defined, 37 requirements mapped) — ready for `/gsd-plan-phase 17`
+Last activity: 2026-05-30 — v3.4.0 roadmap created (Phases 17-20)
 
-Progress: [          ] 0% (0 phases defined)
+Progress: [          ] 0% (0 of 4 phases complete)
+
+### Milestone Phases (v3.4.0)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 17 | Messaging.Contracts + Shared L2 Root Extract | MSG-CONTRACTS-01..04, INFRA-RMQ-01 (5) | Not started |
+| 18 | BaseConsole.Core Library | CONSOLE-01..05, CONSOLE-HEALTH-01..04, CORR-01/02 (11) | Not started |
+| 19 | Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier | ORCH-CON-01..04, MSG-WEBAPI-01..04, MSG-ACK-01..04, INFRA-RMQ-02/03 (14) | Not started |
+| 20 | Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout | CORR-03/04, TEST-RMQ-01..05 (7) | Not started |
+
+Build order (locked): 17 (leaf contracts) -> 18 (console base) -> 19 (Orchestrator || WebApi wiring + RabbitMQ) -> 20 (correlation proof + triple-SHA closeout). See .planning/ROADMAP.md for full success criteria + cross-phase hard constraints.
 
 ## Deferred Items
 
