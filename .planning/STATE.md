@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
 status: executing
-stopped_at: Completed 15-03-PLAN.md
-last_updated: "2026-05-29T14:39:15.884Z"
+stopped_at: Completed 15-04-PLAN.md
+last_updated: "2026-05-29T14:58:09.169Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 21
-  completed_plans: 19
-  percent: 90
+  completed_plans: 20
+  percent: 95
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
 Phase: 15 (l2-redis-projection-write-stop-existence-check) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [█████████░] 90%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -126,6 +126,7 @@ Progress: [█████████░] 90%
 | Phase 15 P01 | ~10min | 3 tasks | 10 files |
 | Phase 15 P02 | ~18min | 3 tasks | 5 files |
 | Phase 15 P03 | ~5min | 3 tasks | 6 files |
+| Phase 15 P04 | ~15min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -349,6 +350,10 @@ Recent decisions affecting current work:
 - Plan 15-02: OrchestrationService.StartAsync passes string.Empty correlationId interim until Plan 04 wires X-Correlation-Id resolution (D-01); writer stays HTTP-agnostic
 - Plan 15-03: Reused OrchestrationValidationException (now sealed partial) for the Stop 422 via a MissingRoots factory + MissingRootsOffending in OrchestrationStopException.cs — one handler, no second registration; gate=stopMissingRoots distinct from Phase 14 gates
 - Plan 15-03: RedisL2Cleanup is always-tolerant cycle-safe GET-and-follow BFS (visited List mirror of WorkflowGraphLoader), collect-then-batch-delete root + reachable step keys, never processor keys, no keyspace enumeration; registered Scoped in AddOrchestrationFeature (Plan 04 wires the 2 callers)
+- Plan 15-04: StartAsync is the D-07 per-workflow loop (404 gate -> correlationId once -> pre-clean -> LoadL1([id]) -> cycle/schemaEdge/payload validators (locked) -> UpsertAsync; snapshot disposed each iteration)
+- Plan 15-04: StopAsync is the D-04/D-06 Redis EXISTS gate (collect ALL missing -> 422 MissingRoots no-delete) then per-workflow cleanup -> 204; repeat Stop -> 422 (non-idempotent), replacing the obsolete Phase-9 Postgres-404 Stop
+- Plan 15-04: OBSERV-REDIS-03 via exception.Data[redisOp] tag (UpsertAsync/KeyExistsAsync) read by FallbackExceptionHandler into Extensions[redisOp]; pre-clean fault tagged UpsertAsync too (Rule 1) so Start-down 500 reports an op name
+- Plan 15-04: dead-Redis facts use ConfigureTestServices doubles (throwing writer / NSubstitute multiplexer) not the abortConnect=false dead-port factory whose backlog completed SET/EXISTS as no-ops
 
 ### Roadmap Milestone Log
 
@@ -442,8 +447,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T14:39:07.437Z
-Stopped at: Completed 15-03-PLAN.md
+Last session: 2026-05-29T14:57:55.548Z
+Stopped at: Completed 15-04-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)

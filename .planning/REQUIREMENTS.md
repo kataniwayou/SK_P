@@ -100,28 +100,39 @@
 
 ### ORCH-START — Start endpoint contract
 
-- [ ] **ORCH-START-01** — `POST /api/v1/orchestration/start` request body shape unchanged from v3.2.0: `{ "workflowIds": ["...guid...", ...] }`. `WorkflowIdsValidator` continues to enforce non-empty + all-GUIDs.
-- [ ] **ORCH-START-02** — On success (all gates pass, L2 write completes): 204 No Content.
+- [x] **ORCH-START-01
+** — `POST /api/v1/orchestration/start` request body shape unchanged from v3.2.0: `{ "workflowIds": ["...guid...", ...] }`. `WorkflowIdsValidator` continues to enforce non-empty + all-GUIDs.
+- [x] **ORCH-START-02
+** — On success (all gates pass, L2 write completes): 204 No Content.
 - [x] **ORCH-START-03
 ** — On any validation failure (existence / cycle / missing-step / schema-edge / payload-config-schema): 422 Unprocessable Entity with RFC 7807 Problem Details, `correlationId`, `instance`, and a structured `errors` extension that identifies the offending entity ids (workflowId / stepId pair / assignmentId).
-- [ ] **ORCH-START-04** — On Redis-side failure (`RedisConnectionException` / timeout): 500 with RFC 7807 + correlationId. L1 cleanup still runs in `finally`.
-- [ ] **ORCH-START-05** — **Idempotency (PUT-like)** — repeated Start with the same WorkflowIds re-runs the full pipeline and overwrites all L2 keys for those workflows. Returns 204 on each call. No staging-then-RENAME; plain `StringSetAsync` is sufficient because the value shape per key is whole-document (not partial).
+- [x] **ORCH-START-04
+** — On Redis-side failure (`RedisConnectionException` / timeout): 500 with RFC 7807 + correlationId. L1 cleanup still runs in `finally`.
+- [x] **ORCH-START-05
+** — **Idempotency (PUT-like)** — repeated Start with the same WorkflowIds re-runs the full pipeline and overwrites all L2 keys for those workflows. Returns 204 on each call. No staging-then-RENAME; plain `StringSetAsync` is sufficient because the value shape per key is whole-document (not partial).
 - [x] **ORCH-START-06
 ** — **Concurrency** — two concurrent Starts for the same WorkflowId interleave at the per-key SET level; last-write-wins on each key. NO Redis distributed lock. Documented behavior — a reader between the two writes may observe a mix of partial state across keys. Acceptable per locked concurrency decision.
-- [ ] **ORCH-START-07** — `X-Correlation-Id` from the request propagates through the entire pipeline (existence → loader → validators → writer) and into all OTel log scopes + RFC 7807 error bodies. Phase 4 correlation invariant preserved.
-- [ ] **ORCH-START-08** — `OrchestrationController.Start` adds `[ProducesResponseType]` for 422 and 500 in addition to the existing 204 / 400; surfaces typed error shapes in Swagger.
+- [x] **ORCH-START-07
+** — `X-Correlation-Id` from the request propagates through the entire pipeline (existence → loader → validators → writer) and into all OTel log scopes + RFC 7807 error bodies. Phase 4 correlation invariant preserved.
+- [x] **ORCH-START-08
+** — `OrchestrationController.Start` adds `[ProducesResponseType]` for 422 and 500 in addition to the existing 204 / 400; surfaces typed error shapes in Swagger.
 
 ### ORCH-STOP — Stop endpoint contract (REVISED — existence check only)
 
-- [ ] **ORCH-STOP-01** — `POST /api/v1/orchestration/stop` request body shape unchanged from v3.2.0: `{ "workflowIds": ["...guid...", ...] }`.
-- [ ] **ORCH-STOP-02** — For each WorkflowId, `OrchestrationService.StopAsync` issues `IDatabase.KeyExistsAsync({prefix}{workflowId})` against Redis. If all keys exist → 204 No Content.
+- [x] **ORCH-STOP-01
+** — `POST /api/v1/orchestration/stop` request body shape unchanged from v3.2.0: `{ "workflowIds": ["...guid...", ...] }`.
+- [x] **ORCH-STOP-02
+** — For each WorkflowId, `OrchestrationService.StopAsync` issues `IDatabase.KeyExistsAsync({prefix}{workflowId})` against Redis. If all keys exist → 204 No Content.
 - [x] **ORCH-STOP-03
 ** — If any WorkflowId's `{workflowId}` key does NOT exist in Redis → 422 Unprocessable Entity with RFC 7807 listing the missing workflowIds. (Distinguishes from v3.2.0 Phase 9 behavior which was Postgres-based existence; v3.3.0 Stop is Redis-based existence.)
 - [x] **ORCH-STOP-04
 ** — Stop performs NO DELETE, NO eviction, NO per-step or per-processor key cleanup. L2 entries remain in place after Stop returns. Full Stop-side eviction semantics are deferred to a future milestone.
-- [ ] **ORCH-STOP-05** — Stop does NOT touch L3 (Postgres). The WorkflowIds are NOT validated against Postgres; only against Redis. (This differs from v3.2.0 Phase 9 where Stop called `ValidateWorkflowIdsAsync` against the L3 DB.)
-- [ ] **ORCH-STOP-06** — Stop is idempotent — repeated Stop with the same WorkflowIds returns the same response (204 if all still exist in L2, 422 otherwise). No state mutation.
-- [ ] **ORCH-STOP-07** — On Redis-side failure: 500 + RFC 7807 + correlationId.
+- [x] **ORCH-STOP-05
+** — Stop does NOT touch L3 (Postgres). The WorkflowIds are NOT validated against Postgres; only against Redis. (This differs from v3.2.0 Phase 9 where Stop called `ValidateWorkflowIdsAsync` against the L3 DB.)
+- [x] **ORCH-STOP-06
+** — Stop is idempotent — repeated Stop with the same WorkflowIds returns the same response (204 if all still exist in L2, 422 otherwise). No state mutation.
+- [x] **ORCH-STOP-07
+** — On Redis-side failure: 500 + RFC 7807 + correlationId.
 
 ### TEST-REDIS — Test infrastructure
 
@@ -143,7 +154,8 @@
 
 - [ ] **OBSERV-REDIS-01** — OpenTelemetry Redis instrumentation (`OpenTelemetry.Instrumentation.StackExchangeRedis`) is NOT wired in v3.3.0. Phase 11 D-03 (no traces backend; `.WithTracing()` stripped) is preserved. Adding the trace-side instrumentation without a backend would create dropped spans + duplicate-span risk (OTel issue #1301).
 - [ ] **OBSERV-REDIS-02** — Redis client operations DO appear in standard MEL logs (Phase 5 OTel MEL bridge ships them to Elasticsearch). `X-Correlation-Id` log scopes flow through Redis async ops via AsyncLocal (verified by E2E test extending the Phase 11 SchemasLogsE2ETests pattern).
-- [ ] **OBSERV-REDIS-03** — RFC 7807 error bodies for Redis-side failures (`ORCH-START-04`, `ORCH-STOP-07`) include the correlationId + the offending Redis operation (`UpsertAsync` / `KeyExistsAsync`) in the Extensions, surfacing root cause to operators.
+- [x] **OBSERV-REDIS-03** — RFC 7807 error bodies for Redis-side failures (`ORCH-START-04
+`, `ORCH-STOP-07`) include the correlationId + the offending Redis operation (`UpsertAsync` / `KeyExistsAsync`) in the Extensions, surfacing root cause to operators.
 - [ ] **OBSERV-REDIS-04** — Future-milestone candidate (documented, not in v3.3.0): Redis-side metrics (latency histograms, command counts) via the `StackExchange.Redis` profiling API → Prometheus exporter. Deferred until there's a real observability need.
 
 ---
