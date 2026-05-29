@@ -13,8 +13,8 @@ namespace BaseApi.Service.Features.Orchestration.Validation;
 /// <c>(parentStepId, childStepId)</c> pair → HTTP 422.
 /// </para>
 /// <para>
-/// <b>Independent of the cycle DFS (D-07 / Phase 13 D-03):</b> this gate does NOT call
-/// <see cref="CycleDetector"/> and does NOT build a shared traversal abstraction. It is a flat,
+/// <b>Independent of the cycle DFS (D-07 / Phase 13 D-03):</b> this gate does NOT call the cycle
+/// gate and does NOT build a shared traversal abstraction. It is a flat,
 /// per-edge equality check. A dangling child (referenced via <c>NextStepIds</c> but absent from the
 /// graph) is the cycle/missing-step gate's concern — that gate runs FIRST in the locked validation
 /// order — so this walk defensively skips an unresolved child rather than raising a different gate's error.
