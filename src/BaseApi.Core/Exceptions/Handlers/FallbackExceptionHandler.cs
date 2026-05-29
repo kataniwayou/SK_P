@@ -47,6 +47,17 @@ public sealed class FallbackExceptionHandler : IExceptionHandler
             Detail = "An unexpected error occurred.",
         };
 
+        // OBSERV-REDIS-03: when a faulting layer tags the exception with the offending
+        // operation name (exception.Data["redisOp"] — e.g. "UpsertAsync"/"KeyExistsAsync"),
+        // surface ONLY that op name in the 500 body. No connection string, message, or stack
+        // is ever copied here (T-04-LEAK / T-15-13 — the op name is a fixed, non-sensitive
+        // literal chosen by the caller). correlationId + instance are added by the Phase 4
+        // customizer on emission.
+        if (exception.Data["redisOp"] is string redisOp && redisOp.Length > 0)
+        {
+            problem.Extensions["redisOp"] = redisOp;
+        }
+
         // Attempt to write; ignore the result — we have claimed this exception regardless.
         // If response has already started (headers committed), TryWriteAsync returns false
         // but we still return true so the chain does not re-throw.

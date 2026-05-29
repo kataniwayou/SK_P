@@ -1,3 +1,4 @@
+using BaseApi.Core.Configuration;
 using BaseApi.Core.Exceptions;
 using BaseApi.Core.Persistence;
 using BaseApi.Service.Features.Orchestration.Loading;
@@ -6,7 +7,10 @@ using BaseApi.Service.Features.Orchestration.Validation;
 using BaseApi.Service.Features.Workflow;
 using FluentValidation;
 using FluentValidation.Results;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace BaseApi.Service.Features.Orchestration;
 
@@ -15,21 +19,29 @@ namespace BaseApi.Service.Features.Orchestration;
 /// <c>BaseService&lt;TEntity,...&gt;</c> subclass — there is no single entity to
 /// project (CONTEXT D-04).
 /// <para>
-/// <b>StartAsync</b> orchestrates the locked pipeline (D-01): existence check →
-/// <see cref="IWorkflowGraphLoader"/> → <see cref="CycleDetector"/> →
-/// <see cref="SchemaEdgeValidator"/> → <see cref="PayloadConfigSchemaValidator"/> →
-/// <see cref="IRedisProjectionWriter"/>, with the transient
-/// <see cref="WorkflowGraphSnapshot"/> disposed via a <c>using</c> declaration on
-/// success AND on any throw. The 5 entity mappers were relocated to
-/// <see cref="WorkflowGraphLoader"/> (D-05); the orchestrator keeps only
-/// <see cref="BaseDbContext"/> + the ids validator for the existence check.
+/// <b>StartAsync</b> (D-07 per-workflow loop) runs the upfront Postgres existence check
+/// (404 fast-fail before any mutation), resolves the X-Correlation-Id ONCE (D-01), then
+/// for EACH requested workflow: tolerant pre-clean (<see cref="IRedisL2Cleanup"/> — GC for
+/// shrunk graphs, ORCH-START-05 delete-then-write) → <see cref="IWorkflowGraphLoader"/>
+/// (single-element list) → the three Phase 14 validators in LOCKED order
+/// (<see cref="CycleDetector"/> → <see cref="SchemaEdgeValidator"/> →
+/// <see cref="PayloadConfigSchemaValidator"/>) → <see cref="IRedisProjectionWriter"/>. The
+/// per-iteration <see cref="WorkflowGraphSnapshot"/> is disposed via a <c>using</c>
+/// declaration on success AND on any throw.
 /// </para>
 /// <para>
-/// <b>StopAsync</b> is a separate public method (D-07 / ORCH-SPLIT-04) — Start and
-/// Stop no longer share a single <c>ValidateWorkflowIdsAsync</c>. Both run the same
-/// existence semantics via the private <see cref="ExistenceCheckAsync"/> helper
-/// (distinct public surfaces; a shared private helper is not "sharing a method" in
-/// the D-07 sense). Phase 15 swaps StopAsync's body to a Redis EXISTS check.
+/// <b>StopAsync</b> (D-04/D-06 Redis EXISTS gate + cleanup) rule-validates the ids, batch
+/// <c>KeyExistsAsync</c>-checks every workflow root key, and if ANY root is missing throws
+/// <see cref="OrchestrationValidationException.MissingRoots"/> (→ 422 with the FULL missing
+/// list, NO deletion); only when all exist does it run the per-workflow
+/// <see cref="IRedisL2Cleanup.StopCleanupAsync"/> (→ controller 204). A repeated Stop of an
+/// already-cleaned workflow re-fails the gate (422 — non-idempotent by design).
+/// </para>
+/// <para>
+/// <b>OBSERV-REDIS-03:</b> a Redis fault on either path is caught, tagged with the offending
+/// op name (<c>Data["redisOp"]</c> = <c>"UpsertAsync"</c>/<c>"KeyExistsAsync"</c>) and
+/// rethrown; <c>FallbackExceptionHandler</c> surfaces that op name (only) in the 500 body
+/// alongside the Phase 4 correlationId — never a connection string or stack.
 /// </para>
 /// </summary>
 public sealed class OrchestrationService
@@ -41,6 +53,10 @@ public sealed class OrchestrationService
     private readonly SchemaEdgeValidator _schemaEdgeValidator;
     private readonly PayloadConfigSchemaValidator _payloadConfigSchemaValidator;
     private readonly IRedisProjectionWriter _redisProjectionWriter;
+    private readonly IRedisL2Cleanup _cleanup;
+    private readonly IHttpContextAccessor _httpContextAccessor;
+    private readonly IConnectionMultiplexer _multiplexer;
+    private readonly string _keyPrefix;
 
     // Ctor is internal (not public): it accepts the internal seam types
     // (IWorkflowGraphLoader, CycleDetector, ...) which CS0051 forbids on a public
@@ -54,7 +70,11 @@ public sealed class OrchestrationService
         CycleDetector cycleDetector,
         SchemaEdgeValidator schemaEdgeValidator,
         PayloadConfigSchemaValidator payloadConfigSchemaValidator,
-        IRedisProjectionWriter redisProjectionWriter)
+        IRedisProjectionWriter redisProjectionWriter,
+        IRedisL2Cleanup cleanup,
+        IHttpContextAccessor httpContextAccessor,
+        IConnectionMultiplexer multiplexer,
+        IOptions<RedisProjectionOptions> options)
     {
         _db                           = db                           ?? throw new ArgumentNullException(nameof(db));
         _idsValidator                 = idsValidator                 ?? throw new ArgumentNullException(nameof(idsValidator));
@@ -63,37 +83,116 @@ public sealed class OrchestrationService
         _schemaEdgeValidator          = schemaEdgeValidator          ?? throw new ArgumentNullException(nameof(schemaEdgeValidator));
         _payloadConfigSchemaValidator = payloadConfigSchemaValidator ?? throw new ArgumentNullException(nameof(payloadConfigSchemaValidator));
         _redisProjectionWriter        = redisProjectionWriter        ?? throw new ArgumentNullException(nameof(redisProjectionWriter));
+        _cleanup                      = cleanup                      ?? throw new ArgumentNullException(nameof(cleanup));
+        _httpContextAccessor          = httpContextAccessor          ?? throw new ArgumentNullException(nameof(httpContextAccessor));
+        _multiplexer                  = multiplexer                  ?? throw new ArgumentNullException(nameof(multiplexer));
+        _keyPrefix                    = (options ?? throw new ArgumentNullException(nameof(options))).Value.KeyPrefix;
     }
 
     /// <summary>
-    /// Orchestrates the locked Start pipeline (ORCH-SPLIT-03, order LOCKED by D-01).
-    /// The transient <see cref="WorkflowGraphSnapshot"/> is disposed by the
-    /// <c>using</c> declaration on success AND on any throw above it. In Plan 13-01
-    /// the loader returns an empty snapshot and all 4 validator/writer seams are
-    /// no-ops; the orchestrator body is structurally final.
+    /// D-07 per-workflow Start loop. <see cref="ExistenceCheckAsync"/> runs FIRST as the
+    /// upfront 404 gate (all ids checked before any mutation). The X-Correlation-Id is
+    /// resolved ONCE (D-01) and passed explicitly to the writer. Each workflow is then
+    /// processed independently: tolerant pre-clean (delete-then-write GC for shrunk graphs,
+    /// ORCH-START-05) → per-workflow <c>LoadL1Async([id])</c> → the three validators in the
+    /// LOCKED Phase 14 order → <c>UpsertAsync</c>. The per-iteration snapshot is disposed by
+    /// the <c>using</c> declaration on success AND on any throw above it.
     /// </summary>
     public async Task StartAsync(IReadOnlyList<Guid> workflowIds, CancellationToken ct)
     {
-        await ExistenceCheckAsync(workflowIds, ct);                          // 1. D-08 404 fast-fail
-        using var snapshot = await _loader.LoadL1Async(workflowIds, ct);     // 2. disposed on success AND throw
-        _cycleDetector.Validate(snapshot);                                  // 3. no-op P13
-        _schemaEdgeValidator.Validate(snapshot);                            // 4. no-op P13
-        _payloadConfigSchemaValidator.Validate(snapshot);                   // 5. no-op P13
-        // 6. L2 projection write (Plan 15-02). correlationId is currently string.Empty:
-        // Plan 04 wires OrchestrationService to resolve X-Correlation-Id once and pass it
-        // here explicitly (D-01). Until then the call site only needs to satisfy the widened
-        // signature; the writer itself is exercised with a real correlationId by its own facts.
-        await _redisProjectionWriter.UpsertAsync(snapshot, string.Empty, ct);
-        // 7. snapshot.Dispose() runs implicitly here AND on any throw above (using declaration).
+        await ExistenceCheckAsync(workflowIds, ct);   // 1. D-08 404 fast-fail (ALL ids, before any mutation)
+
+        // D-01 — resolve the correlationId ONCE from HttpContext.Items (set by
+        // CorrelationIdMiddleware; same read as AuditInterceptor) and pass it explicitly
+        // to the HTTP-agnostic writer for every workflow in this request.
+        var correlationId = _httpContextAccessor.HttpContext?.Items["CorrelationId"] as string ?? string.Empty;
+
+        foreach (var workflowId in workflowIds)
+        {
+            // 2. Tolerant pre-clean — deletes any stale root + per-step keys so a re-Start of a
+            //    SHRUNK graph leaves no orphan per-step keys (delete-then-write, ORCH-START-05).
+            await _cleanup.StopCleanupAsync(workflowId, ct);
+
+            // 3. Per-workflow L1 build (single-element list — no new loader variant, RES Pattern 5).
+            //    Disposed by the `using` on success AND on any throw below (L1 cleanup contract).
+            using var snapshot = await _loader.LoadL1Async(new[] { workflowId }, ct);
+
+            // 4-6. Validator gate order is LOCKED (Phase 14): cycle → schema-edge → payload-config.
+            _cycleDetector.Validate(snapshot);
+            _schemaEdgeValidator.Validate(snapshot);
+            _payloadConfigSchemaValidator.Validate(snapshot);
+
+            // 7. L2 projection write. A Redis fault is tagged with the offending op name
+            //    (OBSERV-REDIS-03) and rethrown → FallbackExceptionHandler → 500.
+            try
+            {
+                await _redisProjectionWriter.UpsertAsync(snapshot, correlationId, ct);
+            }
+            catch (RedisException ex)
+            {
+                ex.Data["redisOp"] = "UpsertAsync";
+                throw;
+            }
+            // snapshot.Dispose() runs here AND on any throw above (using declaration).
+        }
     }
 
     /// <summary>
-    /// Stop semantics (D-07 / ORCH-SPLIT-04). In v3.3.0 this is the same existence
-    /// check as Start's step 1 — a distinct public method, NOT a shared one. Phase 15
-    /// swaps this body to a Redis EXISTS check.
+    /// D-04/D-06 Stop gate + cleanup. Rule-validates the ids (null-body guard + the
+    /// <see cref="WorkflowIdsValidator"/> rules — mirrors <see cref="ExistenceCheckAsync"/>'s
+    /// pre-check), batch <c>KeyExistsAsync</c>-checks every workflow root key, and collects
+    /// ALL ids whose root is missing (NOT fail-fast). If any are missing it throws
+    /// <see cref="OrchestrationValidationException.MissingRoots"/> (→ 422 with the FULL list,
+    /// NO deletion). Only when every root exists does it run the per-workflow tolerant
+    /// <see cref="IRedisL2Cleanup.StopCleanupAsync"/> (→ controller 204). Repeated Stop of an
+    /// already-cleaned workflow re-fails the gate (422 — non-idempotent by design). A Redis
+    /// fault on the EXISTS batch is tagged <c>"KeyExistsAsync"</c> (OBSERV-REDIS-03) → 500.
     /// </summary>
-    public Task StopAsync(IReadOnlyList<Guid> workflowIds, CancellationToken ct)
-        => ExistenceCheckAsync(workflowIds, ct);
+    public async Task StopAsync(IReadOnlyList<Guid> workflowIds, CancellationToken ct)
+    {
+        // WR-01 null-body guard + rule validation — mirror ExistenceCheckAsync (lines below)
+        // so a JSON null body / malformed id list is rejected (400) before any Redis touch
+        // (T-15-12 input validation runs first on Stop too).
+        if (workflowIds is null)
+        {
+            throw new ValidationException(new[]
+            {
+                new ValidationFailure(nameof(workflowIds), "Request body must not be null."),
+            });
+        }
+
+        await _idsValidator.ValidateAndThrowAsync(workflowIds, ct);
+
+        // D-04 — batch EXISTS on each workflow root key; collect ALL missing (not fail-fast).
+        var db = _multiplexer.GetDatabase();
+        List<Guid> missing;
+        try
+        {
+            var checks = workflowIds
+                .Select(id => (Id: id, Task: db.KeyExistsAsync(RedisProjectionKeys.Root(_keyPrefix, id))))
+                .ToList();
+            await Task.WhenAll(checks.Select(c => c.Task));
+            missing = checks.Where(c => !c.Task.Result).Select(c => c.Id).ToList();
+        }
+        catch (RedisException ex)
+        {
+            ex.Data["redisOp"] = "KeyExistsAsync";
+            throw;
+        }
+
+        // D-04 — any missing root → 422 with the FULL missing list and NO deletion.
+        if (missing.Count > 0)
+        {
+            throw OrchestrationValidationException.MissingRoots(missing);
+        }
+
+        // D-06 — all roots exist → per-workflow tolerant traverse-and-delete (root + per-step
+        // keys; never processor keys). Controller maps the completed Task to 204.
+        foreach (var workflowId in workflowIds)
+        {
+            await _cleanup.StopCleanupAsync(workflowId, ct);
+        }
+    }
 
     /// <summary>
     /// Validates the supplied <paramref name="ids"/> against the
