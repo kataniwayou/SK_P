@@ -18,6 +18,10 @@ public sealed class RedisProjectionOptions
     /// </summary>
     public string KeyPrefix { get; set; } = "skp:";
 
+    /// <summary>Processor-key TTL in days (D-08, default 100). Refresh-on-write: every Start
+    /// re-SETs processor keys with this expiry. &lt;= 0 ⇒ no expiry (disable from config).</summary>
+    public int ProcessorKeyTtlDays { get; set; } = 100;
+
     /// <summary>
     /// Nested serialization options. v3.3.0 ships a single string discriminator
     /// <c>"default"</c>; future revisions may add <c>JsonOptions = "snake_case"</c> etc.
