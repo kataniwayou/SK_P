@@ -152,11 +152,14 @@
 
 ### OBSERV-REDIS — Observability (constrained)
 
-- [ ] **OBSERV-REDIS-01** — OpenTelemetry Redis instrumentation (`OpenTelemetry.Instrumentation.StackExchangeRedis`) is NOT wired in v3.3.0. Phase 11 D-03 (no traces backend; `.WithTracing()` stripped) is preserved. Adding the trace-side instrumentation without a backend would create dropped spans + duplicate-span risk (OTel issue #1301).
-- [ ] **OBSERV-REDIS-02** — Redis client operations DO appear in standard MEL logs (Phase 5 OTel MEL bridge ships them to Elasticsearch). `X-Correlation-Id` log scopes flow through Redis async ops via AsyncLocal (verified by E2E test extending the Phase 11 SchemasLogsE2ETests pattern).
+- [x] **OBSERV-REDIS-01
+** — OpenTelemetry Redis instrumentation (`OpenTelemetry.Instrumentation.StackExchangeRedis`) is NOT wired in v3.3.0. Phase 11 D-03 (no traces backend; `.WithTracing()` stripped) is preserved. Adding the trace-side instrumentation without a backend would create dropped spans + duplicate-span risk (OTel issue #1301).
+- [x] **OBSERV-REDIS-02
+** — Redis client operations DO appear in standard MEL logs (Phase 5 OTel MEL bridge ships them to Elasticsearch). `X-Correlation-Id` log scopes flow through Redis async ops via AsyncLocal (verified by E2E test extending the Phase 11 SchemasLogsE2ETests pattern).
 - [x] **OBSERV-REDIS-03** — RFC 7807 error bodies for Redis-side failures (`ORCH-START-04
 `, `ORCH-STOP-07`) include the correlationId + the offending Redis operation (`UpsertAsync` / `KeyExistsAsync`) in the Extensions, surfacing root cause to operators.
-- [ ] **OBSERV-REDIS-04** — Future-milestone candidate (documented, not in v3.3.0): Redis-side metrics (latency histograms, command counts) via the `StackExchange.Redis` profiling API → Prometheus exporter. Deferred until there's a real observability need.
+- [x] **OBSERV-REDIS-04
+** — Future-milestone candidate (documented, not in v3.3.0): Redis-side metrics (latency histograms, command counts) via the `StackExchange.Redis` profiling API → Prometheus exporter. Deferred until there's a real observability need.
 
 ---
 

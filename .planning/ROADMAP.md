@@ -108,8 +108,8 @@ Plans:
 - [x] 15-01-PLAN.md — RedisProjectionKeys + 4 camelCase projection records + ProcessorKeyTtlDays config (Wave 0 unit tests)
 - [x] 15-02-PLAN.md — Fill RedisProjectionWriter: 3-keyspace batch write + processor TTL + liveness via TimeProvider
 - [x] 15-03-PLAN.md — Shared RedisL2Cleanup GET-and-follow traverse+delete routine + 422 missing-roots exception
-- [ ] 15-04-PLAN.md — OrchestrationService per-workflow Start loop + Redis Stop gate/cleanup + DI/controller wiring
-- [ ] 15-05-PLAN.md — OBSERV-REDIS-02 E2E + discipline guards + Phase 14 ValidationOrderFacts amend + REQUIREMENTS/ROADMAP reconcile
+- [x] 15-04-PLAN.md — OrchestrationService per-workflow Start loop + Redis Stop gate/cleanup + DI/controller wiring
+- [x] 15-05-PLAN.md — OBSERV-REDIS-02 E2E + discipline guards + Phase 14 ValidationOrderFacts amend + REQUIREMENTS/ROADMAP reconcile
 **v3.2.0 invariants MUST NOT regress**: Phase 11 D-03 no-traces-backend (`.WithTracing()` stays stripped; no Redis OTel trace instrumentation); Phase 4 `X-Correlation-Id` middleware + RFC 7807 + correlation propagation through OTel to ES (Phase 11 E2E contract); MEL → ES correlation propagation; Mapperly is for entity↔DTO mapping only (L2 DTO → JSON uses `System.Text.Json` directly); INFRA-REDIS-06 soft Redis dependency (CRUD endpoints still serve 200 with Redis down); byte-identical `psql \l` SHA-256.
 
 ### Phase 16: Idempotency + concurrency + L1 cleanup + 3-GREEN closeout
@@ -134,7 +134,7 @@ Plans:
 | 12    | v3.3.0    | 8/8 | Complete    | 2026-05-29 |
 | 13    | v3.3.0    | 3/3 | Complete    | 2026-05-29 |
 | 14    | v3.3.0    | 5/5 | Complete    | 2026-05-29 |
-| 15    | v3.3.0    | 0/0            | Not started | —          |
+| 15    | v3.3.0    | 5/5            | Complete    | 2026-05-29 |
 | 16    | v3.3.0    | 0/0            | Not started | —          |
 
 ---
