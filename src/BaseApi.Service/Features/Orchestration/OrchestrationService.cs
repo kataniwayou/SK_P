@@ -79,7 +79,11 @@ public sealed class OrchestrationService
         _cycleDetector.Validate(snapshot);                                  // 3. no-op P13
         _schemaEdgeValidator.Validate(snapshot);                            // 4. no-op P13
         _payloadConfigSchemaValidator.Validate(snapshot);                   // 5. no-op P13
-        await _redisProjectionWriter.UpsertAsync(snapshot, ct);             // 6. no-op P13
+        // 6. L2 projection write (Plan 15-02). correlationId is currently string.Empty:
+        // Plan 04 wires OrchestrationService to resolve X-Correlation-Id once and pass it
+        // here explicitly (D-01). Until then the call site only needs to satisfy the widened
+        // signature; the writer itself is exercised with a real correlationId by its own facts.
+        await _redisProjectionWriter.UpsertAsync(snapshot, string.Empty, ct);
         // 7. snapshot.Dispose() runs implicitly here AND on any throw above (using declaration).
     }
 
