@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: planning
-stopped_at: Phase 16 context gathered
-last_updated: "2026-05-29T16:46:44.231Z"
+status: executing
+stopped_at: Completed 16-01-PLAN.md
+last_updated: "2026-05-29T17:21:56.990Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 21
-  completed_plans: 21
-  percent: 100
+  total_plans: 26
+  completed_plans: 22
+  percent: 85
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revised 2026-05-28 for Stop scope reduction + correlationId)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship.**
-**Current focus:** Phase 15 — l2-redis-projection-write-stop-existence-check
+**Current focus:** Phase 16 — idempotency-concurrency-l1-cleanup-3-green-closeout
 
 ## Current Position
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
-Phase: 16
-Plan: Not started
-Status: Ready to plan
+Phase: 16 (idempotency-concurrency-l1-cleanup-3-green-closeout) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [██████████] 100%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -129,6 +129,7 @@ Progress: [██████████] 100%
 | Phase 15 P03 | ~5min | 3 tasks | 6 files |
 | Phase 15 P04 | ~15min | 3 tasks | 7 files |
 | Phase 15 P05 | ~20min | 3 tasks | 5 files |
+| Phase 16 P01 | ~3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -359,6 +360,7 @@ Recent decisions affecting current work:
 - Plan 15-05: RedisDisciplineGuardFacts strip C# comments before pattern-matching so doc-comments that name a forbidden pattern to forbid it (IRedisL2Cleanup.cs 'NO KEYS / IServer.Keys()') do not false-positive; No_Mapperly guard scoped to Projection/ folder only (Loading/ Mapperly L1 enrichment is legit, D-05)
 - Plan 15-05: ValidationOrderFacts amended for per-workflow first-failure SCOPE — added one cross-workflow partial-state fact ([A,B] A valid B cycle -> A projected + 422, D-07); existing within-workflow gate-order facts unchanged (single-workflow scope was always correct)
 - Plan 15-05: REQUIREMENTS+ROADMAP Phase 15 reconciled to shipped Stop-deletes/non-idempotent-422/processor-TTL/jobId-NewGuid behavior with inline (amended Phase 15) markers; Phase 16 SC2/SC5 flagged as now-inverted (post-Stop root+step gone, processor intact); OBSERV-REDIS-04 deferred not implemented
+- Plan 16-01: doc-first amendment (D-05) corrected TEST-REDIS-09 + ROADMAP SC2 to the inverted Phase 15 Stop contract (root + per-step removed via GET-and-follow, per-processor TTL'd/intact, repeat Stop -> 422); flagged 15-05 NOTE resolved. Rule 3 fix: rephrased TEST-REDIS-09 history note to avoid the plan's own grep-forbidden 'verified to NOT delete' substring (06-01/08-01 precedent).
 
 ### Roadmap Milestone Log
 
@@ -452,13 +454,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 16 context gathered
-Resume file: --resume-file
+Last session: 2026-05-29T17:21:56.980Z
+Stopped at: Completed 16-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 15 (l2-redis-projection-write-stop-existence-check) — 5 plans — 2026-05-29T13:54:59.360Z
+**Planned Phase:** 16 (idempotency-concurrency-l1-cleanup-3-green-closeout) — 5 plans — 2026-05-29T17:14:46.828Z
