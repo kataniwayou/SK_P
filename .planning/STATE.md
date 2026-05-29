@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: executing
-stopped_at: Completed 16-04-PLAN.md
-last_updated: "2026-05-29T17:51:20.427Z"
+status: verifying
+stopped_at: Completed 16-05-PLAN.md (Phase 16 close gate PASSED — 3x235 GREEN, dual-SHA HELD)
+last_updated: "2026-05-29T18:51:39.274Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 26
-  completed_plans: 25
-  percent: 96
+  completed_plans: 26
+  percent: 100
 ---
 
 # Project State
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 ## Current Position
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
-Phase: 16 (idempotency-concurrency-l1-cleanup-3-green-closeout) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
+Phase: 16 (idempotency-concurrency-l1-cleanup-3-green-closeout) — COMPLETE
+Plan: 5 of 5 (complete)
+Status: Phase complete — ready for verification
 Last activity: 2026-05-29
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -133,6 +133,8 @@ Progress: [██████████] 96%
 | Phase 16 P02 | ~4min | 1 tasks tasks | 1 files files |
 | Phase 16 P03 | ~8min | 2 tasks tasks | 1 file files |
 | Phase 16 P04 | ~9min | 2 tasks | 2 files |
+| Phase 16 P05 | ~10min gate run (3×235 GREEN) + finalization | 2 tasks (1 script-copy + 1 operator checkpoint) | 2 files (2 close-gate scripts) |
+| Phase 16 P05 | ~10min gate run + finalization | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -367,6 +369,7 @@ Recent decisions affecting current work:
 - Plan 16-02: HappyPathE2EFacts drives the full HTTP POST /orchestration/start path (not isolated UpsertAsync) and round-trips all 3 L2 keyspaces via STJ against the locked internal projection records; keys read in default 'D' GUID form, correlationId+jobId asserted, EntryCondition via enum compare. Serves as the positive SCAN control for plan 03. TEST-REDIS-06 closed; 228/228 GREEN.
 - Plan 16-04: idempotency facts use single test(...) commits (no RED→GREEN) — Phase-15 production behavior already shipped; facts LOCK existing contract so they pass first-run
 - Plan 16-04: concurrent Start fact is observational (Task.WhenAll two clients, both 204 + root round-trips, NO winner assertion) to stay non-flaky under last-write-wins (D-01); jobId-changed delta proves second-write-reflected (D-02)
+- Plan 16-05: Accepted the evolved psql \l baseline (37b27e56…f41441) over the stale Phase-12 frozen literal (0d98b0de…0aac127) — the gate's true invariant is BEFORE==AFTER stability, which HELD across the 3x235 GREEN run; operator-approved
 
 ### Roadmap Milestone Log
 
@@ -460,8 +463,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T17:51:20.418Z
-Stopped at: Completed 16-04-PLAN.md
+Last session: 2026-05-29T18:51:39.262Z
+Stopped at: Completed 16-05-PLAN.md (Phase 16 close gate PASSED — 3x235 GREEN, dual-SHA HELD)
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
