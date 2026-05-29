@@ -44,7 +44,22 @@ internal sealed class PayloadConfigSchemaValidator
             if (!schemaCache.TryGetValue(cfgId.Value, out var schema))
             {
                 if (!snapshot.Schemas.TryGetValue(cfgId.Value, out var schemaDto)) continue; // defensive
-                schema = JsonSchema.FromText(schemaDto.Definition);
+                // A persisted Definition normally passed the create-time meta-schema gate
+                // (SchemaCreateDtoValidator), so it should parse. But that invariant is enforced
+                // elsewhere; a Definition written by a future bypassing code path, or a row mutated
+                // directly in the DB, would otherwise throw a raw Json.Schema/JsonException here — which
+                // is NOT an OrchestrationValidationException, so the domain handler bails and it falls
+                // through to FallbackExceptionHandler → HTTP 500. Translate it to the gate's 422 instead.
+                try
+                {
+                    schema = JsonSchema.FromText(schemaDto.Definition);
+                }
+                catch (Exception ex) when (ex is JsonException or JsonSchemaException)
+                {
+                    throw OrchestrationValidationException.PayloadConfigSchema(
+                        assignment.Id,
+                        new[] { $"Config schema '{cfgId.Value}' is not a valid JSON Schema." });
+                }
                 schemaCache[cfgId.Value] = schema;
             }
 
