@@ -8,6 +8,8 @@ v1 delivered a reusable `BaseApi.Core` library plus a runnable `BaseApi.Service`
 
 ## Current Milestone: v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline
 
+**Progress:** Phase 12 of 5 complete (1/5, 20%) — Redis infra + composition + healthcheck + DI registration shipped 2026-05-29 (177/177 facts × 3 GREEN; Redis a healthy 5th compose tier wired into the DI graph with dead-Redis soft-dep resilience; HEALTH-01..05 byte-immutable). Next: Phase 13 (OrchestrationService split + L3 fetch + L1 build).
+
 **Goal:** On `POST /api/v1/orchestration/start`, build a transient in-memory (L1) representation of each requested workflow (validating existence, cycles, schema-edge compatibility, and Payload↔ConfigSchema conformance) and project it into a Redis (L2) materialized view that external consumers read. Stop is an L2-existence check only in v3.3.0 (no eviction — full Stop-side semantics deferred to a later milestone).
 
 **Target features:**
