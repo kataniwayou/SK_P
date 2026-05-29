@@ -41,7 +41,9 @@
   3. The L2 root read-shape (`WorkflowRootProjection` correlationId + fields) now lives in `Messaging.Contracts`; the camelCase `[JsonPropertyName]` wire shape is byte-identical to the shape `BaseApi.Service` previously wrote (no duplicated shape, no wire drift).
   4. `MassTransit` and `MassTransit.RabbitMQ` are pinned at `8.5.5` in Central Package Management with a blocking comment that v9+ is commercial, mirroring the existing Npgsql cautionary pin.
   5. The solution still builds zero-warning Release + Debug and the existing v3.3.0 test suite stays GREEN (the L2 root move is a behavior-preserving using-swap).
-**Plans**: TBD
+**Plans**: 2 plans
+  - [ ] 17-01-PLAN.md — Create Messaging.Contracts leaf (frozen vocabulary + moved L2 records), MassTransit 8.5.5 CPM pins, sln + ProjectReference wiring
+  - [ ] 17-02-PLAN.md — Using-swap all 8 consumers to the new namespace + terminal gate (zero-warning Release/Debug, 3-consecutive-GREEN, dual-snapshot BEFORE=AFTER)
 
 ### Phase 18: BaseConsole.Core Library
 **Goal**: A reusable `BaseConsole.Core` Generic-Host library exists — the console-side mirror of `BaseApi.Core` — providing observability, Redis, embedded health probes, and a MassTransit bus skeleton with correlation filters, validated standalone before any concrete console inherits it.
