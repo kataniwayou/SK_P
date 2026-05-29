@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
 status: executing
-stopped_at: Completed 12-01-PLAN.md
-last_updated: "2026-05-29T03:51:41.111Z"
-last_activity: 2026-05-29 -- Completed 12-01-PLAN.md (StackExchange.Redis CPM pin)
+stopped_at: Completed 12-02-PLAN.md
+last_updated: "2026-05-29T03:57:58.204Z"
+last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 8
-  completed_plans: 1
-  percent: 13
+  completed_plans: 2
+  percent: 25
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
 Phase: 12 (redis-infra-composition-healthcheck-di-registration) — EXECUTING
-Plan: 2 of 8
-Status: Executing Phase 12
-Last activity: 2026-05-29 -- Completed 12-01-PLAN.md (StackExchange.Redis CPM pin)
+Plan: 3 of 8
+Status: Ready to execute
+Last activity: 2026-05-29
 
-Progress: [█░░░░░░░░░] 13%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -105,6 +105,7 @@ Progress: [█░░░░░░░░░] 13%
 | Phase 11 P08b | ~11min | 4 tasks | 3 files |
 | Phase 11 P08c | ~75min | 3 tasks (Task 1 deletion + 4 inline rephrases; Task 1.5 residual orphan rephrase; Task 2 closing-cadence checkpoint; Task 3 closing-narrative commit) | 6 modified + 1 deleted + 1 created SUMMARY + 2 updated for closing (ROADMAP + STATE) |
 | Phase 12 P01 | 6min | 3 tasks tasks | 3 files files |
+| Phase 12 P02 | 4min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -283,6 +284,8 @@ Recent decisions affecting current work:
 - Plan 11-08c: Phase 11 closing plan — `tests/BaseApi.Tests/Observability/OtelCollectorFixture.cs` DELETED via `git rm` (258 lines; commit `5c13683`) with 4 inline Rule 1 fix-forward doc-comment rephrases bundled into the same atomic commit (TestObservabilityController.cs cref + Phase11WebAppFactory.cs 3 historical refs + ValidationWebAppFactory.cs unsealing-precedent doc + ElasticsearchTestClient.cs inline comment — all rephrased to past-tense citations of "the retired Phase 5 fixture"). Task 2 closing-grep uncovered 2 residual doc-comment references that Task 1 missed (ObservabilityServiceCollectionExtensions.cs XML summary mentioned `<c>.WithTracing(...)</c> block` + CollectionDefinitions.cs XML summary cited `tests/.otel-out/telemetry.jsonl`) — swept in commit `c7050f3` via the same educational-rephrase pattern. Phase 3 D-18 cadence achieved on FIRST attempt at 3 consecutive GREEN: Run 1: 163s, Run 2: 161s, Run 3: 162s (142/142 facts each; wall-clock variance ≈1.2%; no warm-up signature) — structural improvement over Plans 08-08 / 09-03 / 10-05 which all needed retry cycles, attributed to the migrated polling-based test surface no longer racing a per-test file-exporter handle. Phase 3 D-15 cleanup discipline preserved byte-identically: psql `\l` SHA-256 BEFORE/AFTER both `0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127` (the 4th consecutive phase to record this exact baseline — Phase 8 P08 + Plan 09-03 + Plan 10-05 + Plan 11-08c verbatim; 4 baseline DBs; zero leaked `stepsdb_test_*`). Zero orphan references anywhere in `src/**/*.cs` + `tests/**/*.cs` for `OtelCollectorFixture | OtelEndOfSuiteCleanup | TraceExportTests | .WithTracing | tests/.otel-out`. Reusable patterns documented: phase-close-via-3-task-plan + residual-doc-comment-rephrase-as-fix-forward + closing-cadence-on-first-attempt structural-improvement claim.
 - Phase 11 COMPLETE — 10-commit forensic-bisect sequence intact (7041adb + a3c0b20 + 1f8eb69 + b40299c + 0fa325e + 765b3fc + e3016e2 + 481a607 + c40d062 + 5c13683): doc-first REQUIREMENTS.md amendment + compose backends + collector rewire + prometheus.yml + SDK strip + test infrastructure (Phase11WebAppFactory + ES/Prom test clients) + E2E round-trip facts + HealthEndpointsTests rebase + 3-test migration + OtelCollectorFixture deletion. Plus 1 fix-forward commit (c7050f3 — residual doc-comment rephrases) and the closing docs commit. All 4 new REQ-IDs (OBSERV-13, OBSERV-14, INFRA-08, TEST-07) closed; OBSERV-12 supersession finalized across SDK + collector + spec; INFRA-06 amendment locked in (4-service compose graph live + healthy). System is shippable end-to-end with the post-Phase-11 stack — ES :9200 green + Prom :9090 healthy + Collector :8889/:13133 up + Postgres :5432 healthy + 142/142 test suite GREEN. Forensic property preserved: each Phase 11 commit independently revertable per atomic-commit convention.
 - Plan 12-01: StackExchange.Redis pinned at exactly 2.13.1 in CPM (INFRA-REDIS-03 D-lock); both BaseApi.Service + BaseApi.Tests consume Version-less; OBSERV-REDIS-01 negative-grep (no OpenTelemetry.Instrumentation.StackExchangeRedis + 5 other forbidden pkgs) GREEN across all csproj/props; Release build 0-warning; HEALTH-01..05 byte-immutable; no EF migration
+- Plan 12-02: sk-redis added as 5th compose tier (redis:7.4.9-alpine, container_name sk-redis, ports 6380:6379, command --save "" --appendonly no, healthcheck CMD redis-cli ping 5s/3s/10/5s); persistence disabled (D-03, no volumes entry); RepoDigest sha256:6ab0b6e7...1ab99
+- Plan 12-02: baseapi-service gains ConnectionStrings__Redis=redis:6379,abortConnect=false,connectTimeout=5000 (D-04 compose-DNS hostname, abortConnect=false boot-safety, no allowAdmin per T-12-02-04) + depends_on redis:service_healthy; runtime-verified healthy + PONG, host port 6379 confirmed UNBOUND (Plan 12-06 dead-port), git diff additions-only (T-12-02-06), HEALTH source files byte-unchanged (D-05/D-06)
 
 ### Roadmap Milestone Log
 
@@ -345,8 +348,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T03:51:41.100Z
-Stopped at: Completed 12-01-PLAN.md
+Last session: 2026-05-29T03:57:45.981Z
+Stopped at: Completed 12-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each — Run 1: 163s + Run 2: 161s + Run 3: 162s; byte-identical psql `\l` SHA-256 BEFORE/AFTER `0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127`; zero leaked test DBs; zero orphan references in `src/**/*.cs` + `tests/**/*.cs` for retired Phase 5 symbols; all 4 new REQ-IDs closed — OBSERV-13, OBSERV-14, INFRA-08, TEST-07; OBSERV-12 superseded; INFRA-06 amendment locked in)

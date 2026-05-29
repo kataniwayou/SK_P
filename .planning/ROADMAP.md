@@ -48,8 +48,8 @@
   5. Phase-close gate extended: `redis-cli --scan | sort | sha256sum` BEFORE = AFTER across the full integration suite, in addition to the v3.2.0 `psql \l` SHA-256 invariant.
 **Plans:** 8 plans
 Plans:
-- [ ] 12-01-PLAN.md — CPM pin StackExchange.Redis 2.13.1 + csproj references + OBSERV-REDIS-01 negative-grep
-- [ ] 12-02-PLAN.md — compose.yaml redis service block (7.4.x-alpine, sk-redis, 6380:6379, ping healthcheck) + baseapi-service depends_on + env var
+- [x] 12-01-PLAN.md — CPM pin StackExchange.Redis 2.13.1 + csproj references + OBSERV-REDIS-01 negative-grep
+- [x] 12-02-PLAN.md — compose.yaml redis service block (7.4.x-alpine, sk-redis, 6380:6379, ping healthcheck) + baseapi-service depends_on + env var
 - [ ] 12-03-PLAN.md — appsettings.json (Docker-internal) + appsettings.Development.json (host-side) + Redis defaults section (KeyPrefix=skp:, JsonOptions=default)
 - [ ] 12-04-PLAN.md — RedisProjectionOptions POCO + RedisServiceCollectionExtensions.AddBaseApiRedis + composition-root call #7
 - [ ] 12-05-PLAN.md — RedisFixture + RedisFixtureFacts + Phase8WebAppFactory in-place D-07/D-08 extension (TEST-REDIS-01..03)

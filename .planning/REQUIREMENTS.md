@@ -10,8 +10,10 @@
 
 ### INFRA-REDIS — Redis as a new infrastructure tier
 
-- [ ] **INFRA-REDIS-01** — `compose.yaml` runs Redis alongside Postgres / Elasticsearch / Prometheus / OTel Collector, pinned to a Redis 7.4.x-alpine image (Redis 7.4 line is RSALv2/SSPLv1; explicitly NOT Redis 8.0+ which is AGPLv3-encumbered).
-- [ ] **INFRA-REDIS-02** — `redis-cli ping` healthcheck on the Redis compose service with `start_period: 5s` + `interval: 5s` + `retries: 10`; `baseapi-service` declares `depends_on: redis: condition: service_healthy`.
+- [x] **INFRA-REDIS-01
+** — `compose.yaml` runs Redis alongside Postgres / Elasticsearch / Prometheus / OTel Collector, pinned to a Redis 7.4.x-alpine image (Redis 7.4 line is RSALv2/SSPLv1; explicitly NOT Redis 8.0+ which is AGPLv3-encumbered).
+- [x] **INFRA-REDIS-02
+** — `redis-cli ping` healthcheck on the Redis compose service with `start_period: 5s` + `interval: 5s` + `retries: 10`; `baseapi-service` declares `depends_on: redis: condition: service_healthy`.
 - [x] **INFRA-REDIS-03
 ** — `StackExchange.Redis 2.13.1` (or current 2.13.x at commit time) added to `Directory.Packages.props` with CPM-pinning; consumed by `src/BaseApi.Service/BaseApi.Service.csproj`.
 - [ ] **INFRA-REDIS-04** — `ConnectionStrings:Redis` in `appsettings.json` and `appsettings.Development.json`; format includes `abortConnect=false,connectTimeout=5000` (production-must-have per StackExchange.Redis maintainer guidance).
