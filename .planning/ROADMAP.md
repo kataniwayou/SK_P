@@ -30,7 +30,7 @@
 
 - [x] **Phase 12: Redis infra + composition + healthcheck + DI registration** — Land Redis as a new compose-stack tier, wire `AddBaseApiRedis`, ship `RedisFixture` test infra (8/8 plans) — 2026-05-29
 - [x] **Phase 13: OrchestrationService split + L3 fetch + L1 build** — Decompose OrchestrationService into seams + load L1 snapshot (no validation, no Redis write yet) — 2026-05-29
-- [ ] **Phase 14: Validation gates (DFS + schema-edge + payload-config-schema)** — Cycle detection, missing-step, schema-edge compatibility, and Payload↔ConfigSchema validators in mandatory order
+- [x] **Phase 14: Validation gates (DFS + schema-edge + payload-config-schema)** — Cycle detection, missing-step, schema-edge compatibility, and Payload↔ConfigSchema validators in mandatory order (completed 2026-05-29)
 - [ ] **Phase 15: L2 Redis projection write + Stop existence check** — RedisProjectionWriter ships 3 keyspaces, Start contract finalized, Stop becomes Redis existence-check
 - [ ] **Phase 16: Idempotency + concurrency + L1 cleanup + 3-GREEN closeout** — Idempotency/concurrency regression facts, end-to-end happy path, v3.3.0 close gate
 
@@ -90,7 +90,7 @@ Plans:
 - [x] 14-02-PLAN.md — CycleDetector: two-set iterative DFS cycle + missing-step gate (+ CycleDetectionFacts, MissingStepFacts)
 - [x] 14-03-PLAN.md — SchemaEdgeValidator: independent edge walk, strict Guid equality, null-passes (+ SchemaEdgeFacts)
 - [x] 14-04-PLAN.md — PayloadConfigSchemaValidator: JsonSchema.Net evaluate + per-Start parse cache (+ PayloadConfigSchemaFacts)
-- [ ] 14-05-PLAN.md — ValidationOrderFacts (gate-order short-circuit + L1 cleanup on failure) + regression sweep + STATE traceability
+- [x] 14-05-PLAN.md — ValidationOrderFacts (gate-order short-circuit + L1 cleanup on failure) + regression sweep + STATE traceability
 **v3.2.0 invariants MUST NOT regress**: Phase 8 JSON Schema SSRF lockdown (`SchemaRegistry.Global.Fetch = (_, _) => null` + draft 2020-12 + `<500ms` regression assertion); Phase 4 RFC 7807 + X-Correlation-Id + Postgres SQLSTATE → HTTP mapping; Phase 6 FluentValidation 12 wiring (no `AddFluentValidation`; manual `ValidateAsync`); Assignment-PUT / Assignment-POST remain "valid JSON only" (VALID-21 only closes at orchestration-start); Mapperly RMG codes; byte-identical `psql \l` SHA-256.
 
 ### Phase 15: L2 Redis projection write + Stop existence check
@@ -126,7 +126,7 @@ Plans:
 | 1-11  | v3.2.0    | 41/41          | Complete    | 2026-05-28 |
 | 12    | v3.3.0    | 8/8 | Complete    | 2026-05-29 |
 | 13    | v3.3.0    | 3/3 | Complete    | 2026-05-29 |
-| 14    | v3.3.0    | 5/5            | Complete    | 2026-05-29 |
+| 14    | v3.3.0    | 5/5 | Complete    | 2026-05-29 |
 | 15    | v3.3.0    | 0/0            | Not started | —          |
 | 16    | v3.3.0    | 0/0            | Not started | —          |
 
