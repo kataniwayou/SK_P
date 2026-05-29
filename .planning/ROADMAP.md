@@ -46,7 +46,16 @@
   3. With Redis stopped, `GET /health/live` returns 200 AND `GET /health/ready` returns 200 (soft dependency) AND the v3.2.0 HEALTH-01..05 acceptance facts still pass byte-for-byte.
   4. `Phase8WebAppFactory` (or its v3.3.0 successor) boots with the `RedisFixture` attached; per-test-class `KeyPrefix = "test:cls-{Guid:N}:"` isolation works and `RedisFixture.DisposeAsync` SCAN-asserts zero residual keys (fail-loud on violation; `FLUSHDB` never called).
   5. Phase-close gate extended: `redis-cli --scan | sort | sha256sum` BEFORE = AFTER across the full integration suite, in addition to the v3.2.0 `psql \l` SHA-256 invariant.
-**Plans**: TBD
+**Plans:** 8 plans
+Plans:
+- [ ] 12-01-PLAN.md — CPM pin StackExchange.Redis 2.13.1 + csproj references + OBSERV-REDIS-01 negative-grep
+- [ ] 12-02-PLAN.md — compose.yaml redis service block (7.4.x-alpine, sk-redis, 6380:6379, ping healthcheck) + baseapi-service depends_on + env var
+- [ ] 12-03-PLAN.md — appsettings.json (Docker-internal) + appsettings.Development.json (host-side) + Redis defaults section (KeyPrefix=skp:, JsonOptions=default)
+- [ ] 12-04-PLAN.md — RedisProjectionOptions POCO + RedisServiceCollectionExtensions.AddBaseApiRedis + composition-root call #7
+- [ ] 12-05-PLAN.md — RedisFixture + RedisFixtureFacts + Phase8WebAppFactory in-place D-07/D-08 extension (TEST-REDIS-01..03)
+- [ ] 12-06-PLAN.md — HealthDeadRedisFixture + 2 soft-dep acceptance facts (INFRA-REDIS-06 + TEST-REDIS-05)
+- [ ] 12-07-PLAN.md — BaseApiCompositionFacts + RedisProjectionOptionsBindingFacts + ComposeYamlFacts + AppsettingsFacts (CI-enforceable INFRA-COMP-01..04 + INFRA-REDIS-01..05 guards)
+- [ ] 12-08-PLAN.md — Phase-close gate scripts (PowerShell + Bash) + 3-GREEN cadence + psql\\l + redis-cli --scan SHA-256 BEFORE=AFTER + STATE.md close entry (TEST-REDIS-04)
 **v3.2.0 invariants MUST NOT regress**: HEALTH-01..05 (live never touches external state; ready tag discipline); INFRA-06 (compose stack still boots end-to-end); Phase 11 D-03 (no traces backend — do NOT add `OpenTelemetry.Instrumentation.StackExchangeRedis`); Mapperly RMG007/RMG012/RMG020/RMG089 build-error discipline; byte-identical `psql \l` SHA-256 `0d98b0de…0aac127`.
 
 ### Phase 13: OrchestrationService split + L3 fetch + L1 build
@@ -106,11 +115,11 @@
 | Phase | Milestone | Plans Complete | Status      | Completed  |
 | ----- | --------- | -------------- | ----------- | ---------- |
 | 1-11  | v3.2.0    | 41/41          | Complete    | 2026-05-28 |
-| 12    | v3.3.0    | 0/0            | Not started | —          |
+| 12    | v3.3.0    | 1/8            | In progress | —          |
 | 13    | v3.3.0    | 0/0            | Not started | —          |
 | 14    | v3.3.0    | 0/0            | Not started | —          |
 | 15    | v3.3.0    | 0/0            | Not started | —          |
 | 16    | v3.3.0    | 0/0            | Not started | —          |
 
 ---
-*v3.3.0 roadmap created 2026-05-28 via `/gsd-new-milestone`. Next: `/gsd-discuss-phase 12` to plan Phase 12.*
+*v3.3.0 roadmap created 2026-05-28 via `/gsd-new-milestone`. Phase 12 planned 2026-05-29 via `/gsd-plan-phase 12` (8 plans, 4 waves). Next: `/gsd-execute-phase 12` to begin Wave 1.*

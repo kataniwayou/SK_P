@@ -12,7 +12,8 @@
 
 - [ ] **INFRA-REDIS-01** — `compose.yaml` runs Redis alongside Postgres / Elasticsearch / Prometheus / OTel Collector, pinned to a Redis 7.4.x-alpine image (Redis 7.4 line is RSALv2/SSPLv1; explicitly NOT Redis 8.0+ which is AGPLv3-encumbered).
 - [ ] **INFRA-REDIS-02** — `redis-cli ping` healthcheck on the Redis compose service with `start_period: 5s` + `interval: 5s` + `retries: 10`; `baseapi-service` declares `depends_on: redis: condition: service_healthy`.
-- [ ] **INFRA-REDIS-03** — `StackExchange.Redis 2.13.1` (or current 2.13.x at commit time) added to `Directory.Packages.props` with CPM-pinning; consumed by `src/BaseApi.Service/BaseApi.Service.csproj`.
+- [x] **INFRA-REDIS-03
+** — `StackExchange.Redis 2.13.1` (or current 2.13.x at commit time) added to `Directory.Packages.props` with CPM-pinning; consumed by `src/BaseApi.Service/BaseApi.Service.csproj`.
 - [ ] **INFRA-REDIS-04** — `ConnectionStrings:Redis` in `appsettings.json` and `appsettings.Development.json`; format includes `abortConnect=false,connectTimeout=5000` (production-must-have per StackExchange.Redis maintainer guidance).
 - [ ] **INFRA-REDIS-05** — `Redis:KeyPrefix` configuration section (default `"skp:"`); all L2 keys are written with this prefix.
 - [ ] **INFRA-REDIS-06** — Soft Redis dependency: `/health/ready` does NOT include a Redis check. CRUD endpoints continue to serve 200 even if Redis is down; only `/api/v1/orchestration/{start,stop}` fail with 500 + RFC 7807 when Redis is unreachable. Phase 5 HEALTH-01..05 contracts unchanged.
