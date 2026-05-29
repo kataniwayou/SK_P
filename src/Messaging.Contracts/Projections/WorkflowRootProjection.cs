@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace BaseApi.Service.Features.Orchestration.Projection;
+namespace Messaging.Contracts.Projections;
 
 /// <summary>
 /// L2 root projection value for the <c>{prefix}{workflowId}</c> key (L2-PROJECT-03).
@@ -8,7 +8,7 @@ namespace BaseApi.Service.Features.Orchestration.Projection;
 /// consumers trace a projection back to its build request. The <c>[property: JsonPropertyName]</c>
 /// targets are load-bearing (RESEARCH Pitfall 1).
 /// </summary>
-internal sealed record WorkflowRootProjection(
+public sealed record WorkflowRootProjection(
     [property: JsonPropertyName("entryStepIds")] List<Guid> EntryStepIds,
     [property: JsonPropertyName("cron")]          string? Cron,
     [property: JsonPropertyName("jobId")]         Guid JobId,
