@@ -448,17 +448,19 @@ This is a code-refactor + new-read-path phase with no rename and no schema chang
 
 **Note:** A1 is the only assumption a planner must actively confirm (one `rg "InternalsVisibleTo" src/BaseApi.Service`). A2/A3 are self-resolving by copying existing patterns / are Phase 15's concern.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Logger placement for the `Dispose()` debug line (D-04).**
    - What we know: D-04 requires `ILogger.LogDebug("L1 snapshot disposed")`. The snapshot is a pure-data record (D-03).
    - What's unclear: whether the log line lives inside `Dispose()` (snapshot needs an injected `ILogger`, slightly muddying "pure data") or is emitted by the orchestrator/loader around disposal.
-   - Recommendation: Planner's call. Cleanest: have the loader pass an `ILogger` into the snapshot, OR log from `StartAsync` immediately after the `using` scope is set up isn't possible (disposal is implicit) — so either inject the logger into the snapshot, or have the orchestrator catch the dispose via a small wrapper. Lean toward injecting `ILogger` into the snapshot record (it stays "data + one diagnostic line"); the `IsDisposed` flag is the test's actual assertion target, not the log line.
+   - Recommendation: Planner's call. Cleanest: have the loader pass an `ILogger` into the snapshot. Lean toward injecting `ILogger` into the snapshot record (it stays "data + one diagnostic line"); the `IsDisposed` flag is the test's actual assertion target, not the log line.
+   - RESOLVED: the `WorkflowGraphSnapshot` record now owns an injected `ILogger<WorkflowGraphSnapshot>` (positional ctor member) and emits the literal `Logger.LogDebug("L1 snapshot disposed")` from inside its own `Dispose()` at the moment of disposal (Plan 13-01). The loader holds an `ILogger<WorkflowGraphSnapshot>` and constructs the snapshot via `new WorkflowGraphSnapshot(_logger)` (Plans 13-01/13-02). This supersedes the earlier loader-emitted build-count idea — the locked D-04 literal lives with disposal observability, exactly where D-04 specifies. The SC4 test (Plan 13-03) still asserts `IsDisposed == true` + empty dicts (unaffected).
 
 2. **Whether StartAsync's existence-check (D-08) and StopAsync share a private helper.**
    - What we know: D-07 says Start/Stop no longer share a *method*; D-08 keeps the existence check as Start's first step; the logic is identical to StopAsync's body.
    - What's unclear: duplicate the ~6 lines or extract a private `ExistenceCheckAsync` helper called by both.
    - Recommendation: Extract a private helper (not a public shared method) — satisfies D-07 (distinct public Start/Stop surfaces) while avoiding duplication. Planner decides; either is compliant.
+   - RESOLVED: a private `ExistenceCheckAsync` helper is shared by both `StartAsync` (its first step, D-08) and `StopAsync` (its whole body in P13, D-07); Start and Stop remain distinct public methods (Plan 13-01, Task 3).
 
 ## Environment Availability
 
