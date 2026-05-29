@@ -18,7 +18,7 @@ namespace BaseApi.Service.Features.Orchestration;
 /// entity Guids and flattened schema-validation messages — never stack traces or internal type names.
 /// </para>
 /// </summary>
-public sealed class OrchestrationValidationException : Exception
+public sealed partial class OrchestrationValidationException : Exception
 {
     /// <summary>Gate discriminator: "cycle" | "missingStep" | "schemaEdge" | "payloadConfigSchema".</summary>
     public string Gate { get; }
