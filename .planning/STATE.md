@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
 status: executing
-stopped_at: Completed 12-05-PLAN.md
-last_updated: "2026-05-29T04:53:27.429Z"
+stopped_at: Completed 12-06-PLAN.md
+last_updated: "2026-05-29T05:00:23.688Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 8
-  completed_plans: 5
-  percent: 63
+  completed_plans: 6
+  percent: 75
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
 Phase: 12 (redis-infra-composition-healthcheck-di-registration) — EXECUTING
-Plan: 6 of 8
+Plan: 7 of 8
 Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [██████░░░░] 63%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -109,6 +109,7 @@ Progress: [██████░░░░] 63%
 | Phase 12 P03 | 2min | 3 tasks | 2 files |
 | Phase 12 P04 | ~12min | 1 tasks | 5 files |
 | Phase 12 P05 | ~25min | 2 tasks tasks | 3 files files |
+| Phase 12 P06 | ~5min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -296,6 +297,7 @@ Recent decisions affecting current work:
 - Plan 12-05: RedisFixture (public sealed IAsyncLifetime) per-class localhost:6380 multiplexer + test:cls-{Guid:N}: KeyPrefix; DisposeAsync SCAN(KeysAsync 250)+DEL+re-SCAN(1000)+assert-zero with FLUSHDB-forbidden throw — no FLUSHDB/FLUSHALL, no synchronous IServer.Keys() (L2-PROJECT-07 reference pattern from day one)
 - Plan 12-05: Phase8WebAppFactory extended IN-PLACE (D-07) — 4-arg ctor (skipPostgres/connStr/skipRedis/redisConnStr) for 12-06 HealthDeadRedisFixture, RedisConnectionString/RedisKeyPrefix/RedisMultiplexer props, defensive Postgres-rollback in InitializeAsync (Pitfall 4), Redis-first DisposeAsync, AddInMemoryCollection Redis-key injection (D-08, NO env-var workaround); 142 baseline + 6 new = 148 GREEN x3
 - Plan 12-05 deviation (Rule 1): residual-key fact made deterministic by pre-seeding 300 bulk keys to widen the fixture DEL->re-SCAN window + tight side-channel reseed loop (single-key plan suggestion failed 2/4 full-suite runs)
+- Plan 12-06: HealthDeadRedisFixture co-located as nested private sealed class in HealthEndpointsTests.cs (mirrors HealthDeadPostgresFixture analog, D-07); Pitfall 3 pre-flight TCP probe to localhost:6379 guards the D-01 dead-port assumption; 4-arg Phase8WebAppFactory ctor keeps live Postgres (skipPostgresFixture=false) while injecting dead Redis via AddInMemoryCollection (D-08, no env-var). Both /health/live + /health/ready return 200 with Redis unreachable — INFRA-REDIS-06 soft-dep closed; HEALTH-01..05 byte-immutable; full suite 150 GREEN
 
 ### Roadmap Milestone Log
 
@@ -358,8 +360,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T04:52:54.516Z
-Stopped at: Completed 12-05-PLAN.md
+Last session: 2026-05-29T05:00:16.854Z
+Stopped at: Completed 12-06-PLAN.md
 Resume file: None
 
 **Completed Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each — Run 1: 163s + Run 2: 161s + Run 3: 162s; byte-identical psql `\l` SHA-256 BEFORE/AFTER `0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127`; zero leaked test DBs; zero orphan references in `src/**/*.cs` + `tests/**/*.cs` for retired Phase 5 symbols; all 4 new REQ-IDs closed — OBSERV-13, OBSERV-14, INFRA-08, TEST-07; OBSERV-12 superseded; INFRA-06 amendment locked in)

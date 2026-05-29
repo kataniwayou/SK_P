@@ -20,7 +20,8 @@
 ** — `ConnectionStrings:Redis` in `appsettings.json` and `appsettings.Development.json`; format includes `abortConnect=false,connectTimeout=5000` (production-must-have per StackExchange.Redis maintainer guidance).
 - [x] **INFRA-REDIS-05
 ** — `Redis:KeyPrefix` configuration section (default `"skp:"`); all L2 keys are written with this prefix.
-- [ ] **INFRA-REDIS-06** — Soft Redis dependency: `/health/ready` does NOT include a Redis check. CRUD endpoints continue to serve 200 even if Redis is down; only `/api/v1/orchestration/{start,stop}` fail with 500 + RFC 7807 when Redis is unreachable. Phase 5 HEALTH-01..05 contracts unchanged.
+- [x] **INFRA-REDIS-06
+** — Soft Redis dependency: `/health/ready` does NOT include a Redis check. CRUD endpoints continue to serve 200 even if Redis is down; only `/api/v1/orchestration/{start,stop}` fail with 500 + RFC 7807 when Redis is unreachable. Phase 5 HEALTH-01..05 contracts unchanged.
 
 ### INFRA-COMP — Composition root + DI
 
@@ -101,7 +102,8 @@
 - [x] **TEST-REDIS-03
 ** — `RedisFixture.DisposeAsync` runs `SCAN MATCH "{KeyPrefix}*"` + `KeyDeleteAsync(keys)`. Then re-`SCAN` with the same prefix and ASSERT count == 0 — throws on violation (fail-loud; analogue of the Phase 3 D-15 byte-identical psql\l discipline). `FLUSHDB` is FORBIDDEN (destroys keys from parallel test classes).
 - [ ] **TEST-REDIS-04** — Phase-close gate is extended: in addition to the v3.2.0 `psql \l` SHA-256 BEFORE=AFTER snapshot, the new `redis-cli --scan | sort | sha256sum` BEFORE=AFTER snapshot must be byte-identical across the full test suite.
-- [ ] **TEST-REDIS-05** — New `HealthDeadRedisFixture` extends `Phase8WebAppFactory` with a dead Redis port (e.g., `localhost:6380`) to prove `/health/live` stays 200 when Redis is down. (Since INFRA-REDIS-06 makes Redis a soft dependency, `/health/ready` ALSO stays 200 when Redis is down — only Start/Stop fail. Both behaviors are tested.)
+- [x] **TEST-REDIS-05** — New `HealthDeadRedisFixture` extends `Phase8WebAppFactory` with a dead Redis port (e.g., `localhost:6380`) to prove `/health/live` stays 200 when Redis is down. (Since INFRA-REDIS-06
+ makes Redis a soft dependency, `/health/ready` ALSO stays 200 when Redis is down — only Start/Stop fail. Both behaviors are tested.)
 - [ ] **TEST-REDIS-06** — Integration facts for the full Start happy-path: real Postgres + real Redis + 3-keyspace assertion (root key shape, per-step chain, per-processor body). Each fact asserts the L2 record matches expected JSON via System.Text.Json deserialization round-trip.
 - [ ] **TEST-REDIS-07** — Integration facts for each validation gate's failure path: cycle-detected workflow → 422 + error body shape; missing-next-step → 422; schema-edge mismatch → 422; payload-vs-config-schema failure → 422; all gate failures verified to NOT write to Redis (`SCAN` assertion that no keys exist for the failed workflowId).
 - [ ] **TEST-REDIS-08** — Integration facts for the Start idempotency contract: Start twice with same WorkflowIds → L2 keys reflect the second write; concurrent Start regression test (two parallel HTTP requests) documents the last-write-wins / partial-state-interleave behavior.
