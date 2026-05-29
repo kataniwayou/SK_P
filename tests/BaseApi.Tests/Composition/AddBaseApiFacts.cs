@@ -38,6 +38,12 @@ public sealed class AddBaseApiFacts
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:Postgres"] = TestConnectionString,
+                // Phase 12 (Plan 12-04): AddBaseApi now chains AddBaseApiRedis(cfg) as call #7,
+                // which fail-fasts via RequireConnectionString("Redis"). No test in this file
+                // resolves IConnectionMultiplexer, so the multiplexer's lazy Connect (D-17) never
+                // fires; abortConnect=false keeps even an eager probe non-fatal. The value is
+                // exercised only by the AddBaseApiRedis fail-fast guard, not a live connection.
+                ["ConnectionStrings:Redis"]    = "localhost:6379,abortConnect=false",
                 ["Service:Name"]               = "sk-api-test",
                 ["Service:Version"]            = "0.0.0-test",
             }).Build();

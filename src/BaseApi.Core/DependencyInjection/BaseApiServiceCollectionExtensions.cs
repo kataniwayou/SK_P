@@ -30,7 +30,8 @@ public static class BaseApiServiceCollectionExtensions
             .AddBaseApiErrorHandling()                                           // 3 — Phase 4
             .AddBaseApiHttp(cfg)                                                 // 4 — Phase 7 NEW
             .AddBaseApiValidation(typeof(TDbContext).Assembly)                   // 5 — Phase 6 (already public)
-            .AddBaseApiMapping(typeof(TDbContext).Assembly);                     // 6 — Phase 6 (already public)
+            .AddBaseApiMapping(typeof(TDbContext).Assembly)                      // 6 — Phase 6 (already public)
+            .AddBaseApiRedis(cfg);                                               // 7 — Phase 12 NEW (INFRA-COMP-01; D-14)
     //  Observability is chained separately on the builder in Program.cs because it needs
     //  builder.Logging (ILoggingBuilder) — IServiceCollection alone cannot wire MEL.
 }

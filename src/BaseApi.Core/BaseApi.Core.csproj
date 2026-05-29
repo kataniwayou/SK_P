@@ -88,4 +88,13 @@
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Phase 12 Redis L2 projection client (INFRA-REDIS-03 / INFRA-COMP-02). Pin lives in
+         Directory.Packages.props (StackExchange.Redis 2.13.1, Plan 12-01 D / CPM). The
+         RedisServiceCollectionExtensions.AddBaseApiRedis Singleton multiplexer (Plan 12-04)
+         consumes IConnectionMultiplexer + ConnectionMultiplexer from this package.
+         Version resolves from Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
 </Project>
