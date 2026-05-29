@@ -89,7 +89,7 @@ Plans:
 - [x] 14-01-PLAN.md — 422 error path (OrchestrationValidationException + handler), D-04 split-Fallback, shared JsonSchemaConfig + SchemaDtoValidator refactor (foundation)
 - [x] 14-02-PLAN.md — CycleDetector: two-set iterative DFS cycle + missing-step gate (+ CycleDetectionFacts, MissingStepFacts)
 - [x] 14-03-PLAN.md — SchemaEdgeValidator: independent edge walk, strict Guid equality, null-passes (+ SchemaEdgeFacts)
-- [ ] 14-04-PLAN.md — PayloadConfigSchemaValidator: JsonSchema.Net evaluate + per-Start parse cache (+ PayloadConfigSchemaFacts)
+- [x] 14-04-PLAN.md — PayloadConfigSchemaValidator: JsonSchema.Net evaluate + per-Start parse cache (+ PayloadConfigSchemaFacts)
 - [ ] 14-05-PLAN.md — ValidationOrderFacts (gate-order short-circuit + L1 cleanup on failure) + regression sweep + STATE traceability
 **v3.2.0 invariants MUST NOT regress**: Phase 8 JSON Schema SSRF lockdown (`SchemaRegistry.Global.Fetch = (_, _) => null` + draft 2020-12 + `<500ms` regression assertion); Phase 4 RFC 7807 + X-Correlation-Id + Postgres SQLSTATE → HTTP mapping; Phase 6 FluentValidation 12 wiring (no `AddFluentValidation`; manual `ValidateAsync`); Assignment-PUT / Assignment-POST remain "valid JSON only" (VALID-21 only closes at orchestration-start); Mapperly RMG codes; byte-identical `psql \l` SHA-256.
 
