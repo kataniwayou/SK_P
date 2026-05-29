@@ -28,7 +28,7 @@
 
 ### v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline (Phases 12-16)
 
-- [ ] **Phase 12: Redis infra + composition + healthcheck + DI registration** — Land Redis as a new compose-stack tier, wire `AddBaseApiRedis`, ship `RedisFixture` test infra
+- [x] **Phase 12: Redis infra + composition + healthcheck + DI registration** — Land Redis as a new compose-stack tier, wire `AddBaseApiRedis`, ship `RedisFixture` test infra (8/8 plans) — 2026-05-29
 - [ ] **Phase 13: OrchestrationService split + L3 fetch + L1 build** — Decompose OrchestrationService into seams + load L1 snapshot (no validation, no Redis write yet)
 - [ ] **Phase 14: Validation gates (DFS + schema-edge + payload-config-schema)** — Cycle detection, missing-step, schema-edge compatibility, and Payload↔ConfigSchema validators in mandatory order
 - [ ] **Phase 15: L2 Redis projection write + Stop existence check** — RedisProjectionWriter ships 3 keyspaces, Start contract finalized, Stop becomes Redis existence-check
@@ -55,7 +55,7 @@ Plans:
 - [x] 12-05-PLAN.md — RedisFixture + RedisFixtureFacts + Phase8WebAppFactory in-place D-07/D-08 extension (TEST-REDIS-01..03)
 - [x] 12-06-PLAN.md — HealthDeadRedisFixture + 2 soft-dep acceptance facts (INFRA-REDIS-06 + TEST-REDIS-05)
 - [x] 12-07-PLAN.md — BaseApiCompositionFacts + RedisProjectionOptionsBindingFacts + ComposeYamlFacts + AppsettingsFacts (CI-enforceable INFRA-COMP-01..04 + INFRA-REDIS-01..05 guards)
-- [ ] 12-08-PLAN.md — Phase-close gate scripts (PowerShell + Bash) + 3-GREEN cadence + psql\\l + redis-cli --scan SHA-256 BEFORE=AFTER + STATE.md close entry (TEST-REDIS-04)
+- [x] 12-08-PLAN.md — Phase-close gate scripts (PowerShell + Bash) + 3-GREEN cadence + psql\\l + redis-cli --scan SHA-256 BEFORE=AFTER + STATE.md close entry (TEST-REDIS-04)
 **v3.2.0 invariants MUST NOT regress**: HEALTH-01..05 (live never touches external state; ready tag discipline); INFRA-06 (compose stack still boots end-to-end); Phase 11 D-03 (no traces backend — do NOT add `OpenTelemetry.Instrumentation.StackExchangeRedis`); Mapperly RMG007/RMG012/RMG020/RMG089 build-error discipline; byte-identical `psql \l` SHA-256 `0d98b0de…0aac127`.
 
 ### Phase 13: OrchestrationService split + L3 fetch + L1 build
@@ -115,7 +115,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status      | Completed  |
 | ----- | --------- | -------------- | ----------- | ---------- |
 | 1-11  | v3.2.0    | 41/41          | Complete    | 2026-05-28 |
-| 12    | v3.3.0    | 7/8            | In progress | —          |
+| 12    | v3.3.0    | 8/8            | Complete    | 2026-05-29 |
 | 13    | v3.3.0    | 0/0            | Not started | —          |
 | 14    | v3.3.0    | 0/0            | Not started | —          |
 | 15    | v3.3.0    | 0/0            | Not started | —          |
