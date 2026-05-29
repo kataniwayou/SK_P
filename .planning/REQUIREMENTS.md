@@ -95,7 +95,8 @@
 ** — **`{processorId}` per-processor key** value shape: `{ inputDefinition, outputDefinition, liveness }`. Field names ARE `inputDefinition` / `outputDefinition` (NOT `definitionIn`/`definitionOut`, NOT `definitionInput`/`definitionOutput`). `inputDefinition` is the JSON-Schema body from `Processor.InputSchema.Definition` (or null if `InputSchemaId` is null). `outputDefinition` analogous. `liveness` is a `{ DateTime timestamp, int interval, string status }` object — Start writes defaults `{ timestamp: now, interval: 0, status: "Pending" }`; write semantics deferred.
 - [x] **L2-PROJECT-06
 ** — Mapperly is for entity↔DTO source-gen mapping ONLY. L2 DTO → JSON string serialization uses System.Text.Json directly (NOT Mapperly). Phase 6 Mapperly disciplines (RMG007/RMG012/RMG020/RMG089) preserved unchanged.
-- [ ] **L2-PROJECT-07** — `IServer.Keys()` and `KEYS` Redis command are FORBIDDEN in production code (Phase 14+ writer + Stop). Only `SCAN`-based enumeration (cursor-based) is allowed if enumeration is needed. v3.3.0 Start does not enumerate; v3.3.0 Stop does not enumerate (existence-check only).
+- [x] **L2-PROJECT-07
+** — `IServer.Keys()` and `KEYS` Redis command are FORBIDDEN in production code (Phase 14+ writer + Stop). Only `SCAN`-based enumeration (cursor-based) is allowed if enumeration is needed. v3.3.0 Start does not enumerate; v3.3.0 Stop does not enumerate (existence-check only).
 
 ### ORCH-START — Start endpoint contract
 
@@ -114,8 +115,10 @@
 
 - [ ] **ORCH-STOP-01** — `POST /api/v1/orchestration/stop` request body shape unchanged from v3.2.0: `{ "workflowIds": ["...guid...", ...] }`.
 - [ ] **ORCH-STOP-02** — For each WorkflowId, `OrchestrationService.StopAsync` issues `IDatabase.KeyExistsAsync({prefix}{workflowId})` against Redis. If all keys exist → 204 No Content.
-- [ ] **ORCH-STOP-03** — If any WorkflowId's `{workflowId}` key does NOT exist in Redis → 422 Unprocessable Entity with RFC 7807 listing the missing workflowIds. (Distinguishes from v3.2.0 Phase 9 behavior which was Postgres-based existence; v3.3.0 Stop is Redis-based existence.)
-- [ ] **ORCH-STOP-04** — Stop performs NO DELETE, NO eviction, NO per-step or per-processor key cleanup. L2 entries remain in place after Stop returns. Full Stop-side eviction semantics are deferred to a future milestone.
+- [x] **ORCH-STOP-03
+** — If any WorkflowId's `{workflowId}` key does NOT exist in Redis → 422 Unprocessable Entity with RFC 7807 listing the missing workflowIds. (Distinguishes from v3.2.0 Phase 9 behavior which was Postgres-based existence; v3.3.0 Stop is Redis-based existence.)
+- [x] **ORCH-STOP-04
+** — Stop performs NO DELETE, NO eviction, NO per-step or per-processor key cleanup. L2 entries remain in place after Stop returns. Full Stop-side eviction semantics are deferred to a future milestone.
 - [ ] **ORCH-STOP-05** — Stop does NOT touch L3 (Postgres). The WorkflowIds are NOT validated against Postgres; only against Redis. (This differs from v3.2.0 Phase 9 where Stop called `ValidateWorkflowIdsAsync` against the L3 DB.)
 - [ ] **ORCH-STOP-06** — Stop is idempotent — repeated Stop with the same WorkflowIds returns the same response (204 if all still exist in L2, 422 otherwise). No state mutation.
 - [ ] **ORCH-STOP-07** — On Redis-side failure: 500 + RFC 7807 + correlationId.
