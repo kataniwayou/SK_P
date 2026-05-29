@@ -200,9 +200,21 @@ public sealed class OrchestrationService
 
         // D-06 — all roots exist → per-workflow tolerant traverse-and-delete (root + per-step
         // keys; never processor keys). Controller maps the completed Task to 204.
-        foreach (var workflowId in workflowIds)
+        // A genuine Redis connection fault during the post-gate deletes (NOT a missing key —
+        // that is tolerated inside the routine) is tagged with the Stop path's stable op name
+        // so the 500 body reports a single stable "KeyExistsAsync" op regardless of which Redis
+        // call faults first (OBSERV-REDIS-03) — mirroring the Start pre-clean convention above.
+        try
         {
-            await _cleanup.StopCleanupAsync(workflowId, ct);
+            foreach (var workflowId in workflowIds)
+            {
+                await _cleanup.StopCleanupAsync(workflowId, ct);
+            }
+        }
+        catch (RedisException ex)
+        {
+            ex.Data["redisOp"] = "KeyExistsAsync";
+            throw;
         }
     }
 

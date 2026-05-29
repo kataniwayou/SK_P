@@ -210,4 +210,60 @@ public sealed class StopGateFacts : IClassFixture<Phase8WebAppFactory>
         Assert.DoesNotContain("localhost", body);
         Assert.DoesNotContain("RedisConnectionException", body);
     }
+
+    [Fact]
+    public async Task Stop_RedisDown_OnPostGateCleanup_500_KeyExistsAsync()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // WR-01 (15-REVIEW): a Redis fault during the POST-gate cleanup deletes (all roots
+        // exist → EXISTS gate passes → tolerant traverse-and-delete) must surface the SAME
+        // stable Stop op name as the EXISTS gate itself. Without the cleanup-loop try/catch
+        // this fault reached the 500 handler with NO redisOp, breaking OBSERV-REDIS-03 for the
+        // post-gate sub-path.
+
+        // Seed + Start through the REAL factory (real cleanup, real mux) so the root key
+        // genuinely exists — the EXISTS gate must read a present root to REACH the cleanup loop.
+        using var seedClient = _factory.CreateClient();
+        var (wfId, _, _) = await SeedAndStartAsync(seedClient, ct);
+
+        // Stop through a variant whose IRedisL2Cleanup throws on the post-gate delete. The mux
+        // is NOT substituted, so the EXISTS gate uses the real, seeded root (gate passes) and the
+        // fault originates in the cleanup loop → service tags redisOp="KeyExistsAsync" → 500.
+        // IRedisL2Cleanup is internal (Castle/NSubstitute can't proxy it), so use a hand-rolled
+        // throwing stub — same pattern as StartLoopFacts' NoOpRedisL2Cleanup/RedisDownProjectionWriter.
+        var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddScoped<Service.Features.Orchestration.Projection.IRedisL2Cleanup, ThrowingRedisL2Cleanup>();
+            }));
+        using var client = factory.CreateClient();
+
+        var correlationId = $"sgf-clean-down-{Guid.NewGuid():N}";
+        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orchestration/stop")
+        {
+            Content = JsonContent.Create(new List<Guid> { wfId }),
+        };
+        req.Headers.Add("X-Correlation-Id", correlationId);
+
+        var resp = await client.SendAsync(req, ct);
+        Assert.Equal(HttpStatusCode.InternalServerError, resp.StatusCode);
+        Assert.Equal("application/problem+json", resp.Content.Headers.ContentType?.MediaType);
+
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal(500, doc.RootElement.GetProperty("status").GetInt32());
+        Assert.Equal("KeyExistsAsync", doc.RootElement.GetProperty("redisOp").GetString());
+        Assert.Equal(correlationId, doc.RootElement.GetProperty("correlationId").GetString());
+        Assert.DoesNotContain("localhost", body);
+        Assert.DoesNotContain("RedisConnectionException", body);
+    }
+
+    /// <summary>Throwing cleanup — simulates a Redis fault on the POST-gate Stop delete loop (WR-01).</summary>
+    private sealed class ThrowingRedisL2Cleanup : Service.Features.Orchestration.Projection.IRedisL2Cleanup
+    {
+        public Task StopCleanupAsync(Guid workflowId, CancellationToken ct)
+            => throw new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, "simulated Redis down on cleanup");
+    }
 }
