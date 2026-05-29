@@ -404,18 +404,20 @@ if (!results.IsValid) { /* surface error */ }
 | A2 | Correct cycle detection requires TWO sets (`onStack` + `fullyVisited`), not the single `visited` set CONTEXT D-07 describes | Iterative DFS | Single-set impl false-positives on DAGs (diamonds/fan-in). If the test corpus has no shared subgraphs the single set "works" but is incorrect. Recommend two-set; confirm with planner. |
 | A3 | `JsonSchema.FromText(string)` parses `Schema.Definition` without throwing for already-validated schemas | JsonSchema.Net API | Definitions are meta-validated at Schema-create time (Phase 8), so a stored Definition is a valid draft-2020-12 schema; `FromText` should not throw. If a malformed Definition somehow persisted, `FromText` could throw → would hit Fallback (500). Low risk given Phase 8 gate. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Existence gate status code (A1): 404 or 422?**
+> All three resolved during plan-phase (2026-05-29). See CONTEXT.md D-13/D-14 and Plan 14-01/14-02.
+
+1. **Existence gate status code (A1): 404 or 422? → RESOLVED: keep 404 (D-13, user decision).**
    - What we know: existing `ExistenceCheckAsync` throws `NotFoundException` → 404, locked by `StartOrchestrationFacts` tests; CONTEXT D-12 says "re-uses the v3.2.0 path."
    - What's unclear: L1-VALIDATE-02 and ORCH-START-03 literal wording say "→ 422."
-   - Recommendation: keep 404 (it is the v3.2.0 path CONTEXT D-12 mandates) and treat the requirement's "422" as covering the THREE new gates; OR planner explicitly decides to convert. Flag to user during planning. Most consistent with locked tests: keep 404.
+   - **Resolution (D-13):** Existence gate stays **404** (re-uses v3.2.0 path); only the THREE new structural gates return 422. `StartOrchestrationFacts` 404 assertion stays GREEN. L1-VALIDATE-02 satisfied by re-use + first-in-order short-circuit.
 
-2. **Two-set vs single-set cycle algorithm (A2).**
-   - Recommendation: implement two-set (`onStack` + `fullyVisited`); add a DAG/diamond test that proves no false-positive.
+2. **Two-set vs single-set cycle algorithm (A2). → RESOLVED: two-set (D-14).**
+   - **Resolution (D-14):** Implement two-set (`onStack` + `fullyVisited`); add a diamond/fan-in DAG test that proves no false-positive (Plan 14-02). Single-`visited` sketch in D-07 is corrected.
 
-3. **D-04 mechanism (a-2 split-Fallback vs static hook).**
-   - Recommendation: split Fallback into `AddBaseApiFallbackHandler()` called last in composition — robust, keeps Fallback provably last-walked, one-line `Program.cs` add. Planner picks.
+3. **D-04 mechanism (a-2 split-Fallback vs static hook). → RESOLVED: split-Fallback.**
+   - **Resolution:** Split Fallback into `AddBaseApiFallbackHandler()` called last in the composition root — keeps Fallback provably last-walked, lets `AddOrchestrationFeature` append its 422 handler before it (Plan 14-01 Task 1).
 
 ## Environment Availability
 
