@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: planning
-stopped_at: Phase 14 context gathered
-last_updated: "2026-05-29T09:51:28.545Z"
+status: executing
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-05-29T10:56:00.838Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 11
-  completed_plans: 11
-  percent: 100
+  total_plans: 16
+  completed_plans: 12
+  percent: 75
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revised 2026-05-28 for Stop scope reduction + correlationId)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship.**
-**Current focus:** Phase 13 — orchestrationservice-split-l3-fetch-l1-build
+**Current focus:** Phase 14 — validation-gates-dfs-schema-edge-payload-config-schema
 
 ## Current Position
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
-Phase: 14
-Plan: Not started
-Status: Ready to plan
+Phase: 14 (validation-gates-dfs-schema-edge-payload-config-schema) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [██████████] 100%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -117,6 +117,7 @@ Progress: [██████████] 100%
 | Phase 13 P01 | ~9min | 3 tasks | 12 files |
 | Phase 13 P02 | ~5min | 2 tasks | 1 files |
 | Phase 13 P03 | ~25min | 3 tasks tasks | 2 files files |
+| Phase 14 P01 | ~12min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -319,6 +320,9 @@ Recent decisions affecting current work:
 - Plan 13-03: white-box loader resolution via factory.Services.CreateScope().GetRequiredService<IWorkflowGraphLoader>() (InternalsVisibleTo) proves SC3 snapshot contents + SC5 fan-out/cycle-termination directly, bypassing the HTTP 204 happy path
 - Plan 13-03: SC4 acceptance gate uses a recording IWorkflowGraphLoader (wraps real loader, captures snapshot) + a throwing IRedisProjectionWriter (last seam) — forces 500 and asserts IsDisposed==true + 5 empty dicts, proving using-declaration Dispose runs on the throw path
 - Plan 13-03: TDD RED phase intentionally collapsed for a verification-only plan — the loader/cleanup behavior was shipped in 13-01/13-02, so the integration facts are green-on-first-run and committed as test(...) gate artifacts
+- Plan 14-01: D-04 resolved via split-Fallback — FallbackExceptionHandler removed from AddBaseApiErrorHandling; new public AddBaseApiFallbackHandler called last in Program.cs after AddAppFeatures; class promoted internal->public for cross-assembly extension visibility (Rule 3 fix).
+- Plan 14-01: One OrchestrationValidationException (D-01) with 4 static factories + camelCase offending records; gates cycle|missingStep|schemaEdge|payloadConfigSchema (D-03); 422 handler fast-bails and emits errors={gate,offending} without setting correlationId/instance (Phase 4 customizer owns those).
+- Plan 14-01: JsonSchemaConfig (D-05) owns the SSRF lockdown; both Schema validators reference JsonSchemaConfig.DefaultOptions to fire the cctor before evaluation (D-06/Pitfall 3); ErrorMappingFacts <500ms guard stayed GREEN; 181/181 suite GREEN.
 
 ### Roadmap Milestone Log
 
@@ -412,13 +416,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 14 context gathered
-Resume file: --resume-file
+Last session: 2026-05-29T10:55:51.461Z
+Stopped at: Completed 14-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 13 (orchestrationservice-split-l3-fetch-l1-build) — 3 plans — 2026-05-29T08:18:47.176Z
+**Planned Phase:** 14 (validation-gates-dfs-schema-edge-payload-config-schema) — 5 plans — 2026-05-29T10:38:10.373Z

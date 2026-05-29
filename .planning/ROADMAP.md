@@ -86,7 +86,7 @@ Plans:
   5. Validation runs in the exact order existence → cycles → schema-edge → Payload↔ConfigSchema (verified by integration tests that supply multi-failure workflows and assert the FIRST gate's 422); L1 cleanup still runs in the `finally` path on every validation failure.
 **Plans**: 5 plans
 Plans:
-- [ ] 14-01-PLAN.md — 422 error path (OrchestrationValidationException + handler), D-04 split-Fallback, shared JsonSchemaConfig + SchemaDtoValidator refactor (foundation)
+- [x] 14-01-PLAN.md — 422 error path (OrchestrationValidationException + handler), D-04 split-Fallback, shared JsonSchemaConfig + SchemaDtoValidator refactor (foundation)
 - [ ] 14-02-PLAN.md — CycleDetector: two-set iterative DFS cycle + missing-step gate (+ CycleDetectionFacts, MissingStepFacts)
 - [ ] 14-03-PLAN.md — SchemaEdgeValidator: independent edge walk, strict Guid equality, null-passes (+ SchemaEdgeFacts)
 - [ ] 14-04-PLAN.md — PayloadConfigSchemaValidator: JsonSchema.Net evaluate + per-Start parse cache (+ PayloadConfigSchemaFacts)
@@ -126,7 +126,7 @@ Plans:
 | 1-11  | v3.2.0    | 41/41          | Complete    | 2026-05-28 |
 | 12    | v3.3.0    | 8/8 | Complete    | 2026-05-29 |
 | 13    | v3.3.0    | 3/3 | Complete    | 2026-05-29 |
-| 14    | v3.3.0    | 0/5            | Planned     | —          |
+| 14    | v3.3.0    | 1/5            | Executing   | —          |
 | 15    | v3.3.0    | 0/0            | Not started | —          |
 | 16    | v3.3.0    | 0/0            | Not started | —          |
 
