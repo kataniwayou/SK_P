@@ -1,9 +1,13 @@
+using BaseApi.Core.Configuration;
 using BaseApi.Core.Persistence;
 using BaseApi.Service.Features.Orchestration.Loading;
 using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Service.Features.Orchestration.Validation;
 using FluentValidation;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace BaseApi.Service.Features.Orchestration;
 
@@ -56,7 +60,11 @@ internal static class OrchestrationServiceCollectionExtensions
             sp.GetRequiredService<CycleDetector>(),
             sp.GetRequiredService<SchemaEdgeValidator>(),
             sp.GetRequiredService<PayloadConfigSchemaValidator>(),
-            sp.GetRequiredService<IRedisProjectionWriter>()));
+            sp.GetRequiredService<IRedisProjectionWriter>(),
+            sp.GetRequiredService<IRedisL2Cleanup>(),               // NEW (Plan 04) — Start pre-clean + Stop cleanup
+            sp.GetRequiredService<IHttpContextAccessor>(),          // NEW (D-01) — correlationId resolution
+            sp.GetRequiredService<IConnectionMultiplexer>(),        // NEW — Stop EXISTS gate
+            sp.GetRequiredService<IOptions<RedisProjectionOptions>>())); // NEW — KeyPrefix for the Stop gate keys
         services.AddScoped<IWorkflowGraphLoader, WorkflowGraphLoader>();
         services.AddScoped<CycleDetector>();
         services.AddScoped<SchemaEdgeValidator>();
