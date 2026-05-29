@@ -1,216 +1,156 @@
-# Research Summary -- v3.3.0 Orchestration L3 to L1 to L2 Build Pipeline
+﻿# Project Research Summary
 
-**Project:** Steps API (BaseApi.Core + BaseApi.Service)
-**Milestone:** v3.3.0 -- Orchestration L3 to L1 to L2 Build Pipeline
-**Domain:** Redis-backed materialized projection layer on a hardened .NET 8 modular monolith
-**Researched:** 2026-05-28
-**Confidence:** HIGH (stack + pitfalls); MEDIUM (DTO shape details; atomic-write pattern selection)
+**Project:** Steps API -- v3.4.0 (BaseConsole + Orchestrator Messaging)
+**Domain:** .NET 8 Generic-Host console platform + MassTransit/RabbitMQ fan-out messaging
+**Researched:** 2026-05-30
+**Confidence:** HIGH
 
----
+## Executive Summary
 
-## Snapshot
+v3.4.0 adds the first message-consumer side of the platform: a reusable BaseConsole.Core Generic-Host library (the console-side mirror of BaseApi.Core), a first Orchestrator concrete console, a Messaging.Contracts shared assembly, MassTransit 8.5.5/RabbitMQ transport, and end-to-end CorrelationId propagation proven in Elasticsearch logs. The milestone stops cleanly at the scheduler-job-start log seam -- no Quartz, no round-trip, no Redis writes from the Orchestrator. The critical licensing constraint is MassTransit 8.5.5 pinned in CPM: v9.0+ (first stable 9.1.1, released 2026-05-13) is a commercial product at $400/month minimum; v8.x remains Apache-2.0 through end-2026. All research confidence is HIGH across the four files.
 
-v3.3.0 adds a Redis (L2) materialized projection pipeline driven by POST /api/v1/orchestration/start. On Start, the service fetches from Postgres (L3), builds a transient in-memory graph (L1), validates it through four sequential gates, writes it to Redis across three key spaces, then discards L1. Stop evicts all Redis keys for the given WorkflowIds. Both endpoints are idempotent (PUT-like); Start is last-write-wins with no Redis lock.
+The recommended build sequence is: Messaging.Contracts (leaf with no host dependency) -> BaseConsole.Core -> parallel Orchestrator + WebApi bus wiring -> RabbitMQ compose tier -> synthetic outbound-filter harness test. The entire consumer-side OTel story is metrics + logs only (MEL bridge, AddMeter(InstrumentationOptions.MeterName), no .WithTracing) -- MassTransit 8 emits natively via ActivitySource and Meter; no separate instrumentation package exists or is needed. Health probes in the console use an embedded minimal Kestrel WebApplication inside an IHostedService so the validated three-probe tag discipline and the MapHealthChecks endpoint surface carry over verbatim from BaseApi.Core.
 
-The four research files reached broad agreement on the solution shape. Three decisions MUST be made at requirements-time before phase planning begins:
+The two highest risks are (1) the fan-out topology trap -- accidentally giving every Orchestrator replica the same receive-endpoint queue name so messages load-balance to one replica instead of broadcasting; this bug is entirely invisible at 1 replica and must be tested with TWO in-process bus instances this milestone -- and (2) ack semantics -- a catch(Exception) at the consumer boundary silently swallows crashes and loses messages forever. The correlation design deliberately keeps two worlds separate: HTTP X-Correlation-Id (string, lives in Redis L2 root) and the future bus-world Guid CorrelationId (minted by Quartz, future milestone); they are linked only via the shared CorrelationId MEL log-scope key whose PascalCase casing is load-bearing for OTel IncludeScopes.
 
-1. **Redis health-check hard vs. soft dependency** -- ARCHITECTURE.md says hard (mirror Postgres ready-check); STACK.md says soft (CRUD survives Redis outage). Genuine tradeoff with operational consequences.
-2. **Atomic-overwrite write pattern for Start** -- FEATURES.md recommends Pattern A (per-key SET); PITFALLS.md recommends stage-then-RENAME for single-key atomicity; PROJECT.md locks last-write-wins but does not specify the per-key write mechanism.
-3. **allStepIds[] field on the {workflowId} root DTO** -- PITFALLS.md flags it as required for O(stepCount) Stop without SCAN; PROJECT.md locked DTO shape does not currently include it; requires explicit PROJECT.md amendment if adopted.
 ---
 
 ## Key Findings
 
-### Consolidated Stack Additions
+### Recommended Stack
 
-Three NuGet packages and one Docker Compose service. Zero changes to the v3.2.0 stack. Versions verified against NuGet.org as of 2026-05-28.
+MassTransit 8.5.5 + MassTransit.RabbitMQ 8.5.5 are the only new NuGet additions in Directory.Packages.props. Both must be **pinned with a blocking comment** in CPM (mirroring the Npgsql 8.0.9 cautionary comment) because NuGet now serves v9.x as the latest stable and v9 is commercial. No OpenTelemetry.Instrumentation.MassTransit package exists or is needed -- the standalone package is deprecated (contrib issue #778) because MassTransit v8.0.0 added built-in OTel. The MassTransit OTel meter name is the string InstrumentationOptions.MeterName (the string literal is 'MassTransit'); add it via .AddMeter(InstrumentationOptions.MeterName) in AddBaseConsoleObservability. The in-process test harness (ITestHarness, AddMassTransitTestHarness) ships inside the core MassTransit package -- there is no separate MassTransit.Testing NuGet to add. The RabbitMQ Docker image is pinned rabbitmq:4.1.8-management-alpine with rabbitmq-diagnostics -q ping as the compose healthcheck.
 
-**Add to Directory.Packages.props:**
+**Core technologies:**
+- MassTransit 8.5.5: bus abstractions, consumer registration, consume/send/publish filter pipeline, in-process test harness -- last Apache-2.0 stable; v9+ is commercial
+- MassTransit.RabbitMQ 8.5.5: RabbitMQ transport, UsingRabbitMq, instance-unique queue topology for fan-out; transitively pulls RabbitMQ.Client 7.x
+- rabbitmq:4.1.8-management-alpine: broker in Docker Compose; management UI on :15672 for dev inspection; -alpine keeps image ~70 MB
+- InstrumentationOptions.MeterName ('MassTransit'): native OTel meter -- metrics-only, no traces, no extra package
+- Microsoft.AspNetCore.App FrameworkReference: gives Kestrel + MapHealthChecks to the console host at zero cost (shared framework already used by the sibling API)
+- AspNetCore.HealthChecks.UI.Client 9.0.0: already pinned; reuse the JSON health body writer identically across API and console
 
-```xml
-<!-- v3.3.0 -- Redis L2 projection -->
-<PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
-<PackageVersion Include="OpenTelemetry.Instrumentation.StackExchangeRedis" Version="1.15.1-beta.1" />
-<PackageVersion Include="Testcontainers.Redis" Version="4.12.0" />
-```
+### Expected Features
 
-Note: OpenTelemetry.Instrumentation.StackExchangeRedis is pinned but NOT referenced in any csproj in v3.3.0. STACK.md Option B and PITFALLS.md Pitfall 13 both agree: defer Redis OTel instrumentation to v3.4 (Contradiction 5 -- no conflict between files).
+The milestone has a tight, well-defined scope with no ambiguity about what is P1 vs deferred.
 
-**Add to compose.yaml:** redis:7.4.2-alpine service. 7.4.x deliberately chosen -- RSALv2/SSPLv1 only, no AGPLv3 viral-network-distribution clause that Redis 8.0+ adds. redis-cli ping healthcheck, persistence disabled (L2 is rebuildable from L3 on demand), no volume mount, ~30MB Alpine image.
+**Must have (table stakes) -- all P1:**
+- Bus skeleton in BaseConsole.Core (AddBaseConsoleMessaging) + WebApi joins the bus -- nothing moves without a configured bus on both ends
+- Messaging.Contracts assembly: StartOrchestration{WorkflowIds[]}, StopOrchestration{WorkflowIds[]}, ICorrelated vocabulary, L2 root shape extracted from BaseApi.Service
+- WebApi Publish<StartOrchestration> / Publish<StopOrchestration> -- the publisher half of the fan-out
+- Per-replica fan-out receive endpoint: instance-unique + temporary/auto-delete queue per replica, bound via InstanceId; Publish from WebApi fans out to all bound queues
+- Orchestrator consumers: read L2 root per WorkflowId -> extract stored X-CorrelationId string -> open 'CorrelationId' MEL log scope -> log to scheduler-job-start seam -> ack-on-success
+- Inbound consume filter: correlationId -> AsyncLocal accessor + BeginScope(['CorrelationId'] = corrId) -- literal PascalCase key matching CorrelationIdMiddleware, surfaced by OTel IncludeScopes=true
+- Outbound send/publish filter: ambient AsyncLocal -> stamp ICorrelated fields + MT envelope header; exercised this milestone via a synthetic harness downstream send (no real downstream yet)
+- MassTransit OTel: AddMeter(InstrumentationOptions.MeterName) + MEL-bridge logs + AddRuntimeInstrumentation(); no .WithTracing, no AddAspNetCoreInstrumentation()
+- Embedded health probes: /health/live|ready|startup on a dedicated port via EmbeddedHealthEndpointService; /ready flips when the MassTransit bus has started (MT auto-registers a ready-tagged check); /live never touches broker or Redis
+- Ack semantics: business failure -> log + complete (ack); crash -> throw -> bounded UseMessageRetry -> _error queue; never catch(Exception) at the consumer boundary
 
-**Connection string (appsettings.json):** localhost:6379,abortConnect=false,connectTimeout=5000,syncTimeout=5000. abortConnect=false is mandatory -- without it, a Redis outage at boot kills the API process (Pitfall 2).
+**Should have (P2, bounded within milestone after happy path is green):**
+- Bounded UseMessageRetry with Ignore<TBusinessException> -- prevents redelivery storms on transient infra faults; add once correlation is proven
+- ConsumerDefinition<T> classes per consumer -- clean seam for retry/concurrency config; cheap, future-proofs Processor milestone
+- ConcurrentMessageLimit / PrefetchCount tuning -- low-volume control queue; sensible defaults likely fine at 1 replica
 
-**Graph cycle detection:** hand-roll iterative DFS in OrchestrationService (~40 LOC). No new NuGet package. Matches v3.2.0 minimal-dependency posture.
+**Defer (Processor milestone, v3.5.x+):**
+- Quartz scheduler + bus Guid CorrelationId minting per trigger (the bus-world correlation source)
+- Send to queue:processorId (load-balanced competing consumers) -- requires Processor console
+- IRequestClient<GetProcessorBySourceHash> + WebApi responder
+- Concrete JobTrigger / ExecutionResult records + live round-trip
+- Transactional outbox -- only needed when DB-transaction-coupled publishing appears
+- OTel traces across the bus hop -- Phase 11 D-03 locked decision; no traces backend deployed
 
-### Feature Scope
+### Architecture Approach
 
-**P1 Table Stakes -- 8 features, all mandatory for v3.3.0 ship:**
+The architecture mirrors the existing BaseApi.Core / BaseApi.Service seam exactly. Messaging.Contracts is the leaf assembly both hosts reference; it depends only on MassTransit (for IFilter<ConsumeContext/SendContext/PublishContext>) and Microsoft.Extensions.Logging.Abstractions. BaseConsole.Core wraps the Generic Host bootstrap the same way BaseApi.Core wraps WebApplicationBuilder -- same 7-chain AddBaseConsole pattern, same IHostApplicationBuilder signature on AddBaseConsoleObservability so the OTel composition-root pattern lifts verbatim. Orchestrator is a ~7-line Program.cs thin shell passing consumer registrations as a lambda, identical to AddAppFeatures() in BaseApi.Service. AddBaseApiMessaging in BaseApi.Core joins the bus publish-only (no consumers, no receive endpoints), wired as composition call #8. WebApi never references BaseConsole.Core or Orchestrator -- shared code flows only through Messaging.Contracts.
 
-| # | Feature | Notes |
-|---|---------|-------|
-| 1 | Bounded L3 fetch + flat Dictionary L1 build + explicit try/finally teardown | 5 entity tables, one request scope, .Clear() in finally |
-| 2 | DFS traversal (iterative only) with cycle detection + missing-next-step 422 | Two-set visited/inPath pattern; recursive DFS is a StackOverflow hazard |
-| 3 | Strict Schema-edge compatibility gate | parent.OutputSchemaId == child.InputSchemaId; either-side null passes; 422 with offending parentStepId/childStepId |
-| 4 | Payload vs ConfigSchema validation gate, closes VALID-21 | Reuses JsonSchema.Net 9.2.1 draft 2020-12 with Phase 8 SSRF lockdown extended |
-| 5 | Three Redis key spaces with locked DTO shapes | {workflowId}, {workflowId:stepId}, {processorId}; JSON strings; inputDefinition/outputDefinition field names |
-| 6 | Idempotent Start (per-key SET overwrite + targeted DEL of removed keys) | Last-write-wins; no Redis lock; 204 response |
-| 7 | Idempotent Stop (evict L2 keys + 204 always) | No KEYS command; no SCAN in hot path; 204 even when no keys exist |
-| 8 | Mandatory validation order | existence -> cycles -> schema-edge -> Payload/Config -> L1 build -> L2 write -> cleanup; asserted by integration tests |
+**Major components:**
+1. Messaging.Contracts -- wire contracts, ICorrelated vocabulary, both correlation filters, ICorrelationAccessor (AsyncLocal), WorkflowRootProjectionContract (moved from BaseApi.Service)
+2. BaseConsole.Core -- Generic-Host bootstrap, console-flavored OTel (logs+metrics, no AspNetCore instrumentation), Redis client (lifted), EmbeddedHealthEndpointService (Kestrel-in-hosted-service), AddBaseConsoleMessaging (bus skeleton + outbound filters)
+3. Orchestrator -- thin concrete console: StartOrchestrationConsumer, StopOrchestrationConsumer, instance-unique receive endpoint wiring
+4. AddBaseApiMessaging in BaseApi.Core -- publish-only bus join for the web API; outbound correlation filters; hard dependency for Start/Stop path only
+5. RabbitMQ compose tier -- rabbitmq:4.1.8-management-alpine with compose healthcheck; new healthy-service dependency for WebApi + Orchestrator Start/Stop paths
 
-**P2 Differentiators -- cheap enough to consider in milestone (USER DECIDES):**
+### Critical Pitfalls
 
-| Feature | Cost | Notes from FEATURES.md |
-|---------|------|------------------------|
-| generationId on {workflowId} root DTO | LOW | Consumer detects rebuild without diffing chain records. Additive field; no breaking change. |
-| Aggregate-error mode (all failures not first) | LOW-MEDIUM | Doubles test surface; DX improvement. Defer if not explicitly requested. |
-| Projection-size telemetry | LOW | orchestration.projection.bytes + keys_total Histograms on existing OTel Meter. |
-| Dry-run Start via ?dryRun=true | MEDIUM | Full L1 pipeline, skip L2 write. Common in dbt/KubeVela. Defer unless operator asks. |
+1. **Fan-out topology trap (shared receive endpoint = load-balancing, not broadcast)** -- configure each Orchestrator replica with an instance-unique, **auto-delete** receive endpoint (via InstanceId + temporary queue); WebApi uses Publish, never Send to a named queue. **Must test with TWO bus instances in a single harness this milestone** -- the bug is completely invisible at 1 replica.
 
-All P2 features are additive and can be deferred to v3.4 without schema migration.
+2. **ACK semantics -- catch-all swallows crashes / throw-on-business causes redelivery storm** -- business failure -> log + return (ack); infrastructure fault -> let it throw -> bounded UseMessageRetry -> _error queue. Never catch(Exception) at the consumer boundary.
 
-**P3 Defer -- do not include in v3.3.0:** Stage-then-rename atomic swap, structural schema compatibility, projection-diff, RedisJSON, pre-warm background service, distributed Start lock, scheduler integration (real JobId/Liveness writers).
-### Architecture Seam Topology
+3. **MassTransit ActivitySource resurrecting the removed traces pipeline** -- any .WithTracing(...) or .AddSource('MassTransit') in BaseConsole.Core re-enables a TracerProvider and floods a Collector with no traces pipeline. Console OTel = metrics-only: .WithMetrics(m => m.AddMeter(InstrumentationOptions.MeterName)). Assert no TracerProvider in the console container.
 
-Four seams inside Features/Orchestration/. OrchestrationService shrinks to orchestrator calling seams in validation order. Seams kept internal to the feature folder; promote to BaseApi.Core only if a second consumer surfaces.
+4. **RabbitMQ-down widening -- broker outage must not kill CRUD readiness or crash the WebApi host** -- bus start failure must be additive; Publish throws at call-time -> Start endpoint returns 503; CRUD is unaffected. For the WebApi /ready, set MinimalFailureStatus = Degraded on the bus health check or re-tag it off ready (open question -- see below).
 
-| Seam | Interface | Lifetime | Responsibility |
-|------|-----------|----------|----------------|
-| Orchestrator | OrchestrationService (rewritten) | Scoped | Calls seams in order; owns try/finally L1 cleanup |
-| Loader | IWorkflowGraphLoader | Scoped | L3 batch-fetch (5 entity tables); builds flat Dictionary L1 |
-| Validator | IWorkflowGraphValidator | Singleton (stateless) | DFS cycle detect + schema-edge gate + Payload/ConfigSchema gate |
-| Writer | IRedisProjectionWriter | Scoped | Owns 3 key spaces; holds IConnectionMultiplexer; formats JSON |
+5. **Correlation log-scope key casing is load-bearing** -- 'CorrelationId' (PascalCase) is the exact key CorrelationIdMiddleware uses and OTel IncludeScopes=true serializes into Elasticsearch. Any drift creates a different ES field and silently breaks the cross-service log join. Make it a shared constant in Messaging.Contracts.
 
-**Folder layout (from ARCHITECTURE.md Section 7):**
+6. **RabbitMQ queues added to the SHA-256 zero-leak gate** -- extend the phase-close gate to a **TRIPLE-SHA**: psql \l + redis-cli --scan + rabbitmqctl list_queues name BEFORE=AFTER. Tests must use auto-delete per-class unique queue prefixes (broker analog of RedisFixture.KeyPrefix).
 
-```
-src/BaseApi.Service/Features/Orchestration/
-|-- OrchestrationController.cs                    (UNCHANGED)
-|-- OrchestrationService.cs                       (body rewrite -- orchestrator only ~80 LOC)
-|-- OrchestrationServiceCollectionExtensions.cs   (EXTEND -- registers 4 services + validators)
-|-- WorkflowIdsValidator.cs                       (UNCHANGED)
-|-- Loading/
-|   +-- WorkflowGraphLoader.cs                    (NEW)
-|-- Validation/
-|   |-- CycleDetector.cs                          (NEW)
-|   |-- SchemaEdgeValidator.cs                    (NEW)
-|   +-- PayloadConfigSchemaValidator.cs            (NEW)
-+-- Projection/
-    |-- RedisProjectionWriter.cs                  (NEW -- owns 3 key spaces)
-    +-- RedisProjectionKeys.cs                    (NEW -- key constants; Guid via ToString("N"))
-
-src/BaseApi.Core/DependencyInjection/
-|-- RedisServiceCollectionExtensions.cs           (NEW -- AddBaseApiRedis, chained as call #7)
-+-- Configuration/RedisProjectionOptions.cs       (NEW)
-
-tests/BaseApi.Tests/Composition/
-+-- RedisFixture.cs                               (NEW -- per-class isolation)
-```
-
-**DI placement:** AddBaseApiRedis(IServiceCollection) chained inside AddBaseApi<TDbContext> as call #7. NOT a separate IHostApplicationBuilder overload -- no ILoggingBuilder surface needed, unlike D-13 observability split.
-
-**IConnectionMultiplexer:** MUST be Singleton. IDatabase resolved per-operation via _multiplexer.GetDatabase() -- not a class field.
-
-**Data flow:** Redis is WRITE-ONLY from BaseApi.Service in v3.3.0. No cache-invalidation on CRUD. No IDistributedCache integration.
-### Suggested Phase Decomposition (Phases 12-16)
-
-Quoted verbatim from ARCHITECTURE.md Section 9:
-
-| Phase | Title | What lands |
-|-------|-------|------------|
-| 12 | Redis infra + composition + healthcheck + DI | compose.yaml redis service, AddBaseApiRedis, AspNetCore.HealthChecks.Redis, appsettings entries, RedisFixture test infra, RedisProjectionOptions, Redis-dead health test |
-| 13 | OrchestrationService split + L3 fetch + L1 build (no validation no Redis write) | WorkflowGraphSnapshot, WorkflowGraphLoader.LoadL1Async, OrchestrationService body shrunk, DI wiring, L1-snapshot-shape tests |
-| 14 | Validation gates -- DFS + schema-edge + payload-config-schema | CycleDetector, SchemaEdgeValidator, PayloadConfigSchemaValidator, DI wiring, StartAsync chains 3 validators, 422 error path, ~30 unit tests cycle detection, ~10 integration tests. Closes VALID-21. |
-| 15 | L2 (Redis) projection write + Stop endpoint | RedisProjectionKeys, 3 L2 DTOs (WorkflowL2Dto/StepL2Dto/ProcessorL2Dto with inputDefinition/outputDefinition), RedisProjectionWriter.UpsertAsync, DeleteAsync, OrchestrationService.StopAsync, 3-keyspace assertion tests |
-| 16 | Idempotency + concurrency + L1 cleanup + 3-GREEN closeout | Start-twice regression test, concurrent Start regression test, Stop-without-prior-Start test, finally-block cleanup verification, E2E with real Postgres + Redis, 3-consecutive-GREEN gate, psql l SHA-256 + redis-cli --scan SHA-256 snapshots |
-
-**Phase-close gate (all 5 phases):** 3-consecutive-GREEN, byte-identical psql l SHA-256, byte-identical redis-cli --scan SHA-256 (NEW for v3.3.0), bisect-friendly N-commit sequence.
-
-**Research flags:** All phases use well-documented patterns. Skip per-phase research during planning. Phase 14 requires explicit implementation note on SSRF lockdown extension (not a research gap).
-
-### Top 10 Highest-Stakes Pitfalls
-
-Drawn from PITFALLS.md 32 entries, prioritizing the 10 v3.2.0 regression guards and the R4 L2-writer cluster (11 pitfalls in R4 alone).
-
-| # | Pitfall | Problem | Mitigation | Phase |
-|---|---------|---------|-----------|-------|
-| 1 | ConnectionMultiplexer registered Scoped/Transient | One TCP connection per request; maxclients hit; 500 cascade | AddSingleton<IConnectionMultiplexer>; add lifetime-assertion fact | Phase 12 |
-| 2 | AbortOnConnectFail not set | Process crashes on startup if Redis briefly unreachable; HEALTH-01 violated | Always set AbortOnConnectFail=false in ConfigurationOptions | Phase 12 |
-| 3 | OTel Redis instrumentation re-enables traces pipeline | AddRedisInstrumentation revives Phase 11 D-03 stripped traces pipeline | Do NOT reference package in v3.3.0; use ILogger + custom Meter; build-guard fact in NoTracesBackendFacts | Phase 12/16 |
-| 4 | Redis healthcheck missing tag discipline | Untagged AddRedis puts Redis in live probe; Redis blip kills pod | .AddRedis(..., tags: [ready]) only; extend Redis-down -> /health/live=200 acceptance test | Phase 12 |
-| 5 | Recursive DFS -> StackOverflowException | Workflow >10k steps crashes process; uncatchable; bypasses Phase 4 exception handler | Always use iterative DFS with explicit Stack<>; add 50,000-node fact | Phase 14 |
-| 6 | Single HashSet in cycle detection | Diamond DAG (A->B, A->C, B->D, C->D) misclassified as cycle; OR real cycle missed | Two sets: visited (subtree done) + inPath (current path); add diamond-DAG discriminating fact | Phase 14 |
-| 7 | JsonSchema.Net SSRF defense regressed | New Payload gate uses fresh EvaluationOptions without Phase 8 SSRF lockdown | Shared JsonSchemaConfig.DefaultOptions factory; both gates must use it; extend <500ms regression test | Phase 14 |
-| 8 | JsonSchema.Net schema re-parsed per validation | 100 assignments x 5 distinct schemas = 100 parses; perf hit + GC pressure | Per-Start Dictionary<Guid, JsonSchema> lazy cache; shared EvaluationOptions instance | Phase 14 |
-| 9 | DEL-then-SET anti-pattern (nil window) | Reader sees nil between delete and set during Start | Use plain StringSetAsync (no preceding DEL) for overwrite; batch DEL removed children AFTER new SETs | Phase 15 |
-| 10 | allStepIds[] missing -> Stop forced to SCAN | Stop cannot find {workflowId:stepId} children without O(N) keyspace SCAN | Include allStepIds[] on root DTO; Stop reads root, issues targeted UNLINK; never use IServer.Keys() | Phase 15 |
-
-**v3.2.0 regression guards defended by PITFALLS.md:** 142/142 GREEN x3 (P16), psql l SHA-256 no-leak (P16), Mapperly RMG codes as build errors (P17), Phase 11 D-03 no traces backend (P13), HEALTH-01 live never touches external state (P14), X-Correlation-Id E2E through OTel to ES (P15), StartupCompletionService LogCritical/no-rethrow contract (P31), RFC 7807 with offending field names in Extensions (P29), JsonSchema.Net SSRF disabled (P11), L2 DTO field names inputDefinition/outputDefinition locked (P30).
 ---
 
-## Cross-File Contradictions
+## Implications for Roadmap
 
-This is the most important synthesis output. Five items below surface conflicts between research files. Items 1-4 require user resolution at requirements-time. Item 5 is resolved (both files agree).
+Phases continue numbering from v3.3.0 last phase 16; this milestone starts at phase 17.
 
-### Contradiction 1: Redis health-check hard vs. soft dependency
+### Phase 17: Messaging.Contracts + Shared L2 Root Extract
 
-- ARCHITECTURE.md (Section 3): Redis MUST join /health/ready with tags: [ready] -- mirrors Postgres pattern; ensures operators know Redis is a runtime dependency.
-- STACK.md (Integration Notes): Recommend deferring Redis readiness check; CRUD continues to work when Redis is down; graceful degradation (Start fails 503, CRUD still works).
-- Conflict: Hard dependency (ARCHITECTURE) vs. soft dependency (STACK). Both are reasonable positions.
-- User must decide: Does a Redis outage constitute not-ready for the whole API, or does the API stay ready with only orchestration endpoints degraded?
-- Recommendation: Soft dependency is technically more accurate; hard dependency is operationally simpler. Either is defensible. Lock before Phase 12.
+**Rationale:** Leaf dependency -- both WebApi and Orchestrator compile against it; nothing else can start until this exists. The WorkflowRootProjectionContract move out of BaseApi.Service must precede the WebApi writer swap.
+**Delivers:** StartOrchestration/StopOrchestration records; ICorrelated vocabulary; ICorrelationAccessor + AsyncLocalCorrelationAccessor; InboundCorrelationConsumeFilter; OutboundCorrelationSendFilter + OutboundCorrelationPublishFilter; WorkflowRootProjectionContract (+ LivenessProjection) moved from BaseApi.Service.
+**Addresses:** Messaging.Contracts table-stakes feature; shared L2 root shape as single source of truth.
+**Avoids:** Anti-pattern of WebApi referencing console host code to publish; correlation key-casing drift (constant defined here).
+**Research flag:** Standard pattern -- no phase research needed.
 
-### Contradiction 2: Test isolation -- Testcontainers.Redis vs. host-side Redis with prefix scoping
+### Phase 18: BaseConsole.Core Library
 
-- STACK.md: Per-class ephemeral Testcontainers.Redis 4.12.0. Ryuk-managed cleanup, mirrors Phase 3 D-15 throwaway-Postgres discipline exactly. Full RESP3 + MULTI/EXEC semantics tested.
-- ARCHITECTURE.md (Section 5): Single shared container + per-class GUID-prefix isolation + SCAN/DEL teardown. Per-class container boot (1-2s x N classes) adds ~30-60s to suite, violating the 163s/161s/162s cadence established at v3.2.0 close (142 facts).
-- Conflict: Isolation purity (STACK) vs. suite-speed discipline (ARCHITECTURE).
-- User must decide: Accept suite slowdown for container purity, or use prefix isolation to preserve cadence.
-- Recommendation: ARCHITECTURE reasoning is stronger given established cadence discipline. Use prefix isolation on a shared container; FLUSHDB and KEYS * are both forbidden; use IServer.KeysAsync(pattern) (SCAN-backed) for teardown. Revisit if suite exceeds 3x baseline.
+**Rationale:** Console library must exist before the Orchestrator can inherit it; OTel + health probes must be validated before the bus is added on top.
+**Delivers:** AddBaseConsole DI chain; AddBaseConsoleObservability (MEL bridge + runtime + MassTransit meter, no AspNetCore instrumentation, no .WithTracing); Redis client lifted; EmbeddedHealthEndpointService (Kestrel-in-hosted-service) + three-probe tag discipline; duplicate IStartupGate/StartupHealthCheck; AddBaseConsoleMessaging (bus skeleton + outbound filters wired bus-wide).
+**Uses:** Microsoft.AspNetCore.App FrameworkReference; MassTransit + MassTransit.RabbitMQ 8.5.5; InstrumentationOptions.MeterName; AspNetCore.HealthChecks.UI.Client 9.0.0.
+**Implements:** BaseConsole.Core component; EmbeddedHealthEndpointService pattern; MT auto ready check.
+**Avoids:** Pitfall 3 (traces resurrection); Pitfall 5 (liveness touching broker); MapHealthChecks on Generic Host; hand-rolled bus-started latch.
+**Research flag:** No phase research needed -- patterns verified HIGH in all four research files.
 
-### Contradiction 3: allStepIds[] extension to the {workflowId} root DTO
+### Phase 19: Orchestrator Console + WebApi Bus Wiring (parallel streams)
 
-- PITFALLS.md (Pitfall 12): allStepIds[] on the root DTO is REQUIRED for O(stepCount) Stop without SCAN. The milestone roadmap must encode this upfront.
-- PROJECT.md locked shape: { entryStepIds[], cron, jobId, liveness } -- does NOT include allStepIds[].
-- Conflict: PITFALLS says the field must exist on the root DTO; PROJECT.md locked shape does not include it.
-- User must decide:
-  - Option (a): Extend root DTO with allStepIds[] -- recommended; traversal already enumerates all steps for cycle detection; collecting into the DTO is essentially free. Requires PROJECT.md amendment.
-  - Option (b): In-memory key-list passed from Start to Stop -- fragile; process-restart loses it.
-  - Option (c): SCAN-based Stop -- O(keyspace); rejected by PITFALLS.md for production use.
-- Recommendation: Option (a). Requires explicit PROJECT.md amendment to the locked {workflowId} DTO shape.
+**Rationale:** Both depend only on Messaging.Contracts + BaseConsole.Core (for the Orchestrator) and have no dependency on each other, so they run as parallel implementation streams.
+**Delivers (stream A -- Orchestrator):** StartOrchestrationConsumer + StopOrchestrationConsumer (read L2 per WorkflowId -> extract stored X-CorrelationId -> 'CorrelationId' MEL log scope -> log to scheduler-job-start seam -> ack-on-success); AddAppConsumers + instance-unique auto-delete receive endpoint wiring; Program.cs (~7 lines).
+**Delivers (stream B -- WebApi bus wiring):** AddBaseApiMessaging in BaseApi.Core (publish-only, call #8); OrchestrationController Start/Stop -> IPublishEndpoint.Publish; RedisProjectionWriter using-swap to WorkflowRootProjectionContract; RabbitMQ compose tier + appsettings for both hosts.
+**Addresses:** All P1 table-stakes features; fan-out topology; ack semantics.
+**Avoids:** Pitfall 1 (fan-out topology trap); Pitfall 2 (ack semantics); Pitfall 4 (RabbitMQ-down widening); competing-consumer queue for fan-out.
+**Research flag:** InstanceId fan-out wiring variant (MEDIUM confidence) -- confirm exact API in phase plan before implementation.
 
-### Contradiction 4: Stage-then-RENAME vs. plain per-key SET for atomic overwrite
+### Phase 20: Correlation Propagation Proof + Synthetic Harness Test
 
-- FEATURES.md (Pattern A): Per-key StringSetAsync (overwrite-in-place) recommended for v3.3.0. No nil window because SET replaces atomically. Acknowledges cross-key inconsistency window as accepted given last-write-wins semantics.
-- PITFALLS.md (Pitfall 5): Stage-then-RENAME recommended to prevent nil window. Calls DEL-then-SET the canonical bug.
-- Reconciliation: Contradiction dissolves on closer reading. FEATURES recommends SET (not DEL-then-SET). StringSetAsync unconditionally replaces with no nil window for in-place overwrites. PITFALLS targets DEL-then-SET specifically. Plain SET for existing-key overwrite is safe. The genuine open question is removed-child keys (steps in previous Start but not in new projection) -- those require a DEL after new SETs, creating the acknowledged cross-key window.
-- User must decide: Accept the cross-key interleave window (document per Pitfall 20), or require stage-then-RENAME for root key atomicity (defer to v3.4+).
-- Recommendation: Plain StringSetAsync (no preceding DEL) for all key overwrites; batch DEL removed children after new SETs; document accepted window. Stage-then-RENAME deferred to v3.4+ if consumers complain.
+**Rationale:** The headline milestone deliverable -- 'CorrelationId propagation proven end-to-end (HTTP -> Redis L2 -> fan-out message -> orchestrator correlated log in Elasticsearch)' -- is only provable with the outbound filter exercised and the ES query confirmed. This phase closes the milestone.
+**Delivers:** Synthetic outbound downstream send via AddMassTransitTestHarness; two-bus-instance fan-out broadcast test (both consumers receive one Publish); E2E assertion that orchestrator ES log carries the same CorrelationId key + value as the HTTP request; no TracerProvider in console container assertion; rabbitmqctl list_queues SHA-256 BEFORE=AFTER extended gate; 3-consecutive-GREEN closeout.
+**Uses:** AddMassTransitTestHarness (ships in core MassTransit package); real RabbitMQ via Docker Compose for the leak gate; per-class unique queue prefix discipline.
+**Avoids:** Pitfall 6 (correlation lost / outbound filter omitted); Pitfall 7 (leaked queues breaking SHA gate).
+**Research flag:** No phase research needed -- test harness API confirmed HIGH; ES correlation query mirrors existing SchemasLogsE2ETests.
 
-### Contradiction 5: OTel Redis instrumentation (not a contradiction -- both files agree)
+### Phase Ordering Rationale
 
-- STACK.md: Option B -- defer to v3.4; add TODO marker in AddBaseApiObservability.
-- PITFALLS.md (Pitfall 13): Do NOT reference the package in v3.3.0; use structured ILogger + custom Meter; add build-guard fact in NoTracesBackendFacts.
-- No contradiction. ARCHITECTURE.md is silent (consistent with deferral). Decision: defer Redis OTel instrumentation to v3.4. No user decision needed.
----
+- Messaging.Contracts is the strict leaf dependency -- both hosts depend on it; it must compile before either can be written.
+- BaseConsole.Core depends on Messaging.Contracts (filters are defined there) and must precede the Orchestrator.
+- Orchestrator and WebApi bus wiring have no mutual dependency -- they parallelize naturally on the same phase boundary.
+- The correlation proof phase is last because it is the integration validation across all three prior phases.
+- The TRIPLE-SHA gate extension is in Phase 20 (not deferred) -- deferring it leaves the phase-close gate incomplete for the new resource class.
 
-## Open Questions for Requirements
+### Research Flags
 
-Consolidated from all four research files, deduplicated:
+Phases needing a doc check during planning:
+- **Phase 19:** InstanceId fan-out wiring variant -- MEDIUM confidence on exact API surface. Three approaches exist (per-endpoint .Endpoint(e => e.InstanceId), a custom IEndpointNameFormatter, and ConnectReceiveEndpoint(new TemporaryEndpointDefinition())); phase plan should confirm which composes cleanest with ConfigureEndpoints before any code is written.
 
-| # | Question | Source Files | Disposition |
-|---|----------|-------------|-------------|
-| 1 | Redis health-check hard vs. soft dependency? | ARCHITECTURE S3, STACK Integration Notes | Decide at requirements (Contradiction 1) |
-| 2 | Test isolation: Testcontainers.Redis vs. host-side prefix isolation? | STACK Test infra, ARCHITECTURE S5 | Decide at requirements (Contradiction 2) |
-| 3 | Add allStepIds[] to {workflowId} root DTO? | PITFALLS P12, FEATURES S3, PROJECT.md | Decide at requirements (Contradiction 3); PROJECT.md amendment required if yes |
-| 4 | Stage-then-RENAME vs. plain SET for writer? | FEATURES Pattern A/B, PITFALLS P5 | Decide at requirements (Contradiction 4); recommendation is plain SET with no prior DEL |
-| 5 | OTel Redis instrumentation in v3.3.0? | STACK, PITFALLS P13 | Decided: defer to v3.4 (both files agree) |
-| 6 | P2 differentiators include in v3.3.0? (generationId, aggregate-error, telemetry, dry-run) | FEATURES S7 P2 table | Decide at requirements; all are additive and deferrable to v3.4 |
-| 7 | L1Snapshot disposal: IDisposable+using vs. try/finally+.Clear()? | ARCHITECTURE open questions, PITFALLS P7 | Decide at Phase 13 planning; PITFALLS prefers try/finally for clarity |
-| 8 | Stop key strategy (tied to Question 3) | ARCHITECTURE open questions, PITFALLS P12, FEATURES S3 | Decide at requirements (follows from Contradiction 3) |
-| 9 | JobId initial value: Guid.Empty or null? | FEATURES S3 {workflowId} shape | Decide at requirements; Guid.Empty is more explicit for a typed field |
-| 10 | MULTI/EXEC vs. IBatch for L2 write? | STACK atomic write, PITFALLS P4 | Decide at Phase 15 planning; PITFALLS recommends plain IBatch (last-write-wins removes transaction need) |
-| 11 | Compose host port for Redis: 6379 or 6380? | STACK compose snippet (6379), PITFALLS P32 (6380) | Decide at Phase 12; PITFALLS recommends 6380:6379 mirroring v3.2.0 Postgres 5433:5432 |
-| 12 | Startup gate extended to probe Redis reachability? | PITFALLS P31 | Decide at Phase 12; PITFALLS strongly recommends adding Redis ping to StartupCompletionService before MarkReady() |
+Phases with fully verified patterns (skip /gsd-research-phase):
+- **Phase 17:** POCO contracts + filter interfaces -- no MassTransit-specific wiring.
+- **Phase 18:** AddBaseConsole mirrors AddBaseApi verbatim; OTel console flavor is two edits from the existing method; embedded Kestrel pattern confirmed HIGH.
+- **Phase 20:** AddMassTransitTestHarness API confirmed HIGH; ES correlation query mirrors existing SchemasLogsE2ETests.
+
+### Open Questions -- Requirements Must Resolve
+
+**(a) Does RabbitMQ-down flip WebApi /health/ready?**
+MassTransit auto-registers a ready-tagged health check when AddMassTransit is called. If left defaulted, a broker outage flips WebApi /health/ready to 503 even though all CRUD operations continue to succeed -- violating the existing Redis soft-dependency contract. **Recommendation:** set MinimalFailureStatus = Degraded on the WebApi bus health check (or re-tag it off ready), keeping CRUD readiness green on broker outage and surfacing broker status as Degraded in the readiness body. The Orchestrator is different -- its entire job depends on the bus, so ready should go Unhealthy if the broker drops.
+
+**(b) IStartupGate / StartupHealthCheck -- duplicate into BaseConsole.Core or lift to a shared Hosting.Abstractions assembly?**
+A BaseConsole.Core -> BaseApi.Core dependency would drag EF Core and ASP.NET MVC transitively into a console host. **Recommendation:** duplicate the ~40 LOC this milestone; extract to Hosting.Abstractions if/when a third host type appears.
+
+**(c) Extend the phase-close leak gate to a TRIPLE-SHA?**
+The current gate is dual-SHA (psql \l + redis-cli --scan). **Recommendation:** extend to a TRIPLE-SHA -- add rabbitmqctl list_queues name (and optionally list_exchanges) to the BEFORE/AFTER snapshot. This must be in-scope for the milestone; deferring it leaves the gate incomplete and the leak discipline unproven for the new resource class.
 
 ---
 
@@ -218,47 +158,45 @@ Consolidated from all four research files, deduplicated:
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All NuGet pins verified against NuGet.org 2026-05-28. StackExchange.Redis 2.13.1 is Context7-verified de facto standard since 2014. Docker image licensing verified against Redis blog + Percona analysis + InfoQ. |
-| Features | HIGH on table stakes and mechanics; MEDIUM on exact DTO shape details | Table-stakes cross-referenced against Temporal/Argo/Airflow/Redis community. Exact DTO shapes MEDIUM (consumer-dependent); PROJECT.md locked shapes are authoritative. |
-| Architecture | HIGH for seam topology and DI placement; MEDIUM for test isolation tactic | Seam decomposition verified against actual v3.2.0 source files. Test isolation tactic is a genuine requirements tradeoff. |
-| Pitfalls | HIGH | 32 pitfalls verified against StackExchange.Redis docs + GitHub issues #2537/#1169/#885, OTel contrib issues #1301/#674/#3257, JsonSchema.Net docs, Redis canonical command docs. MEDIUM only for Cluster-mode edge cases (not relevant in v3.3.0 single-node). |
+| Stack | HIGH | MassTransit 8.5.5 + v9 commercial status verified on NuGet; native OTel confirmed via official docs + contrib issue #778; RabbitMQ image verified on Docker Hub; AddMassTransitTestHarness in core package confirmed |
+| Features | HIGH | All four mechanisms (fan-out topology, ack/redelivery, correlation, request/response) verified against official MassTransit docs via Context7; scope discipline clear from PROJECT.md locked decisions |
+| Architecture | HIGH | Existing codebase read directly for all mirror claims; MassTransit health-check tags/semantics, filter registration, and embedded Kestrel pattern confirmed HIGH |
+| Pitfalls | HIGH | Fan-out trap + ack semantics confirmed across multiple MassTransit discussion threads + official docs; traces resurrection confirmed from PROJECT.md D-03 + contrib issue; tag discipline from existing StartupHealthCheck |
 
-**Overall confidence:** HIGH on everything needed to proceed to requirements. The four open requirements-level decisions (Contradictions 1-4) are genuinely unresolved and require user input -- they are not research gaps.
+**Overall confidence:** HIGH
 
 ### Gaps to Address
 
-- **allStepIds[] DTO field:** PROJECT.md must be amended explicitly if Contradiction 3 resolves to Option (a). The locked {workflowId} DTO shape does not currently include it.
-- **Compose host port for Redis:** PITFALLS recommends 6380; ARCHITECTURE and STACK examples use 6379. Decide before Phase 12 to avoid re-editing compose.yaml.
-- **Redis persistence policy documentation:** The compose service disables RDB + AOF intentionally (L2 is rebuildable from L3). Document in a compose comment to prevent a future operator from re-enabling persistence as a fix.
+- **InstanceId fan-out wiring variant (MEDIUM):** three valid approaches exist; Phase 19 plan should confirm the correct API before implementation. All three achieve the required fan-out; the uncertainty is only ergonomic.
+- **WebApi bus health check tag behavior under custom ConfigureHealthCheckOptions:** custom tags replace defaults -- must re-add ready + masstransit manually if any custom configuration is applied. Recommendation: leave defaults alone and address only via MinimalFailureStatus = Degraded.
+- **Compose depends_on scope:** WebApi and Orchestrator should depends_on rabbitmq condition service_healthy for the Start/Stop path; affects only compose-local dev boot ordering.
 
 ---
 
 ## Sources
 
-Full source lists with URLs live in the individual research files (.planning/research/STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md).
+### Primary (HIGH confidence)
 
-**Primary (HIGH confidence -- verified within 30 days):**
-- StackExchange.Redis 2.13.1 -- NuGet.org + official docs (singleton pattern, MULTI/EXEC semantics, Configuration docs) + GitHub issues #2537/#1169/#885
-- OpenTelemetry.Instrumentation.StackExchangeRedis 1.15.1-beta.1 -- NuGet.org + OTel contrib CHANGELOG + issues #1301/#674/#3257
-- Testcontainers.Redis 4.12.0 -- NuGet.org + Testcontainers .NET xUnit integration docs
-- Redis 7.4.2-alpine -- Docker Hub + Redis blog (AGPLv3 license change announcement) + Percona analysis + InfoQ
-- JsonSchema.Net 9.2.1 -- NuGet.org + json-everything docs (SSRF defense, SchemaRegistry, 2025 perf work)
-- Redis canonical command docs (RENAME, SCAN, MULTI/EXEC, KEYS) -- redis.io
-- AspNetCore.HealthChecks.Redis 9.0.0 -- Xabaril package surface
-- sk_p .planning/PROJECT.md -- locked constraints (authoritative; overrides research preferences)
-- sk_p v3.2.0 source files (verified live): BaseApiServiceCollectionExtensions.cs, ObservabilityServiceCollectionExtensions.cs, HealthServiceCollectionExtensions.cs, OrchestrationService.cs
+- MassTransit 8.5.5 on NuGet (Apache-2.0, net8.0, 2025-10-22) -- version pinning, harness in core package
+- MassTransit v9.1.1 on NuGet (commercial product statement) -- v9 license trap
+- MassTransit official observability docs (masstransit.massient.com) -- ActivitySource = DiagnosticHeaders.DefaultListenerName, Meter = InstrumentationOptions.MeterName; fan-out InstanceId quote
+- opentelemetry-dotnet-contrib issue #778 -- deprecation of standalone OpenTelemetry.Instrumentation.MassTransit; built-in v8 support confirmed
+- Docker Hub rabbitmq official image -- 4.1.8-management-alpine tag, rabbitmq-diagnostics -q ping probe
+- MassTransit concepts/transports, concepts/outbox, concepts/messages, concepts/exceptions, configuration/topology, configuration/middleware/retry (Context7, 2026-05-30) -- Publish/Send/ack/redelivery/correlation semantics
+- Existing codebase (read directly): BaseApiServiceCollectionExtensions.cs, ObservabilityServiceCollectionExtensions.cs, CorrelationIdMiddleware.cs, StartupHealthCheck.cs, HealthServiceCollectionExtensions.cs, WorkflowRootProjection.cs, RedisProjectionWriter.cs
+- .planning/PROJECT.md -- locked decisions (D-03 no traces, fan-out topology, correlation reconciliation, Redis soft-dep, 3-GREEN gate)
 
-**Secondary (MEDIUM confidence):**
-- Temporal / Argo Workflows / Airflow pattern comparisons -- idempotent start, stop semantics, graph projection approaches
-- Azure Architecture Center Materialized View pattern -- read-time vs write-time materialization
-- Martin Fowler HeartBeat pattern -- liveness field shapes
-- Redis Hash vs JSON tradeoff -- Redis docs hash depth limit, RedisJSON perf benchmarks
-- Lua-as-anti-pattern -- Redis docs scripting warnings (no business logic in Lua)
-- Dry-run pattern -- KubeVela docs, dbt guide precedent
-- Redis database anti-pattern -- multi-DB for test isolation deprecated in Cluster mode
-- Valkey BSD fork -- future licensing fallback if Redis licensing escalates; not adopted in v3.3.0
+### Secondary (MEDIUM confidence)
+
+- Milan Jovanovic -- MassTransit going commercial analysis; confirms v8-to-v9 Apache-2.0-to-commercial boundary
+- OneUptime blog (2026-02) -- MassTransit OTel metrics-only wiring example
+- MassTransit discussion threads (groups.google.com/g/masstransit-discuss, GitHub discussions) -- fan-out vs competing-consumer topology behavior at multiple replicas
+- MassTransit Send vs Publish semantics (maldworth.com/2015/10/27) -- exchange vs queue routing
+
+### Tertiary (LOW confidence)
+
+- WorkerService + HealthCheck gist (CarlosLanderas) -- embedded Kestrel pattern reference; superseded by HIGH-confidence official Microsoft docs for the core approach
 
 ---
-*Research completed: 2026-05-28*
-*Synthesized: 2026-05-28*
-*Ready for requirements: yes -- pending 4 user decisions (Contradictions 1-4)*
+*Research completed: 2026-05-30*
+*Ready for roadmap: yes*

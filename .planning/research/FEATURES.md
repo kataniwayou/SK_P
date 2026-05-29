@@ -1,383 +1,250 @@
-# Feature Research — v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline
+# Feature Research — MassTransit/RabbitMQ Messaging (v3.4.0)
 
-**Domain:** Workflow / data-pipeline orchestration projection layer — a materialized read model in Redis (L2) built from a relational source-of-truth (L3 Postgres) via a transient in-memory compile step (L1), feeding external Orchestrator + Scheduler consumers.
-**Researched:** 2026-05-28
-**Confidence:** HIGH on ecosystem patterns (cross-referenced across Temporal / Argo / Airflow / generic Redis materialized-view literature); MEDIUM on exact DTO shape preferences (consumer-dependent, but converged conclusions are well-supported); HIGH on Stop/Start mechanics (clear ecosystem precedent).
+**Domain:** Message-driven console worker platform (.NET 8 modular monolith) — WebApi publisher → Orchestrator consumer over MassTransit/RabbitMQ
+**Researched:** 2026-05-30
+**Confidence:** HIGH (all core mechanisms verified against official MassTransit docs via Context7: masstransit.massient.com — Publish/Send topology, InstanceId fan-out, ack/redelivery, request/response, correlation conventions)
 
----
-
-## How to Read This Document
-
-Categories drive what lands in v3.3.0 requirements vs. defers to v3.4+:
-
-- **TABLE STAKES** — Must ship in v3.3.0. Missing = external Orchestrator/Scheduler cannot consume the projection or cannot reason about correctness after a Start call.
-- **DIFFERENTIATOR** — Adds material value, may include in v3.3.0 if cheap; otherwise defer to v3.4+. Optional for ship.
-- **ANTI-FEATURE** — Looks attractive (often suggested by external operators or appears in adjacent workflow systems) but is explicitly OUT-OF-SCOPE for v3.3.0, either by milestone scope or by ecosystem evidence that the cost exceeds the value at this stage.
-
-PROJECT.md / MILESTONES.md anchors are cited as `[LOCKED:<topic>]` when the v3.3.0 milestone scope text or v3.2.0 invariants are the source.
+> **Scope discipline.** This file maps MassTransit behaviors to THIS milestone (v3.4.0) vs FUTURE (Processor milestone). The locked milestone decisions in `PROJECT.md` are treated as the requirement spine; research **confirms/refines** the idiomatic MassTransit way to honor them. Everything Quartz-, Processor-, or round-trip-related is explicitly an **ANTI-FEATURE for now** (= deliberately not built this milestone), not "bad."
 
 ---
 
-## 1. L3 Fetch + L1 Build (Transient In-Memory Materialization)
+## How the Four Mechanisms Actually Work (verified primer)
 
-### Table Stakes
+These four findings drive the categorization below. Confidence HIGH unless noted.
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| **Bounded fetch scoped to requested `WorkflowIds`** | Consumers send a finite list; loading every workflow into memory would scale-bomb the API as the catalog grows | LOW | Single `WHERE WorkflowId = ANY(@ids)` per entity table (5 SELECTs total). Reuse existing `BaseDbContext.Set<TEntity>()`. `[LOCKED: L1 transient]` |
-| **Flat `Dictionary<Guid, EntityDto>` per entity type** | Compile step needs O(1) lookup by id when walking edges; nested-object trees force re-traversal | LOW | Five dictionaries (Workflows, Assignments, Steps, Processors, Schemas). Use existing Mapperly mappers to convert Entity → ReadDto. |
-| **Existence validation before traversal** | Walking edges into missing ids is the most common bug in graph compilers — silent skip vs. loud failure is a correctness choice; loud is the only safe one for a projection consumers will rely on | LOW | After fetch, for each requested WorkflowId not present → 422 with id list. For each `Workflow.EntryStepIds[*]` not present → 422. `[LOCKED: validation order]` |
-| **Explicit teardown contract (try/finally)** | A request-scoped dictionary leaked across requests is invisible until OOM at 3am. Explicit `.Clear()` in finally makes the lifetime visible in the code | LOW | `try { ... } finally { dict.Clear(); visited.Clear(); }`. .NET GC will eventually collect, but explicit Clear() makes ownership obvious in code review. `[LOCKED: L1 cleanup]` |
-| **Single transactional snapshot of L3 reads** | A Start that reads Schema, then Processor, then Step from a mutating database can build a self-inconsistent L1 (e.g., Processor references a Schema that was deleted between the two reads) | LOW | Wrap all 5 fetches in a single `using var tx = await ctx.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead)` (or rely on Postgres MVCC + a single round-trip per entity). Reuse v3.2.0 `BaseDbContext`. |
+### 1. Fan-out (broadcast to all replicas) vs Load-balanced (competing consumers)
 
-### Differentiators
+The distinction is **entirely a receive-endpoint topology choice**, not a publish-side choice. RabbitMQ semantics:
 
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| **Parallel fetch of independent entity tables** | Schema/Processor/Step/Assignment/Workflow have no fetch-order dependency; `await Task.WhenAll(...)` shaves ~5× the per-query latency at scale | LOW | Free; just `await Task.WhenAll(loadSchemas, loadProcessors, ...)`. Risk: shared `DbContext` is NOT thread-safe — must spin up scoped contexts or serialize. Defer unless profiling shows latency pain. |
-| **L1 build telemetry counters** | Operators want to know "compile took N ms for M steps across K workflows" without scraping per-request logs | LOW | One Histogram + 3 Counters on the existing OTel `Meter`. Reuse Phase 5 metric pipeline; add `orchestration.compile.duration_ms`, `orchestration.compile.steps_walked`, `orchestration.compile.errors_total`. |
+- **`Publish<T>(msg)`** → sends to the **exchange** for type `T`. Every queue bound to that exchange gets a copy. *Who receives* depends on how many distinct queues are bound.
+- **`Send(addr, msg)`** → sends to **one specific queue**. If N consumers share that one queue, RabbitMQ round-robins (competing consumers = load-balancing). Verified: "RabbitMQ supports competing consumers... messages are dispatched to consumers, locked while being processed, and removed from the queue once successfully handled."
 
-### Anti-Features (v3.3.0)
+**Fan-out to all N replicas (THIS milestone, WebApi→Orchestrator):**
+The idiomatic MassTransit mechanism is **`InstanceId`** on the receive endpoint. Verified quote from the configuration reference: *InstanceId* "If specified, should be unique for each bus instance — **to enable fan-out (instead of load balancing).**" Each replica sets a unique `InstanceId`, which the endpoint-name formatter appends to the queue name, so every replica binds its **own** distinct queue to the shared `StartOrchestration` exchange. `Publish` then reaches a copy on every replica. With 1 replica today this is a single instance-suffixed queue; scaling to N replicas needs zero code change — each new pod just self-assigns a unique InstanceId.
 
-| Feature | Why Tempting | Why Out of Scope | Alternative |
-|---------|--------------|------------------|-------------|
-| **Long-lived in-memory cache of L1 between requests** | "Why rebuild the same workflow's L1 on every Start?" | The whole point of v3.3.0 is that L2 (Redis) is the cache. L1 is a per-Start scratchpad; caching it adds invalidation logic (an entire CRUD-side cache-busting surface) that v3.2.0 deliberately avoided | Make L1 short-lived; if consumers want a snapshot, they read L2. |
-| **Lazy fetching during traversal** | "Don't load steps we don't walk" | Lazy fetching during DFS leaks `DbContext` into the traversal layer, breaks the "fetch → validate → build → write" phase model, and N+1s under concurrent load | Eager-fetch all 5 entity tables up front; traversal works against memory only. |
-
----
-
-## 2. Workflow-Graph Traversal & Validation Gates
-
-### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| **DFS from every `Workflow.EntryStepIds[*]`** | Workflow is a DAG with possibly multiple entry points; missing an entry = silent-incomplete projection | LOW | Standard iterative DFS with a `Stack<Guid>` + a per-traversal `HashSet<Guid> visited`. Walks `StepEntity.NextStepIds` via the existing `StepNextSteps` junction (already loaded as part of Step DTO). `[LOCKED: traversal scope]` |
-| **Cycle detection with explicit 422** | A → B → A loops the projection writer forever; consumers cannot reason about a cyclic graph; even one-step self-loops must be caught | LOW | Standard DFS three-color (white/gray/black) or per-path `HashSet` — if next step is already in current-path set → cycle. Return 422 with the offending `(parentStepId, childStepId)` pair. `[LOCKED: cycle 422]` |
-| **Missing `NextStepId` is 422 (not silent skip)** | A Step pointing to a deleted child is a data-integrity bug, not "the graph ends here" | LOW | Lookup in `Steps` dict; absent → 422 with `(parentStepId, childStepId)`. **Distinction:** `NextStepIds` collection that's empty/null = terminal step (legal). `NextStepIds` containing an id that resolves to no Step = error. |
-| **Strict Schema-edge compatibility gate** | An external consumer that reads `(processorId → outputDefinition)` and the downstream processor's `inputDefinition` will assume they're compatible because the projection said the workflow compiled. Silent acceptance = type-unsafe pipeline at runtime | MEDIUM | For each edge `(parent → child)` walked: compare `parent.Processor.OutputSchemaId` vs `child.Processor.InputSchemaId`. Strict Guid equality; either-side null passes (Phase 10 source/sink semantics). 422 with offending `(parentStepId, childStepId)`. `[LOCKED: strict equality, null passes]` |
-| **Payload ↔ ConfigSchema validation gate** | Closes v3.2.0-deferred VALID-21; validating Payload at Assignment-PUT was rejected (N2) because the Payload may legitimately predate the Processor; validating at orchestration-start is the right ratchet | MEDIUM | For each Assignment: resolve `Step.ProcessorId → Processor.ConfigSchemaId → Schema.Definition`. Run existing v3.2.0 JSON Schema validator (draft 2020-12, SSRF-disabled). 422 with offending `assignmentId` on failure. `[LOCKED: VALID-21 closes here]` |
-| **Mandatory validation order** | Reordering gates produces different error messages for the same broken input — a consumer correcting issues will hit a different 422 next time, with no clear sense of progress | LOW | Lock the order: **existence → cycles → schema-edge compat → Payload↔ConfigSchema → L1 build → L2 write → cleanup**. Order is explicit in service code; integration tests assert it. `[LOCKED: mandatory order]` |
-
-### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| **Aggregate-error mode (return all failures, not first)** | Consumer fixing 12 schema-edge mismatches gets all 12 at once vs. one-at-a-time | LOW-MEDIUM | Collect all gate failures into a `List<ProblemDetail>` per gate; emit 422 with `errors[]` array. Mirrors FluentValidation's behavior at the DTO layer. Increases test surface ~2×. Defer if not asked for. |
-| **Structural Schema compatibility (vs. strict Id equality)** | Two distinct Schema rows with byte-identical Definitions should be considered compatible | HIGH | Requires canonical JSON Schema diffing — entire research milestone of its own. `[LOCKED: defer to v3.4+ candidate]` |
-| **Per-step compile metadata stamped into L2** | Consumer wants to know "which Schema.Id validated this edge" for audit | LOW | Add `compileMetadata { schemaEdge: { parentOutputSchemaId, childInputSchemaId } }` to the chain record. Cheap; defer unless audit consumer asks for it. |
-
-### Anti-Features (v3.3.0)
-
-| Feature | Why Tempting | Why Out of Scope | Alternative |
-|---------|--------------|------------------|-------------|
-| **Auto-fix or auto-propose corrections** | "If parent.Output is null and child.Input is X, suggest setting parent.Output to X" | Adds an entire repair-recommendation engine to a milestone whose scope is "validate and project." Couples the projection layer to entity-edit logic | Return clear 422; let the operator decide. |
-| **Validation gates running in parallel** | "Run all 4 gates concurrently to lower latency" | Each gate's failure mode is different; running in parallel makes the error surface non-deterministic and reorders error messages between runs | Sequential, ordered, deterministic. Latency is fine — these are in-memory passes. |
-| **Validating at Assignment-PUT instead of (or in addition to) at Start** | "Catch errors at write-time, not at orchestration-time" | v3.2.0 N2 explicitly chose Assignment-PUT = "valid JSON only." Adding Schema-aware validation at PUT breaks that contract and re-opens the choice. v3.3.0 closes VALID-21 at Start only. | Document the asymmetry in the OpenAPI spec; the Start endpoint is the type-safety gate. |
-
----
-
-## 3. L2 (Redis) Materialized Projection — DTO Shape & Write Semantics
-
-### Table Stakes
-
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| **Three key spaces with clear, hierarchical naming** | Consumers need to know what to read where without out-of-band knowledge; Redis-community convention is colon-delimited hierarchical keys (e.g., `{workflowId}`, `{workflowId}:{stepId}`, `{processorId}`) | LOW | The `:` separator is the universal convention (Redis docs, every client library). Use bare UUID-N (no hyphens — matches the Guid `"N"` format used by `CorrelationIdMiddleware` in v3.2.0 — for symmetry and grep-ability). `[LOCKED: 3 key spaces]` |
-| **Per-record reads (no projection-wide scan required for consumer hot path)** | Consumers reading `{workflowId:stepId}` billions of times per day cannot SCAN; the key shape must support direct `GET` / `HGETALL` | LOW | The chain-form `{workflowId:stepId}` shape already supports this — caller knows both ids from their context. Confirmed against orchestrator-side reading patterns. |
-| **JSON-string-value-in-string-key (single `SET`) for each record** | Hash data type has per-field overhead and a >1-level depth restriction Redis itself documents; serializing the DTO as JSON in a single STRING value avoids both | LOW | `SET key json-payload`. Single round-trip read = `GET key` → deserialize. Aligns with how RedisJSON markets itself for partial-read workloads, but using plain STRING + System.Text.Json keeps the deps minimal. **See section 4 for the hash-vs-JSON tradeoff explicitly.** |
-| **Idempotent Start = full replace of all 3 key spaces for the workflow(s) involved** | Consumer must never read a half-rebuilt projection where some chain records point to a Processor that no longer exists in the projection | MEDIUM | Two viable approaches — both ship a deterministic post-condition. See "How idempotent Start is implemented" subsection below. `[LOCKED: PUT-like, last-write-wins]` |
-| **Idempotent Stop = delete all 3 key spaces for given WorkflowIds, 204 even when empty** | A 404-on-empty-Stop forces consumers to handle the "already gone" race; 204 makes Stop a true idempotent verb | LOW | Track or compute the key set per WorkflowId; issue `UNLINK` (non-blocking DEL); return 204. `[LOCKED: 204 always]` |
-| **Liveness as a stored DTO field (timestamp + interval + status)** | The v3.3.0 contract is "liveness is a stored field shape" — not a Redis TTL, not a computation. Consumers read the field and decide aliveness themselves | LOW | DTO: `{ timestamp: DateTime, interval: int (seconds), status: string }`. Writer (this milestone) stamps `timestamp = utcNow`, `interval = configured`, `status = "Active"` at Start time. **Scheduler integration that updates these is deferred.** `[LOCKED: stored field, not computation]` |
-| **`JobId` as a stored Guid field (not Hangfire/Quartz integration)** | The v3.3.0 contract is "JobId is an L2 DTO field shape only" — write semantics deferred. Reserve the field shape now so consumers can read it later without a projection-shape migration | LOW | DTO: `jobId: Guid`. Writer stamps `jobId = Guid.Empty` (or omits / nulls — TBD) at Start time. **Scheduler integration that writes the real JobId is deferred.** `[LOCKED: field shape, not behavior]` |
-| **Field-name discipline: `inputDefinition` / `outputDefinition`** | Tiny detail with consumer-contract weight: drift between docs and code is a real source of integration breaks | LOW | Lock the names in DTO classes; integration test asserts the serialized JSON contains exactly these keys. `[LOCKED: input/output Definition exact spelling]` |
-
-### How idempotent Start is typically implemented (canonical patterns)
-
-Three options found in the ecosystem; each ships the same post-condition but with different read-during-rebuild semantics:
-
-| Pattern | How it works | Read-during-rebuild semantics | When to choose |
-|---------|--------------|-------------------------------|----------------|
-| **A. Per-key `SET` (overwrite-in-place)** | For each key in the new projection, issue `SET key newValue` overwriting any old value. Pre-existing keys not in the new projection are deleted by name. | Reader can briefly see a mix of old and new records during the write window (each key flips atomically, but the set of keys doesn't). | **Recommended for v3.3.0.** Simple, no Lua, no naming dance. Acceptable because the milestone is single-replica and Start is human-triggered (Orchestrator service) — not a hot loop. Consumers read entire chain in a fresh call; in-flight reads naturally tolerate per-key freshness. |
-| **B. Stage-then-rename (atomic swap)** | Build the new projection under a staging prefix (e.g., `staging:{workflowId}:...`); when complete, `RENAME` each staging key to the live key. Pre-Redis 7 has limited multi-key RENAME atomicity; Redis 8 cluster-aware RENAME works only within a single hash slot. | Reader sees old projection until the swap, then new. Cleaner consistency window. | Defer to v3.4+ if/when consumers complain about read-during-rebuild artifacts. Adds key-naming complexity and cluster-slot constraints. |
-| **C. MULTI/EXEC over all keys** | Wrap all SETs + DELs in a single transaction. | Atomic from server's POV (commands queued, executed contiguously). | Works but is ugly at scale: every workflow rebuild crams N steps × M assignments worth of commands into one EXEC; blocks server during execution; loses pipelining benefits. Anti-pattern at high projection sizes. |
-
-**Recommendation for v3.3.0:** Pattern A (per-key SET + targeted DEL of removed keys). Cheapest, no Lua dependency, consumer-acceptable. Document the read-during-rebuild window in the milestone's PITFALLS.md. Upgrade to Pattern B if/when projection size or consumer SLAs demand it.
-
-### How Stop is typically implemented (DEL strategies)
-
-| Strategy | Tradeoffs | Recommendation |
-|----------|-----------|----------------|
-| **Compute key set in code + `UNLINK key1 key2 ...`** | Requires knowing all keys (workflow key + N chain keys + M processor keys). The L1 build can produce this list as a side effect of compilation; cache it once at Start, look it up at Stop. **Cleanest.** | **Recommended for v3.3.0.** Use `UNLINK` not `DEL` (non-blocking; frees memory asynchronously; supported since Redis 4.0). |
-| **`SCAN` for matching keys, then `UNLINK`** | Pattern: `SCAN cursor MATCH workflowId:*` then DEL. Works without bookkeeping. | Acceptable fallback for unknown-key Stops (e.g., projection-cleanup admin tool). Per-Start Stop should not need SCAN — we know the keys. Avoid in the hot Stop path. |
-| **`KEYS pattern` + `DEL`** | `KEYS` is blocking on the server; explicitly contraindicated in production by Redis docs (despite Redis 8 single-slot optimization). | **Anti-pattern.** Never use in v3.3.0. |
-| **TTL-based expiry (no explicit delete)** | Set TTL at Start = max-expected-Stop-window; let Redis evict | Couples Stop semantics to wall-clock TTL — fragile; an extended workflow run becomes a "where did my projection go?" mystery. Anti-pattern for an L2 that's the consumer's authoritative read model. |
-| **Status flag flip (write `status = "Stopped"`)** | Mark each record with a status field; consumer filters on it; physical delete deferred | Defers a cleanup problem; means consumers must always check status; doubles read cost. Anti-pattern unless audit-trail of stopped workflows is required (it isn't in v3.3.0). |
-
-**Recommendation for v3.3.0:** Compute the key set at L1 build time, persist it transiently for Stop, issue a single `UNLINK key1 key2 ...` per workflow at Stop. Return 204 unconditionally.
-
-### Liveness — typical field shapes
-
-| Field shape | Pros | Cons | Recommendation |
-|-------------|------|------|----------------|
-| `{ timestamp, interval, status }` | Minimal; matches v3.3.0 locked shape | No causality / no fencing token | **The locked v3.3.0 shape.** Sufficient for v3.3.0 because no concurrent writer races exist yet (Scheduler integration deferred). |
-| `{ timestamp, interval, status, sequenceNumber }` | Monotonic seqnum lets consumers detect missed updates / out-of-order | Requires monotonic-counter source (Redis INCR or DB sequence) | Differentiator: add when Scheduler integration arrives. |
-| `{ timestamp, interval, status, generationId }` | A generation/epoch token (regenerated on each Start) lets consumers reject stale liveness writes from a prior Start | Couples liveness write path to Start lifecycle | Differentiator: add when multi-writer concurrency becomes real. |
-| `{ timestamp, interval, status, causalityToken }` | Full causal-consistency vector | Overkill for a single-writer projection | Anti-feature for v3.3.0. |
-
-**Recommendation:** Keep the locked `{ timestamp, interval, status }` shape for v3.3.0. Reserve `sequenceNumber` and `generationId` as named v3.4+ candidates — they're additive to the DTO so future addition doesn't break existing consumers.
-
-### Differentiators
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| **`X-Projection-Version` / `generation` field on the `{workflowId}` root record** | Consumer can detect "this projection was rebuilt since my last read" without diffing every chain record | LOW | Stamp `generationId = Guid.NewGuid()` (or a monotonic counter) into `{workflowId}` root at every Start. Cheap; high audit value. |
-| **Projection size telemetry** | Operators want to know "this workflow projects to N keys, M bytes" before it bloats Redis | LOW | One Histogram on the existing OTel Meter — `orchestration.projection.bytes`, `orchestration.projection.keys_total`. Defer if not asked for. |
-| **Dry-run Start (`?dryRun=true`)** | Operator can validate a Workflow's compilability without touching Redis. Useful for CI / pre-prod gates | MEDIUM | Implement the full L1 build pipeline and report what *would* be written; skip the L2 write step. Common pattern in dbt / Snakemake / KubeVela ecosystems. Defer unless operator asks for it. |
-| **Projection-diff between current and proposed Start** | "What's about to change?" output — useful for change-management workflows | HIGH | Requires reading current L2, computing diff vs. proposed projection. Defer to v3.4+; not needed when Start is idempotent and last-write-wins. |
-| **Audit trail of Start invocations** | Compliance / debugging — "who started workflow X at time Y?" | MEDIUM | Append-only log table or Redis stream of `(workflowId, timestamp, correlationId, userId)`. v3.2.0 already has `CreatedBy` plumbing; reuse for the audit row. Defer unless audit is a v3.3.0 requirement. |
-| **Pre-warm Strategy (Background Service)** | At startup, replay last-known-good Start for every workflow with non-null cron — projection is hot from second 0 | HIGH | Couples startup ordering to projection state; requires a "last successful Start" persistence mechanism (currently not in L3 schema). **Defer** — risks startup-probe regressions on the v3.2.0 health-probe contract. |
-
-### Anti-Features (v3.3.0)
-
-| Feature | Why Tempting | Why Out of Scope | Alternative |
-|---------|--------------|------------------|-------------|
-| **Lua scripts encoding compile/validation logic** | "Run the whole projection write as one atomic Lua block" | Redis docs and community explicitly warn against business logic in Lua: blocks the server during execution, hard to debug (SHA-1 digests are opaque), forces all client instances to maintain the script copy, dynamic-script-generation is an anti-pattern (script cache poisoning). All v3.3.0 logic is in .NET — Lua adds a second language and a second test harness for zero benefit. | Pattern A (per-key SET) requires no Lua. Keep all business logic in `OrchestrationService.StartAsync`. |
-| **Read-through cache semantics (lazy fill on miss)** | "If consumer reads a missing key, build the projection on demand" | Mixes the materialized-view semantic ("writer materializes, reader reads") with cache semantics ("reader triggers build on miss"). Double the failure modes; consumer reads become unbounded-latency; cache stampede on cold start. The whole point of the L1→L2 pipeline is that writes materialize once at Start; reads are always pre-built | If consumer reads a miss, return 404 / let Orchestrator-side handle it. Don't auto-rebuild on read. |
-| **Eager invalidation of L2 on CRUD writes to L3** | "If someone edits a Step in L3, invalidate the affected projections in L2" | Re-opens the entire CRUD surface to "which L2 keys does this L3 entity touch?" tracking. A v3.3.0 maintenance hellscape. The contract is explicit: L2 is rebuilt by Start; CRUD does not touch L2 | Document explicitly: L3 edits do not invalidate L2. Operators must re-Start. |
-| **Mixing flat HASH and nested JSON in the same key space** | "Use HSET for top-level fields and JSON for nested ones" | Splits the read path: consumers need 2 commands per record (HGETALL + GET). Doubles round-trips at billions-of-reads-per-day scale. Redis-community guidance is: pick one shape per key space and stay there | Pick JSON-string-in-STRING for all 3 key spaces. Single GET per record. |
-| **`KEYS pattern` in Stop** | "Easiest way to find all of this workflow's keys" | KEYS is blocking on the server; production-contraindicated by Redis docs across all major versions | Compute key set in code from L1; UNLINK explicitly. |
-| **TTL-based expiry on projection keys** | "Auto-cleanup if Stop is never called" | Couples projection lifetime to wall-clock; a long workflow run becomes a "where did my projection go?" mystery; Stop becomes optional which removes its audit weight | No TTL. Stop is the explicit teardown. |
-| **Status-flag flip instead of physical delete on Stop** | "Keep the projection for audit; just mark it Stopped" | Doubles read cost on the hot path (consumer must filter every chain record); requires consumer cooperation; defers a cleanup problem | Physical UNLINK on Stop. Audit goes in the audit log (separate, deferred). |
-| **Redis distributed lock around the Start operation** | "Prevent concurrent Starts from racing" | The locked v3.3.0 contract is "last-write-wins, no Redis lock." A lock creates a "what if the lock owner dies?" failure mode (lease renewal, fencing tokens, the full RedLock saga). v3.3.0 is single-replica; concurrent Start collisions are operator-triggered and rare | Last-write-wins is acceptable. Document the semantics in the milestone. |
-
----
-
-## 4. Expected DTO Shapes — Hash vs. JSON, Flat vs. Nested
-
-### Recommendation Matrix
-
-| Key space | Recommended shape | Storage type | Reason |
-|-----------|-------------------|--------------|--------|
-| `{workflowId}` | Single JSON object, JSON-encoded | Redis STRING (`SET`/`GET`) | One read per workflow; small payload; nested array (`entryStepIds[]`) + nested object (`liveness{}`) don't fit cleanly in a flat HASH |
-| `{workflowId:stepId}` | Single JSON object, JSON-encoded | Redis STRING (`SET`/`GET`) | The hot read path. Consumers read this billions of times per day. Single GET, single deserialization. Payload is small (~few hundred bytes). |
-| `{processorId}` | Single JSON object, JSON-encoded | Redis STRING (`SET`/`GET`) | Includes `inputDefinition` / `outputDefinition` (JSON Schema documents — can be large, often >1KB, deeply nested). HASH is contraindicated by Redis docs for >1-level depth |
-
-### Hash vs. JSON tradeoff (ecosystem evidence)
-
-- **Hashes** are simple field-value pairs, "default recommendation" for shallow flat records (Redis docs). But they degrade for nested data; the JSON object should not be deeper than one level to maintain HASH optimization.
-- **JSON-as-STRING** (this milestone's recommendation) keeps the value serialized; access requires deserialization but a single `GET` returns the entire record in one round-trip. Matches consumer pattern of "read whole step record, decide next action."
-- **RedisJSON module** offers partial-field retrieval and in-place updates, advertised as ~90× lower latency than MongoDB for nested-JSON workloads. Overkill for v3.3.0: requires a Redis module dependency in the compose stack, and v3.3.0 doesn't have a partial-read use case (consumer always reads the full chain record).
-
-**Conclusion:** Plain STRING + `System.Text.Json` for all 3 key spaces. Defer RedisJSON to v3.4+ only if a partial-update use case emerges.
-
-### Field shape — exact contracts
-
-```jsonc
-// {workflowId} — STRING value:
+```csharp
+// Orchestrator (consumer side) — fan-out: unique queue per replica
+x.AddConsumer<StartOrchestrationConsumer>();
+x.AddConsumer<StopOrchestrationConsumer>();
+x.UsingRabbitMq((context, cfg) =>
 {
-  "entryStepIds": ["<guidN>", "<guidN>"],
-  "cron": "0 */5 * * *",            // nullable; mirrors v3.2.0 Workflow.CronExpression
-  "jobId": "<guidN>",                // Guid; v3.3.0 = Guid.Empty (scheduler-write deferred)
-  "liveness": {
-    "timestamp": "2026-05-28T00:00:00Z",
-    "interval": 60,                  // seconds
-    "status": "Active"
-  }
-}
+    // InstanceId makes the queue name unique per replica → each binds its own queue → Publish fans out
+    cfg.ConfigureEndpoints(context);
+    // InstanceId supplied per-endpoint or via the formatter; e.g. pod name / Environment.MachineName / Guid
+});
+// WebApi (publisher side) — just Publish; topology decides fan-out
+await publishEndpoint.Publish<StartOrchestration>(new { WorkflowIds = ids });
 ```
 
-```jsonc
-// {workflowId:stepId} — STRING value (chain form, one nextStepId per record):
-{
-  "entryCondition": "PreviousProcessing", // existing StepEntity.EntryCondition enum
-  "processorId": "<guidN>",
-  "payload": { /* arbitrary JSON from Assignment.Payload */ },
-  "nextStepId": "<guidN>"                  // single id; null = terminal
-}
-```
+> **Refinement flagged for STACK/ARCHITECTURE:** the exact wiring of InstanceId (per-endpoint `.Endpoint(e => e.InstanceId = …)` vs a formatter that injects it vs `ConnectReceiveEndpoint(new TemporaryEndpointDefinition())`) is the one config detail to pin down in the phase plan. The endpoint must also be **non-durable / auto-delete (temporary)** so dead replicas don't leave orphan queues accumulating messages in RabbitMQ. MassTransit exposes a `Temporary`/auto-delete flag for exactly this fan-out case (`TemporaryEndpointDefinition` exists for the dynamic variant). MEDIUM confidence on the best of the 3 wiring variants — resolve in plan.
 
-```jsonc
-// {processorId} — STRING value:
-{
-  "inputDefinition": { /* full JSON Schema from Processor.InputSchema.Definition; may be null */ },
-  "outputDefinition": { /* full JSON Schema from Processor.OutputSchema.Definition; may be null */ },
-  "liveness": {
-    "timestamp": "2026-05-28T00:00:00Z",
-    "interval": 60,
-    "status": "Active"
-  }
-}
-```
+**Load-balanced send (FUTURE — Processor milestone):**
+`Send` to `queue:processorId` and a shared results queue, with N processor replicas sharing one queue = competing consumers. Mechanism understood, **not built now.**
 
-**Chain form note:** A Step with multiple `NextStepIds` produces multiple `{workflowId:stepId}` records, each with one `nextStepId`. This is the "fan-out flattening" the milestone scope already specifies and is consumer-friendly — readers walk one record per edge, never an array. `[LOCKED: chain form]`
+### 2. Request/Response (`IRequestClient<T>` / `GetResponse<TRes>`)
+
+- Caller injects `IRequestClient<TReq>` and `await client.GetResponse<TRes>(req, ct, timeout)`. Returns `Response<TRes>`.
+- **Default timeout is 30 seconds** (configurable via `RequestTimeout` per-call or on the client registration). On timeout → `RequestTimeoutException`.
+- Responder side: a normal `IConsumer<TReq>` that calls `context.RespondAsync<TRes>(…)`. If the responder **throws**, MassTransit converts it into a `Fault<TReq>` and the awaiting `GetResponse` **throws `RequestFaultException`** rather than hanging.
+- Uses a temporary response queue + the `RequestId`/`ResponseAddress` envelope headers under the hood; entirely automatic.
+
+**This is FUTURE** (processor→WebApi `GetProcessorBySourceHash`). Mechanism captured; **not built now.**
+
+### 3. Ack / redelivery / retry semantics (the crash-vs-business-failure distinction)
+
+Verified delivery model (Context7, `concepts/transports` + `concepts/outbox`):
+
+> "The broker locks a message, making it invisible to other consumers. The message remains locked until it is explicitly acknowledged by the consumer or negatively-acknowledged due to a service or network failure. **If a process crashes or a network split occurs, the broker will redeliver the message.**"
+
+So:
+- **Consume completes normally → MassTransit acks** (RabbitMQ `basic.ack`); message removed from queue. This is the "ack on success."
+- **Consumer throws →** retry policy (if any) runs; once exhausted, the message is **moved to the `_error` queue** and the original is acked-away (it is *not* left on the source queue forever). A `Fault<T>` is published. So a thrown exception is **not** "leave on queue" — it is "dead-letter after retries."
+- **Process crash / connection drop mid-Consume → no ack → RabbitMQ redelivers** to the same or another bound queue. This is the genuine "left on queue if the consumer crashed" guarantee.
+
+**Critical design consequence for THIS milestone** (the requirement says "business failures still ack but crashes don't"):
+
+| Outcome | Consumer should… | Result |
+|---|---|---|
+| Business failure (workflow not in L2, validation fail, pass/fail result) | **Log it and return normally (complete Consume)** — do NOT throw | Message **acked**, not redelivered, not dead-lettered |
+| Infrastructure crash (Redis unreachable transiently, process killed, broker drop) | **Let it throw / let the process die** | No ack → broker **redelivers** |
+
+This means the consumer must **catch its own business/domain exceptions, log them at the correlated scope, and complete** — reserving thrown exceptions (and the resulting nack/redelivery) for genuine infrastructure faults. That mapping is a **table-stakes** design requirement, not an optional refinement, because the default ("throw on anything bad") would dead-letter business failures, which the milestone explicitly does not want.
+
+### 4. Correlation: native CorrelationId/ConversationId/InitiatorId vs the explicit domain Guid
+
+Verified (`concepts/messages`, `configuration/topology`):
+- Every message rides in an envelope with headers: `MessageId`, `CorrelationId`, `ConversationId`, `InitiatorId`, `RequestId`, plus addresses.
+- **Convention:** MassTransit auto-populates the envelope `CorrelationId` header if the message implements `CorrelatedBy<Guid>` **or** has a `Guid`/`Guid?` property literally named `CorrelationId`, `CommandId`, or `EventId`.
+- On a consumed→published chain, `ConversationId` is inherited and the inbound `CorrelationId` is copied to the new message's `InitiatorId` — automatic conversation threading.
+
+**Reconciliation with this codebase (the important part):** there are **two different correlation worlds and the milestone deliberately does NOT unify them** (locked decision in PROJECT.md):
+1. **HTTP edge:** `X-Correlation-Id` string, `Guid.NewGuid().ToString("N")` format, lives in `CorrelationIdMiddleware` and inside the Redis L2 root value (`WorkflowRootProjection.CorrelationId`, a `string`). This is the value the Orchestrator extracts and logs against this milestone.
+2. **Bus world:** MassTransit's envelope `CorrelationId` (`Guid`) and the frozen `ICorrelated` domain vocabulary `{ CorrelationId, ExecutionId, WorkflowId, StepId, ProcessorId, EntryId }` — all `Guid`. The bus `Guid CorrelationId` is **minted by the Quartz scheduler per trigger, which is FUTURE.**
+
+The two are **linked via logs, not merged.** For THIS milestone:
+- The `Start/Stop` **control contracts carry NO correlationId on the wire** (locked) — they are bare `WorkflowIds[]`. The Orchestrator obtains the correlation **string** from Redis L2, not from the message envelope.
+- The reusable inbound consume filter in `BaseConsole.Core` pushes that string into an AsyncLocal accessor + a MEL log scope under the **literal key `"CorrelationId"`** — deliberately the SAME key `CorrelationIdMiddleware` uses and the same key OTel `IncludeScopes=true` surfaces, so HTTP-side and bus-side log lines correlate in Elasticsearch by identical attribute name. This mirroring is the whole point of the milestone ("CorrelationId propagation proven end-to-end").
+- The outbound send/publish filter that stamps the ambient correlationId onto `ICorrelated` messages is built but exercised only by a **synthetic test-harness downstream send** this milestone (no real downstream yet).
+
+> **Subtle naming collision to flag:** the domain `ICorrelated.CorrelationId` is a `Guid`; if a real `ICorrelated` message is ever published, MassTransit's convention will auto-promote that `Guid` to the envelope `CorrelationId` header. That is fine and desirable — but note it is a **different value** from the HTTP `X-Correlation-Id` string. Do not write code that assumes the envelope header equals the L2 root's correlation string. They correlate **only through co-located log lines.**
 
 ---
 
-## 5. Feature Dependencies
+## Feature Landscape
+
+### Table Stakes (must-have for THIS milestone)
+
+| Feature | Why Expected (milestone need) | Complexity | Dependencies |
+|---|---|---|---|
+| **MassTransit bus skeleton in `BaseConsole.Core`** (`AddBaseConsoleMessaging`) + WebApi joins the bus | Nothing moves without a configured bus on both ends; RabbitMQ in compose | MEDIUM | New RabbitMQ compose tier; reuses existing DI/Generic-Host patterns |
+| **`Publish` of `StartOrchestration`/`StopOrchestration` from WebApi** | Locked: WebApi fans Start/Stop to all Orchestrator replicas | LOW | Bus skeleton; `Messaging.Contracts` shared assembly |
+| **Per-replica fan-out receive endpoint via `InstanceId`** (unique, temporary/auto-delete queue per replica) | Locked: every replica must receive a copy; topology supports N with 1 today | MEDIUM | `ConfigureEndpoints` + InstanceId wiring; **the one config detail to pin in the plan** |
+| **`Messaging.Contracts` assembly** (`StartOrchestration{WorkflowIds[]}`, `StopOrchestration{WorkflowIds[]}` — NO correlationId on wire; `ICorrelated` vocabulary; shared L2 root shape) | Locked vocabulary; one source of truth for the L2 root WebApi writes + Orchestrator reads | LOW–MEDIUM | Extract `WorkflowRootProjection` shape out of `BaseApi.Service` into shared assembly |
+| **Orchestrator consumes Start/Stop → reads Redis L2 root per WorkflowId → extracts stored `X-CorrelationId`** | Locked milestone deliverable | MEDIUM | Existing Redis L2 root (`WorkflowRootProjection.CorrelationId`); StackExchange.Redis lifted into `BaseConsole.Core` |
+| **Correlated log scope keyed `"CorrelationId"`** (inbound consume filter → AsyncLocal + MEL scope), mirroring `CorrelationIdMiddleware` | Locked: "correlation proven end-to-end (HTTP → L2 → message → orchestrator log in ES)" | MEDIUM | Existing OTel `IncludeScopes=true`; reuse the literal key from `CorrelationIdMiddleware` |
+| **Ack-on-success / catch-business-failures-and-complete; throw only on infra fault** | Locked: "ack on success"; business failures must ack, crashes must redeliver | MEDIUM | Correct understanding of MassTransit ack/redelivery (see primer §3); explicit try/catch boundary in the consumer |
+| **MassTransit OTel instrumentation in `BaseConsole.Core`** (MEL-bridge logs + runtime + MassTransit instrumentation, no AspNetCore instrumentation) | Console-flavored mirror of `BaseApi.Core` observability; needed to see the correlated logs in ES | MEDIUM | Existing OTel Collector; OpenTelemetry .NET SDK 1.15.x |
+| **Embedded minimal-Kestrel health probes; `/ready` flips when the bus has started** | Console worker still needs K8s-style probes; bus-started readiness is the meaningful signal | MEDIUM | MassTransit `IBusHealth` / bus-started signal; mirrors existing health-probe discipline |
+| **Outbound send/publish correlation filter** (stamps ambient correlationId onto `ICorrelated`) | Locked: outbound side must exist; exercised via synthetic harness send this milestone | LOW–MEDIUM | AsyncLocal accessor from the inbound filter |
+
+### Differentiators (idiomatic resilience worth a small, bounded amount now)
+
+| Feature | Value Proposition | Complexity | Dependencies / Note |
+|---|---|---|---|
+| **Bounded message-retry on infra faults** (`UseMessageRetry(r => r.Intervals(…))` or `r.Immediate(n)`, `Ignore<TBusinessException>`) | Transient Redis blip → a few short retries before redelivery/dead-letter, instead of immediate fault; classic MassTransit idiom | LOW | Must `Ignore` the business-failure path so business failures still ack (ties to table-stakes ack rule). Keep intervals tiny. |
+| **Honoring the `_error` queue as the dead-letter outcome** (don't suppress it) | Free operational visibility: genuine infra faults land in `orchestrator_error` for inspection, not lost | LOW | Default MassTransit behavior — just don't disable it |
+| **`ConcurrentMessageLimit` / `PrefetchCount` tuning on the consumer** | Prevents a single replica grabbing more in-flight Start/Stop than it can correlate-and-log | LOW | Endpoint/consumer definition; sensible defaults are fine for 1 replica |
+| **Consumer definition class per consumer** (`StartOrchestrationConsumerDefinition : ConsumerDefinition<…>`) | The clean seam for retry/InstanceId/concurrency config; matches the project's "base + per-entity definition" idiom | LOW | Pure organization; cheap and future-proofs the Processor milestone |
+
+### Anti-Features (deliberately NOT built this milestone)
+
+| Feature | Why It's Tempting | Why Defer / Problem Now | What To Do Instead |
+|---|---|---|---|
+| **Quartz scheduler + minting the bus `Guid CorrelationId`** | "Correlation should be a Guid on the wire end-to-end" | Locked FUTURE; the bus-world Guid correlation is the scheduler's job and unifying it with the HTTP string is explicitly NOT a goal | Carry NO correlationId on the Start/Stop wire; pull the string from L2; link worlds via logs only |
+| **`Send` to `queue:processorId` (load-balanced competing consumers)** | The mechanism is right there and understood | FUTURE Processor milestone; no Processor console exists; no downstream send this milestone | Document the mechanism (done, §1); build only fan-out now |
+| **Request/Response `GetProcessorBySourceHash` + WebApi responder** | WebApi already has `GetBySourceHash`; wiring `IRequestClient` looks small | FUTURE; processor→WebApi query has no caller yet; adds a temporary-response-queue surface with nothing using it | Leave `GetBySourceHash` as the existing HTTP endpoint; add the bus responder in the Processor milestone |
+| **Concrete `JobTrigger` / `ExecutionResult` records + real downstream/result SEND** | Completes the "round-trip" mental model | FUTURE; the milestone deliverable is *logs up to the scheduler-job-start seam*, no downstream send | Stop the consumer at the "scheduler job start" log seam; exercise outbound filter with a synthetic harness send only |
+| **Throwing on business failure (workflow missing in L2, pass/fail result)** | Throwing is the default "something's wrong" reflex | Throwing dead-letters the message to `_error` after retries — the opposite of the locked "business failures still ack" rule | Catch domain exceptions, log at correlated scope, **complete** the Consume (ack). Reserve throw for infra faults only |
+| **Persisting Redis writes / new keyspaces from the Orchestrator** | "While we're here, write status back" | Locked: "No Redis writes" this milestone — logs are the deliverable | Read-only L2 access from the Orchestrator |
+| **Transactional Outbox (`AddEntityFrameworkOutbox` / in-memory outbox)** | Exactly-once / dedup is a known MassTransit feature | Overkill: WebApi only *publishes* control messages, no DB-transaction-coupled publish; no downstream publish from the Orchestrator yet | Skip the outbox until the Processor round-trip introduces transaction-coupled publishing |
+| **Sagas / state machines for orchestration state** | "Orchestration" sounds like a saga | The Orchestrator is a stateless log-to-seam consumer this milestone; saga = large complexity with no state to hold | Plain `IConsumer<T>`; revisit sagas only if/when long-running execution state appears |
+| **OTel traces / spans across the bus hop** | Tracing the HTTP→bus→log flow would be elegant | Project has NO traces backend (locked, Phase 11 D-03); logs + the shared `"CorrelationId"` key are the correlation substrate | Correlate via the MEL log scope key in Elasticsearch; traces stay a future-milestone candidate |
+| **Durable per-replica fan-out queues** | Durability sounds safer | Durable instance queues orphan and accumulate when replicas die/rescale → unbounded broker growth | Make fan-out endpoints temporary/auto-delete (the InstanceId fan-out idiom) |
+
+---
+
+## Feature Dependencies
 
 ```
-[Bounded L3 fetch by WorkflowIds]
-    └──required-by──> [L1 Dictionary build]
-                          └──required-by──> [Existence validation]
-                                                └──required-by──> [Cycle detection (DFS)]
-                                                                      └──required-by──> [Schema-edge compat gate]
-                                                                                            └──required-by──> [Payload↔ConfigSchema gate]
-                                                                                                                  └──required-by──> [L2 projection write (3 key spaces)]
-                                                                                                                                        └──required-by──> [L1 cleanup (try/finally)]
+RabbitMQ compose tier
+    └──requires──> Bus skeleton in BaseConsole.Core (AddBaseConsoleMessaging) + WebApi bus join
+                       ├──requires──> Messaging.Contracts (StartOrchestration / StopOrchestration / ICorrelated / shared L2 root shape)
+                       │                  └──requires──> extract WorkflowRootProjection shape out of BaseApi.Service
+                       │
+                       ├──enables──> WebApi Publish<Start/Stop>  ──(topology)──> InstanceId fan-out receive endpoint (Orchestrator)
+                       │                                                              └──requires──> Redis client lifted into BaseConsole.Core
+                       │                                                                                 └──requires──> existing Redis L2 root (correlationId string)
+                       │
+                       ├──enables──> Inbound consume filter (CorrelationId → AsyncLocal + "CorrelationId" MEL scope)
+                       │                  └──enhances──> MassTransit OTel instrumentation ──> correlated logs in Elasticsearch
+                       │                  └──enables──> Outbound send/publish filter (stamp ICorrelated) ──exercised by──> synthetic harness send
+                       │
+                       └──enables──> Health probe /ready flips on bus-started
 
-[Stop: compute key set] ── derives from ──> [L1 build artifact (key list cache)]
-[Stop: UNLINK] ── precondition ──> [Redis client (StackExchange.Redis) in compose stack]
+Ack-on-success rule ──governs──> Orchestrator consumer body (catch business → log → complete; throw only infra)
+        └──interacts-with──> bounded UseMessageRetry (must Ignore<TBusinessException>)
 
-[Liveness DTO shape] ── shape-only-in-v3.3.0 ──> (Scheduler writes deferred)
-[JobId DTO shape] ── shape-only-in-v3.3.0 ──> (Hangfire/Quartz integration deferred)
+[FUTURE] Quartz scheduler ──mints──> bus Guid CorrelationId ──would-flow-through──> ICorrelated wire fields
+[FUTURE] Send to queue:processorId (load-balanced) ──requires──> Processor console
+[FUTURE] IRequestClient<GetProcessorBySourceHash> ──requires──> WebApi bus responder
 ```
 
 ### Dependency Notes
-
-- **L1 → L2 ordering is non-negotiable:** an L2 write before L1 is fully built risks projecting an incomplete graph. The "build → validate → write → cleanup" pipeline is sequential.
-- **Validation order (existence → cycles → schema-edge → payload→config) is consumer-facing:** swapping the order changes which 422 a broken workflow produces. Locked in milestone scope.
-- **Stop depends on L1's key-list output:** the cleanest implementation has Start return / cache the list of keys it wrote so Stop can UNLINK them without SCAN. Alternative is SCAN at Stop time (slower, has cursor semantics) — defer that to a v3.4+ admin-cleanup tool.
-- **Redis dependency is new in compose.yaml:** adds operational footprint (one more container, one more health probe). Document in PITFALLS.md as the v3.3.0 infrastructure delta.
-
----
-
-## 6. MVP Definition — v3.3.0 Scope
-
-### Launch With (v3.3.0 — Table Stakes)
-
-- [ ] **Bounded L3 fetch + flat Dictionary L1 build** — 5 entity types loaded once per Start request, in-memory dicts, explicit teardown.
-- [ ] **DFS traversal with cycle detection + missing-next-step 422** — per-traversal `visited` set, deterministic error messages.
-- [ ] **Strict Schema-edge compatibility gate** — Guid equality, null passes, 422 on mismatch with `(parentStepId, childStepId)`.
-- [ ] **Payload↔ConfigSchema gate (closes VALID-21)** — reuses v3.2.0 JsonSchema.Net validator (draft 2020-12, SSRF-disabled), 422 on failure with offending `assignmentId`.
-- [ ] **3 Redis key spaces with locked DTO shapes** — `{workflowId}`, `{workflowId:stepId}`, `{processorId}`; STRING + JSON; exact field names (`inputDefinition` / `outputDefinition`, `liveness{timestamp,interval,status}`, `jobId`).
-- [ ] **Idempotent Start (Pattern A: per-key SET overwrite, targeted DEL of removed keys)** — last-write-wins on concurrent Starts; no Redis lock; 204 response.
-- [ ] **Idempotent Stop (compute-key-set + UNLINK)** — 204 even when no keys exist; never SCAN, never KEYS, never status-flag flip.
-- [ ] **Mandatory validation order** — existence → cycles → schema-edge → Payload↔Config → L1 build → L2 write → cleanup, asserted by integration tests.
-- [ ] **L1 cleanup contract** — explicit `.Clear()` in finally block, success or failure path.
-- [ ] **Redis client added to `compose.yaml`** — alongside Postgres/ES/Prom; v3.2.0 health-probe pattern extended to include Redis reachability in `/health/ready`.
-
-### Add After Validation (v3.4+ — Differentiators)
-
-- [ ] **Aggregate-error mode for validation gates** — return all 12 mismatches at once vs. first-failure-only.
-- [ ] **`generationId` on `{workflowId}` root** — consumer can detect rebuild without diffing chain records.
-- [ ] **Projection-size telemetry** — Histograms on `orchestration.projection.{bytes,keys_total}`.
-- [ ] **Dry-run Start (`?dryRun=true`)** — full validation pipeline, skip L2 write. Useful for CI / change-management.
-- [ ] **Audit trail of Start invocations** — `(workflowId, timestamp, correlationId, userId)` log row per Start.
-- [ ] **Scheduler integration** — who writes the real `JobId`; who emits `Liveness.timestamp` updates; Hangfire vs. Quartz vs. external Scheduler service decision.
-- [ ] **Compile metadata stamped into L2** — `compileMetadata.schemaEdge.{parentOutputSchemaId, childInputSchemaId}` per chain record for audit consumers.
-- [ ] **Stage-then-rename atomic swap (Pattern B)** — upgrade from per-key SET if consumers complain about read-during-rebuild artifacts.
-
-### Future Consideration (v3.5+ — Defer)
-
-- [ ] **Structural Schema compatibility** — canonical JSON Schema diffing instead of strict Guid equality. Entire research milestone of its own.
-- [ ] **Projection-diff between current and proposed Start** — "what's about to change" output for change-management consumers.
-- [ ] **RedisJSON module integration** — partial-read / in-place-update of nested fields; defer until a partial-read use case appears.
-- [ ] **Pre-warm strategy (background service replays last-known-good Start at API startup)** — risks startup-probe regression; defer until consumers demand cold-start latency improvements.
-- [ ] **Distributed lock around Start (RedLock or similar)** — only relevant once multi-replica is in play. v3.3.0 is single-replica.
-- [ ] **Sequence numbers / generation IDs / causal-consistency tokens in `Liveness`** — needed once Scheduler integration introduces multi-writer races.
+- **Fan-out endpoint requires the Redis client + L2 root:** the consumer's whole job is read-L2-then-log; without the lifted Redis client and the shared root shape it can't extract the correlation string.
+- **Ack rule governs the consumer body and constrains retry config:** `UseMessageRetry` must `Ignore` the business-failure exception type (or business failures must never be expressed as throws) so they don't get retried/dead-lettered.
+- **Inbound filter must use the literal `"CorrelationId"` key:** any drift from `CorrelationIdMiddleware`'s key breaks the cross-source correlation in Elasticsearch — this is a hard coupling, not a convention.
+- **Contracts assembly is a prerequisite for both publisher and consumer compilation** — earliest phase item.
 
 ---
 
-## 7. Feature Prioritization Matrix
+## MVP Definition
 
-| Feature | User Value (External Orchestrator + Scheduler) | Implementation Cost | Priority |
-|---------|------------------------------------------------|---------------------|----------|
-| Bounded L3 fetch + L1 build + cleanup | HIGH (correctness foundation) | LOW | **P1 — v3.3.0** |
-| DFS traversal + cycle detection | HIGH (consumer safety) | LOW | **P1 — v3.3.0** |
-| Strict Schema-edge gate | HIGH (type-safety contract) | MEDIUM | **P1 — v3.3.0** |
-| Payload↔ConfigSchema gate (closes VALID-21) | HIGH (closes deferred v3.2.0 debt) | MEDIUM | **P1 — v3.3.0** |
-| 3 Redis key spaces with locked DTO shapes | HIGH (consumer-contract surface) | LOW | **P1 — v3.3.0** |
-| Idempotent Start (Pattern A) | HIGH (operator-trigger semantics) | MEDIUM | **P1 — v3.3.0** |
-| Idempotent Stop (compute-key-set + UNLINK) | HIGH (operator-trigger semantics) | LOW | **P1 — v3.3.0** |
-| Mandatory validation order | MEDIUM (deterministic error messages) | LOW | **P1 — v3.3.0** |
-| `generationId` on workflow root | MEDIUM (rebuild detection) | LOW | **P2 — v3.4** |
-| Dry-run Start (`?dryRun=true`) | MEDIUM (CI gating) | MEDIUM | **P2 — v3.4** |
-| Aggregate-error mode | MEDIUM (DX) | LOW | **P2 — v3.4** |
-| Projection-size telemetry | MEDIUM (ops) | LOW | **P2 — v3.4** |
-| Audit trail of Start | MEDIUM (compliance) | MEDIUM | **P2 — v3.4** |
-| Scheduler integration (real JobId/Liveness writers) | HIGH (full system completeness) | HIGH | **P2 — v3.4** (separate milestone) |
-| Stage-then-rename swap (Pattern B) | LOW until consumer asks | HIGH | **P3 — v3.5+** |
-| Structural Schema compat | LOW until ecosystem matures | HIGH | **P3 — v3.5+** |
-| Projection diffing | LOW | HIGH | **P3 — v3.5+** |
-| RedisJSON module | LOW until partial-read use case | HIGH | **P3 — v3.5+** |
-| Pre-warm strategy | LOW (risk > value at this stage) | HIGH | **P3 — v3.5+** |
-| Distributed Start lock | LOW (single-replica) | HIGH | **P3 — v3.5+** |
+### Launch With (THIS milestone, v3.4.0)
+- [ ] RabbitMQ compose tier + bus skeleton both ends — nothing works without it
+- [ ] `Messaging.Contracts` (control contracts, `ICorrelated` vocab, shared L2 root) — compile prerequisite
+- [ ] WebApi `Publish` Start/Stop — the publisher half of fan-out
+- [ ] InstanceId fan-out receive endpoint (temporary/auto-delete) — the broadcast topology, N-ready
+- [ ] Orchestrator consumer: read L2 → extract corr string → correlated log scope → log to "scheduler job start" seam → ack-on-success
+- [ ] Inbound consume filter (`"CorrelationId"` MEL scope) + MassTransit OTel instrumentation — proves the end-to-end correlation in ES
+- [ ] Ack semantics: catch business failures + complete; throw only on infra
+- [ ] Health probe `/ready` flips on bus-started
+- [ ] Outbound correlation filter exercised by a synthetic harness send
 
-**Priority key:**
-- **P1**: Must have for v3.3.0 ship (consumer-contract or correctness)
-- **P2**: Should have, candidate for v3.4 milestone
-- **P3**: Nice to have, defer until trigger emerges
+### Add After Validation (bounded, optional within milestone)
+- [ ] Bounded `UseMessageRetry` on infra faults (with `Ignore<business>`) — add once happy-path correlation is proven green
+- [ ] `ConcurrentMessageLimit`/`PrefetchCount` tuning — add if 1-replica behavior shows in-flight pressure
+- [ ] Per-consumer `ConsumerDefinition` classes — adopt as the config seam (cheap, future-proofs Processor milestone)
+
+### Future Consideration (Processor milestone, v3.5.x+)
+- [ ] Quartz scheduler + bus `Guid CorrelationId` minting — the bus-world correlation source
+- [ ] `Send` to `queue:processorId` (load-balanced competing consumers) — orchestrator→processor
+- [ ] Processor→orchestrator result `Send` (load-balanced shared results queue)
+- [ ] `IRequestClient<GetProcessorBySourceHash>` + WebApi responder — request/response query
+- [ ] Concrete `JobTrigger` / `ExecutionResult` records + the live round-trip
+- [ ] Transactional outbox — once DB-transaction-coupled publishing appears
+- [ ] OTel traces across the bus hop — when request-flow debugging becomes painful (Phase 11 D-03 future candidate)
 
 ---
 
-## 8. Ecosystem Pattern Analysis (Comparable Systems)
+## Feature Prioritization Matrix
 
-| Pattern | Temporal | Argo Workflows | Airflow | sk_p v3.3.0 (our approach) |
-|---------|----------|----------------|---------|---------------------------|
-| **How is the graph stored?** | Event-sourced history per workflow execution | YAML CRD in K8s etcd | Python DAG file parsed at scheduler-tick | Postgres L3 → projected to Redis L2 (this milestone) |
-| **Compile-time validation** | Workflow code is just Go/Java/TS — compile errors caught by language toolchain | YAML schema validated by k8s admission | DAG-bag parser at scheduler-tick (runtime error if broken) | Explicit gates at Start: existence, cycles, schema-edge, payload↔config |
-| **Cycle detection** | N/A (event-sourced, replays history; no compile-time graph) | YAML structural lint | Implicit (DAG = Directed *Acyclic* Graph; parser rejects cycles) | Explicit DFS at Start (LOCKED) |
-| **Idempotent start** | `WorkflowIdReusePolicy` enum (ALLOW_DUPLICATE / REJECT_DUPLICATE / TERMINATE_IF_RUNNING) | `kubectl apply` is idempotent by K8s convention | Trigger by `dag_id` + `execution_date` — date is the idempotency key | PUT-like idempotent Start; last-write-wins |
-| **Stop semantics** | `TerminateWorkflowExecution` API; durable state preserved | `argo terminate` — sets phase=Failed; CRD remains | `dag.set_dag_run_state(state=DagRunState.FAILED)` | DEL the L2 projection; 204 unconditionally |
-| **Projection / read model** | Visibility store (ES) for queries; primary store is event log | K8s API queries the CRD directly | Metadata DB queries (Postgres/MySQL) | Redis L2 — the consumer-facing read model |
+| Feature | User/Platform Value | Implementation Cost | Priority |
+|---|---|---|---|
+| Bus skeleton + RabbitMQ tier | HIGH | MEDIUM | P1 |
+| `Messaging.Contracts` (incl. shared L2 root extract) | HIGH | LOW–MEDIUM | P1 |
+| WebApi `Publish` Start/Stop | HIGH | LOW | P1 |
+| InstanceId fan-out endpoint (temporary) | HIGH | MEDIUM | P1 |
+| Orchestrator consumer (read-L2 → correlated log → ack) | HIGH | MEDIUM | P1 |
+| Inbound `"CorrelationId"` consume filter + MassTransit OTel | HIGH | MEDIUM | P1 |
+| Ack-on-success / business-vs-infra rule | HIGH | MEDIUM | P1 |
+| Health `/ready` flips on bus-started | MEDIUM | MEDIUM | P1 |
+| Outbound correlation filter (synthetic harness) | MEDIUM | LOW–MEDIUM | P1 |
+| Bounded `UseMessageRetry` (Ignore business) | MEDIUM | LOW | P2 |
+| `ConsumerDefinition` classes | LOW–MEDIUM | LOW | P2 |
+| Concurrency/prefetch tuning | LOW | LOW | P2 |
+| Quartz / Send-load-balanced / Request-Response / round-trip | (future value) | HIGH | P3 (FUTURE) |
+| Outbox, sagas, traces | LOW (now) | HIGH | P3 (FUTURE) |
 
-**Takeaway:** sk_p's L3→L1→L2 split mirrors a CQRS read-model pattern more than a Temporal-style event-sourced pattern. The L2 projection is the read model; L3 is the write model. v3.3.0 introduces the read-model materializer.
+**Priority key:** P1 = required to ship v3.4.0 · P2 = bounded refinement within milestone · P3 = FUTURE (Processor milestone or later)
+
+---
+
+## Mechanism Reference (MassTransit term ↔ milestone use)
+
+| MassTransit term | What it does | THIS milestone | FUTURE |
+|---|---|---|---|
+| `Publish<T>` | exchange-routed; all bound queues get a copy | WebApi Start/Stop fan-out | downstream events |
+| `Send(addr,T)` | one queue; N consumers compete (load-balance) | — (anti-feature) | orchestrator→processor `queue:processorId`, results queue |
+| `InstanceId` (endpoint) | unique per-replica queue bound to shared exchange → **fan-out instead of load-balance** | the broadcast topology (1 replica, N-ready) | — |
+| Temporary/auto-delete endpoint | queue removed when bus stops; no orphan accumulation | fan-out queues | — |
+| `IConsumer<T>` Consume completes | broker `basic.ack`; message removed | ack-on-success | — |
+| Throw in Consume | retry → `_error` dead-letter + `Fault<T>` | **only** for infra faults | — |
+| Process crash / drop mid-Consume | no ack → broker redelivers | crash safety guarantee | — |
+| `UseMessageRetry` | bounded retry before fault | optional, Ignore business | — |
+| `IRequestClient<T>` / `GetResponse<TRes>` | temp-response-queue req/resp; default 30s timeout; fault→`RequestFaultException` | — (anti-feature) | `GetProcessorBySourceHash` |
+| `RespondAsync<TRes>` | responder side | — | WebApi responder |
+| Envelope `CorrelationId`/`ConversationId`/`InitiatorId` | conversation threading via headers | NOT used to carry the HTTP corr; logs link the two worlds | scheduler-minted Guid flows here |
+| `CorrelatedBy<Guid>` / property named `CorrelationId`/`CommandId`/`EventId` | auto-sets envelope `CorrelationId` header | `ICorrelated.CorrelationId` Guid will auto-promote if ever published | wire-level correlation |
 
 ---
 
 ## Sources
 
-### Ecosystem patterns
-- [Workflow Orchestration Best Practices for ETL, ELT, and ML Pipelines (ml4devs)](https://www.ml4devs.com/what-is/workflow-orchestration/) — schema validation, separation of orchestration from business logic, treating DAGs as code
-- [Temporal vs Airflow vs Argo: Workflow Orchestration Guide (xgrid)](https://www.xgrid.co/resources/temporal-vs-airflow-vs-argo-workflow-orchestration/) — comparison of graph storage and validation approaches
-- [Workflow Engine design proposal (Architecture Weekly)](https://www.architecture-weekly.com/p/workflow-engine-design-proposal-tell) — graph compilation and projection patterns
-- [Idempotency when creating workflows · workflow-core #828](https://github.com/danielgerlag/workflow-core/issues/828) — WorkflowIdReusePolicy ecosystem precedent
-- [The Myths of Idempotent APIs in Practices](https://medium.com/@qlong/the-myths-of-idempotent-apis-in-practices-9025a94487f2) — Indeed Workflow Engine StartWorkflow idempotency pattern
-
-### Redis projection patterns
-- [Redis Atomic Update Patterns (Antirez)](https://redis.antirez.com/fundamental/atomic-updates.html) — atomic swap / RENAME patterns
-- [How to Use RENAME and RENAMENX in Redis (OneUptime, 2026)](https://oneuptime.com/blog/post/2026-03-31-redis-how-to-use-rename-and-renamenx-in-redis-to-rename-keys/view) — staging-key-then-rename pattern
-- [What is idempotency in Redis? (Redis blog)](https://redis.io/blog/what-is-idempotency-in-redis/) — SET NX vs Lua tradeoffs
-- [Faster KEYS and SCAN (Redis blog)](https://redis.io/blog/faster-keys-and-scan-optimized/) — Redis 8 single-slot optimization; production caveats
-- [Redis SCAN vs KEYS command (Medium)](https://medium.com/@shaskumar/redis-scan-vs-keys-command-9df7f51b7162) — production-safety guidance
-- [Redis Pattern Matching: How to Use KEYS and SCAN Effectively (DEV)](https://dev.to/rijultp/redis-pattern-matching-how-to-use-keys-and-scan-effectively-5dkp) — anti-pattern catalog
-- [Redis Key Design and Naming Conventions (OneUptime, 2026)](https://oneuptime.com/blog/post/2026-01-21-redis-key-design-naming/view) — colon-delimited hierarchical convention
-
-### Materialized view / projection theory
-- [Materialized View pattern (Azure Architecture Center)](https://learn.microsoft.com/en-us/azure/architecture/patterns/materialized-view) — work distribution: read-time vs. write-time; rebuild patterns
-- [Materialized Views: An alternative to full-blown cache systems (Distributed Computing Musings, 2022)](https://distributed-computing-musings.com/2022/11/materialized-views-an-alternative-to-full-blown-cache-systems/) — read-through vs. materialized; when not to mix
-
-### Redis Hash vs JSON
-- [Hash vs JSON Storage (Redis docs)](https://redis.io/docs/latest/develop/ai/redisvl/user_guide/hash_vs_json/) — depth-of-nesting tradeoff (HASH ≤ 1 level)
-- [RedisJSON: Performance Benchmarking (Redis blog)](https://redis.io/blog/redisjson-public-preview-performance-benchmarking/) — partial-read latency claims
-- [JSON Performance (Redis docs)](https://redis.io/docs/latest/develop/data-types/json/performance/) — when RedisJSON helps and when it doesn't
-
-### Lua-as-anti-pattern
-- [Scripting with Lua (Redis docs)](https://redis.io/docs/latest/develop/programmability/eval-intro/) — explicit warnings: dynamic script generation is an anti-pattern; debugging is hard; server blocks during execution; business logic in Lua leads to bad architecture
-- [Limitations of scripting with Lua in Redis (Boyner Tech, Medium)](https://medium.com/boyner-technology/limitations-of-scripting-with-lua-in-redis-b4381bd9629f) — maintainability constraints
-
-### Liveness / heartbeat shape
-- [HeartBeat (Martin Fowler, Patterns of Distributed Systems)](https://martinfowler.com/articles/patterns-of-distributed-systems/heartbeat.html) — canonical pattern, field shapes (timestamp + sequence + node_id)
-- [Heartbeats in Distributed Systems (Arpit Bhayani)](https://arpitbhayani.me/blogs/heartbeats-in-distributed-systems/) — interval selection vs. round-trip time
-- [Redis-Powered User Session Tracking with Heartbeat-Based Expiration (Tilt Engineering)](https://medium.com/tilt-engineering/redis-powered-user-session-tracking-with-heartbeat-based-expiration-c7308420489f) — stored-field vs. TTL-as-liveness tradeoffs
-
-### Dry-run pattern
-- [Dry Run (KubeVela docs)](https://kubevela.io/docs/tutorials/dry-run/) — workflow-system dry-run precedent
-- [A Guide to dbt Dry Runs (Towards Data Engineering)](https://medium.com/towards-data-engineering/a-guide-to-dbt-dry-runs-safe-simulation-for-data-engineers-7e480ce5dcf7) — data-pipeline dry-run idiom
-
-### Partial-failure / atomic batch
-- [AIP-233: Batch methods: Create (Google API Improvement Proposals)](https://google.aip.dev/233) — atomic vs. partial-success batch semantics
-- [How to Handle Partial Success in Bulk API Operations (OneUptime, 2026)](https://oneuptime.com/blog/post/2026-02-02-rest-bulk-api-partial-success/view) — response shape patterns
-- [Error handling in distributed systems (Temporal)](https://temporal.io/blog/error-handling-in-distributed-systems) — compensation / saga patterns
-
-### .NET Redis client
-- [Pipelines and transactions (Redis .NET docs)](https://redis.io/docs/latest/develop/clients/dotnet/transpipe/) — IDatabase batching, MULTI/EXEC, CreateBatch
-- [Pipelines and Multiplexers (StackExchange.Redis docs)](https://stackexchange.github.io/StackExchange.Redis/PipelinesMultiplexers.html) — auto-pipelining on async calls
-- [How to Use Redis Pipelining in C# (OneUptime, 2026)](https://oneuptime.com/blog/post/2026-03-31-redis-pipelining-csharp/view) — batch HashSetAsync patterns
+- MassTransit official docs (via Context7 `/websites/masstransit_massient`, 2026-05-30): `concepts/transports`, `concepts/outbox`, `concepts/messages`, `concepts/exceptions`, `concepts/requests`, `configuration`, `configuration/topology`, `configuration/middleware/retry`, `reference/ipublishendpoint`, `reference/irequestclient` — **HIGH** confidence on Publish/Send topology, InstanceId fan-out, ack/redelivery + `_error` dead-letter, request/response timeout (30s default), correlation conventions.
+- `masstransit.massient.com/documentation/configuration` (WebFetch, 2026-05-30) — InstanceId fan-out quote: "unique for each bus instance — to enable fan-out (instead of load balancing)." **HIGH.**
+- Project context: `.planning/PROJECT.md` (v3.4.0 Current Milestone, locked decisions), `src/BaseApi.Service/Features/Orchestration/Projection/WorkflowRootProjection.cs` (L2 root correlation string), `src/BaseApi.Core/Middleware/CorrelationIdMiddleware.cs` (the `"CorrelationId"` log-scope key to mirror).
+- **MEDIUM** confidence flag: the precise InstanceId wiring variant (per-endpoint `.Endpoint(e => e.InstanceId)` vs formatter vs `ConnectReceiveEndpoint(TemporaryEndpointDefinition)`) — resolve in the phase plan; all three achieve fan-out, the choice is ergonomics + temporary-queue cleanliness.
 
 ---
-
-*Feature research scoped to milestone v3.3.0 — Orchestration L3 → L1 → L2 Build Pipeline*
-*Researched: 2026-05-28*
-*Confidence: HIGH on ecosystem patterns; MEDIUM on exact DTO shapes; HIGH on Stop/Start mechanics*
+*Feature research for: MassTransit/RabbitMQ messaging — WebApi publisher → Orchestrator consumer (v3.4.0)*
+*Researched: 2026-05-30*

@@ -1,383 +1,449 @@
-# ARCHITECTURE — v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline
+# Architecture Research — v3.4.0 BaseConsole + Orchestrator Messaging
 
-**Domain:** Redis-backed materialized projection layer added to an existing .NET 8 modular monolith
-**Researched:** 2026-05-28
-**Verification posture:** Composition-root decisions and Phase 7 D-13 precedent verified against actual source files at `src/BaseApi.Core/DependencyInjection/*.cs` (HIGH); Redis-specific recommendations verified against StackExchange.Redis maintainer guidance + AspNetCore.Diagnostics.HealthChecks Xabaril package + Testcontainers.Redis NuGet (HIGH for stack choice, MEDIUM for sequencing tactics).
+**Domain:** Reusable .NET 8 Generic-Host console base (`BaseConsole.Core`) + MassTransit/RabbitMQ integration into an existing modular-monolith web API, with a shared `Messaging.Contracts` assembly and automatic CorrelationId propagation.
+**Researched:** 2026-05-30
+**Confidence:** HIGH (existing codebase read directly; MassTransit filter/health-check/topology behavior verified via Context7 + official docs)
+
+> Scope note: this mirrors the *existing* `BaseApi.Core` / `BaseApi.Service` seam, which was read directly from source — not re-researched. All "mirror" claims below cite the concrete file that establishes the pattern.
 
 ---
 
-## 1. Where the Redis ConnectionMultiplexer lives in the DI graph
+## Standard Architecture
 
-### Recommendation: **NEW `AddBaseApiRedis` extension on `IServiceCollection`, chained inside `AddBaseApi<TDbContext>` as call #7** — *not* a separate `IHostApplicationBuilder` overload.
+### System Overview
 
-**Rationale — the Phase 7 D-13 precedent does NOT apply here.**
+```
+┌───────────────────────────────────────────────────────────────────────────┐
+│  Messaging.Contracts  (NEW shared assembly — no host dependency)            │
+│  ┌────────────────┐ ┌──────────────────┐ ┌────────────────────────────┐    │
+│  │ Control records│ │ ICorrelated +    │ │ Correlation machinery:     │    │
+│  │ StartOrch /    │ │ field vocabulary │ │  InboundCorrelationFilter  │    │
+│  │ StopOrch       │ │ {CorrelationId.. │ │  OutboundCorrelationFilter │    │
+│  │ {WorkflowIds[]}│ │  ExecutionId..}  │ │  ICorrelationAccessor      │    │
+│  │                │ │                  │ │  (AsyncLocal impl)         │    │
+│  └────────────────┘ └──────────────────┘ └────────────────────────────┘    │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │ WorkflowRootProjectionContract (L2 read-side shape — moved from        │  │
+│  │ BaseApi.Service; WebApi WRITES it, Orchestrator READS it)              │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+└────────────┬──────────────────────────────────────────────┬────────────────┘
+   referenced by                                     referenced by
+             │                                                │
+┌────────────▼─────────────────────┐         ┌────────────────▼────────────────┐
+│  BaseApi.Service (web API)        │         │  BaseConsole.Core (NEW library)  │
+│  WebApplication.CreateBuilder     │         │  Host.CreateApplicationBuilder*  │
+│  + AddBaseApi (existing 7-chain)  │  RabbitMQ│  AddBaseConsole / RunAsync       │
+│  + NEW AddBaseApiMessaging        │◄────────►│  ├ AddBaseConsoleObservability   │
+│    (joins bus, PUBLISH only,      │ fan-out  │  ├ AddBaseConsoleRedis (lifted)  │
+│     fan-out to instance queues)   │ exchange │  ├ AddBaseConsoleHealth (embedded│
+│  Start/Stop endpoint → publish    │          │  │    Kestrel + IStartupGate)   │
+│  RabbitMQ HARD dep on Start/Stop  │          │  └ AddBaseConsoleMessaging       │
+│  path only (F4)                   │          │       (bus skeleton + filters)   │
+└──────────────┬────────────────────┘         └────────────────┬─────────────────┘
+               │                                                │ inherited by
+               ▼                                                ▼
+┌──────────────────────────────┐              ┌──────────────────────────────────┐
+│ Postgres 17 / Redis 7.4 (L2)  │              │  Orchestrator (NEW console)       │
+│ WebApi writes L2 root w/       │   reads L2   │  thin shell (mirror of entity     │
+│ stored X-Correlation-Id        │◄─────────────┤  feature folders): registers      │
+└──────────────────────────────┘              │  StartConsumer/StopConsumer +     │
+                                               │  instance-unique receive endpoint │
+                                               └──────────────────────────────────┘
+*Host.CreateApplicationBuilder vs WebApplication-as-host — decision below (Pattern 2).
+```
 
-The Phase 7 D-13 split (`AddBaseApiObservability` on `IHostApplicationBuilder`, everything else on `IServiceCollection`) exists for one specific reason documented verbatim at `src/BaseApi.Core/DependencyInjection/ObservabilityServiceCollectionExtensions.cs:23-26` and again at `BaseApiServiceCollectionExtensions.cs:34-35`:
+### Component Responsibilities
 
-> "`builder.Logging.AddOpenTelemetry` requires the `ILoggingBuilder` surface (not `IServiceCollection`). The host builder gives access to both `.Logging` and `.Services`. This is the engineering necessity behind the CONTEXT D-13 amendment."
+| Component | Responsibility | Layer (base / shared / concrete) |
+|-----------|----------------|----------------------------------|
+| `Messaging.Contracts` | Wire contracts, `ICorrelated` vocabulary, both correlation filters, `ICorrelationAccessor` (AsyncLocal), L2 read-side record | **shared** (referenced by both hosts; depends only on MassTransit abstractions + `Microsoft.Extensions.Logging.Abstractions`) |
+| `BaseConsole.Core` | Generic-Host bootstrap, OTel (console flavor), Redis client, embedded-Kestrel health probes, MassTransit bus skeleton | **base library** (mirror of `BaseApi.Core`) |
+| `Orchestrator` | Consumers + instance-unique receive endpoint wiring; reads L2; establishes correlated log scope; logs to scheduler seam | **concrete console** (mirror of entity feature folders + `AddAppFeatures`) |
+| WebApi `AddBaseApiMessaging` | Joins bus as a **publisher only**; outbound correlation filters; no consumers, no receive endpoints | **base-library addition to `BaseApi.Core`** |
 
-`StackExchange.Redis.ConnectionMultiplexer.Connect(...)` registration needs **only `IServiceCollection`** — there is no MEL bridge equivalent, no `builder.Logging` surface, no `builder.Configuration` surface that isn't already reachable via the `IConfiguration` parameter that `AddBaseApi<TDbContext>` already accepts. Mirroring the observability split "for symmetry" would invent a discipline the engineering doesn't require, and would force the `Program.cs` body cap (7 non-trivial lines today, 10 ceiling) upward without justification.
+---
 
-**Registration shape** (mirrors `PersistenceServiceCollectionExtensions.cs:31` `cfg.RequireConnectionString("Postgres")` pattern):
+## Recommended Project Structure
 
+```
+src/
+├── Messaging.Contracts/                 # NEW shared assembly (build FIRST)
+│   ├── Contracts/
+│   │   ├── StartOrchestration.cs        # record { Guid[] WorkflowIds } — NO correlationId on wire
+│   │   └── StopOrchestration.cs         # record { Guid[] WorkflowIds }
+│   ├── Correlation/
+│   │   ├── ICorrelated.cs               # mandatory-field vocabulary interface
+│   │   ├── ICorrelationAccessor.cs      # ambient read/write contract
+│   │   ├── AsyncLocalCorrelationAccessor.cs   # AsyncLocal<string?> impl (Singleton-safe)
+│   │   ├── InboundCorrelationConsumeFilter.cs # IFilter<ConsumeContext> (non-generic, all msgs)
+│   │   ├── OutboundCorrelationSendFilter.cs    # IFilter<SendContext<T>>  where T : class
+│   │   └── OutboundCorrelationPublishFilter.cs # IFilter<PublishContext<T>> where T : class
+│   └── Projection/
+│       └── WorkflowRootProjectionContract.cs   # MOVED from BaseApi.Service (+ Liveness)
+│
+├── BaseConsole.Core/                    # NEW reusable library (build SECOND)
+│   ├── DependencyInjection/
+│   │   ├── BaseConsoleServiceCollectionExtensions.cs   # AddBaseConsole (chain)  ← mirror AddBaseApi
+│   │   ├── BaseConsoleObservabilityExtensions.cs       # on IHostApplicationBuilder ← mirror AddBaseApiObservability
+│   │   ├── ConsoleRedisServiceCollectionExtensions.cs  # lifted from BaseApi.Core
+│   │   ├── ConsoleHealthServiceCollectionExtensions.cs # IStartupGate + checks + Kestrel hosted svc
+│   │   └── MessagingServiceCollectionExtensions.cs     # AddBaseConsoleMessaging(cfg, configureConsumers)
+│   ├── Health/
+│   │   ├── EmbeddedHealthEndpointService.cs   # IHostedService hosting a minimal Kestrel app
+│   │   └── (IStartupGate / StartupHealthCheck — see "lift vs duplicate" decision)
+│   └── Hosting/
+│       └── BaseConsoleHost.cs            # static RunAsync(args, configure) entry (the ~7-line mirror)
+│
+└── Orchestrator/                        # NEW concrete console (build THIRD, parallel w/ WebApi wiring)
+    ├── Program.cs                        # ~7 lines — mirror of BaseApi.Service/Program.cs
+    ├── AppMessaging.cs                   # AddAppConsumers() ← mirror of AddAppFeatures()
+    └── Consumers/
+        ├── StartOrchestrationConsumer.cs
+        └── StopOrchestrationConsumer.cs
+
+(modified) src/BaseApi.Core/DependencyInjection/
+    └── MessagingServiceCollectionExtensions.cs  # NEW AddBaseApiMessaging (publish-only) — call #8
+```
+
+### Structure Rationale
+
+- **`Messaging.Contracts` has zero host dependency.** It references only `MassTransit` (for `ConsumeContext`/`SendContext`/`IFilter<>`) and `Microsoft.Extensions.Logging.Abstractions` (for the `BeginScope` reuse). This is what lets the web API reference it **without taking a console-host dependency** (the milestone's explicit constraint). Filters are framework abstractions, not host code.
+- **`BaseConsole.Core` mirrors `BaseApi.Core` one-for-one.** `AddBaseConsole` chains sub-extensions on `IServiceCollection` exactly like `AddBaseApi<TDbContext>` chains its 7 (`BaseApiServiceCollectionExtensions.cs:24`). Observability stays a *separate* call on `IHostApplicationBuilder` for the identical reason the API does it — `builder.Logging.AddOpenTelemetry` needs `ILoggingBuilder`, which `IServiceCollection` does not expose (`ObservabilityServiceCollectionExtensions.cs:37`).
+- **`Orchestrator` is a thin shell** the same way the 5 entity feature folders are: it adds nothing but its own consumers via an `AddAppConsumers()` aggregator (mirror of `AddAppFeatures()` — `Program.cs:8`).
+
+---
+
+## Architectural Patterns
+
+### Pattern 1: `AddBaseConsole` / `RunAsync` — the composition-root mirror
+
+**What:** A static `BaseConsoleHost.RunAsync` that owns the host builder and exposes a thin configure seam, plus an `AddBaseConsole(cfg, configureConsumers)` chain mirroring `AddBaseApi`. Concrete `Orchestrator/Program.cs` stays ~7 lines.
+
+**When:** Every console built on this base.
+
+**Trade-offs:** Centralizing the builder in a static `RunAsync` (vs. exposing `AddBaseConsole`/`UseBaseConsole` as three separate calls like the API) trades a little flexibility for a smaller concrete `Program.cs`. Recommended: expose **both** — `AddBaseConsole` for DI parity and a `RunAsync` convenience wrapper — so the concrete passes its consumer registration as a lambda.
+
+**Example (concrete `Orchestrator/Program.cs` — the ~7-line target):**
 ```csharp
-// New file: src/BaseApi.Core/DependencyInjection/RedisServiceCollectionExtensions.cs
-internal static class RedisServiceCollectionExtensions
+using BaseConsole.Core.Hosting;
+using Orchestrator;
+
+await BaseConsoleHost.RunAsync(args, x =>           // x = IBusRegistrationConfigurator
 {
-    internal static IServiceCollection AddBaseApiRedis(
-        this IServiceCollection services, IConfiguration cfg)
+    x.AddConsumer<StartOrchestrationConsumer>();
+    x.AddConsumer<StopOrchestrationConsumer>();
+});
+```
+```csharp
+// BaseConsole.Core/Hosting/BaseConsoleHost.cs — mirror of the WebApplication path
+public static class BaseConsoleHost
+{
+    public static async Task RunAsync(string[] args, Action<IBusRegistrationConfigurator> configureConsumers)
     {
-        var connStr = cfg.RequireConnectionString("Redis");   // WR-03 fail-fast (Phase 5 precedent)
-        services.AddSingleton<IConnectionMultiplexer>(_ =>
-            ConnectionMultiplexer.Connect(connStr));
-        services.AddSingleton(sp =>
-            sp.GetRequiredService<IConnectionMultiplexer>().GetDatabase());
-        services.Configure<RedisProjectionOptions>(cfg.GetSection("Redis"));
-        return services;
+        var builder = Host.CreateApplicationBuilder(args);
+        builder.AddBaseConsoleObservability(builder.Configuration);          // IHostApplicationBuilder (ILoggingBuilder)
+        builder.Services.AddBaseConsole(builder.Configuration, configureConsumers);
+        await builder.Build().RunAsync();
     }
 }
 ```
 
-`IConnectionMultiplexer` as singleton is the StackExchange.Redis maintainer-blessed pattern — thread-safe, expensive to construct, designed for long-lived reuse. `IDatabase` (resolved per-call from the singleton) is the consumer surface; it is cheap and stateless.
+### Pattern 2: Host choice — `Host.CreateApplicationBuilder` + embedded Kestrel hosted service (F2)
 
-**Chained into `AddBaseApi<TDbContext>` as call #7** (file `BaseApiServiceCollectionExtensions.cs:27-33`):
+**What:** The Generic Host has **no** `MapHealthChecks` (that is `IEndpointRouteBuilder`, a `WebApplication`-only surface). To serve `/health/live|ready|startup` over HTTP from a pure Generic Host, run a **second, minimal `WebApplication`/Kestrel listener inside an `IHostedService`** bound to a dedicated health port. The hosted service builds its own `WebApplication.CreateBuilder`, calls `MapHealthChecks` with the exact same tag predicates as `BaseApiApplicationBuilderExtensions.cs:46-60`.
 
+**Decision (HIGH confidence): use the embedded-Kestrel-in-a-hosted-service approach (locked decision F2), not `WebApplication` as the primary host.** Rationale: the milestone wants a *console* (Generic Host) whose primary lifecycle is the MassTransit bus, with health as a side-channel. An embedded listener keeps the health surface isolated on its own port and keeps the host a worker, matching F2's "minimal Kestrel listener" wording. The alternative (make the whole console a `WebApplication`) is simpler to wire but blurs "console" vs "web app" and pulls full ASP.NET Core instrumentation into the OTel pipeline, which the milestone explicitly excludes ("no AspNetCore instrumentation," PROJECT.md:19).
+
+**Trade-offs / wiring caveat:** Health checks must be registered in the **inner** Kestrel listener's own service collection — they cannot be resolved cross-container. The shared `IStartupGate` singleton and the MassTransit bus health status must be reachable from the inner checks. Cleanest resolution: register the **same** `IStartupGate` instance into the inner listener's container (`b.Services.AddSingleton(theSharedGateInstance)`), and surface the bus status either by keeping the bus health in the inner container or via a small shared accessor (see Pattern 3).
+
+**Example (embedded Kestrel health host):**
 ```csharp
-=> services
-    .AddBaseApiPersistence<TDbContext>(cfg)        // 1 — Phase 3
-    .AddBaseApiHealth(cfg)                         // 2 — Phase 5 (now includes Redis check — see §3)
-    .AddBaseApiErrorHandling()                     // 3 — Phase 4
-    .AddBaseApiHttp(cfg)                           // 4 — Phase 7
-    .AddBaseApiValidation(typeof(TDbContext).Assembly)  // 5 — Phase 6
-    .AddBaseApiMapping(typeof(TDbContext).Assembly)     // 6 — Phase 6
-    .AddBaseApiRedis(cfg);                         // 7 — Phase 12 NEW
-```
-
-**Trade-offs vs alternatives:**
-
-| Option | Verdict | Reason |
-|---|---|---|
-| **A. `AddBaseApiRedis(IServiceCollection)` chained into `AddBaseApi`** ✅ | Recommended | Honors Plan 07-01 6-extensions-chained convention; one `Program.cs` line unchanged |
-| B. `AddBaseApiRedis(IHostApplicationBuilder)` separate from `AddBaseApi` | Rejected | No engineering reason (no `.Logging` need); introduces a precedent that future infra additions also need a separate hook |
-| C. Inline `services.AddSingleton<IConnectionMultiplexer>(...)` in `AppFeatures.AddAppFeatures` | Rejected | Couples a `BaseApi.Core` infrastructure concern to `BaseApi.Service`'s feature aggregator |
-
-Confidence: **HIGH**.
-
----
-
-## 2. Where the L1 build logic lives
-
-### Recommendation: **`OrchestrationService.StartAsync` directly orchestrates, but L1 build is extracted to NEW seams: `IWorkflowGraphLoader` + `IWorkflowGraphValidator` + `IRedisProjectionWriter`.**
-
-The current `OrchestrationService` (`OrchestrationService.cs:37-129`) is intentionally NOT `BaseService`-derived. It already pre-injects all 5 entity mappers "for v2 ctor stability" per CONTEXT D-05. v3.3.0 is that future phase.
-
-The orchestration logic is **not** "one method that does everything" — it's a 6-stage pipeline (existence → cycles → schema-edge → payload-schema → L1 build → L2 write → cleanup), and the existing single-method `ValidateWorkflowIdsAsync` is exactly the wrong shape for that.
-
-### Proposed decomposition
-
-```
-OrchestrationService.StartAsync(ids)             // orchestrates, does NOT do logic
-  ├─ ValidateWorkflowIdsAsync (existing)         // step 1 (existence, REUSED)
-  ├─ IWorkflowGraphLoader.LoadL1Async(ids)       // step 2 (L3 fetch + L1 build)
-  │     returns transient WorkflowGraphSnapshot
-  ├─ IWorkflowGraphValidator.Validate(snapshot)  // step 3 (DFS + cycles + edges + payload)
-  ├─ IRedisProjectionWriter.UpsertAsync(snapshot)// step 4 (L2 write)
-  └─ snapshot.Dispose()                          // step 5 (L1 cleanup contract)
-```
-
-| Seam | Lives in | Lifetime | Why this boundary |
-|---|---|---|---|
-| `IWorkflowGraphLoader` | `Features/Orchestration/Loading/` (NEW) | Scoped | Reusable for non-Workflow graph types in future; testable without Redis |
-| `IWorkflowGraphValidator` (composite) | `Features/Orchestration/Validation/` | Singleton (stateless) | Pure function over a snapshot; no DB/Redis dependencies |
-| `IRedisProjectionWriter` | `Features/Orchestration/Projection/` (NEW) | Scoped | Owns the 3 keyspaces; injects `IDatabase` + `RedisProjectionOptions` |
-
-**Should L3-fetch reuse `Repository<TEntity>`?** **No** — use direct `BaseDbContext` access matching the existing `OrchestrationService.cs:115-119` pattern. The 5-method generic Repository surface doesn't include batch-load-many-with-projection, and Phase 3 explicitly rejected exposing `IQueryable`.
-
-**Refinement** (v3.3.0 decision): keep seams as `internal` types in the Orchestration feature folder. Promote to `BaseApi.Core` only when a second consumer surfaces (matches Phase 7 D-13 precedent).
-
-Confidence: **HIGH** for seam topology; **MEDIUM** for naming.
-
----
-
-## 3. Health probe integration
-
-### Recommendation: **`/health/ready` MUST include the Redis check; `/health/live` MUST NOT; tags exactly mirror the existing Postgres check.**
-
-`HealthServiceCollectionExtensions.cs:20-30` shows the current shape:
-
-```csharp
-services.AddHealthChecks()
-    .AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" })
-    .AddCheck<StartupHealthCheck>("startup", tags: new[] { "startup", "ready" })
-    .AddNpgSql(cfg.RequireConnectionString("Postgres"), tags: new[] { "ready" });
-```
-
-Phase 5 Pitfall 15: *"live never touches DB"*. Redis is a downstream dependency exactly like Postgres.
-
-**Add a 4th check** via `AspNetCore.HealthChecks.Redis` (Xabaril 9.0.0):
-
-```csharp
-.AddRedis(cfg.RequireConnectionString("Redis"), tags: new[] { "ready" });
-```
-
-**What happens if Redis is down mid-Start:**
-- `/health/live` returns 200 (HEALTH-01 contract preserved).
-- `/health/ready` returns 503 within the next poll interval.
-- An in-flight Start fails when `IRedisProjectionWriter.UpsertAsync` throws `RedisConnectionException`. Per Phase 4 fallback handler chain → 500 with RFC 7807 + `X-Correlation-Id`. L1 cleanup (snapshot.Dispose in `finally`) still runs.
-
-**HEALTH-01..05 preserved:** live=process only ✓ · ready=DB+Redis ✓ · startup=migration-gated (unchanged — Redis has no schema) ✓ · tag discipline strict ✓ · UI response writer aggregates over all checks ✓.
-
-**Test obligation:** Extend `HealthEndpointsTests` with a Redis-dead variant analogous to `HealthDeadPostgresFixture`. Use a dead Redis port (e.g., `localhost:6380`).
-
-Note: STACK.md (sibling research) suggests an alternative: **don't** add a Redis ready check, so CRUD continues to work when Redis is down. This is a genuine tradeoff. ARCHITECTURE.md leans toward "hard dependency, mirror Postgres" for consistency; the requirements phase should pick one.
-
-Confidence: **HIGH** on tag-discipline rules; **MEDIUM** on hard-vs-soft dependency choice (genuine tradeoff to resolve in requirements).
-
----
-
-## 4. Composition root + appsettings.json shape
-
-### Recommendation: **Single config section `Redis:*`; one new connection string `Redis`; minimal additions.**
-
-```json
+internal sealed class EmbeddedHealthEndpointService(IStartupGate gate, IConfiguration cfg) : IHostedService
 {
-  "ConnectionStrings": {
-    "Postgres": "Host=postgres;Port=5432;...",
-    "Redis":    "redis:6379,abortConnect=false,connectTimeout=5000"
-  },
-  "Redis": {
-    "KeyPrefix": "skp:",
-    "Serialization": {
-      "JsonOptions": "Default"
+    private WebApplication? _app;
+
+    public async Task StartAsync(CancellationToken ct)
+    {
+        var b = WebApplication.CreateBuilder();
+        b.WebHost.UseUrls(cfg["Health:Url"] ?? "http://0.0.0.0:8081");
+        b.Services.AddSingleton(gate);                                  // share the outer gate instance
+        b.Services.AddHealthChecks()
+            .AddCheck("self", () => HealthCheckResult.Healthy(), tags: ["live"])
+            .AddCheck<StartupHealthCheck>("startup", tags: ["startup", "ready"]);
+        // + the MassTransit "ready" bus check reaches /health/ready (Pattern 3)
+        _app = b.Build();
+        _app.MapHealthChecks("/health/live",    new() { Predicate = c => c.Tags.Contains("live") });
+        _app.MapHealthChecks("/health/ready",   new() { Predicate = c => c.Tags.Contains("ready") });
+        _app.MapHealthChecks("/health/startup", new() { Predicate = c => c.Tags.Contains("startup") });
+        await _app.StartAsync(ct);
     }
-  }
+    public async Task StopAsync(CancellationToken ct) { if (_app is not null) await _app.StopAsync(ct); }
 }
 ```
 
-**Why these choices:**
-- **`abortConnect=false`** — without it, a transient network blip during boot permanently kills the multiplexer. Production-must-have.
-- **`KeyPrefix`** — enables (a) prod/staging isolation when sharing a Redis cluster and (b) test-class isolation in the test suite.
-- **No `Redis:Endpoint` separate from `ConnectionStrings:Redis`** — `ConnectionStrings:Redis` is the canonical .NET location.
+> Tag discipline is identical to the web API (`live` never touches bus/DB — Pitfall 15 precedent). `self` is the only `live` check; `startup`+`ready` carry the startup gate; the bus check carries `ready`.
 
-**`compose.yaml` addition** (pin `redis:7-alpine` per Phase 11 D-09 discipline — but see STACK.md for licensing-driven `redis:7.4.x-alpine` refinement):
+### Pattern 3: Bus-started readiness — MassTransit's own health check IS the signal (F3)
 
-```yaml
-redis:
-  image: redis:7-alpine
-  container_name: sk-redis
-  restart: unless-stopped
-  ports:
-    - "6379:6379"
-  healthcheck:
-    test: ["CMD", "redis-cli", "ping"]
-    interval: 5s
-    timeout: 3s
-    retries: 10
-    start_period: 5s
+**What:** `AddMassTransit(...)` **automatically registers an `IHealthCheck`** into the service collection, tagged `ready` + `masstransit` by default. It reports **Healthy once the bus has started and is connected to the broker**, **Degraded** if the broker connection drops while running, and **Unhealthy** on a startup failure. This is exactly the "ready flips when the bus has started" mechanism (F3) — **no custom bus-started hosted service is needed.**
 
-baseapi-service:
-  environment:
-    ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=5000"
-  depends_on:
-    redis:
-      condition: service_healthy
-```
+**When:** The console's `/health/ready` endpoint.
 
-Confidence: **HIGH**.
+**Mechanism / wiring (HIGH confidence, verified via MassTransit docs):**
+- Default tags are `ready` and `masstransit`. If you call `ConfigureHealthCheckOptions(...)` to add custom tags, **you must re-add `ready` and `masstransit` manually** — custom tags *replace* the defaults. Recommendation: leave defaults alone.
+- Because the bus health check is registered by `AddMassTransit` in whichever container hosts the bus, and the health *endpoints* live in the inner Kestrel listener, the inner listener must surface that status. Cleanest: register `AddMassTransit` in the **inner** listener's DI alongside the endpoints (the bus check then flows straight into `/health/ready`). If you keep a hard container split, expose the bus status via a shared singleton the inner check reads (the supported programmatic read is `IBusHealth.CheckHealth()`).
 
----
+**`StartupGate` interplay:** keep the existing `IStartupGate` semantics — `/health/startup` flips Healthy when host init finishes (Redis multiplexer constructed, consumers registered). `/health/ready` is the **AND** of `startup` + the MassTransit bus check (both tagged `ready`), so readiness is true only when *both* startup completed **and** the bus connected. This mirrors the web API's `ready` = startup gate + Npgsql (`HealthServiceCollectionExtensions.cs:21-26`).
 
-## 5. Test infrastructure: per-class Redis isolation
+**Trade-offs:** Relying on the built-in check (vs. a hand-rolled `IBusControl.StartAsync` latch) is less code and tracks runtime broker drops (Degraded), not just the one-time start. Set `MinimalFailureStatus` deliberately (default: `Unhealthy` on startup problems, `Degraded` on mid-run drops).
 
-### Recommendation: **Single shared Redis container + per-class key-prefix isolation with prefix-scoped DEL in `DisposeAsync`.**
-
-Per-class testcontainers were rejected for Postgres at v1 for cost reasons (boot dominates wall-clock). The same applies to Redis: ~1-2s boot × N classes → ~30-60s added per run; violates the 3-consecutive-GREEN cadence efficiency demonstrated at v3.2.0 close (163s/161s/162s for 142 facts).
-
-Redis logical DB indices (`SELECT 0..15`) are deprecated in Cluster mode — caps parallelism, diverges from prod posture.
-
-**Implementation:**
-
+**Example (the base messaging seam):**
 ```csharp
-// New: tests/BaseApi.Tests/Composition/RedisFixture.cs  (parallels PostgresFixture)
-public class RedisFixture : IAsyncLifetime
+services.AddMassTransit(x =>
 {
-    public string ConnectionString { get; } = "localhost:6379,abortConnect=false";
-    public string KeyPrefix { get; } = $"test:cls-{Guid.NewGuid():N}:";
-    public async ValueTask DisposeAsync() => await DeleteByPrefixAsync();
+    configureConsumers(x);                          // concrete adds its consumers (the seam)
+    x.UsingRabbitMq((ctx, cfg) =>
+    {
+        cfg.Host(rabbitConnString);
+        cfg.UsePublishFilter(typeof(OutboundCorrelationPublishFilter<>), ctx);   // base-owned, bus-wide
+        cfg.UseSendFilter(typeof(OutboundCorrelationSendFilter<>), ctx);         // base-owned, bus-wide
+        configureEndpoints(ctx, cfg);               // concrete adds instance-unique receive endpoints
+    });
+});
+```
+
+### Pattern 4: Base bus skeleton vs concrete consumers — the `AddBaseApi` ÷ `AddAppFeatures` seam
+
+**What:** `AddBaseConsoleMessaging(cfg, configureConsumers, configureEndpoints)` owns everything generic: `AddMassTransit`, `UsingRabbitMq`, host connection, the two **outbound** correlation filters (bus-wide), and the bus health check. The **concrete** `Orchestrator` supplies (a) `x.AddConsumer<...>()` registrations and (b) the instance-unique receive endpoint with the **inbound** consume filter applied per-endpoint.
+
+**Where the seam is (mirror):**
+- Base = `AddBaseApi<TDbContext>` (infrastructure chain, `BaseApiServiceCollectionExtensions.cs:24`).
+- Concrete = `AddAppFeatures()` (entity-specific registrations, `Program.cs:8`).
+- For messaging: Base = `AddBaseConsoleMessaging`; Concrete = the `configureConsumers`/`configureEndpoints` lambdas passed through.
+
+**Why filters split base-outbound vs concrete-endpoint-inbound:** outbound `UseSendFilter`/`UsePublishFilter` are bus-wide and belong to the base (every message any console sends must be stamped). Inbound `UseConsumeFilter` is registered **per receive endpoint** (`e.UseConsumeFilter(...)`, verified via MassTransit middleware docs) — and the endpoint is concrete-owned (instance-unique name). So the base *provides* the filter type from `Messaging.Contracts`, and the concrete's endpoint configuration *applies* it. To keep the concrete thin, `AddBaseConsoleMessaging` can wrap the endpoint helper so the concrete just names its consumers and the base attaches the inbound filter + instance-unique queue name.
+
+**Instance-unique queue (topology fan-out):** WebApi `Publish`es the control message; MassTransit's default fanout exchange delivers a copy to **every bound receive-endpoint queue**. To get fan-out (not competing consumers), each Orchestrator replica must bind a **distinct** queue name, e.g. `cfg.ReceiveEndpoint($"orchestrator-{NewId.NextGuid():N}", e => ...)` or an `IEndpointNameFormatter` with an instance suffix. Declare it **auto-delete/non-durable** so replicas don't leak queues on restart (verified: MassTransit creates durable queues by default; an instance-unique fan-out queue should be temporary).
+
+### Pattern 5: Correlation propagation — inbound consume filter + outbound send/publish + AsyncLocal
+
+**What:** Three filters in `Messaging.Contracts`, plus an `ICorrelationAccessor` backed by `AsyncLocal<string?>`:
+- **Inbound** `IFilter<ConsumeContext>` (non-generic — runs for *all* consumed messages): reads `ICorrelated.CorrelationId` / the MT header, writes it to the `AsyncLocal` accessor, **and** opens a MEL log scope keyed `"CorrelationId"` — the *literal same key* the web API uses (`CorrelationIdMiddleware.cs:52`, `ItemKey = "CorrelationId"`). Because OTel runs with `IncludeScopes = true` (`ObservabilityServiceCollectionExtensions.cs:51`), that scope key serializes as a log attribute named `CorrelationId` with **no renaming** — so orchestrator logs land in Elasticsearch under the same field the API uses, completing the HTTP→Redis→message→log trace.
+- **Outbound** `IFilter<SendContext<T>>` + `IFilter<PublishContext<T>>` (generic, `where T : class`): reads the ambient correlationId from the accessor and stamps it onto every `ICorrelated` message (and/or the MT header) so downstream hops inherit it. Exercised this milestone via the synthetic harness send (locked decision).
+
+**Log-scope reuse (critical, HIGH confidence):** the inbound filter MUST call `logger.BeginScope(new Dictionary<string,object>{ ["CorrelationId"] = corrId })` — the **PascalCase literal**, matching `CorrelationIdMiddleware`. Any other casing produces a *different* OTel attribute and breaks the single-field correlation contract.
+
+**Example (inbound filter — the load-bearing scope reuse):**
+```csharp
+public sealed class InboundCorrelationConsumeFilter(
+    ICorrelationAccessor accessor, ILogger<InboundCorrelationConsumeFilter> logger)
+    : IFilter<ConsumeContext>
+{
+    public async Task Send(ConsumeContext context, IPipe<ConsumeContext> next)
+    {
+        var corrId = context.CorrelationId?.ToString("N")             // MT envelope
+                     ?? context.Headers.Get<string>("CorrelationId")  // explicit header
+                     ?? Guid.NewGuid().ToString("N");
+        accessor.Set(corrId);
+        using (logger.BeginScope(new Dictionary<string, object> { ["CorrelationId"] = corrId }))
+            await next.Send(context);                                  // SAME key as CorrelationIdMiddleware
+    }
+    public void Probe(ProbeContext context) => context.CreateFilterScope("correlation");
+}
+```
+```csharp
+public sealed class AsyncLocalCorrelationAccessor : ICorrelationAccessor   // register Singleton
+{
+    private static readonly AsyncLocal<string?> _current = new();
+    public string? Get() => _current.Value;
+    public void Set(string? value) => _current.Value = value;
 }
 ```
 
-The `RedisFixture` is encapsulated inside `Phase8WebAppFactory` (same Plan 05-02 Pattern C reason: *"xUnit cannot order fixture instantiation between two IClassFixture<> slots"*).
+> The bus-world `Guid CorrelationId` (minted by the future Quartz scheduler) and the HTTP `X-Correlation-Id` string **do not unify** (PROJECT.md:28). This milestone's deliverable is that the Orchestrator reads the **stored** `X-Correlation-Id` out of the L2 root (the `WorkflowRootProjectionContract.CorrelationId` field) and opens the log scope from *that* — linking the two worlds via logs, exactly as locked.
 
-**Test infrastructure pitfall to avoid:** never use `FLUSHDB` without prefix scoping — it nukes ALL keys including parallel-running classes. Always `SCAN MATCH "{prefix}*"` + `DEL`.
+### Pattern 6: WebApi joins the bus as publisher-only (F4)
 
-Note: STACK.md recommends `Testcontainers.Redis 4.12.0` for full Ryuk-managed lifecycle. Either approach (host-side Redis with prefix scoping, OR Testcontainers per-suite) works — the requirements phase should pick.
+**What:** A new `AddBaseApiMessaging(cfg)` in `BaseApi.Core` (composition call #8 in `Program.cs`, after the existing chain) calls `AddMassTransit` with **no consumers and no receive endpoints** — only `UsingRabbitMq` host config + the two outbound filters. The WebApi's `OrchestrationController` Start/Stop path resolves `IPublishEndpoint` (or `IBus`) and `Publish`es `StartOrchestration`/`StopOrchestration`. RabbitMQ becomes a **hard dependency for the Start/Stop path only**; CRUD is unaffected because CRUD never touches the bus.
 
-Confidence: **HIGH** for option choice; **MEDIUM** for exact tactic.
+**Why no console-host dependency leaks in:** the WebApi references `Messaging.Contracts` (records + filters + accessor) and the `MassTransit`/`MassTransit.RabbitMQ` NuGet — never `BaseConsole.Core` or `Orchestrator`. The bus client is symmetric across both hosts because the *only* shared code is contracts/filters, which are host-agnostic.
 
----
-
-## 6. Redis analogue of Phase 3 D-15 byte-identical `psql \l` no-leak invariant
-
-### Recommendation: **Per-prefix orphan-key assertion in `DisposeAsync` + cross-session global `redis-cli --scan | sort | sha256sum` snapshot.**
-
-| Phase 3 invariant | Redis analogue |
-|---|---|
-| `psql \l` enumerates all DBs | `KEYS *` / `DBSIZE` enumerates all keys |
-| SHA-256 BEFORE = AFTER 142 facts | SHA-256 of `KEYS * \| sort` BEFORE = AFTER full run |
-| 4 baseline DBs | 0 baseline keys (Redis container starts empty) |
-| No `stepsdb_test_*` leak | No `test:cls-*` leak |
-
-**Implementation:**
-
-1. **Per-class teardown** — `SCAN MATCH "{KeyPrefix}*"` + `KeyDeleteAsync(keys)`.
-2. **Per-class assertion** — re-`SCAN` and assert count == 0; throw if violated (fail-loud).
-3. **Cross-session proof** — append `redis-cli --scan | sort | sha256sum` to phase-close ritual alongside `psql \l` SHA-256.
-
-**Why not `FLUSHDB`:** destroys keys from parallel classes; hides genuine leaks; zero diagnostic value.
-
-Confidence: **HIGH**.
+**Health impact (flag for requirements):** because the bus is now part of WebApi startup, MassTransit's `ready`-tagged health check joins the API's `/health/ready` set automatically. This would make `/health/ready` go unhealthy if RabbitMQ is down — even though CRUD still works. To preserve the existing CRUD-availability contract (Redis soft-dep precedent, Key Decisions table), either set the WebApi bus check's `MinimalFailureStatus = Degraded` or re-tag it off `ready`, so CRUD readiness does not flip on a broker outage. RabbitMQ is hard *for the Start/Stop endpoint*, not necessarily for the readiness probe — this is a requirements decision to lock.
 
 ---
 
-## 7. When does OrchestrationService warrant splitting?
+## Data Flow
 
-### Recommendation: **Split NOW (at the start of v3.3.0 — Phase 13, before any L1/L2 work lands).**
-
-### Current state (v3.2.0)
-`OrchestrationService.cs:37-129` is **92 lines**, 1 public method, 7 ctor params (5 mappers deliberately unused per CONTEXT D-05).
-
-### Projected state without split
-v3.3.0 adds: L3 batch-fetch + DFS + 3 validation gates + L1 dictionary build + L2 write (3 keyspaces) + cleanup. Naive growth → ~600-800 LOC with 6 public methods and ~12 ctor dependencies.
-
-### Inflection point already crossed
-1. **Pre-injected dependency count > 7** — Future phases adding Redis client + 3 validators + 1 graph builder → 12+.
-2. **Multiple unrelated responsibilities** — L3-fetch / cycle-detect / Redis-write are three different change axes.
-3. **Test surface area** — Monolithic StartAsync tests must mock 5 entity DBs + Redis + 3 validators simultaneously.
-
-### Recommended layout
+### Control flow (Start) — end-to-end correlation
 
 ```
-src/BaseApi.Service/Features/Orchestration/
-├── OrchestrationController.cs                    (UNCHANGED)
-├── OrchestrationService.cs                       (SHRINK — orchestrator only; ~80 LOC)
-├── OrchestrationServiceCollectionExtensions.cs   (EXTEND — registers 4 services + 3 validators)
-├── WorkflowIdsValidator.cs                       (UNCHANGED)
-├── Loading/
-│   └── WorkflowGraphLoader.cs                    (NEW)
-├── Validation/
-│   ├── CycleDetector.cs                          (NEW)
-│   ├── SchemaEdgeValidator.cs                    (NEW)
-│   └── PayloadConfigSchemaValidator.cs           (NEW)
-└── Projection/
-    ├── RedisProjectionWriter.cs                  (NEW — owns 3 keyspaces)
-    └── RedisProjectionKeys.cs                    (NEW — key-format constants)
+POST /api/v1/orchestration/start  (X-Correlation-Id: abc...)
+    ↓  CorrelationIdMiddleware stashes "abc" in HttpContext.Items["CorrelationId"]   [existing]
+OrchestrationService builds L1 → writes L2 root  (root.correlationId = "abc")        [existing]
+    ↓  OrchestrationController.Start → IPublishEndpoint.Publish(StartOrchestration{WorkflowIds})
+    ↓     OutboundCorrelationPublishFilter stamps ambient corrId onto envelope        [NEW]
+RabbitMQ default fanout exchange
+    ↓  copy → orchestrator-{instanceA} queue   (+ {instanceB}.. for N replicas)
+Orchestrator StartOrchestrationConsumer
+    ↓  InboundCorrelationConsumeFilter: corrId → AsyncLocal + BeginScope("CorrelationId")  [NEW]
+    ↓  per WorkflowId: GET L2 root → read WorkflowRootProjectionContract.CorrelationId ("abc")
+    ↓  re-establish log scope from the STORED "abc"  → log "scheduler job start" seam
+    ↓  ack-on-success
+Elasticsearch: orchestrator log line carries CorrelationId="abc"  (same field as the API)
 ```
 
-### Why split at Phase 13 (early), not later
-- Splitting a 92-LOC service is a 1-hour refactor with zero behavior change.
-- Splitting a 600-LOC service after L1+L2 lands is a multi-day refactor that risks regression.
-- Phase 10 already validated the "bisect-friendly 5-commit sequence" for canonical revisions.
-
-Confidence: **HIGH**.
-
----
-
-## 8. Integration points
-
-### Files TOUCHED (modified)
-
-| File | Change | Reason |
-|---|---|---|
-| `src/BaseApi.Service/Program.cs` | None | `AddBaseApiRedis` chained internally |
-| `src/BaseApi.Core/DependencyInjection/BaseApiServiceCollectionExtensions.cs` | +1 line | Composition root |
-| `src/BaseApi.Core/DependencyInjection/HealthServiceCollectionExtensions.cs` | +1 line | HEALTH-01..05 extension |
-| `src/BaseApi.Service/appsettings.json` | +1 conn string, +1 section | Configuration |
-| `src/BaseApi.Service/appsettings.Development.json` | Same shape | Dev overrides |
-| `compose.yaml` | +1 service, +1 depends_on | Local dev stack |
-| `src/BaseApi.Service/Features/Orchestration/OrchestrationController.cs` | Possibly extend [ProducesResponseType] for 422 + 500 | New error paths |
-| `src/BaseApi.Service/Features/Orchestration/OrchestrationService.cs` | Body rewrite — orchestrator role | Pre-injected mappers NOW USED |
-| `src/BaseApi.Service/Features/Orchestration/OrchestrationServiceCollectionExtensions.cs` | +4 service registrations | DI for split services |
-| `src/BaseApi.Service/AppDbContext.cs` | None | Redis has no DbSet |
-| `tests/BaseApi.Tests/Composition/Phase8WebAppFactory.cs` | +RedisFixture wiring | Per-class isolation |
-
-### Files ADDED (new)
-
-14 new files (4 in `BaseApi.Core/DependencyInjection` + Configuration; 10 in `Features/Orchestration/` and `tests/Composition`). See the §7 layout for the Orchestration feature folder; in `BaseApi.Core`:
-- `RedisServiceCollectionExtensions.cs`
-- `Configuration/RedisProjectionOptions.cs`
-
-Plus L2 DTOs (`WorkflowL2Dto`, `StepL2Dto`, `ProcessorL2Dto` with `inputDefinition`/`outputDefinition` field names per PROJECT.md locked constraint) and `RedisFixture.cs`.
-
-### Data flow changes
+### Read-side contract move
 
 ```
-v3.2.0 (read path):
-    Client → Controller → BaseService.GetByIdAsync → Repository → Postgres
+BEFORE: BaseApi.Service.Features.Orchestration.Projection.WorkflowRootProjection  (internal sealed record)
+            └ written by RedisProjectionWriter.UpsertAsync (RedisProjectionWriter.cs:66)
 
-v3.3.0 (Start path):
-    Client → OrchestrationController.Start
-        → OrchestrationService.StartAsync
-            → ValidateWorkflowIdsAsync (existence) ──→ Postgres
-            → WorkflowGraphLoader.LoadL1Async   ──→ Postgres (5 batch SELECTs)
-            → CycleDetector.Validate           ──→ in-memory only
-            → SchemaEdgeValidator.Validate     ──→ in-memory only
-            → PayloadConfigSchemaValidator     ──→ in-memory only
-            → RedisProjectionWriter.UpsertAsync──→ Redis (3 keyspaces)
-            → snapshot.Dispose()               ──→ L1 cleanup contract
-        ← 204 No Content
+AFTER:  Messaging.Contracts.Projection.WorkflowRootProjectionContract  (public sealed record)
+            ├ WebApi RedisProjectionWriter writes it  (1 using-swap + visibility public)
+            └ Orchestrator consumer deserializes it from the L2 GET
+```
+The record's `[property: JsonPropertyName(...)]` targets are **load-bearing** (`WorkflowRootProjection.cs:9` / `LivenessProjection.cs:6`) — they must travel with the record into `Messaging.Contracts` so the camelCase wire shape is byte-identical on both write and read sides. `LivenessProjection` is nested inside the root, so it moves too (or the contract carries its own copy).
 
-v3.3.0 (read path — UNCHANGED):
-    Client → Controller → BaseService.GetByIdAsync → Repository → Postgres
-    (Redis is WRITE-ONLY from BaseApi.Service in v3.3.0; reads are by external Orchestrator)
+---
+
+## Integration Points
+
+### External Services
+
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| RabbitMQ | MassTransit `UsingRabbitMq`; default durable fanout exchange per message type; instance-unique auto-delete receive queues for fan-out | NEW compose tier. Hard dep on WebApi Start/Stop path + the whole Orchestrator lifecycle. Default MT queues are durable — make the instance-unique fan-out queue **temporary/auto-delete** so replicas don't leak queues. |
+| Redis (L2) | `IConnectionMultiplexer` singleton lifted from `BaseApi.Core` `AddBaseApiRedis` (`RedisServiceCollectionExtensions.cs:57`) | Orchestrator is **read-only** to L2 this milestone (no writes, no Quartz). `abortConnect=false` connection-string contract carries over. |
+| OTel Collector | `AddBaseConsoleObservability` on `IHostApplicationBuilder` — MEL-bridge logs + runtime + **MassTransit instrumentation**, **no** AspNetCore instrumentation | Mirror of `ObservabilityServiceCollectionExtensions.cs` minus AspNetCore. `IncludeScopes=true` mandatory for the correlation field. |
+
+### Internal Boundaries
+
+| Boundary | Communication | Notes |
+|----------|---------------|-------|
+| WebApi ↔ Orchestrator | Async messages over RabbitMQ (`StartOrchestration`/`StopOrchestration`) | Contracts in `Messaging.Contracts`; no shared host code. |
+| WebApi ↔ Orchestrator (state) | Redis L2 root (`WorkflowRootProjectionContract`) | WebApi writes, Orchestrator reads — one source of truth in the shared assembly. |
+| `Messaging.Contracts` ↔ both hosts | Project reference (assembly), not deployment coupling | Depends only on `MassTransit` + `Logging.Abstractions` — no host packages. |
+| `BaseConsole.Core` ↔ `Orchestrator` | Inheritance/composition (`AddBaseConsole` + `configureConsumers` lambda) | Mirror of `AddBaseApi` + `AddAppFeatures`. |
+
+---
+
+## Anti-Patterns
+
+### Anti-Pattern 1: Using `MapHealthChecks` directly on the Generic Host
+**What people do:** Call `app.MapHealthChecks(...)` expecting it to work in `Host.CreateApplicationBuilder`.
+**Why it's wrong:** `MapHealthChecks`/`IEndpointRouteBuilder` is a `WebApplication`-only surface; the Generic Host has no HTTP pipeline. It won't compile/route.
+**Do this instead:** Run an embedded minimal Kestrel `WebApplication` inside an `IHostedService` (Pattern 2, locked decision F2), re-using the tag predicates verbatim from `BaseApiApplicationBuilderExtensions.cs`.
+
+### Anti-Pattern 2: Hand-rolling a "bus started" latch
+**What people do:** Add a custom `IHostedService` that awaits `IBusControl.StartAsync` and flips a second gate for readiness.
+**Why it's wrong:** Duplicates a built-in. `AddMassTransit` already registers a `ready`-tagged health check that reports Healthy on connect and Degraded on drop (verified). The custom latch also misses mid-run broker drops.
+**Do this instead:** Let the MassTransit `ready` health check be the bus-started signal (Pattern 3, F3). Keep `IStartupGate` only for host-init (Redis/consumer registration).
+
+### Anti-Pattern 3: Renaming the correlation log-scope key in the console
+**What people do:** Use `"correlation_id"` or `"correlationId"` in the consumer's `BeginScope`.
+**Why it's wrong:** OTel `IncludeScopes=true` serializes the scope key verbatim. A different key creates a *different* ES field and the HTTP-side and console-side logs no longer correlate on one field.
+**Do this instead:** Reuse the literal `"CorrelationId"` (PascalCase) from `CorrelationIdMiddleware.cs:52` in the inbound filter (Pattern 5).
+
+### Anti-Pattern 4: Competing-consumer queue for fan-out
+**What people do:** Give every replica the same receive-endpoint queue name.
+**Why it's wrong:** RabbitMQ load-balances one copy across replicas (competing consumers) — only one Orchestrator sees each Start. The topology requires **all** replicas to react (fan-out).
+**Do this instead:** Instance-unique, auto-delete receive endpoint per replica (Pattern 4) so the fanout exchange delivers a copy to each.
+
+### Anti-Pattern 5: WebApi referencing `BaseConsole.Core` or `Orchestrator` to publish
+**What people do:** Pull console host code into the API to reuse bus wiring.
+**Why it's wrong:** Couples the web host to a console host; violates the milestone constraint and bloats the API.
+**Do this instead:** WebApi references only `Messaging.Contracts` + the `MassTransit`/`MassTransit.RabbitMQ` NuGet, and adds its own publish-only `AddBaseApiMessaging` (Pattern 6).
+
+---
+
+## New vs Modified Components
+
+### New
+| Item | Assembly | Notes |
+|------|----------|-------|
+| `Messaging.Contracts` project | (new) | contracts + `ICorrelated` + 3 filters + `ICorrelationAccessor`/`AsyncLocal` impl + L2 read record |
+| `BaseConsole.Core` project | (new) | `AddBaseConsole`, `RunAsync`, console-flavored observability, Redis (lifted), embedded-Kestrel health, `AddBaseConsoleMessaging` |
+| `Orchestrator` project | (new) | thin shell: `Program.cs` + `AddAppConsumers` + 2 consumers |
+| `AddBaseApiMessaging` | BaseApi.Core (new file) | publish-only bus join for the web API |
+| RabbitMQ compose tier | compose.yaml | new healthy service dependency |
+
+### Modified
+| Item | Change |
+|------|--------|
+| `BaseApi.Service/Program.cs` | + `builder.Services.AddBaseApiMessaging(builder.Configuration);` (composition call #8) |
+| `BaseApi.Service` `RedisProjectionWriter.cs` | swap `WorkflowRootProjection` → `Messaging.Contracts.WorkflowRootProjectionContract` (using-swap; record made `public`) |
+| `OrchestrationController` (Start/Stop) | inject `IPublishEndpoint`; `Publish` the control contract after the existing L2 write/gate |
+| `WorkflowRootProjection.cs` + `LivenessProjection.cs` | **moved** out of `BaseApi.Service` into `Messaging.Contracts` (delete from Service) |
+| `BaseApi.Core` OTel/health | (optionally) re-tag the bus health check off `ready` or set `MinimalFailureStatus=Degraded` so RabbitMQ-down does not flip CRUD `/health/ready` (requirements decision) |
+
+### Decision: lift-or-duplicate `IStartupGate` / `StartupHealthCheck`
+`IStartupGate`, `StartupGate`, `StartupHealthCheck` currently live in `BaseApi.Core/Health/`. Two options:
+1. **Lift into a shared `Hosting.Abstractions` assembly** both base libraries reference (cleanest; avoids a `BaseConsole.Core → BaseApi.Core` dependency).
+2. **Duplicate** the three tiny files into `BaseConsole.Core` (pragmatic; gate ~30 LOC, check ~10 LOC).
+**Recommendation:** Option 2 (duplicate) this milestone — the types are trivial and a `BaseConsole.Core → BaseApi.Core` dependency would drag EF Core / ASP.NET MVC transitively into a console. Re-evaluate extracting a `Hosting.Abstractions` assembly if a third host appears.
+
+---
+
+## Suggested Build Order (dependency-respecting)
+
+```
+1. Messaging.Contracts                    (no deps on the new libs)
+   1a. StartOrchestration / StopOrchestration records
+   1b. ICorrelated + field vocabulary
+   1c. ICorrelationAccessor + AsyncLocalCorrelationAccessor
+   1d. Inbound + Outbound correlation filters (MassTransit abstractions only)
+   1e. MOVE WorkflowRootProjectionContract (+ Liveness) from BaseApi.Service
+
+2. BaseConsole.Core                        (refs: Messaging.Contracts, MassTransit.RabbitMQ, OTel, SE.Redis)
+   2a. (duplicate) IStartupGate/StartupGate/StartupHealthCheck
+   2b. ConsoleRedis extension (lift AddBaseApiRedis)
+   2c. AddBaseConsoleObservability (console flavor: + MassTransit instr, − AspNetCore)
+   2d. EmbeddedHealthEndpointService (Kestrel-in-hosted-service) + ConsoleHealth extension
+   2e. AddBaseConsoleMessaging(cfg, configureConsumers, configureEndpoints) + outbound filters wired
+   2f. AddBaseConsole chain + BaseConsoleHost.RunAsync
+
+3a. Orchestrator                           (refs: BaseConsole.Core, Messaging.Contracts)   ─┐ parallel
+   3a1. StartOrchestrationConsumer / StopOrchestrationConsumer (read L2, scope, log seam)   │
+   3a2. AppMessaging.AddAppConsumers + instance-unique receive endpoint                     │
+   3a3. Program.cs (~7 lines)                                                               │
+                                                                                            │
+3b. WebApi bus wiring                      (refs: Messaging.Contracts, MassTransit.RabbitMQ)─┘ parallel
+   3b1. AddBaseApiMessaging (publish-only) in BaseApi.Core
+   3b2. Program.cs call #8
+   3b3. RedisProjectionWriter using-swap to the moved contract
+   3b4. OrchestrationController Start/Stop → Publish
+
+4. RabbitMQ compose tier + appsettings (Health:Url, RabbitMq conn) for both hosts
+5. Synthetic outbound-filter harness test (locked: outbound exercised via harness send)
 ```
 
-**Critical: v3.3.0 only WRITES to Redis.** No IDistributedCache integration; no cache-invalidation on PUT/DELETE.
+**Why this order:** `Messaging.Contracts` is the leaf both hosts depend on, so it builds first (and the read-side record move must precede the WebApi writer swap). `BaseConsole.Core` depends on the contracts (for filters) and builds second. `Orchestrator` and the WebApi bus wiring both depend only on contracts (+ `BaseConsole.Core` for the Orchestrator) and have no dependency on each other, so they parallelize. RabbitMQ infra and the harness test close it out once both endpoints exist.
 
 ---
 
-## 9. Suggested build order — phase decomposition
+## Scaling Considerations
 
-### Recommendation: **5 phases (Phase 12–16), strictly serialized by dependency graph.**
+| Scale | Architecture adjustments |
+|-------|--------------------------|
+| 1 Orchestrator replica (today) | Instance-unique queue already future-proofs fan-out; single queue, single consumer. |
+| N replicas (topology-ready) | Each replica's auto-delete instance queue receives its own copy from the fanout exchange — fan-out works with zero code change (locked topology decision). |
+| Load-balanced send (future) | `queue:processorId` + shared results queue (explicitly future per PROJECT.md:27) — different topology (competing consumers), not this milestone. |
 
-| Phase | Title | What lands |
-|---|---|---|
-| **12** | **Redis infra + composition + healthcheck + DI registration** | `compose.yaml` redis service · `RedisServiceCollectionExtensions.AddBaseApiRedis` · `AspNetCore.HealthChecks.Redis` wired · `appsettings.{json,Development.json}` entries · `RedisFixture` test infra · `RedisProjectionOptions` · Redis-dead health test |
-| **13** | **OrchestrationService split + L3 fetch + L1 build (no validation yet, no Redis write)** | `WorkflowGraphSnapshot` · `WorkflowGraphLoader.LoadL1Async` · `OrchestrationService.cs` body shrunk · DI wiring · L1-snapshot-shape tests |
-| **14** | **Validation gates — DFS cycle detect + schema-edge + payload-config-schema** | `CycleDetector` · `SchemaEdgeValidator` · `PayloadConfigSchemaValidator` · DI wiring · `StartAsync` chains 3 validators · 422 error path · ~30 unit tests for cycle detection · ~10 integration tests for schema-edge + payload-schema. Closes deferred v2 REQ VALID-21. |
-| **15** | **L2 (Redis) projection write + Stop endpoint divergence** | `RedisProjectionKeys` · 3 L2 DTOs (`WorkflowL2Dto`, `StepL2Dto`, `ProcessorL2Dto` with `inputDefinition`/`outputDefinition`) · `RedisProjectionWriter.UpsertAsync` (MULTI/EXEC pipeline) · `DeleteAsync` (scan + DEL) · `OrchestrationService.StartAsync` final step · NEW `OrchestrationService.StopAsync` (split per CONTEXT D-09) · 3-keyspace assertion tests |
-| **16** | **Idempotency + concurrency + L1 cleanup contract + 3-GREEN closeout** | Start-twice-same-ids regression test · Concurrent Start regression test · Stop-without-prior-Start regression test · IDisposable Dispose / finally-block L1 cleanup verification · End-to-end happy path with real Postgres + Redis · 3-consecutive-GREEN gate · psql \l SHA-256 + redis-cli --scan SHA-256 snapshots |
-
-### Phase-close gate (mandatory)
-
-Each phase 12-16 closes with:
-- 3-consecutive-GREEN integration test runs (Phase 3 D-18)
-- Byte-identical `psql \l` SHA-256 BEFORE = AFTER (Phase 3 D-15)
-- **NEW** Byte-identical `redis-cli --scan | sort | sha256sum` BEFORE = AFTER (v3.3.0 analogue)
-- Bisect-friendly N-commit sequence per Phase 10 precedent
-
-Confidence: **HIGH** for ordering; **MEDIUM** for exact LOC estimates.
+### Scaling priorities
+1. **First concern:** instance-queue leakage on replica churn — mitigate with auto-delete/non-durable instance queues (MT defaults are durable; override).
+2. **Second concern:** RabbitMQ as a hard dep widening — keep it scoped to Start/Stop + Orchestrator lifecycle; do not let it gate CRUD readiness (Pattern 6 health note).
 
 ---
 
-## Summary of recommendations
+## Sources
 
-1. **DI** — `AddBaseApiRedis(IServiceCollection)` chained into `AddBaseApi<TDbContext>` as call #7.
-2. **L1 build** — extract `IWorkflowGraphLoader` + `IWorkflowGraphValidator` + `IRedisProjectionWriter` seams in `Features/Orchestration/`; do NOT reuse `Repository<TEntity>`.
-3. **Health** — Redis joins `ready` tag only (tradeoff with STACK.md flagged — soft-vs-hard dependency).
-4. **Composition** — `ConnectionStrings:Redis` + `Redis:KeyPrefix` config section; `compose.yaml` adds redis:7-alpine.
-5. **Tests** — single shared Redis container + per-class GUID-prefix isolation + SCAN/DEL teardown.
-6. **No-leak invariant** — per-class prefix-scoped DEL+assert + cross-session `redis-cli --scan` SHA-256 BEFORE=AFTER snapshot.
-7. **OrchestrationService split** — split NOW (Phase 13 start); 4 internal feature-folder seams.
-8. **Integration points** — 11 files modified, 14 files new; Redis is WRITE-ONLY in v3.3.0.
-9. **Build order** — 5 phases: 12 (infra) → 13 (split+L1) → 14 (validation) → 15 (L2 write+Stop) → 16 (idempotency+close).
+- Existing codebase (read directly, HIGH): `BaseApi.Service/Program.cs`, `BaseApi.Core/DependencyInjection/{BaseApiServiceCollectionExtensions,BaseApiApplicationBuilderExtensions,HealthServiceCollectionExtensions,ObservabilityServiceCollectionExtensions,RedisServiceCollectionExtensions}.cs`, `BaseApi.Core/Health/{IStartupGate,StartupHealthCheck,StartupCompletionService}.cs`, `BaseApi.Core/Middleware/CorrelationIdMiddleware.cs`, `BaseApi.Service/Features/Orchestration/Projection/{WorkflowRootProjection,LivenessProjection,RedisProjectionWriter}.cs`, `.planning/PROJECT.md`.
+- MassTransit health-check tags (`ready`+`masstransit`), Healthy/Degraded/Unhealthy semantics, `ConfigureHealthCheckOptions`/`MinimalFailureStatus`, custom-tags-replace-defaults (HIGH, official): https://masstransit.io/documentation/configuration
+- MassTransit middleware filters — `IFilter<ConsumeContext>`, `IFilter<SendContext<T>>`, `IFilter<PublishContext<T>>`, `UseConsumeFilter`/`UseSendFilter`/`UsePublishFilter` registration (HIGH, Context7 `/challengermode/opentransit` middleware docs).
+- MassTransit RabbitMQ default durable fanout exchange + competing-consumer-on-shared-queue behavior; instance-unique queue for fan-out (HIGH, official): https://masstransit.io/documentation/configuration/transports/rabbitmq
+- Embedded Kestrel-in-hosted-service for health endpoints on a Generic Host; `MapHealthChecks` is `WebApplication`-only; tag predicate filtering (MEDIUM/HIGH): https://learn.microsoft.com/en-us/aspnet/core/host-and-deploy/health-checks , https://andrewlock.net/deploying-asp-net-core-applications-to-kubernetes-part-6-adding-health-checks-with-liveness-readiness-and-startup-probes/
+- .NET Generic Host (`Host.CreateApplicationBuilder`, worker pattern) (HIGH, official): https://learn.microsoft.com/en-us/dotnet/core/extensions/generic-host
 
 ---
-
-## Open questions for requirements / phase planning
-
-1. **L1 snapshot disposal contract** — `IDisposable` (sync) vs `IAsyncDisposable` (async)? Recommend `IDisposable` + `using`; cleanup is pure sync work.
-2. **Redis MULTI/EXEC vs pipeline batch** for 3-keyspace UpsertAsync — both work; MULTI/EXEC adds atomic guarantee. Phase 15 picks based on workflow-size projections.
-3. **Stop deletion key-scan strategy** — `SCAN MATCH` vs maintaining a key index. Recommend SCAN until benchmarked. (FEATURES.md proposes: compute key set at L1 build time + UNLINK — non-blocking DEL — that's the better mental model.)
-4. **Health-check hard vs soft Redis dependency** — ARCHITECTURE says hard (mirror Postgres), STACK says soft (CRUD survives Redis outage). Genuine tradeoff for requirements.
-5. **Testcontainers.Redis vs host-side Redis with prefix scoping** — both work; pick based on CI environment.
+*Architecture research for: BaseConsole.Core + MassTransit/RabbitMQ integration into a modular monolith*
+*Researched: 2026-05-30*
