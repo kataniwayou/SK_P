@@ -1,8 +1,8 @@
 ---
 phase: 15
 slug: l2-redis-projection-write-stop-existence-check
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-05-29
 ---
@@ -36,11 +36,17 @@ created: 2026-05-29
 
 ## Per-Task Verification Map
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD (planner fills) | — | — | L2-PROJECT-* / ORCH-* / OBSERV-REDIS-* | — | — | integration | `dotnet test ...` | ❌ W0 | ⬜ pending |
+Plan-grained map (each plan's tasks carry their own `<automated>` verify command; the executor ticks per-task status during execution).
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky. The planner/executor completes this map per task.*
+| Plan | Wave | Requirements | Test Type | Automated Command | Status |
+|------|------|--------------|-----------|-------------------|--------|
+| 15-01 | 1 | L2-PROJECT-02/03/04/05/06 | unit (TDD RED→GREEN) | `dotnet test tests/BaseApi.Tests --filter "FullyQualifiedName~RedisProjectionKeys\|Projection"` | ⬜ pending |
+| 15-02 | 2 | L2-PROJECT-01/03/04/05/06, ORCH-START-06 | integration | `dotnet test tests/BaseApi.Tests --filter "FullyQualifiedName~RedisProjectionWriter"` | ⬜ pending |
+| 15-03 | 2 | L2-PROJECT-07, ORCH-STOP-03/04 (+02/05/06/07 via 04) | integration | `dotnet test tests/BaseApi.Tests --filter "FullyQualifiedName~RedisL2Cleanup\|StopException"` | ⬜ pending |
+| 15-04 | 3 | ORCH-START-01..08, ORCH-STOP-01..07, OBSERV-REDIS-03 | integration | `dotnet test tests/BaseApi.Tests --filter "FullyQualifiedName~StartLoop\|StopGate"` | ⬜ pending |
+| 15-05 | 4 | OBSERV-REDIS-01/02/04, L2-PROJECT-06/07 (guards) | integration + negative-grep | `dotnet test tests/BaseApi.Tests --filter "FullyQualifiedName~RedisLogsE2E\|Discipline\|ValidationOrder"` | ⬜ pending |
+
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky. Executor ticks per-task status during execution; `wave_0_complete` flips true once Plan 15-01's Wave-0 harness is GREEN.*
 
 ---
 
@@ -70,11 +76,11 @@ created: 2026-05-29
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 60s (quick filter)
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (Plan 15-01 RED→GREEN unit harness)
+- [x] No watch-mode flags
+- [x] Feedback latency < 60s (quick filter)
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-05-29

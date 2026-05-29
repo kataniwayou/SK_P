@@ -508,21 +508,24 @@ services.AddScoped<OrchestrationService>(sp => new OrchestrationService(
 | A3 | Existing `RedisFixture` prefix SCAN already sweeps processor keys | Runtime State / Pitfall 3 | LOW — verified pattern `$"{KeyPrefix}*"` at `RedisFixture.cs:62` matches all 3 key types. Confirm no test Starts outside the fixture. |
 | A4 | `WorkflowReadDto.EntryStepIds` / `StepReadDto.NextStepIds` are populated by the loader's `with {}` enrichment (non-null on a real snapshot) | Pattern 3 assembly | LOW — verified in `WorkflowGraphLoader.cs:114/122`; coalesce to `[]` defensively anyway. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Where is `liveness.timestamp` stamped — writer or service?**
    - Known: the writer assembles the records, so the writer is the natural home for `TimeProvider`.
    - Unclear: D-01 injects `IHttpContextAccessor` into the *service*; D-05 timestamp could go either place.
    - Recommendation: inject `TimeProvider` into the **writer** (it owns record assembly); keep `IHttpContextAccessor` on the **service** (it owns correlationId resolution + passes it down). Cleanest separation.
+   - **RESOLVED:** `TimeProvider` → writer (Plan 15-02); `IHttpContextAccessor` → service (Plan 15-04). Realized in plans.
 
 2. **RFC 7807 Redis-op-name attachment seam (OBSERV-REDIS-03).**
    - Known: Phase 4 customizer attaches correlationId; the fallback handler maps unhandled exceptions to 500.
    - Unclear: cleanest place to add `UpsertAsync`/`KeyExistsAsync` to `Extensions`.
    - Recommendation: planner reads the Phase 4 fallback handler + customizer; either wrap the Redis exception with a typed exception carrying the op name, or extend the customizer. Low-risk either way.
+   - **RESOLVED:** op name attached via the Phase 4 `FallbackExceptionHandler` seam (Plan 15-04 Task 2). Realized in plans.
 
 3. **Does the per-workflow loop's partial-state on a mid-loop 422 need any compensating action?**
    - Known: CONTEXT D-07 explicitly ACCEPTS partial state (A cleaned+rebuilt, B wiped).
    - Recommendation: no compensation; document the accepted behavior in tests + XML docs. This is a locked decision, not a bug.
+   - **RESOLVED:** no compensation — locked D-07 acceptance; documented in tests + XML docs.
 
 ## Environment Availability
 
