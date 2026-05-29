@@ -81,7 +81,12 @@ internal sealed class RedisProjectionWriter : IRedisProjectionWriter
         // --- Per-step values — NO expiry ---
         foreach (var step in snapshot.Steps.Values)
         {
-            var payload = snapshot.Assignments.Values.First(a => a.StepId == step.Id).Payload;
+            // A step is NOT guaranteed to have an Assignment (Workflow.AssignmentIds is
+            // nullable per ENTITY-08; a Workflow may carry steps with no payload binding).
+            // FirstOrDefault avoids a crash on that valid shape; an unbound step projects an
+            // empty payload string (StepProjection.Payload is a non-nullable string member).
+            var payload = snapshot.Assignments.Values
+                .FirstOrDefault(a => a.StepId == step.Id)?.Payload ?? string.Empty;
             var stepProjection = new StepProjection(
                 step.EntryCondition,
                 step.ProcessorId,

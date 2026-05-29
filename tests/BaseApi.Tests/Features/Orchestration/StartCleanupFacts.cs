@@ -64,7 +64,7 @@ public sealed class StartCleanupFacts : IClassFixture<Phase8WebAppFactory>
     /// </summary>
     private sealed class ThrowingRedisProjectionWriter : IRedisProjectionWriter
     {
-        public Task UpsertAsync(WorkflowGraphSnapshot snapshot, CancellationToken ct)
+        public Task UpsertAsync(WorkflowGraphSnapshot snapshot, string correlationId, CancellationToken ct)
             => throw new InvalidOperationException("forced throw for SC4 cleanup gate");
     }
 
