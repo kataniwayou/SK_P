@@ -115,6 +115,9 @@
 
     <!-- Microsoft.Extensions.* family — versions on own cadence (Phase 3: FakeTimeProvider) -->
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.10.0" />
+
+    <!-- v3.3.0 / Phase 12 — Redis L2 projection client (CPM pin, INFRA-REDIS-03). -->
+    <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
   </ItemGroup>
 
 </Project>
