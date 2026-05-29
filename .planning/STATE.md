@@ -331,6 +331,10 @@ Recent decisions affecting current work:
 - Plan 14-04: D-10 implemented — PayloadConfigSchemaValidator cache is a LOCAL Dictionary<Guid,JsonSchema> inside Validate (never an instance field; DI-Scoped seam would leak across requests), keyed by Schema.Id (parse-once, L1-VALIDATE-08); null ConfigSchemaId passes; missing step/proc/schema skipped (prior gates own those).
 - Plan 14-04 deviation (Rule 3): JsonSchema.Net 9.2.1 results.Details is nullable — guarded with (results.Details ?? Enumerable.Empty<EvaluationResults>()) before .Where to satisfy CS8604 under TreatWarningsAsErrors; falls through to results.Errors fallback when null. Commit e4bff78.
 - Plan 14-04: cache-parse-once asserted behaviorally (two same-schema assignments both validate in one Start -> 204) per plan guidance — no production instrumentation added solely for the test.
+- Plan 14-05: L1-VALIDATE-02 satisfied by re-using the existence path (D-13) — existence stays 404 (NotFoundException), NOT 422; StartOrchestrationFacts.Start_Returns404_* unchanged. Only the three NEW structural gates (cycle/missingStep, schemaEdge, payloadConfigSchema) throw OrchestrationValidationException → 422. The '422 for existence' wording in L1-VALIDATE-01/02/ORCH-START-03 applies to the three structural gates only.
+- Plan 14-05: L1-VALIDATE-09 — VALID-21 closes ONLY at orchestration-start; Assignment PUT/POST remain valid-JSON-only (AssignmentsIntegrationTests unchanged + GREEN). HTTP-write Payload↔Schema conformance is FUTURE-VALID-21-HTTP-WRITE (out of v3.3.0).
+- Plan 14-05: L1-VALIDATE-10 — TEST-03 (Testcontainers.PostgreSql) + TEST-04 (Respawn) remain DEFERRED; v3.3.0 does NOT close them. Recorded for traceability.
+- Plan 14-05: Gate order proven by ValidationOrderFacts multi-failure workflows (existence 404 → cycle → schema-edge → payload short-circuit) + L1 cleanup (snapshot.IsDisposed) on the 422 validation-failure path. D-04 split-Fallback (AddBaseApiFallbackHandler last in Program.cs) keeps Fallback last-walked; OrchestrationValidationExceptionHandler reachable → 422.
 
 ### Roadmap Milestone Log
 
