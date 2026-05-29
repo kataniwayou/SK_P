@@ -28,6 +28,26 @@ namespace BaseApi.Service.Features.Orchestration;
 /// references (CS8852 — Pitfall 2). <see cref="IsDisposed"/> is a separate mutable
 /// auto-property, not a positional member.
 /// </para>
+/// <para>
+/// <b>Validation-gate scope contract (WR-03):</b> the validation gates deliberately walk
+/// DIFFERENT node sets and this asymmetry is intentional, NOT a bug:
+/// <list type="bullet">
+///   <item><see cref="Step"/>-graph cycle/missing-step gate (<c>CycleDetector</c>) is seeded
+///   ONLY from <see cref="Workflow.WorkflowReadDto"/>.<c>EntryStepIds</c> — it validates the
+///   entry-reachable subgraph, because a step that is NOT reachable from any entry can never be
+///   executed and so cannot contribute a runtime cycle.</item>
+///   <item>The schema-edge gate (<c>SchemaEdgeValidator</c>) and the payload↔config-schema gate
+///   (<c>PayloadConfigSchemaValidator</c>) iterate EVERY entry in <see cref="Steps"/> /
+///   <see cref="Assignments"/> — a flat per-edge / per-assignment static check that is cheap and
+///   does not depend on reachability.</item>
+/// </list>
+/// Net effect: an entry-UNREACHABLE orphan subgraph containing a cycle is NOT flagged by the cycle
+/// gate (never seeded) yet is still edge-walked by the other gates. The FK-Restrict junctions make a
+/// true dangling edge hard to produce via the API, and an orphan cycle is unreachable at runtime, so
+/// this divergence is accepted by design. If a future requirement needs the cycle gate to cover orphan
+/// subgraphs too, sweep <see cref="Steps"/> keys not yet in the shared <c>fullyVisited</c> set after
+/// the entry-seeded pass in <c>CycleDetector.Validate</c>.
+/// </para>
 /// </summary>
 internal sealed record WorkflowGraphSnapshot(ILogger<WorkflowGraphSnapshot> Logger) : IDisposable
 {

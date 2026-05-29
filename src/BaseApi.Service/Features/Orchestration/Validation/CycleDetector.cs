@@ -32,6 +32,14 @@ internal sealed class CycleDetector
     /// <summary>
     /// Runs the two-set iterative DFS over <c>snapshot.Steps[*].NextStepIds</c>, seeded from every
     /// <c>Workflow.EntryStepIds[*]</c>. Throws on the first cycle or missing-step encountered.
+    /// <para>
+    /// <b>Scope contract (WR-03):</b> the DFS is seeded ONLY from entry steps, so an entry-UNREACHABLE
+    /// orphan subgraph is intentionally NOT visited by this gate — an unreachable step can never execute
+    /// and so cannot contribute a runtime cycle. The schema-edge and payload↔config-schema gates walk the
+    /// full <c>Steps</c>/<c>Assignments</c> sets by contrast; that divergence is by design (see the scope
+    /// contract on <see cref="WorkflowGraphSnapshot"/>). To extend this gate to orphan subgraphs, sweep
+    /// <c>snapshot.Steps.Keys</c> not yet in <c>fullyVisited</c> after the entry-seeded loop below.
+    /// </para>
     /// </summary>
     public void Validate(WorkflowGraphSnapshot snapshot)
     {
