@@ -40,7 +40,7 @@ try {
     Write-Host "Capturing BEFORE snapshots..." -ForegroundColor Cyan
 
     # (a) Phase 3 D-15 psql \l invariant
-    $beforePg = (docker exec sk-postgres psql -U postgres -lqt | Out-String).Trim()
+    $beforePg = (docker compose exec -T postgres psql -U postgres -lqt | Out-String).Trim()
     $beforePgHash = (Get-FileHash -Algorithm SHA256 -InputStream (
         [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($beforePg))
     )).Hash.ToLower()
@@ -88,7 +88,7 @@ try {
     }
 
     # All three runs must have the same Passed count (deterministic invariant)
-    $distinctPassed = $runResults | Select-Object -ExpandProperty Passed -Unique
+    $distinctPassed = @($runResults | Select-Object -ExpandProperty Passed -Unique)
     if ($distinctPassed.Count -ne 1) {
         Write-Host "3-GREEN cadence violation — fact counts diverge: $($runResults.Passed -join ', ')" -ForegroundColor Red
         exit 1
@@ -97,7 +97,7 @@ try {
 
     # ---- AFTER snapshots ----
     Write-Host "Capturing AFTER snapshots..." -ForegroundColor Cyan
-    $afterPg = (docker exec sk-postgres psql -U postgres -lqt | Out-String).Trim()
+    $afterPg = (docker compose exec -T postgres psql -U postgres -lqt | Out-String).Trim()
     $afterPgHash = (Get-FileHash -Algorithm SHA256 -InputStream (
         [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($afterPg))
     )).Hash.ToLower()

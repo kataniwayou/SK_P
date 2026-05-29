@@ -38,7 +38,7 @@ done
 echo "Capturing BEFORE snapshots..."
 
 # (a) Phase 3 D-15 psql \l invariant
-BEFORE_PG=$(docker exec sk-postgres psql -U postgres -lqt)
+BEFORE_PG=$(docker compose exec -T postgres psql -U postgres -lqt)
 BEFORE_PG_HASH=$(printf '%s' "$BEFORE_PG" | sha256sum | awk '{print $1}')
 echo "  psql \\l SHA-256 BEFORE = $BEFORE_PG_HASH"
 
@@ -75,7 +75,7 @@ echo "3-GREEN cadence passed — $PASSED_TOTAL facts GREEN across 3 runs."
 
 # ---- AFTER snapshots ----
 echo "Capturing AFTER snapshots..."
-AFTER_PG=$(docker exec sk-postgres psql -U postgres -lqt)
+AFTER_PG=$(docker compose exec -T postgres psql -U postgres -lqt)
 AFTER_PG_HASH=$(printf '%s' "$AFTER_PG" | sha256sum | awk '{print $1}')
 echo "  psql \\l SHA-256 AFTER  = $AFTER_PG_HASH"
 
