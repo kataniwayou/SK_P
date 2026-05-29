@@ -33,7 +33,7 @@
 - [x] **Phase 14: Validation gates (DFS + schema-edge + payload-config-schema)** — Cycle detection, missing-step, schema-edge compatibility, and Payload↔ConfigSchema validators in mandatory order
  (completed 2026-05-29)
 - [x] **Phase 15: L2 Redis projection write + Stop existence check** — RedisProjectionWriter ships 3 keyspaces, Start contract finalized, Stop becomes Redis existence-check (completed 2026-05-29)
-- [ ] **Phase 16: Idempotency + concurrency + L1 cleanup + 3-GREEN closeout** — Idempotency/concurrency regression facts, end-to-end happy path, v3.3.0 close gate
+- [x] **Phase 16: Idempotency + concurrency + L1 cleanup + 3-GREEN closeout** — Idempotency/concurrency regression facts, end-to-end happy path, v3.3.0 close gate (completed 2026-05-29)
 
 ## Phase Details
 
@@ -127,8 +127,8 @@ Plans:
 - [x] 16-01-PLAN.md — Doc-first amendment (D-05): rewrite REQUIREMENTS.md TEST-REDIS-09 + ROADMAP SC2/SC5 to the inverted Stop contract; resolve the flagged NOTE
 - [x] 16-02-PLAN.md — TEST-REDIS-06 HappyPathE2EFacts: full-HTTP Start happy-path, 3-keyspace System.Text.Json round-trip
 - [x] 16-03-PLAN.md — TEST-REDIS-07 GateNoWriteFacts: 3 HTTP gates each 422 + RFC 7807 + SCAN-zero no-write; Open Q2 missing-step arm resolved
-- [ ] 16-04-PLAN.md — TEST-REDIS-08 IdempotencyFacts (second-write-reflected + concurrent observational) + TEST-REDIS-09 thin StopScanFacts
-- [ ] 16-05-PLAN.md — D-06 phase-close gate: copy phase-16-close.{ps1,sh}, run 3-GREEN + dual-SHA BEFORE=AFTER
+- [x] 16-04-PLAN.md — TEST-REDIS-08 IdempotencyFacts (second-write-reflected + concurrent observational) + TEST-REDIS-09 thin StopScanFacts
+- [x] 16-05-PLAN.md — D-06 phase-close gate: copy phase-16-close.{ps1,sh}, run 3-GREEN + dual-SHA BEFORE=AFTER
 **v3.2.0 invariants MUST NOT regress**: Phase 3 D-15 byte-identical `psql \l` SHA-256 no-leak; Phase 3 D-18 3-consecutive-GREEN phase-close cadence; Phase 11 D-03 no-traces-backend; all 11 Phase 1-11 success criteria (142/142 baseline must still GREEN); Mapperly RMG codes; `FLUSHDB` is FORBIDDEN in test cleanup; `KEYS`/`IServer.Keys()` are FORBIDDEN in production code (SCAN-only).
 
 ## Progress
@@ -140,7 +140,7 @@ Plans:
 | 13    | v3.3.0    | 3/3 | Complete    | 2026-05-29 |
 | 14    | v3.3.0    | 5/5 | Complete    | 2026-05-29 |
 | 15    | v3.3.0    | 5/5 | Complete    | 2026-05-29 |
-| 16    | v3.3.0    | 0/0            | Not started | —          |
+| 16    | v3.3.0    | 5/5 | Complete    | 2026-05-29 |
 
 ---
 *v3.3.0 roadmap created 2026-05-28 via `/gsd-new-milestone`. Phase 12 planned 2026-05-29 via `/gsd-plan-phase 12` (8 plans, 4 waves). Phase 14 planned 2026-05-29 via `/gsd-plan-phase 14` (5 plans, 3 waves). Next: `/gsd-execute-phase 14` to begin Wave 1.*

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: verifying
+status: milestone_complete
 stopped_at: Completed 16-05-PLAN.md (Phase 16 close gate PASSED — 3x235 GREEN, dual-SHA HELD)
 last_updated: "2026-05-29T18:51:39.274Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 26
   completed_plans: 26
-  percent: 100
+  percent: 120
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 ## Current Position
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
-Phase: 16 (idempotency-concurrency-l1-cleanup-3-green-closeout) — COMPLETE
-Plan: 5 of 5 (complete)
-Status: Phase complete — ready for verification
+Phase: 16
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-05-29
 
 Progress: [██████████] 100%
@@ -37,7 +37,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 66
+- Total plans completed: 71
 - Average duration: —
 - Total execution time: —
 
@@ -60,6 +60,7 @@ Progress: [██████████] 100%
 | 13 | 3 | - | - |
 | 14 | 5 | - | - |
 | 15 | 5 | - | - |
+| 16 | 5 | - | - |
 
 **Recent Trend:**
 
