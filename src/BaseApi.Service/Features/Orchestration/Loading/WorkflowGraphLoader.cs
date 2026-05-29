@@ -125,8 +125,53 @@ internal sealed class WorkflowGraphLoader : IWorkflowGraphLoader
         return snapshot;
     }
 
-    // Plan 13-02 Task 2 replaces this stub with the iterative depth-wave BFS over StepNextSteps.
-    private Task<(List<StepEntity> Steps, Dictionary<Guid, List<Guid>> NextStepLookup)>
+    /// <summary>
+    /// Iterative depth-wave BFS over the <c>StepNextSteps</c> junction (L1-BUILD-04, D-03). No
+    /// recursion (banned downstream by L1-VALIDATE-03) and no <c>.Include()</c> (no nav properties
+    /// exist between entities). The <c>visited</c> guard is a <see cref="List{Guid}"/> keyed on
+    /// <c>StepId</c> (REQ explicit — NOT a <c>HashSet</c>); skipping already-visited ids before
+    /// enqueuing the next wave is what makes loading TERMINATE on a cyclic graph (A→B→A) while the
+    /// cycle-rejecting validator is still a no-op (mitigates T-13-05). Multi-child fan-out is honored:
+    /// the next wave collects ALL <c>NextStepId</c>s from the current wave, not just the first.
+    /// Returns both the loaded entities and the per-step children lookup used by
+    /// <see cref="LoadL1Async"/> to enrich <c>StepReadDto.NextStepIds</c>.
+    /// </summary>
+    private async Task<(List<StepEntity> Steps, Dictionary<Guid, List<Guid>> NextStepLookup)>
         LoadStepsBreadthFirstAsync(IReadOnlyList<Guid> entryStepIds, CancellationToken ct)
-        => Task.FromResult((new List<StepEntity>(), new Dictionary<Guid, List<Guid>>()));
+    {
+        var visited = new List<Guid>();                          // keyed on StepId (List, not HashSet)
+        var loadedSteps = new List<StepEntity>();
+        var nextStepLookup = new Dictionary<Guid, List<Guid>>();
+
+        var currentWave = entryStepIds.Where(id => id != Guid.Empty).Distinct().ToList();
+
+        while (currentWave.Count > 0)
+        {
+            // Only load ids not already visited (cycle/dedup guard).
+            var toLoad = currentWave.Where(id => !visited.Contains(id)).Distinct().ToList();
+            if (toLoad.Count == 0) break;
+
+            var stepEntities = await _db.Set<StepEntity>().AsNoTracking()
+                .Where(s => toLoad.Contains(s.Id)).ToListAsync(ct);
+            loadedSteps.AddRange(stepEntities);
+
+            var loadedIds = stepEntities.Select(s => s.Id).ToList();
+            foreach (var id in loadedIds) visited.Add(id);       // mark visited (termination on cycle)
+
+            // Discover children via the junction (children of S = rows where StepId == S).
+            var nextRows = await _db.Set<StepNextSteps>().AsNoTracking()
+                .Where(j => loadedIds.Contains(j.StepId)).ToListAsync(ct);
+
+            var waveLookup = nextRows.GroupBy(j => j.StepId)
+                .ToDictionary(g => g.Key, g => g.Select(j => j.NextStepId).ToList());
+            foreach (var kvp in waveLookup) nextStepLookup[kvp.Key] = kvp.Value;
+
+            // Next wave = all children not yet visited (multi-child fan-out: ALL children).
+            currentWave = nextRows.Select(j => j.NextStepId)
+                .Where(id => !visited.Contains(id))
+                .Distinct().ToList();
+        }
+
+        return (loadedSteps, nextStepLookup);
+    }
 }
