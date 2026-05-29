@@ -111,7 +111,19 @@ public sealed class OrchestrationService
         {
             // 2. Tolerant pre-clean — deletes any stale root + per-step keys so a re-Start of a
             //    SHRUNK graph leaves no orphan per-step keys (delete-then-write, ORCH-START-05).
-            await _cleanup.StopCleanupAsync(workflowId, ct);
+            //    The pre-clean is the FIRST half of the Start L2-write path; a genuine Redis
+            //    connection fault here (NOT a missing key — that is tolerated inside the routine)
+            //    is tagged with the Start op name so the 500 body reports a single stable
+            //    "UpsertAsync" op regardless of which Redis call faults first (OBSERV-REDIS-03).
+            try
+            {
+                await _cleanup.StopCleanupAsync(workflowId, ct);
+            }
+            catch (RedisException ex)
+            {
+                ex.Data["redisOp"] = "UpsertAsync";
+                throw;
+            }
 
             // 3. Per-workflow L1 build (single-element list — no new loader variant, RES Pattern 5).
             //    Disposed by the `using` on success AND on any throw below (L1 cleanup contract).

@@ -11,23 +11,18 @@ using Xunit;
 namespace BaseApi.Tests.Features.Orchestration;
 
 /// <summary>
-/// Phase 9 REQ-4 integration tests for <c>POST /api/v1/orchestration/stop</c>.
-/// Stop and Start are behaviorally identical in v1 (CONTEXT D-12 — both endpoints
-/// delegate to the same <c>OrchestrationService.ValidateWorkflowIdsAsync</c>
-/// method). Detailed validation coverage (duplicate / empty / Guid.Empty) is
-/// asserted in <see cref="StartOrchestrationFacts"/>; here we only prove the
-/// <c>/stop</c> URL is correctly wired to the same service method.
+/// Stop endpoint contract for <c>POST /api/v1/orchestration/stop</c>.
 /// <para>
-/// <b>2 facts:</b>
-/// <list type="number">
-///   <item><c>Stop_Returns204_AndEmptyBody_WhenWorkflowIdsValid</c> — happy path
-///     mirror of Start.</item>
-///   <item><c>Stop_Returns404_WhenAnyWorkflowIdMissing</c> — proves the existence
-///     check applies to the /stop URL too (not just /start).</item>
-/// </list>
+/// <b>v3.3.0 semantics change (Phase 15 Plan 04):</b> Stop is no longer a Postgres
+/// existence check (the original Phase 9 D-12 shared-method 404 behavior). It is now a
+/// Redis (L2) EXISTS gate (D-04/D-06): all requested workflow root keys must already
+/// exist in L2 (i.e. the workflow was Started) → per-workflow cleanup → 204; ANY missing
+/// root → 422 listing the full missing set, NO deletion. These facts were updated from
+/// the obsolete 404 assertions to the new gate semantics — the full Redis-gate coverage
+/// (processor retention, repeat-422, Redis-down 500) lives in <see cref="StopGateFacts"/>.
 /// </para>
 /// </summary>
-[Trait("Phase", "9")]
+[Trait("Phase", "15")]
 public sealed class StopOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
 {
     private readonly Phase8WebAppFactory _factory;
@@ -73,11 +68,16 @@ public sealed class StopOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
     }
 
     [Fact]
-    public async Task Stop_Returns204_AndEmptyBody_WhenWorkflowIdsValid()
+    public async Task Stop_Returns204_AndEmptyBody_WhenAllRootsExist()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
         var wfId = await SeedWorkflowAsync(client, ct);
+
+        // v3.3.0 Stop gates on L2 existence — the workflow must be Started (root key written)
+        // before a Stop can succeed. Start it first, then Stop → 204.
+        var start = await client.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+        Assert.Equal(HttpStatusCode.NoContent, start.StatusCode);
 
         var resp = await client.PostAsJsonAsync(
             "/api/v1/orchestration/stop",
@@ -90,39 +90,34 @@ public sealed class StopOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
     }
 
     [Fact]
-    public async Task Stop_Returns404_WhenAnyWorkflowIdMissing()
+    public async Task Stop_Returns422_WhenAnyWorkflowRootMissing()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
 
+        // A well-formed but never-Started id has no L2 root key → the EXISTS gate fails → 422.
         var missingId = Guid.NewGuid();
         var resp = await client.PostAsJsonAsync(
             "/api/v1/orchestration/stop",
             new List<Guid> { missingId },
             ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
         Assert.Equal("application/problem+json", resp.Content.Headers.ContentType?.MediaType);
 
         var body = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(body);
-        Assert.Equal("WorkflowEntity", doc.RootElement.GetProperty("resourceType").GetString());
-        // IN-04 (iteration 2): single-id resourceId must equal the bare GUID string.
-        // See StartOrchestrationFacts.Start_Returns404_WhenAnyWorkflowIdMissing for
-        // the rationale (strict equality locks the `string.Join(", ", missing)` shape).
-        var resourceId = doc.RootElement.GetProperty("resourceId").GetString();
-        Assert.Equal(missingId.ToString(), resourceId);
+        Assert.Equal(422, doc.RootElement.GetProperty("status").GetInt32());
+        // The 422 detail lists the missing id (MissingRoots gate, string.Join(", ", missing)).
+        Assert.Contains(missingId.ToString(), body);
     }
 
     /// <summary>
-    /// IN-04 (iteration 2) mirror — proves the multi-id <c>string.Join(", ", missing)</c>
-    /// contract holds for the <c>/stop</c> URL too (not just <c>/start</c>). Stop and
-    /// Start share <c>OrchestrationService.ValidateWorkflowIdsAsync</c> per CONTEXT D-12,
-    /// but a small explicit fact here defends against a future split that might
-    /// accidentally diverge the error-shape on one side only.
+    /// Multi-id gate — proves a 422 lists the FULL missing set (not just the first) when
+    /// every requested workflow root is absent from L2.
     /// </summary>
     [Fact]
-    public async Task Stop_Returns404_WithCommaJoinedIds_WhenMultipleWorkflowIdsMissing()
+    public async Task Stop_Returns422_WithFullMissingList_WhenMultipleWorkflowRootsMissing()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
@@ -134,21 +129,13 @@ public sealed class StopOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
             new List<Guid> { missingId1, missingId2 },
             ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
         Assert.Equal("application/problem+json", resp.Content.Headers.ContentType?.MediaType);
 
         var body = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(body);
-        Assert.Equal("WorkflowEntity", doc.RootElement.GetProperty("resourceType").GetString());
-        var resourceId = doc.RootElement.GetProperty("resourceId").GetString();
-        Assert.NotNull(resourceId);
-        Assert.Contains(missingId1.ToString(), resourceId);
-        Assert.Contains(missingId2.ToString(), resourceId);
-        Assert.Contains(", ", resourceId);
-        var expectedInOrder = $"{missingId1}, {missingId2}";
-        var expectedReversed = $"{missingId2}, {missingId1}";
-        Assert.True(
-            resourceId == expectedInOrder || resourceId == expectedReversed,
-            $"resourceId '{resourceId}' must equal '{expectedInOrder}' or '{expectedReversed}' (comma-space joined, unwrapped).");
+        Assert.Equal(422, doc.RootElement.GetProperty("status").GetInt32());
+        Assert.Contains(missingId1.ToString(), body);
+        Assert.Contains(missingId2.ToString(), body);
     }
 }
