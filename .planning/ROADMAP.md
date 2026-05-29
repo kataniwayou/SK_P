@@ -30,7 +30,8 @@
 
 - [x] **Phase 12: Redis infra + composition + healthcheck + DI registration** — Land Redis as a new compose-stack tier, wire `AddBaseApiRedis`, ship `RedisFixture` test infra (8/8 plans) — 2026-05-29
 - [x] **Phase 13: OrchestrationService split + L3 fetch + L1 build** — Decompose OrchestrationService into seams + load L1 snapshot (no validation, no Redis write yet) — 2026-05-29
-- [x] **Phase 14: Validation gates (DFS + schema-edge + payload-config-schema)** — Cycle detection, missing-step, schema-edge compatibility, and Payload↔ConfigSchema validators in mandatory order (completed 2026-05-29)
+- [x] **Phase 14: Validation gates (DFS + schema-edge + payload-config-schema)** — Cycle detection, missing-step, schema-edge compatibility, and Payload↔ConfigSchema validators in mandatory order
+ (completed 2026-05-29)
 - [ ] **Phase 15: L2 Redis projection write + Stop existence check** — RedisProjectionWriter ships 3 keyspaces, Start contract finalized, Stop becomes Redis existence-check
 - [ ] **Phase 16: Idempotency + concurrency + L1 cleanup + 3-GREEN closeout** — Idempotency/concurrency regression facts, end-to-end happy path, v3.3.0 close gate
 
@@ -103,7 +104,13 @@ Plans:
   3. `POST /api/v1/orchestration/stop` returns 204 when `EXISTS` returns 1 for every requested `{workflowId}` key in Redis; returns 422 with the missing workflowIds list when ANY key is absent; performs NO DELETE/UNLINK; Stop does NOT touch Postgres.
   4. Redis-side failures (`RedisConnectionException`, timeout) surface as 500 + RFC 7807 + `correlationId` from BOTH Start (`UpsertAsync`) and Stop (`KeyExistsAsync`); L1 cleanup still runs in `finally` on the Start path.
   5. `OpenTelemetry.Instrumentation.StackExchangeRedis` is NOT referenced anywhere in the solution; Redis ops appear in MEL logs with X-Correlation-Id flowing via AsyncLocal (verified by E2E test extending the Phase 11 `SchemasLogsE2ETests` pattern); `IServer.Keys()` and `KEYS` are forbidden in production code (only SCAN-based enumeration allowed).
-**Plans**: TBD
+> NOTE: SC3/SC4/SC5 above are superseded by 15-CONTEXT amendments (Stop now DELETES root+per-step via GET-and-follow, non-idempotent 422 on repeat, never deletes processor keys; jobId = Guid.NewGuid(); processor keys TTL'd). Plan 15-05 reconciles this text.
+**Plans**: 5 plans
+- [ ] 15-01-PLAN.md — RedisProjectionKeys + 4 camelCase projection records + ProcessorKeyTtlDays config (Wave 0 unit tests)
+- [ ] 15-02-PLAN.md — Fill RedisProjectionWriter: 3-keyspace batch write + processor TTL + liveness via TimeProvider
+- [ ] 15-03-PLAN.md — Shared RedisL2Cleanup GET-and-follow traverse+delete routine + 422 missing-roots exception
+- [ ] 15-04-PLAN.md — OrchestrationService per-workflow Start loop + Redis Stop gate/cleanup + DI/controller wiring
+- [ ] 15-05-PLAN.md — OBSERV-REDIS-02 E2E + discipline guards + Phase 14 ValidationOrderFacts amend + REQUIREMENTS/ROADMAP reconcile
 **v3.2.0 invariants MUST NOT regress**: Phase 11 D-03 no-traces-backend (`.WithTracing()` stays stripped; no Redis OTel trace instrumentation); Phase 4 `X-Correlation-Id` middleware + RFC 7807 + correlation propagation through OTel to ES (Phase 11 E2E contract); MEL → ES correlation propagation; Mapperly is for entity↔DTO mapping only (L2 DTO → JSON uses `System.Text.Json` directly); INFRA-REDIS-06 soft Redis dependency (CRUD endpoints still serve 200 with Redis down); byte-identical `psql \l` SHA-256.
 
 ### Phase 16: Idempotency + concurrency + L1 cleanup + 3-GREEN closeout
