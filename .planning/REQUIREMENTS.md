@@ -94,9 +94,12 @@
 
 ### TEST-REDIS — Test infrastructure
 
-- [ ] **TEST-REDIS-01** — `tests/BaseApi.Tests/Composition/RedisFixture.cs` parallels the v3.2.0 `PostgresFixture`. Holds a single shared connection to a host-side Redis (or compose-provided Redis); each test class instance generates a unique `KeyPrefix = "test:cls-{Guid:N}:"` for isolation.
-- [ ] **TEST-REDIS-02** — `Phase8WebAppFactory` (or a v3.3.0 successor) encapsulates the `RedisFixture` alongside `PostgresFixture`. `ConfigureWebHost` injects `ConnectionStrings:Redis` + `Redis:KeyPrefix` via `AddInMemoryCollection`. Same Plan 05-02 Pattern C reasoning.
-- [ ] **TEST-REDIS-03** — `RedisFixture.DisposeAsync` runs `SCAN MATCH "{KeyPrefix}*"` + `KeyDeleteAsync(keys)`. Then re-`SCAN` with the same prefix and ASSERT count == 0 — throws on violation (fail-loud; analogue of the Phase 3 D-15 byte-identical psql\l discipline). `FLUSHDB` is FORBIDDEN (destroys keys from parallel test classes).
+- [x] **TEST-REDIS-01
+** — `tests/BaseApi.Tests/Composition/RedisFixture.cs` parallels the v3.2.0 `PostgresFixture`. Holds a single shared connection to a host-side Redis (or compose-provided Redis); each test class instance generates a unique `KeyPrefix = "test:cls-{Guid:N}:"` for isolation.
+- [x] **TEST-REDIS-02
+** — `Phase8WebAppFactory` (or a v3.3.0 successor) encapsulates the `RedisFixture` alongside `PostgresFixture`. `ConfigureWebHost` injects `ConnectionStrings:Redis` + `Redis:KeyPrefix` via `AddInMemoryCollection`. Same Plan 05-02 Pattern C reasoning.
+- [x] **TEST-REDIS-03
+** — `RedisFixture.DisposeAsync` runs `SCAN MATCH "{KeyPrefix}*"` + `KeyDeleteAsync(keys)`. Then re-`SCAN` with the same prefix and ASSERT count == 0 — throws on violation (fail-loud; analogue of the Phase 3 D-15 byte-identical psql\l discipline). `FLUSHDB` is FORBIDDEN (destroys keys from parallel test classes).
 - [ ] **TEST-REDIS-04** — Phase-close gate is extended: in addition to the v3.2.0 `psql \l` SHA-256 BEFORE=AFTER snapshot, the new `redis-cli --scan | sort | sha256sum` BEFORE=AFTER snapshot must be byte-identical across the full test suite.
 - [ ] **TEST-REDIS-05** — New `HealthDeadRedisFixture` extends `Phase8WebAppFactory` with a dead Redis port (e.g., `localhost:6380`) to prove `/health/live` stays 200 when Redis is down. (Since INFRA-REDIS-06 makes Redis a soft dependency, `/health/ready` ALSO stays 200 when Redis is down — only Start/Stop fail. Both behaviors are tested.)
 - [ ] **TEST-REDIS-06** — Integration facts for the full Start happy-path: real Postgres + real Redis + 3-keyspace assertion (root key shape, per-step chain, per-processor body). Each fact asserts the L2 record matches expected JSON via System.Text.Json deserialization round-trip.

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
 status: executing
-stopped_at: Completed 12-04-PLAN.md
-last_updated: "2026-05-29T04:15:46.080Z"
+stopped_at: Completed 12-05-PLAN.md
+last_updated: "2026-05-29T04:53:27.429Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 8
-  completed_plans: 4
-  percent: 50
+  completed_plans: 5
+  percent: 63
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
 Phase: 12 (redis-infra-composition-healthcheck-di-registration) — EXECUTING
-Plan: 5 of 8
+Plan: 6 of 8
 Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [█████░░░░░] 50%
+Progress: [██████░░░░] 63%
 
 ## Performance Metrics
 
@@ -108,6 +108,7 @@ Progress: [█████░░░░░] 50%
 | Phase 12 P02 | 4min | 1 tasks | 1 files |
 | Phase 12 P03 | 2min | 3 tasks | 2 files |
 | Phase 12 P04 | ~12min | 1 tasks | 5 files |
+| Phase 12 P05 | ~25min | 2 tasks tasks | 3 files files |
 
 ## Accumulated Context
 
@@ -292,6 +293,9 @@ Recent decisions affecting current work:
 - Plan 12-04: RedisProjectionOptions is public sealed (Phase 15 cross-assembly IOptions read); RedisServiceCollectionExtensions is internal static (same-assembly chain) — mirrors Persistence/Health extension visibility split
 - Plan 12-04: AddBaseApiRedis registers Singleton IConnectionMultiplexer via ConnectionMultiplexer.Connect(RequireConnectionString(Redis)) inside factory closure (D-14, safe due to abortConnect=false from 12-03); IDatabase NOT DI-registered (INFRA-COMP-03, consumers call multiplexer.GetDatabase()); Configure<RedisProjectionOptions>(GetSection Redis) binds options (INFRA-COMP-04)
 - Plan 12-04 deviation [Rule 3]: StackExchange.Redis PackageReference added to BaseApi.Core.csproj (CPM pin from 12-01 had no consuming project reference until this plan); [Rule 1]: AddBaseApiFacts in-memory config gained ConnectionStrings:Redis because call #7 fail-fasts on missing key
+- Plan 12-05: RedisFixture (public sealed IAsyncLifetime) per-class localhost:6380 multiplexer + test:cls-{Guid:N}: KeyPrefix; DisposeAsync SCAN(KeysAsync 250)+DEL+re-SCAN(1000)+assert-zero with FLUSHDB-forbidden throw — no FLUSHDB/FLUSHALL, no synchronous IServer.Keys() (L2-PROJECT-07 reference pattern from day one)
+- Plan 12-05: Phase8WebAppFactory extended IN-PLACE (D-07) — 4-arg ctor (skipPostgres/connStr/skipRedis/redisConnStr) for 12-06 HealthDeadRedisFixture, RedisConnectionString/RedisKeyPrefix/RedisMultiplexer props, defensive Postgres-rollback in InitializeAsync (Pitfall 4), Redis-first DisposeAsync, AddInMemoryCollection Redis-key injection (D-08, NO env-var workaround); 142 baseline + 6 new = 148 GREEN x3
+- Plan 12-05 deviation (Rule 1): residual-key fact made deterministic by pre-seeding 300 bulk keys to widen the fixture DEL->re-SCAN window + tight side-channel reseed loop (single-key plan suggestion failed 2/4 full-suite runs)
 
 ### Roadmap Milestone Log
 
@@ -354,8 +358,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T04:15:34.544Z
-Stopped at: Completed 12-04-PLAN.md
+Last session: 2026-05-29T04:52:54.516Z
+Stopped at: Completed 12-05-PLAN.md
 Resume file: None
 
 **Completed Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each — Run 1: 163s + Run 2: 161s + Run 3: 162s; byte-identical psql `\l` SHA-256 BEFORE/AFTER `0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127`; zero leaked test DBs; zero orphan references in `src/**/*.cs` + `tests/**/*.cs` for retired Phase 5 symbols; all 4 new REQ-IDs closed — OBSERV-13, OBSERV-14, INFRA-08, TEST-07; OBSERV-12 superseded; INFRA-06 amendment locked in)
