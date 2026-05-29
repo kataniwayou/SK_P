@@ -49,9 +49,12 @@
 
 - [x] **L1-BUILD-01
 ** — `WorkflowGraphSnapshot` is a transient record built per Start request. Lives only inside `StartAsync` scope. Implements `IDisposable` for the cleanup contract.
-- [ ] **L1-BUILD-02** — `IWorkflowGraphLoader.LoadL1Async(IReadOnlyList<Guid> workflowIds)` fetches from Postgres (L3) using direct `BaseDbContext.Set<>().AsNoTracking()...Where(x => ids.Contains(x.Id))` batch queries — does NOT extend `Repository<TEntity>` (Phase 3 5-method surface unchanged).
-- [ ] **L1-BUILD-03** — Loader populates a flat `Dictionary<Guid, EntityDto>` for each entity type: Workflows, Assignments, Steps, Processors, Schemas. Keyed by `Id`. The DTOs are the v3.2.0 ReadDto types.
-- [ ] **L1-BUILD-04** — Step traversal iterates every collection: from each `Workflow.EntryStepIds[*]`, walk into each `StepEntity.NextStepIds[*]` via the existing `StepNextSteps` junction. A step with multiple children is followed into ALL children (not just the first). Per-traversal `visited` list (NOT a HashSet keyed on object identity; keyed on StepId).
+- [x] **L1-BUILD-02
+** — `IWorkflowGraphLoader.LoadL1Async(IReadOnlyList<Guid> workflowIds)` fetches from Postgres (L3) using direct `BaseDbContext.Set<>().AsNoTracking()...Where(x => ids.Contains(x.Id))` batch queries — does NOT extend `Repository<TEntity>` (Phase 3 5-method surface unchanged).
+- [x] **L1-BUILD-03
+** — Loader populates a flat `Dictionary<Guid, EntityDto>` for each entity type: Workflows, Assignments, Steps, Processors, Schemas. Keyed by `Id`. The DTOs are the v3.2.0 ReadDto types.
+- [x] **L1-BUILD-04
+** — Step traversal iterates every collection: from each `Workflow.EntryStepIds[*]`, walk into each `StepEntity.NextStepIds[*]` via the existing `StepNextSteps` junction. A step with multiple children is followed into ALL children (not just the first). Per-traversal `visited` list (NOT a HashSet keyed on object identity; keyed on StepId).
 - [ ] **L1-BUILD-05** — **L1 cleanup contract** — `WorkflowGraphSnapshot.Dispose()` clears all internal dictionaries + traversal lists. Called via `using` declaration in `StartAsync` so cleanup runs on success AND failure paths.
 
 ### L1-VALIDATE — Validation gates (mandatory order)

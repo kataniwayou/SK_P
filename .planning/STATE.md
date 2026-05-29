@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
 status: executing
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-05-29T08:36:11.297Z"
+stopped_at: Completed 13-02-PLAN.md
+last_updated: "2026-05-29T08:45:01.180Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 1
   total_plans: 11
-  completed_plans: 9
-  percent: 82
+  completed_plans: 10
+  percent: 91
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
 Phase: 13 (orchestrationservice-split-l3-fetch-l1-build) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [████████░░] 82%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -114,6 +114,7 @@ Progress: [████████░░] 82%
 | Phase 12 P07 | ~18min | 2 tasks | 4 files |
 | Phase 12 P08 | ~9min gate run (3×~2:54 GREEN) + finalization | 3 tasks (2 scripts + 1 operator checkpoint) | 3 files (2 scripts + STATE.md) |
 | Phase 13 P01 | ~9min | 3 tasks | 12 files |
+| Phase 13 P02 | ~5min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -310,6 +311,9 @@ Recent decisions affecting current work:
 - Plan 13-01: OrchestrationService split into thin StartAsync/StopAsync orchestrator + private ExistenceCheckAsync; old shared ValidateWorkflowIdsAsync deleted; locked NotFoundException(nameof(WorkflowEntity), string.Join(", ", missing)) shape preserved byte-exact
 - Plan 13-01 deviation [Rule 3]: OrchestrationService ctor made internal (CS0051 — public ctor cannot expose internal seam types); class stays public sealed; registered via AddScoped<T>(sp => new T(...)) factory because default DI ValidateOnBuild requires a public ctor. Reusable internal-ctor + factory pattern for public services taking internal collaborators
 - Plan 13-01: WorkflowGraphSnapshot is internal sealed record : IDisposable with injected ILogger<WorkflowGraphSnapshot>; Dispose clears 5 dicts + sets IsDisposed + emits D-04 literal 'L1 snapshot disposed'. Loader holds ILogger<WorkflowGraphSnapshot> and passes it into the snapshot ctor; snapshot NOT in DI
+- Plan 13-02: WorkflowGraphLoader.LoadL1Async now does the real L3->L1 build — staged AsNoTracking batch reads (5 entity tables + WorkflowEntrySteps/WorkflowAssignments/StepNextSteps junctions) + iterative cycle-terminating BFS + Mapperly ToRead + with{} junction enrichment. Zero Repository<T>; assignments via WorkflowAssignments junction only (Pitfall 1). L1-BUILD-02/03/04 closed.
+- Plan 13-02: LoadStepsBreadthFirstAsync uses a List<Guid> visited guard (not HashSet, REQ-explicit) — !visited.Contains(child) before enqueuing the next wave is the cycle-termination guarantee (T-13-05); multi-child fan-out honored; no recursion/Include.
+- Plan 13-02: within-plan two-commit split on one file — Task 1 lands LoadL1Async + empty BFS stub (build-green), Task 2 replaces stub with real traversal (build-green); commit-boundary mechanic to keep each task individually buildable, final code matches plan verbatim. Snapshot constructed via new WorkflowGraphSnapshot(_logger); loader emits no disposal log (D-04 owned by record). 177/177 GREEN.
 
 ### Roadmap Milestone Log
 
@@ -403,8 +407,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T08:36:00.036Z
-Stopped at: Completed 13-01-PLAN.md
+Last session: 2026-05-29T08:44:31.977Z
+Stopped at: Completed 13-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
