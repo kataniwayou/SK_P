@@ -18,21 +18,41 @@ namespace BaseApi.Tests.Features.Orchestration;
 
 /// <summary>
 /// Phase 14 SC#5 — proves the LOCKED gate order short-circuits at the FIRST failure and that
-/// L1 cleanup runs on the validation-failure path. The pipeline order
+/// L1 cleanup runs on the validation-failure path. The within-workflow pipeline order
 /// (<see cref="OrchestrationService.StartAsync"/>) is:
 /// existence (404 — D-13) → cycle (422) → schema-edge (422) → payload (422).
 /// <para>
-/// <b>4 facts:</b>
+/// <b>Phase 15 amendment (per-workflow first-failure scope).</b> Plan 15-04 restructured
+/// <c>StartAsync</c> into a PER-WORKFLOW loop: for a multi-workflow request <c>[A, B]</c>, the
+/// upfront existence gate runs over ALL ids first (404 if any is missing, before any mutation),
+/// then workflow A is FULLY processed (pre-clean → load → cycle/schema-edge/payload → L2 project)
+/// BEFORE workflow B is even loaded. First-failure semantics therefore changed from "first failing
+/// gate across the whole batch" to "first failing gate within the FIRST failing workflow, in
+/// iteration order" (15-CONTEXT amendment, line 112). The WITHIN-workflow gate ORDER
+/// (cycle → schema-edge → payload) is UNCHANGED — only the cross-workflow SCOPE changed, and
+/// partial state across workflows is now ACCEPTED (D-07): a valid earlier workflow stays projected
+/// in L2 even though a later workflow fails 422.
+/// </para>
+/// <para>
+/// <b>5 facts:</b>
 /// <list type="number">
 ///   <item><c>ExistenceBeforeCycle_MissingWorkflowId_Returns404_NotCycle</c> — a missing WorkflowId is
 ///     rejected 404 BEFORE the snapshot is even loaded; existence short-circuits ahead of the 422 gates
 ///     (D-13 — existence stays 404, NOT 422).</item>
-///   <item><c>CycleBeforeSchemaEdge_WorkflowFailingBoth_Returns422Cycle</c> — a workflow that fails BOTH
-///     the cycle gate (back-edge) AND the schema-edge gate (mismatched processor schemas) returns
-///     <c>errors.gate=="cycle"</c>: the cycle gate (step 3) wins over schema-edge (step 4).</item>
-///   <item><c>SchemaEdgeBeforePayload_WorkflowFailingBoth_Returns422SchemaEdge</c> — an ACYCLIC workflow
-///     that fails BOTH schema-edge (mismatched schemas) AND payload (bad assignment payload) returns
-///     <c>errors.gate=="schemaEdge"</c>: schema-edge (step 4) wins over payload (step 5).</item>
+///   <item><c>CycleBeforeSchemaEdge_WorkflowFailingBoth_Returns422Cycle</c> — a (single) workflow that
+///     fails BOTH the cycle gate (back-edge) AND the schema-edge gate (mismatched processor schemas)
+///     returns <c>errors.gate=="cycle"</c>: the cycle gate (step 3) wins over schema-edge (step 4).
+///     WITHIN-workflow gate order — UNCHANGED by the Phase 15 amendment.</item>
+///   <item><c>SchemaEdgeBeforePayload_WorkflowFailingBoth_Returns422SchemaEdge</c> — an ACYCLIC (single)
+///     workflow that fails BOTH schema-edge (mismatched schemas) AND payload (bad assignment payload)
+///     returns <c>errors.gate=="schemaEdge"</c>: schema-edge (step 4) wins over payload (step 5).
+///     WITHIN-workflow gate order — UNCHANGED by the Phase 15 amendment.</item>
+///   <item><c>PerWorkflowScope_FirstValid_SecondCycle_ProjectsFirst_Fails422</c> — Phase 15 amendment.
+///     A request <c>[A, B]</c> where A is a valid single-step graph and B has a back-edge cycle:
+///     A is PROJECTED (its L2 root key exists) and the request fails 422 on B's cycle. Proves the
+///     per-workflow loop processes A fully before B and that cross-workflow partial state is accepted
+///     (D-07), replacing the old "no keys written for ANY workflow when the FIRST/any failed" batch
+///     snapshot assumption.</item>
 ///   <item><c>L1Cleanup_RunsOnValidationFailurePath</c> — a real back-edge cycle forces a 422; a recording
 ///     loader captures the snapshot and asserts <c>IsDisposed==true</c> + all 5 dicts empty, proving the
 ///     <c>using var snapshot</c> declaration runs <c>Dispose()</c> on the DOMAIN-VALIDATION failure path
@@ -284,6 +304,55 @@ public sealed class ValidationOrderFacts : IClassFixture<Phase8WebAppFactory>
 
         // Schema-edge (step 4) wins over payload (step 5).
         Assert.Equal("schemaEdge", errors.GetProperty("gate").GetString());
+    }
+
+    /// <summary>
+    /// Phase 15 amendment — per-workflow first-failure SCOPE. A request <c>[A, B]</c> where A is a valid
+    /// single-step graph (no schemas → passes all 3 gates) and B has a back-edge cycle A'→B'→A'. The
+    /// existence gate passes for both, then the per-workflow loop processes A FULLY (projecting its L2
+    /// root key) BEFORE loading B, then B's cycle gate throws → the request returns 422. The test asserts
+    /// BOTH: the 422 (B failed) AND that A's L2 root key EXISTS (A was projected). This is the
+    /// cross-workflow partial-state behavior the Phase 15 per-workflow loop introduces (D-07), replacing
+    /// the old batch-snapshot assumption that a single failure left NO workflow projected.
+    /// </summary>
+    [Fact]
+    public async Task PerWorkflowScope_FirstValid_SecondCycle_ProjectsFirst_Fails422()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = _factory.CreateClient();
+
+        // Workflow A — valid single-step graph, no schemas (passes cycle + schema-edge + payload).
+        var procA = await SeedProcessorAsync(client, inputSchemaId: null, outputSchemaId: null, configSchemaId: null, ct);
+        var stepA = await SeedStepAsync(client, procA, nextStepIds: null, ct);
+        var wfA = await SeedWorkflowAsync(client, new List<Guid> { stepA }, assignmentIds: null, ct);
+
+        // Workflow B — real back-edge cycle B1→B2→B1 (all schema FKs null so the cycle gate is reached).
+        var procB = await SeedProcessorAsync(client, inputSchemaId: null, outputSchemaId: null, configSchemaId: null, ct);
+        var stepB2 = await SeedStepAsync(client, procB, nextStepIds: null, ct);
+        var stepB1 = await SeedStepAsync(client, procB, nextStepIds: new List<Guid> { stepB2 }, ct);
+        await SetNextStepIdsAsync(client, stepB2, procB, new List<Guid> { stepB1 }, ct);
+        var wfB = await SeedWorkflowAsync(client, new List<Guid> { stepB1 }, assignmentIds: null, ct);
+
+        // Request order [A, B] — existence passes for both; A is projected; B's cycle gate throws.
+        var resp = await client.PostAsJsonAsync(
+            "/api/v1/orchestration/start",
+            new List<Guid> { wfA, wfB },
+            ct);
+
+        // B failed the cycle gate → the request is 422 (per-workflow first-failure: B is the first — and
+        // only — failing workflow in iteration order).
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
+        var body = await resp.Content.ReadAsStringAsync(ct);
+        using var doc = JsonDocument.Parse(body);
+        Assert.Equal("cycle", doc.RootElement.GetProperty("errors").GetProperty("gate").GetString());
+
+        // Cross-workflow partial state (D-07) — A was FULLY processed before B was loaded, so A's L2
+        // root key EXISTS despite B's later 422. (The old batch-snapshot model would have written NOTHING.)
+        var prefix = _factory.RedisKeyPrefix;
+        var db = _factory.RedisMultiplexer.GetDatabase();
+        Assert.True(
+            await db.KeyExistsAsync($"{prefix}{wfA}"),
+            "workflow A's L2 root key must exist — per-workflow loop projected A before B failed");
     }
 
     /// <summary>
