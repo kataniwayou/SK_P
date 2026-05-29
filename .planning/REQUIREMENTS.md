@@ -9,9 +9,12 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 ### Messaging Contracts (shared assembly)
 
-- [ ] **MSG-CONTRACTS-01**: A `Messaging.Contracts` class library exists, referenced by both `BaseApi.Service` (publisher) and `Orchestrator` (consumer), with NO dependency on MassTransit or any host library (POCO records only — message types discovered structurally).
-- [ ] **MSG-CONTRACTS-02**: `StartOrchestration` and `StopOrchestration` records each carry exactly `Guid[] WorkflowIds` and no correlation field (no correlationId on the wire).
-- [ ] **MSG-CONTRACTS-03**: An `ICorrelated` contract declares the mandatory fields `Guid CorrelationId, ExecutionId, WorkflowId, StepId, ProcessorId, EntryId` as the frozen shared vocabulary.
+- [x] **MSG-CONTRACTS-01
+**: A `Messaging.Contracts` class library exists, referenced by both `BaseApi.Service` (publisher) and `Orchestrator` (consumer), with NO dependency on MassTransit or any host library (POCO records only — message types discovered structurally).
+- [x] **MSG-CONTRACTS-02
+**: `StartOrchestration` and `StopOrchestration` records each carry exactly `Guid[] WorkflowIds` and no correlation field (no correlationId on the wire).
+- [x] **MSG-CONTRACTS-03
+**: An `ICorrelated` contract declares the mandatory fields `Guid CorrelationId, ExecutionId, WorkflowId, StepId, ProcessorId, EntryId` as the frozen shared vocabulary.
 - [ ] **MSG-CONTRACTS-04**: The L2 root read-shape (the `WorkflowRootProjection` correlationId + fields) lives in `Messaging.Contracts`; `BaseApi.Service` writes it and `Orchestrator` reads it from this single source of truth (no duplicated shape).
 
 ### BaseConsole.Core (reusable Generic-Host library)
@@ -59,7 +62,8 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 ### Infrastructure (RabbitMQ + pins)
 
-- [ ] **INFRA-RMQ-01**: `MassTransit` and `MassTransit.RabbitMQ` are pinned at `8.5.5` (Apache-2.0) in Central Package Management with a blocking comment that v9+ is commercial ($400/mo) — mirroring the existing Npgsql cautionary pin.
+- [x] **INFRA-RMQ-01
+**: `MassTransit` and `MassTransit.RabbitMQ` are pinned at `8.5.5` (Apache-2.0) in Central Package Management with a blocking comment that v9+ is commercial ($400/mo) — mirroring the existing Npgsql cautionary pin.
 - [ ] **INFRA-RMQ-02**: A `rabbitmq:4.1.8-management-alpine` service is added to `compose.yaml` with a `rabbitmq-diagnostics -q ping` healthcheck; the Start/Stop path depends on `service_healthy`.
 - [ ] **INFRA-RMQ-03**: appsettings carry RabbitMQ connection configuration for both `BaseApi.Service` and `Orchestrator`; the bus connects with the locked host/credentials.
 

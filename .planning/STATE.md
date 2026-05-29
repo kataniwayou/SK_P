@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: completed
-stopped_at: Phase 17 context gathered
-last_updated: "2026-05-29T22:48:38.574Z"
-last_activity: 2026-05-30 — v3.4.0 roadmap created (Phases 17-20)
+status: executing
+stopped_at: Completed 17-01-PLAN.md
+last_updated: "2026-05-29T23:22:46.363Z"
+last_activity: 2026-05-29
 progress:
   total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 2
+  completed_plans: 1
+  percent: 50
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** v3.4.0 — stand up `BaseConsole.Core` + `Orchestrator` console connected to the web API over MassTransit/RabbitMQ, with CorrelationId propagation proven end-to-end. Roadmap created: 4 phases (17-20), 37 requirements mapped. Ready to plan Phase 17.
+**Current focus:** Phase 17 — messaging-contracts-shared-l2-root-extract
 
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 17 (Messaging.Contracts + Shared L2 Root Extract) — not started
-Plan: —
-Status: Roadmap complete (4 phases defined, 37 requirements mapped) — ready for `/gsd-plan-phase 17`
-Last activity: 2026-05-30 — v3.4.0 roadmap created (Phases 17-20)
+Phase: 17 (messaging-contracts-shared-l2-root-extract) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-05-29
 
-Progress: [          ] 0% (0 of 4 phases complete)
+Progress: [█████░░░░░] 50%
 
 ### Milestone Phases (v3.4.0)
 
@@ -157,6 +157,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 16 P04 | ~9min | 2 tasks | 2 files |
 | Phase 16 P05 | ~10min gate run (3×235 GREEN) + finalization | 2 tasks (1 script-copy + 1 operator checkpoint) | 2 files (2 close-gate scripts) |
 | Phase 16 P05 | ~10min gate run + finalization | 2 tasks | 2 files |
+| Phase 17 P01 | ~2min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -392,6 +393,9 @@ Recent decisions affecting current work:
 - Plan 16-04: idempotency facts use single test(...) commits (no RED→GREEN) — Phase-15 production behavior already shipped; facts LOCK existing contract so they pass first-run
 - Plan 16-04: concurrent Start fact is observational (Task.WhenAll two clients, both 204 + root round-trips, NO winner assertion) to stay non-flaky under last-write-wins (D-01); jobId-changed delta proves second-write-reflected (D-02)
 - Plan 16-05: Accepted the evolved psql \l baseline (37b27e56…f41441) over the stale Phase-12 frozen literal (0d98b0de…0aac127) — the gate's true invariant is BEFORE==AFTER stability, which HELD across the 3x235 GREEN run; operator-approved
+- Plan 17-01: MassTransit pinned in CPM only (D-03/D-12) — no PackageReference until Phase 18+ wiring; zero-PackageReference grep asserted GREEN
+- Plan 17-01: flat root namespace Messaging.Contracts for net-new types, Messaging.Contracts.Projections for the two moved records (co-located so the nested Liveness ctor param resolves)
+- Plan 17-01: CorrelationIdMiddleware.cs:52 literal NOT repointed (RESEARCH Open Q1) — would force a BaseApi.Core -> Messaging.Contracts edge for zero behavior change; deferred to Phase 18
 
 ### Roadmap Milestone Log
 
@@ -485,13 +489,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 17 context gathered
-Resume file: --resume-file
+Last session: 2026-05-29T23:22:46.355Z
+Stopped at: Completed 17-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 16 (idempotency-concurrency-l1-cleanup-3-green-closeout) — 5 plans — 2026-05-29T17:14:46.828Z
+**Planned Phase:** 17 (messaging-contracts-shared-l2-root-extract) — 2 plans — 2026-05-29T23:11:14.519Z
