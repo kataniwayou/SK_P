@@ -36,14 +36,19 @@
 
 ### ORCH-SPLIT — OrchestrationService decomposition
 
-- [ ] **ORCH-SPLIT-01** — Existing `OrchestrationService` (Phase 9, 92 LOC) split into orchestrator + 4 internal seams: `IWorkflowGraphLoader` (Loading/), `CycleDetector` + `SchemaEdgeValidator` + `PayloadConfigSchemaValidator` (Validation/), `IRedisProjectionWriter` (Projection/). Split happens BEFORE any L1/L2 work lands (Phase 10 bisect-friendly N-commit sequence applies).
-- [ ] **ORCH-SPLIT-02** — Seams stay `internal` to `BaseApi.Service.Features.Orchestration` in v3.3.0; promotion to `BaseApi.Core` deferred until a second consumer surfaces.
-- [ ] **ORCH-SPLIT-03** — `OrchestrationService.StartAsync` becomes the orchestrator only (target body length ~80 LOC): existence-check → loader → validator chain → writer → `snapshot.Dispose()`.
-- [ ] **ORCH-SPLIT-04** — `OrchestrationService.StopAsync` extracted as a NEW method (split from the v3.2.0 `ValidateWorkflowIdsAsync` since Start/Stop semantics now diverge per the v3.2.0 Phase 9 CONTEXT D-09 "refactor when they diverge" note).
+- [x] **ORCH-SPLIT-01
+** — Existing `OrchestrationService` (Phase 9, 92 LOC) split into orchestrator + 4 internal seams: `IWorkflowGraphLoader` (Loading/), `CycleDetector` + `SchemaEdgeValidator` + `PayloadConfigSchemaValidator` (Validation/), `IRedisProjectionWriter` (Projection/). Split happens BEFORE any L1/L2 work lands (Phase 10 bisect-friendly N-commit sequence applies).
+- [x] **ORCH-SPLIT-02
+** — Seams stay `internal` to `BaseApi.Service.Features.Orchestration` in v3.3.0; promotion to `BaseApi.Core` deferred until a second consumer surfaces.
+- [x] **ORCH-SPLIT-03
+** — `OrchestrationService.StartAsync` becomes the orchestrator only (target body length ~80 LOC): existence-check → loader → validator chain → writer → `snapshot.Dispose()`.
+- [x] **ORCH-SPLIT-04
+** — `OrchestrationService.StopAsync` extracted as a NEW method (split from the v3.2.0 `ValidateWorkflowIdsAsync` since Start/Stop semantics now diverge per the v3.2.0 Phase 9 CONTEXT D-09 "refactor when they diverge" note).
 
 ### L1-BUILD — Transient in-memory build
 
-- [ ] **L1-BUILD-01** — `WorkflowGraphSnapshot` is a transient record built per Start request. Lives only inside `StartAsync` scope. Implements `IDisposable` for the cleanup contract.
+- [x] **L1-BUILD-01
+** — `WorkflowGraphSnapshot` is a transient record built per Start request. Lives only inside `StartAsync` scope. Implements `IDisposable` for the cleanup contract.
 - [ ] **L1-BUILD-02** — `IWorkflowGraphLoader.LoadL1Async(IReadOnlyList<Guid> workflowIds)` fetches from Postgres (L3) using direct `BaseDbContext.Set<>().AsNoTracking()...Where(x => ids.Contains(x.Id))` batch queries — does NOT extend `Repository<TEntity>` (Phase 3 5-method surface unchanged).
 - [ ] **L1-BUILD-03** — Loader populates a flat `Dictionary<Guid, EntityDto>` for each entity type: Workflows, Assignments, Steps, Processors, Schemas. Keyed by `Id`. The DTOs are the v3.2.0 ReadDto types.
 - [ ] **L1-BUILD-04** — Step traversal iterates every collection: from each `Workflow.EntryStepIds[*]`, walk into each `StepEntity.NextStepIds[*]` via the existing `StepNextSteps` junction. A step with multiple children is followed into ALL children (not just the first). Per-traversal `visited` list (NOT a HashSet keyed on object identity; keyed on StepId).

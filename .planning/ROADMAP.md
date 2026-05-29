@@ -69,7 +69,7 @@ Plans:
   4. `WorkflowGraphSnapshot.Dispose()` runs deterministically on BOTH success AND failure paths (verified by integration test that forces a throw mid-Start and asserts cleanup ran).
   5. Step traversal walks every entry in `Workflow.EntryStepIds[*]` and follows every entry in `StepEntity.NextStepIds[*]` (multi-child fan-out) using a per-traversal `visited` list keyed on StepId.
 **Plans**: 3 plans
-  - [ ] 13-01-PLAN.md — Structural split: thin orchestrator (StartAsync+StopAsync) + 4 no-op seams + WorkflowGraphSnapshot record + InternalsVisibleTo + DI (loader returns empty snapshot)
+  - [x] 13-01-PLAN.md — Structural split: thin orchestrator (StartAsync+StopAsync) + 4 no-op seams + WorkflowGraphSnapshot record + InternalsVisibleTo + DI (loader returns empty snapshot)
   - [ ] 13-02-PLAN.md — Fill LoadL1Async: batched AsNoTracking reads + iterative cycle-terminating BFS + Mapperly ToRead + junction enrichment
   - [ ] 13-03-PLAN.md — Tests: SC3 snapshot contents + SC5 fan-out/cycle termination + SC4 forced-throw deterministic disposal gate
 **v3.2.0 invariants MUST NOT regress**: Phase 3 5-method `IRepository<>` surface (no `IQueryable<>` leakage); Phase 9 `OrchestrationService` ctor-injection of all 5 entity mappers; Phase 4 X-Correlation-Id propagation through service-layer call chain; Phase 7 `Program.cs` ≤10 non-trivial body-line cap; Mapperly RMG codes; byte-identical `psql \l` SHA-256.
@@ -119,7 +119,7 @@ Plans:
 | ----- | --------- | -------------- | ----------- | ---------- |
 | 1-11  | v3.2.0    | 41/41          | Complete    | 2026-05-28 |
 | 12    | v3.3.0    | 8/8 | Complete    | 2026-05-29 |
-| 13    | v3.3.0    | 0/0            | Not started | —          |
+| 13    | v3.3.0    | 1/3            | In progress | —          |
 | 14    | v3.3.0    | 0/0            | Not started | —          |
 | 15    | v3.3.0    | 0/0            | Not started | —          |
 | 16    | v3.3.0    | 0/0            | Not started | —          |

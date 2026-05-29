@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: planning
-stopped_at: Phase 13 context gathered
-last_updated: "2026-05-29T07:39:42.319Z"
+status: executing
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-05-29T08:36:11.297Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 1
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
+  total_plans: 11
+  completed_plans: 9
+  percent: 82
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revised 2026-05-28 for Stop scope reduction + correlationId)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship.**
-**Current focus:** Phase --phase=12 — --name=redis-infra-composition-healthcheck-di-registration
+**Current focus:** Phase 13 — orchestrationservice-split-l3-fetch-l1-build
 
 ## Current Position
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
-Phase: 13
-Plan: Not started
-Status: Ready to plan
+Phase: 13 (orchestrationservice-split-l3-fetch-l1-build) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [████░░░░░░] 20% (1 of 5 v3.3.0 phases complete)
+Progress: [████████░░] 82%
 
 ## Performance Metrics
 
@@ -113,6 +113,7 @@ Progress: [████░░░░░░] 20% (1 of 5 v3.3.0 phases complete)
 | Phase 12 P06 | ~5min | 1 tasks | 1 files |
 | Phase 12 P07 | ~18min | 2 tasks | 4 files |
 | Phase 12 P08 | ~9min gate run (3×~2:54 GREEN) + finalization | 3 tasks (2 scripts + 1 operator checkpoint) | 3 files (2 scripts + STATE.md) |
+| Phase 13 P01 | ~9min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -306,6 +307,9 @@ Recent decisions affecting current work:
 - Plan 12-08 gate-fix deviations (orchestrator commit d5d97e3 during the operator's Task 3 close-run): (1) `docker exec sk-postgres` → `docker compose exec -T postgres` in BOTH scripts — the postgres service has no `container_name` in compose.yaml so the literal `sk-postgres` container does not exist (real Compose-generated name is `sk_p-postgres-1`); the service-name form is name-stable. (2) (.ps1 only) `Set-StrictMode -Version Latest` crashed on `$distinctPassed.Count` because `Select-Object -Unique` returns a SCALAR (not an array) when all 3 runs share an identical Passed count — wrapped in `@(...)` to force array semantics. Both are Rule 1 fix-forward bugs surfaced by the live gate run; not architectural.
 - Plan 12-08 RECORDED v3.3.0 BASELINES (operator close-run, exit 0 — "Phase 12 close gate PASSED."): 3-GREEN cadence = 177 facts × 3 deterministic runs (~2:54 each). psql \l SHA-256 (v3.3.0 baseline) = `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` — BEFORE = AFTER byte-identical (Phase 3 D-15 invariant HELD). NOTE: this differs from the historical comment baseline `0d98b0de…0aac127` because the corrected `docker compose exec -T` capture framing differs byte-wise from the original `docker exec` capture method used by Phases 8/9/10/11; the real gate invariant (BEFORE = AFTER within a single run) held byte-identical, so `37b27e56…` is recorded as the canonical v3.3.0 psql baseline going forward. redis-cli --scan SHA-256 (net-new TEST-REDIS-04 baseline) = `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (the SHA-256 of empty input) — BEFORE = AFTER, empty keyspace, zero residual `test:cls-*` keys (RedisFixture SCAN-assert-zero dispose discipline held end-to-end). No EF migrations generated (negative schema-push assertion HELD). HEALTH-01..05 byte-immutable across the entire phase (D-05/D-06 HELD).
 - Phase 12 COMPLETE — 8 plans shipped across 4 waves: 12-01 (CPM pin) + 12-02 (compose redis tier) + 12-03 (appsettings split) + 12-04 (AddBaseApiRedis DI) + 12-05 (RedisFixture test infra) + 12-06 (dead-Redis soft-dep health) + 12-07 (composition facts) + 12-08 (phase-close gate). All 15 phase REQ-IDs closed (INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05). All 5 ROADMAP Success Criteria GREEN. 177 facts GREEN × 3 consecutive runs. The v3.3.0 `redis-cli --scan` SHA-256 invariant joins the v3.2.0 `psql \l` SHA-256 invariant as a phase-close gate that Phases 13-16 inherit. Phase 3 D-18 cadence honored for the 12th consecutive phase; Phase 3 D-15 psql invariant honored for the 5th consecutive phase (new v3.3.0 baseline `37b27e56…`); HEALTH-01..05 byte-immutable for the 7th phase. Phase 13 (OrchestrationService split + L3 fetch + L1 build) unblocked.
+- Plan 13-01: OrchestrationService split into thin StartAsync/StopAsync orchestrator + private ExistenceCheckAsync; old shared ValidateWorkflowIdsAsync deleted; locked NotFoundException(nameof(WorkflowEntity), string.Join(", ", missing)) shape preserved byte-exact
+- Plan 13-01 deviation [Rule 3]: OrchestrationService ctor made internal (CS0051 — public ctor cannot expose internal seam types); class stays public sealed; registered via AddScoped<T>(sp => new T(...)) factory because default DI ValidateOnBuild requires a public ctor. Reusable internal-ctor + factory pattern for public services taking internal collaborators
+- Plan 13-01: WorkflowGraphSnapshot is internal sealed record : IDisposable with injected ILogger<WorkflowGraphSnapshot>; Dispose clears 5 dicts + sets IsDisposed + emits D-04 literal 'L1 snapshot disposed'. Loader holds ILogger<WorkflowGraphSnapshot> and passes it into the snapshot ctor; snapshot NOT in DI
 
 ### Roadmap Milestone Log
 
@@ -399,11 +403,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 13 context gathered
-Resume file: --resume-file
+Last session: 2026-05-29T08:36:00.036Z
+Stopped at: Completed 13-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
+
+**Planned Phase:** 13 (orchestrationservice-split-l3-fetch-l1-build) — 3 plans — 2026-05-29T08:18:47.176Z
