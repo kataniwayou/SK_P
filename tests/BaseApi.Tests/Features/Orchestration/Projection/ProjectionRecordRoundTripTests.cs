@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.Json;
 using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Service.Features.Step;
+using Messaging.Contracts.Projections;
 using Xunit;
 
 namespace BaseApi.Tests.Features.Orchestration.Projection;

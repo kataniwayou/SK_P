@@ -2,6 +2,7 @@ using System.Text.Json;
 using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Service.Features.Step;
 using BaseApi.Tests.Composition;
+using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 using Xunit;

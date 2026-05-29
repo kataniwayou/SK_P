@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Messaging.Contracts.Projections;
 
 namespace BaseApi.Service.Features.Orchestration.Projection;
 

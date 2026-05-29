@@ -1,5 +1,6 @@
 using System.Text.Json;
 using BaseApi.Core.Configuration;
+using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 

@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BaseApi.Core.Configuration;
 using BaseApi.Service.Features.Orchestration;
+using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;

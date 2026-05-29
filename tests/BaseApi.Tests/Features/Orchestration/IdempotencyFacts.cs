@@ -7,6 +7,7 @@ using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
 using BaseApi.Tests.TestHelpers;
+using Messaging.Contracts.Projections;
 using StackExchange.Redis;
 using Xunit;
 
