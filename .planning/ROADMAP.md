@@ -87,7 +87,7 @@ Plans:
 **Plans**: 5 plans
 Plans:
 - [x] 14-01-PLAN.md — 422 error path (OrchestrationValidationException + handler), D-04 split-Fallback, shared JsonSchemaConfig + SchemaDtoValidator refactor (foundation)
-- [ ] 14-02-PLAN.md — CycleDetector: two-set iterative DFS cycle + missing-step gate (+ CycleDetectionFacts, MissingStepFacts)
+- [x] 14-02-PLAN.md — CycleDetector: two-set iterative DFS cycle + missing-step gate (+ CycleDetectionFacts, MissingStepFacts)
 - [ ] 14-03-PLAN.md — SchemaEdgeValidator: independent edge walk, strict Guid equality, null-passes (+ SchemaEdgeFacts)
 - [ ] 14-04-PLAN.md — PayloadConfigSchemaValidator: JsonSchema.Net evaluate + per-Start parse cache (+ PayloadConfigSchemaFacts)
 - [ ] 14-05-PLAN.md — ValidationOrderFacts (gate-order short-circuit + L1 cleanup on failure) + regression sweep + STATE traceability

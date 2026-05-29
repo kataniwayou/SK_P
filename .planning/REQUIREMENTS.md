@@ -63,8 +63,10 @@
 - [x] **L1-VALIDATE-01
 ** — Validation runs in this exact order: existence → cycles → schema-edge compatibility → Payload↔ConfigSchema. Failure at any gate short-circuits with HTTP 422 + RFC 7807 + `X-Correlation-Id`. L1 cleanup still runs in the `finally` path.
 - [ ] **L1-VALIDATE-02** — **Existence gate**: re-uses the v3.2.0 `ValidateWorkflowIdsAsync` path. WorkflowIds not in Postgres → 422 with offending id list.
-- [ ] **L1-VALIDATE-03** — **Cycle-detection gate**: `CycleDetector` uses ITERATIVE DFS with an explicit stack/list (NOT recursive — recursion risks `StackOverflowException` which `IExceptionHandler` cannot catch). On each visit, check `visited.Contains(stepId)` BEFORE adding; if true, return cycle-detected 422 with the offending stepId chain.
-- [ ] **L1-VALIDATE-04** — **Missing next-step gate**: `NextStepId` referenced by a step but absent from the loaded `Dictionary<Guid, StepEntity>` → 422 with the parent stepId + missing childId. `null` NextStepId is the terminal-step signal and passes.
+- [x] **L1-VALIDATE-03
+** — **Cycle-detection gate**: `CycleDetector` uses ITERATIVE DFS with an explicit stack/list (NOT recursive — recursion risks `StackOverflowException` which `IExceptionHandler` cannot catch). On each visit, check `visited.Contains(stepId)` BEFORE adding; if true, return cycle-detected 422 with the offending stepId chain.
+- [x] **L1-VALIDATE-04
+** — **Missing next-step gate**: `NextStepId` referenced by a step but absent from the loaded `Dictionary<Guid, StepEntity>` → 422 with the parent stepId + missing childId. `null` NextStepId is the terminal-step signal and passes.
 - [ ] **L1-VALIDATE-05** — **Schema-edge compatibility gate**: for every `(parent step → child step)` edge in the traversal — iterating over EVERY entry in `parent.NextStepIds[*]`, NOT just the first — `parent.Processor.OutputSchemaId` MUST equal `child.Processor.InputSchemaId` (strict `Guid` equality). On mismatch, return 422 with the offending `(parentStepId, childStepId)` pair. If either side is `null` (Phase 10 source/sink/unconfigured processor), the edge passes.
 - [ ] **L1-VALIDATE-06** — **Payload↔ConfigSchema gate**: for every Assignment in the L1 snapshot, resolve `Step.ProcessorId → Processor.ConfigSchemaId → Schema.Definition`, then validate `Assignment.Payload` against that JSON Schema (JsonSchema.Net draft 2020-12). Failure → 422 with offending assignmentId + validation errors. If `Processor.ConfigSchemaId` is null, the assignment passes (no schema to validate against).
 - [x] **L1-VALIDATE-07
