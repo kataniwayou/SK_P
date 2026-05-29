@@ -46,6 +46,8 @@
     <!-- Phase 8 entity-specific validators (Schema definition meta-validation; Workflow cron parse). -->
     <PackageReference Include="JsonSchema.Net" />
     <PackageReference Include="Cronos" />
+    <!-- Phase 12 — Redis L2 client. Version pinned in Directory.Packages.props (CPM). -->
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
 </Project>

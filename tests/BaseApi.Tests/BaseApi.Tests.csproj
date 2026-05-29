@@ -98,6 +98,8 @@
          PrivateAssets/ExcludeAssets attributes per Phase 6 D-13 convention.
          Version pinned in Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
     <PackageReference Include="NSubstitute" />
+    <!-- Phase 12 — RedisFixture per-class IConnectionMultiplexer + KeyPrefix isolation. -->
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
   <ItemGroup>
