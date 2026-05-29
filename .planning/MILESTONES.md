@@ -4,6 +4,72 @@ A historical log of shipped milestones. Each entry is a frozen snapshot; full ar
 
 ---
 
+## v3.3.0 — Orchestration L3 → L1 → L2 Build Pipeline
+
+**Shipped:** 2026-05-29
+**Tag:** `v3.3.0`
+**Archives:** [milestones/v3.3.0-ROADMAP.md](milestones/v3.3.0-ROADMAP.md) · [milestones/v3.3.0-REQUIREMENTS.md](milestones/v3.3.0-REQUIREMENTS.md) · [milestones/v3.3.0-MILESTONE-AUDIT.md](milestones/v3.3.0-MILESTONE-AUDIT.md)
+
+### Delivered
+
+The orchestration Start/Stop build pipeline: `POST /api/v1/orchestration/start` fetches each requested workflow graph from Postgres (L3), builds a transient in-memory `WorkflowGraphSnapshot` (L1), validates it (existence → cycle → schema-edge → payload-config-schema, 422 + RFC 7807 at first failed gate), and projects it into 3 Redis (L2) keyspaces that external consumers read. Stop is a Redis existence gate with GET-and-follow cleanup. Redis landed as a soft compose-stack dependency (Phase 5 HEALTH contracts untouched). Closes v2-deferred VALID-21 at orchestration-start scope. No new SQL entities or columns — L3 schema is the v3.2.0 `InitialCreate` unchanged.
+
+### Stats
+
+| Metric                    | Value                                          |
+| ------------------------- | ---------------------------------------------- |
+| Phases                    | 5 (12-16)                                       |
+| Plans                     | 26                                             |
+| C# files                  | 237 (127 src / 110 tests)                       |
+| Lines of code             | ~18,344 (7,366 src / 10,978 tests)             |
+| Code changed              | 70 files, +6,855 / −149 (vs v3.2.0)            |
+| Git commits               | 158 (`v3.2.0..HEAD`)                            |
+| Timeline                  | 2026-05-29 (single intensive day)               |
+| Integration facts (final) | 235/235 GREEN × 3 consecutive runs             |
+
+### Key Accomplishments
+
+1. **Redis as a soft infrastructure tier** — `redis:7.4.x-alpine` in compose (RSALv2/SSPLv1, not AGPLv3 8.0+); `AddBaseApiRedis` registers `IConnectionMultiplexer` Singleton + `RedisProjectionOptions`; `/health/ready` stays 200 with Redis down (only Start/Stop fail with 500 + RFC 7807); `RedisFixture` per-class `KeyPrefix` isolation with SCAN-assert-zero teardown (FLUSHDB forbidden).
+2. **OrchestrationService split + transient L1 build** — thin orchestrator delegating to `IWorkflowGraphLoader` + 3 validators + `IRedisProjectionWriter`; `WorkflowGraphSnapshot` (flat `Dictionary<Guid, EntityDto>` per entity) loaded via batch `AsNoTracking` reads, disposed via `using` on success and failure paths; multi-child fan-out traversal.
+3. **Validation gates in mandatory order (closes VALID-21)** — existence → cycle (ITERATIVE DFS, no recursion) → schema-edge (strict `Guid` equality) → Payload↔ConfigSchema (JsonSchema.Net draft 2020-12, SSRF-locked, per-Start parse cache); single `OrchestrationValidationException` → 422 with offending entity ids at the first failed gate; L1 cleanup in `finally`.
+4. **L2 Redis materialized projection + Stop** — 3 keyspaces (root/step/processor) written in one `CreateBatch()` pipeline via System.Text.Json (camelCase-pinned records, processor-only TTL, `TimeProvider` liveness); Stop is a collect-all-missing existence gate (422 with full missing list, no deletion) else GET-and-follow cleanup (deletes root + per-step, never processor keys — `IServer.Keys()`/`KEYS` forbidden) → 204; non-idempotent by design.
+5. **Idempotency + concurrency + 3-GREEN closeout** — re-Start reflects the second write (jobId changed) with orphan GC; concurrent Starts both 204 (last-write-wins, no Redis lock); gate failures write zero L2 keys (SCAN-verified); close gate ran 3× consecutive GREEN at 235 passed with byte-identical `psql \l` + `redis-cli --scan` SHA-256 BEFORE=AFTER.
+
+### Decisions Set in Stone (v3.3.0)
+
+| Decision                                                                          | Outcome |
+| --------------------------------------------------------------------------------- | ------- |
+| Redis is a SOFT dependency (`/health/ready` never probes it; CRUD serves 200 down) | ✓ Good  |
+| Iterative DFS for cycle detection (no recursion — `StackOverflowException` uncatchable) | ✓ Good  |
+| Strict `Schema.Id` equality for schema-edge compatibility (null-side passes)       | ✓ Good  |
+| System.Text.Json (not Mapperly) for L2 DTO → JSON serialization                    | ✓ Good  |
+| `IServer.Keys()`/`KEYS` forbidden in production; targeted GET-and-follow traversal | ✓ Good  |
+| Stop scope: existence-gate + root/step deletion (never processor keys), non-idempotent | ✓ Good  |
+| Per-processor keys TTL'd (`ProcessorKeyTtlDays` default 100); root/step no TTL     | ✓ Good  |
+
+### Closed Requirements (per phase)
+
+- **Phase 12 (Redis infra + composition + healthcheck + DI)** — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05
+- **Phase 13 (OrchestrationService split + L3 fetch + L1 build)** — ORCH-SPLIT-01..04, L1-BUILD-01..05
+- **Phase 14 (Validation gates)** — L1-VALIDATE-01..10 (closes deferred VALID-21 at orchestration-start scope)
+- **Phase 15 (L2 Redis projection write + Stop existence check)** — L2-PROJECT-01..07, ORCH-START-01..08, ORCH-STOP-01..07, OBSERV-REDIS-01..03
+- **Phase 16 (Idempotency + concurrency + L1 cleanup + 3-GREEN closeout)** — TEST-REDIS-06..09
+
+**Total: 64/64 requirements satisfied** (milestone audit PASSED — integration fully wired, all E2E flows complete).
+
+### Notes
+
+- **OBSERV-REDIS-04 deferred** — Redis-side profiling metrics → Prometheus; future milestone (FUTURE-OTEL-REDIS).
+- **Deferred future candidates** — FUTURE-STOP-EVICTION (full eviction + processor-key ref-counting), FUTURE-SCHEDULER (real JobId/Liveness writers), FUTURE-GENERATION-ID (stale-projection detection), FUTURE-VALID-21-HTTP-WRITE (VALID-21 at Assignment write time).
+- **Stop scope evolved twice** — original mirror-of-Start eviction → existence-check-only (2026-05-28) → root+step deletion (never processor keys) + collect-all-missing gate (Phase 15 D-04/D-06).
+- **Known deferred items at close** — Nyquist VALIDATION.md for phases 12/14/16 left in `draft` (all passed VERIFICATION + 3×235 GREEN close gate); close-gate script maintenance smells (`-1` fact-count fallback, compose `ps --format json` assumption, PS1/SH divergence). Both tech-debt only, do not affect correctness. Phase 15 `15-HUMAN-UAT.md` (status passed, 0 pending) flagged by audit-open as a benign false positive — acknowledged at close.
+
+### Code Review / Verification Posture at Close
+
+All 5 phases passed independent VERIFICATION (12: 5/5, 13: 9/9, 14: 5/5 verified, 15: 5/5 human-verified, 16: 12/12). Cross-phase integration checker confirmed all 5 seams wired with no gaps and all E2E flows complete. Phase 16 close gate: 3×235 GREEN, dual-SHA BEFORE=AFTER held, EF-migration + HEALTH-01..05 byte-immutable guards clean.
+
+---
+
 ## v3.2.0 — Steps API MVP
 
 **Shipped:** 2026-05-28

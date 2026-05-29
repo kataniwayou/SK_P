@@ -2,36 +2,46 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: milestone_complete
-stopped_at: Completed 16-05-PLAN.md (Phase 16 close gate PASSED — 3x235 GREEN, dual-SHA HELD)
-last_updated: "2026-05-29T18:51:39.274Z"
+status: milestone_shipped
+stopped_at: v3.3.0 milestone archived and tagged (audit PASSED, 64/64 requirements satisfied)
+last_updated: "2026-05-29T20:30:00.000Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
-  completed_phases: 6
+  completed_phases: 5
   total_plans: 26
   completed_plans: 26
-  percent: 120
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revised 2026-05-28 for Stop scope reduction + correlationId)
+See: .planning/PROJECT.md (updated 2026-05-29 after v3.3.0 milestone completion)
 
-**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship.**
-**Current focus:** Phase 16 — idempotency-concurrency-l1-cleanup-3-green-closeout
+**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
+**Current focus:** No active milestone — start the next cycle with `/gsd-new-milestone`.
 
 ## Current Position
 
-Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
-Phase: 16
-Plan: Not started
-Status: Milestone complete
+Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — SHIPPED 2026-05-29 (archived + tagged)
+Phase: — (between milestones)
+Plan: —
+Status: Milestone shipped — audit PASSED, 64/64 requirements satisfied
 Last activity: 2026-05-29
 
-Progress: [██████████] 100%
+Progress: [██████████] 100% (5/5 phases)
+
+## Deferred Items
+
+Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
+
+| Category | Item | Status |
+|----------|------|--------|
+| nyquist | Phases 12/14/16 VALIDATION.md left in draft (not nyquist_compliant) | deferred — passed VERIFICATION + 3×235 GREEN close gate |
+| tech-debt | Close-gate script smells (phase-16-close.{ps1,sh}): -1 fact-count fallback, compose ps --format json assumption, PS1/SH service-list divergence | deferred — no effect on pipeline correctness |
+| uat-flag | 15-HUMAN-UAT.md flagged by audit-open (status passed, 0 pending) | acknowledged — benign false positive |
 
 ## Performance Metrics
 

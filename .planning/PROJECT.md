@@ -2,50 +2,27 @@
 
 ## Current State
 
-**Shipped:** v3.2.0 (Steps API MVP) — 2026-05-28 · [milestone archive](milestones/v3.2.0-ROADMAP.md)
+**Shipped:** v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — 2026-05-29 · [milestone archive](milestones/v3.3.0-ROADMAP.md)
+**Previously:** v3.2.0 (Steps API MVP) — 2026-05-28 · [milestone archive](milestones/v3.2.0-ROADMAP.md)
 
-v1 delivered a reusable `BaseApi.Core` library plus a runnable `BaseApi.Service` exposing CRUD over 5 entities (Schema, Processor, Step, Assignment, Workflow) + 3 junctions, against Postgres 17 in Docker Compose. OpenTelemetry logs ship to Elasticsearch; metrics to Prometheus; no traces (per Phase 11 D-03). RFC 7807 Problem Details on every error path with `X-Correlation-Id` end-to-end. Three K8s-style health probes (live/ready/startup) with migration-gated readiness. 142/142 integration facts GREEN × 3 consecutive runs against real Postgres + ES + Prom. 5,924 LOC src + 6,397 LOC tests across 190 C# files.
+On top of the v3.2.0 CRUD foundation, v3.3.0 added the orchestration build pipeline: `POST /api/v1/orchestration/start` fetches each requested workflow graph from Postgres (L3), builds a transient in-memory `WorkflowGraphSnapshot` (L1), validates it (existence → cycle → schema-edge → payload-config-schema; 422 + RFC 7807 at the first failed gate), and projects it into 3 Redis (L2) keyspaces that external consumers read. Stop is a Redis existence gate with GET-and-follow cleanup. Redis is a soft compose-stack dependency (Phase 5 HEALTH contracts untouched); closes v2-deferred VALID-21 at orchestration-start scope; no new SQL entities or columns. 235/235 integration facts GREEN × 3 consecutive runs against real Postgres + Redis + ES + Prom, dual-SHA (`psql \l` + `redis-cli --scan`) BEFORE=AFTER held. 64/64 requirements satisfied (milestone audit PASSED).
 
-## Current Milestone: v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline
+v3.2.0 delivered the reusable `BaseApi.Core` library + runnable `BaseApi.Service` exposing CRUD over 5 entities (Schema, Processor, Step, Assignment, Workflow) + 3 junctions against Postgres 17 in Docker Compose; OpenTelemetry logs → Elasticsearch, metrics → Prometheus, no traces (Phase 11 D-03); RFC 7807 + `X-Correlation-Id` end-to-end; three K8s-style health probes with migration-gated readiness.
 
-**Progress:** Phase 16 complete (5/5, 100% — milestone v3.3.0 phase work done) — idempotency + concurrency + L1-cleanup + end-to-end happy-path coverage shipped 2026-05-29 plus the v3.3.0 phase-close gate run GREEN (3×235 deterministic, `psql \l` + `redis-cli --scan` SHA-256 BEFORE=AFTER held). New Orchestration fact classes `HappyPathE2EFacts` (TEST-REDIS-06), `GateNoWriteFacts` (TEST-REDIS-07, gate 422 + SCAN-zero no-write), `IdempotencyFacts` (TEST-REDIS-08, last-write-wins re-Start + concurrent-Start), `StopScanFacts` (TEST-REDIS-09, inverted post-Stop key state); `scripts/phase-16-close.{ps1,sh}` clone the audited Phase-12 dual-SHA + 3-GREEN gate. Ready for `/gsd-complete-milestone`.
+_No active milestone — start the next cycle with `/gsd-new-milestone`._
 
-Phase 15 complete (2026-05-29) — L2 Redis projection write + Redis-based Stop shipped (227/227 facts GREEN × multiple runs against the live compose stack). `RedisProjectionWriter.UpsertAsync` projects each workflow's L1 snapshot into the 3 flat Redis keyspaces in one `CreateBatch()` pipeline (camelCase `[JsonPropertyName]`-pinned records, processor-only TTL via `ProcessorKeyTtlDays`, `TimeProvider` liveness, partial-failure = one MEL warning + rethrow); `RedisL2Cleanup` is a tolerant cycle-safe GET-and-follow BFS that deletes root + per-step keys (never processor keys, no key enumeration). `OrchestrationService` is now the live per-workflow Start loop (pre-clean → L1 build → locked validators → L2 write) and the Redis-EXISTS Stop gate (collect ALL missing → 422 with the full set, else per-workflow cleanup → 204). Redis-fault 500s carry the offending op name via `exception.Data["redisOp"]`. Validated in Phase 15: L2-PROJECT-01..07, ORCH-START-01..08, ORCH-STOP-01..07, OBSERV-REDIS-01..03 (OBSERV-REDIS-04 Redis metrics explicitly deferred). Next: Phase 16 (idempotency + concurrency + L1 cleanup + 3-green closeout).
+## Next Milestone Goals
 
-Earlier phases this milestone: L1 validation gates (Phase 14, L1-VALIDATE-01..10) — `CycleDetector` iterative DFS, `SchemaEdgeValidator`, SSRF-locked `PayloadConfigSchemaValidator`, all in locked order with a single `OrchestrationValidationException` → 422.
+No milestone is currently active. v3.3.0 shipped the L3→L1→L2 orchestration build pipeline; the natural follow-on candidates (all documented as deferred future requirements) are:
 
-**Goal:** On `POST /api/v1/orchestration/start`, build a transient in-memory (L1) representation of each requested workflow (validating existence, cycles, schema-edge compatibility, and Payload↔ConfigSchema conformance) and project it into a Redis (L2) materialized view that external consumers read. Stop is an L2-existence check only in v3.3.0 (no eviction — full Stop-side semantics deferred to a later milestone).
+- **FUTURE-SCHEDULER** — real `JobId` / `Liveness` write semantics; likely an external Scheduler service writes to L2 after Start (Hangfire/Quartz in-process or opaque).
+- **FUTURE-STOP-EVICTION** — full Stop-side L2 eviction with processor-key reference-counting / orphan cleanup.
+- **FUTURE-OTEL-REDIS** — re-add OTel Redis trace instrumentation once a traces backend exists (re-opens Phase 11 D-03).
+- **FUTURE-GENERATION-ID** — monotonic `generationId` on the L2 root DTO for stale-projection detection by external consumers.
+- **FUTURE-VALID-21-HTTP-WRITE** — close VALID-21 at Assignment-PUT/POST time (v3.3.0 closed it only at orchestration-start).
+- **v2 hardening** — TEST-03 (Testcontainers), TEST-04 (Respawn), INFRA-09 (advisory-lock startup migration), INFRA-10 (least-privilege Postgres roles); v2 querying HTTP-17/18/19 (pagination/filtering/sorting); authentication boundary.
 
-**Target features:**
-- **L3 fetch + L1 build (transient)** — flat `Dictionary<Guid, EntityDto>` for Workflows, Assignments, Steps, Processors, Schemas; populated inside `OrchestrationService.StartAsync`; discarded at end of request.
-- **Workflow-graph traversal with cycle detection** — DFS from each `Workflow.EntryStepIds[*]` via `StepEntity.NextStepIds`; per-traversal `visited` temp list rejects cycles (422), missing next-step ids (422), accepts `null` as terminal.
-- **Schema-edge compatibility gate** — for every `(parent step → child step)` edge in the traversal, `parent.Processor.OutputSchemaId` must equal `child.Processor.InputSchemaId` (strict Schema.Id equality in v3.3.0; structural/canonical compatibility is a future-milestone candidate). If either side is `null` (source/sink/unconfigured processor per Phase 10) the edge passes. Mismatch returns 422 with the offending edge's `(parentStepId, childStepId)` pair.
-- **Payload↔ConfigSchema validation gate (closes deferred VALID-21)** — for every Assignment, resolve `Step.ProcessorId → Processor.ConfigSchemaId → Schema.Definition`, validate `Assignment.Payload` against that JSON Schema (draft 2020-12, SSRF-disabled per Phase 8). Failure returns 422 with offending assignment id. Orchestration-start only; Assignment-PUT remains "valid JSON only" (v3.2.0 behavior preserved).
-- **L2 (Redis) materialized projection** — three key spaces:
-  - `{workflowId}` → `{ entryStepIds[], cron, jobId(Guid), liveness{timestamp,interval,status}, correlationId }` — `correlationId` is the `X-Correlation-Id` value from the originating Start POST request; lets external consumers trace each projection back to its build request.
-  - `{workflowId:stepId}` → `{ entryCondition, processorId, payload, nextStepIds[] }` — `nextStepIds[]` is a list because `StepNextSteps` is many-to-many; a step can branch to multiple children. Empty/null list = terminal step.
-  - `{processorId}` → `{ inputDefinition, outputDefinition, liveness{timestamp,interval,status} }`
-- **Start is idempotent (PUT-like)** — second Start for the same WorkflowIds re-runs the full pipeline and replaces L2 keys; returns 204. Concurrent Starts: last-write-wins, no Redis lock.
-- **Stop is a Redis-EXISTS gate + root/step cleanup (revised in Phase 15)** — batch `KeyExistsAsync` over every requested `{workflowId}` root key, collecting ALL missing ids (not fail-fast); any missing → 422 listing the full missing set with NO deletion. When all roots exist, run the per-workflow tolerant cleanup (delete root + reachable per-step keys; processor keys are NEVER deleted). Returns 204. Non-idempotent by design: a repeated Stop of an already-cleaned workflow re-fails the gate (422). **(Scope evolved across two revisions: 2026-05-28 /gsd-new-milestone reduced the original mirror-of-Start eviction to existence-check-only; Phase 15 CONTEXT amendments D-04/D-06 then re-added root+step deletion — but still never processor keys — and made the gate collect-all-missing. REQUIREMENTS.md/ROADMAP.md SC3/SC5 reconciled in 15-05.)**
-- **L1 cleanup contract** — explicit teardown of the in-memory dictionary + temp traversal lists at the end of `StartAsync` (success or failure path).
-
-**Key context / locked constraints:**
-- Reuse existing `StepEntity.EntryCondition` enum (PreviousProcessing/Completed/Failed/Cancelled/Always/Never) — no new entity columns.
-- `JobId` (Guid) and `Liveness` (`{ DateTime timestamp, int interval, string status }`) are L2-DTO field shapes only — no Hangfire/Quartz integration this milestone; write semantics deferred.
-- No new SQL-side entities or columns — L3 schema is the v3.2.0 `InitialCreate` unchanged.
-- Validation order is mandatory: existence → cycles → schema-edge compatibility → Payload↔ConfigSchema → L1 build → L2 write → cleanup.
-- Schema-edge compatibility in v3.3.0 is **strict Schema.Id equality** (parent.Output == child.Input). Null on either side passes (preserves Phase 10 source/sink/unconfigured processor semantics).
-- Redis is a new infrastructure dependency (added to `compose.yaml` next to Postgres/Elasticsearch/Prometheus/OTel Collector).
-- L2 DTO field names: `inputDefinition` / `outputDefinition` (NOT `definitionIn` / `definitionOut` or `definitionInput` / `definitionOutput`).
-
-**Deferred (not in this milestone):**
-- **Full Stop-side L2 eviction** — v3.3.0 Stop is existence-check only. A future milestone will add DELETE semantics, processor-key reference-counting / orphan cleanup, and (if needed) Stop-side Redis transactions.
-- Scheduler integration (who writes `JobId` / emits `Liveness`) — TBD, possibly external Scheduler service.
-- OTel Redis instrumentation — Phase 11 D-03 stripped `.WithTracing()`; Redis trace spans deferred until a traces backend exists in a future milestone.
-- `generationId` on the L2 root DTO — additive forward-compat candidate; revisit when Scheduler integration introduces multi-writer races.
-- v2 hardening items: TEST-03 (Testcontainers), TEST-04 (Respawn), INFRA-09 (advisory-lock startup migration), INFRA-10 (least-privilege Postgres roles).
-- v2 querying items: HTTP-17/18/19 (pagination, filtering, sorting).
-- Authentication boundary — still out of scope.
+Start the next cycle with `/gsd-new-milestone` to scope and lock these into requirements.
 
 ## What This Is
 
@@ -125,9 +102,30 @@ A .NET 8 Web API platform that exposes CRUD over a workflow-engine data model �
 - ✓ Phase 5 file-exporter test infrastructure fully retired (OtelCollectorFixture deleted) — v3.2.0
 - ✓ E2E round-trip test pair (`SchemasLogsE2ETests`, `SchemasMetricsE2ETests`) drives real HTTP and polls both backends — v3.2.0
 
+**Phase 12 (Redis infra + composition + healthcheck + DI registration) — 2026-05-29**
+- ✓ Redis 7.4.x-alpine as a healthy compose-stack tier (soft dependency; `/health/ready` stays 200 with Redis down) — v3.3.0
+- ✓ `AddBaseApiRedis` registers `IConnectionMultiplexer` Singleton + `RedisProjectionOptions` (composition-root call #7) — v3.3.0
+- ✓ `RedisFixture` per-class `KeyPrefix` isolation + SCAN-assert-zero teardown (FLUSHDB forbidden); phase-close gate extended with `redis-cli --scan` SHA-256 — v3.3.0 (INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05)
+
+**Phase 13 (OrchestrationService split + L3 fetch + L1 build) — 2026-05-29**
+- ✓ `OrchestrationService` split into thin orchestrator + 4 internal seams; `StopAsync` extracted — v3.3.0
+- ✓ Transient `WorkflowGraphSnapshot` (L1) loaded via batch `AsNoTracking` reads, disposed via `using` on success and failure paths; multi-child fan-out traversal — v3.3.0 (ORCH-SPLIT-01..04, L1-BUILD-01..05)
+
+**Phase 14 (Validation gates — DFS + schema-edge + payload-config-schema) — 2026-05-29**
+- ✓ Locked-order gates (existence → cycle → schema-edge → payload-config-schema) → 422 + RFC 7807 at first failed gate; iterative DFS (no recursion); SSRF-locked payload validator; L1 cleanup in `finally` — v3.3.0
+- ✓ Closes v2-deferred VALID-21 at orchestration-start scope (Assignment HTTP-write remains valid-JSON-only) — v3.3.0 (L1-VALIDATE-01..10)
+
+**Phase 15 (L2 Redis projection write + Stop existence check) — 2026-05-29**
+- ✓ 3 Redis keyspaces (root/step/processor) written via `CreateBatch()` + System.Text.Json (camelCase-pinned, processor-only TTL, `TimeProvider` liveness) — v3.3.0
+- ✓ Stop is a collect-all-missing existence gate (422 + full missing list, no deletion) else GET-and-follow cleanup (root+step deleted, never processor keys; `IServer.Keys()`/`KEYS` forbidden) → 204; non-idempotent — v3.3.0 (L2-PROJECT-01..07, ORCH-START-01..08, ORCH-STOP-01..07, OBSERV-REDIS-01..03)
+
+**Phase 16 (Idempotency + concurrency + L1 cleanup + 3-GREEN closeout) — 2026-05-29**
+- ✓ Re-Start reflects second write with orphan GC; concurrent Starts both 204 (last-write-wins, no Redis lock); gate failures write zero L2 keys (SCAN-verified) — v3.3.0
+- ✓ Close gate: 3× consecutive GREEN at 235 passed, dual-SHA (`psql \l` + `redis-cli --scan`) BEFORE=AFTER held — v3.3.0 (TEST-REDIS-06..09)
+
 ### Active
 
-Defined in `.planning/REQUIREMENTS.md` for milestone v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline). Created during `/gsd-new-milestone` on 2026-05-28.
+No active milestone. v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) shipped 2026-05-29 — all 64 requirements satisfied (audit PASSED). Next milestone requirements will be defined via `/gsd-new-milestone`. See the "Next Milestone Goals" section above for documented follow-on candidates (FUTURE-SCHEDULER, FUTURE-STOP-EVICTION, FUTURE-OTEL-REDIS, FUTURE-GENERATION-ID, FUTURE-VALID-21-HTTP-WRITE, v2 hardening).
 
 ### Out of Scope
 
@@ -146,8 +144,9 @@ Defined in `.planning/REQUIREMENTS.md` for milestone v3.3.0 (Orchestration L3 �
 
 ## Context
 
+- **Shipped:** v3.3.0 — 5 phases / 26 plans / 235 integration facts / ~18,344 LOC C# (7,366 src + 10,978 tests) / 237 .cs files / 158 commits (`v3.2.0..HEAD`) on 2026-05-29.
 - **Shipped:** v3.2.0 — 11 phases / 41 plans / 142 integration facts / 12,321 LOC C# (5,924 src + 6,397 tests) / 190 .cs files / 334 git commits over 3 days (2026-05-26 → 2026-05-28).
-- **Tech stack (locked):** .NET 8.0.421 (pinned via `global.json`), EF Core 8 + Npgsql 8.0.9, Postgres 17-alpine, FluentValidation 12.x, Mapperly (source-generators), OpenTelemetry .NET SDK 1.15.x with OTLP, Asp.Versioning.Http 8.1.0, Swashbuckle.AspNetCore 6.9.0, JsonSchema.Net (draft 2020-12), Cronos (5-field), Elasticsearch 8.15.5, Prometheus v3.11.3, OTel Collector contrib 0.152.0.
+- **Tech stack (locked):** .NET 8.0.421 (pinned via `global.json`), EF Core 8 + Npgsql 8.0.9, Postgres 17-alpine, StackExchange.Redis 2.13.1 + Redis 7.4.x-alpine (v3.3.0), FluentValidation 12.x, Mapperly (source-generators), OpenTelemetry .NET SDK 1.15.x with OTLP, Asp.Versioning.Http 8.1.0, Swashbuckle.AspNetCore 6.9.0, JsonSchema.Net (draft 2020-12), Cronos (5-field), Elasticsearch 8.15.5, Prometheus v3.11.3, OTel Collector contrib 0.152.0.
 - **Repository structure:** `src/BaseApi.Core/` (reusable class library — 5,924 LOC including tests/, actually src/BaseApi.Core + src/BaseApi.Service split), `src/BaseApi.Service/` (the runnable webapi + Features/* per-entity folders), `tests/BaseApi.Tests/` (xUnit v3 + WebApplicationFactory + per-class throwaway Postgres DBs).
 - **Test discipline:** 3-consecutive-GREEN cadence locked as the phase-close gate (Phase 3 D-18) — proven 11×. Byte-identical `psql \l` SHA-256 BEFORE/AFTER snapshot proves zero leaked `stepsdb_test_*` databases (Phase 3 D-15) — locked invariant honored across all 11 phases (most recent SHA-256: `0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127`, the 4th consecutive phase to record this baseline).
 - **Domain framing:** workflow / data-pipeline platform. `Schema` defines data shapes; `Processor` transforms input→output schemas (and optionally references a Config schema, per Phase 10); `Step` couples a Processor to next steps; `Assignment` binds a Step to a Payload; `Workflow` is the DAG of entry steps + assignments with an optional cron. External Orchestrator + Scheduler consume `Workflow` records to drive execution.
@@ -197,6 +196,14 @@ Defined in `.planning/REQUIREMENTS.md` for milestone v3.3.0 (Orchestration L3 �
 | `Assignment.Payload` validated as valid JSON only (not against referenced Schema) | User-specified (N2) | ✓ Good (v3.2.0) — Phase 10 simplified further by dropping SchemaId from Assignment |
 | Bisect-friendly N-commit sequence for v1-surface revisions (Phase 10 precedent) | Each commit isolates one concern; final commit flips test project GREEN | ✓ Good (v3.2.0) — 5-commit Phase 10 sequence intact in git log; pattern adopted by Phase 11 (10 commits) |
 | 3-consecutive-GREEN test cadence + byte-identical psql `\l` snapshot as phase-close gate | Proves no flakes + no leaked test DBs | ✓ Good (v3.2.0) — locked in Phase 3 D-15/D-18; honored 11× across the milestone |
+| Redis is a SOFT dependency — `/health/ready` never probes it; CRUD serves 200 with Redis down (only orchestration Start/Stop fail) | Keeps the v1 CRUD surface available regardless of Redis; preserves Phase 5 HEALTH-01..05 contracts | ✓ Good (v3.3.0) — `HealthDeadRedisFixture` proves both probes stay 200 with a dead Redis port |
+| Iterative DFS for cycle detection (explicit stack, no recursion) | `StackOverflowException` is uncatchable by `IExceptionHandler`; recursion on adversarial graphs is unsafe | ✓ Good (v3.3.0) — `CycleDetector` two-set iterative DFS |
+| Strict `Schema.Id` equality for schema-edge compatibility (null-on-either-side passes) | Structural/canonical compatibility needs a subset-checker; deferred until a real use case | ✓ Good (v3.3.0) — `SchemaEdgeValidator` independent edge walk |
+| System.Text.Json (not Mapperly) for L2 DTO → JSON serialization | Mapperly is entity↔DTO source-gen only; L2 wire format is a flat JSON string | ✓ Good (v3.3.0) — camelCase `[JsonPropertyName]`-pinned records |
+| `IServer.Keys()`/`KEYS` forbidden in production; Stop uses targeted GET-and-follow traversal | Keyspace enumeration is O(N) server-blocking; graph walk by `StringGetAsync` is bounded | ✓ Good (v3.3.0) — `RedisL2Cleanup` cycle-safe BFS |
+| Stop = existence-gate + root/step deletion (never processor keys), non-idempotent | Scope evolved twice; processor keys self-expire via TTL and are shared across workflows | ✓ Good (v3.3.0) — collect-all-missing 422, else cleanup → 204; repeated Stop → 422 |
+| Per-processor keys TTL'd (`ProcessorKeyTtlDays` default 100); root/step no TTL | Processor keys outlive Stop and self-expire; root/step are deleted by Stop | ✓ Good (v3.3.0) |
+| Redis `--scan` SHA-256 BEFORE=AFTER added to the phase-close gate (alongside `psql \l`) | Proves zero leaked `test:cls-*` keys; FLUSHDB forbidden (would mask leaks across parallel classes) | ✓ Good (v3.3.0) — held at 3×235 GREEN close |
 
 ## Evolution
 
@@ -216,7 +223,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-29 — Phase 16 complete (idempotency + concurrency + L1-cleanup + happy-path coverage facts; v3.3.0 close gate GREEN at 3×235, dual-SHA BEFORE=AFTER). milestone v3.3.0 phase work at 5/5 (100%) — ready for /gsd-complete-milestone. v3.2.0 (Steps API MVP) shipped 2026-05-28; see `milestones/v3.2.0-ROADMAP.md` for the full phase narrative; per-phase footers preserved below for git-blame continuity.*
+*Last updated: 2026-05-29 after v3.3.0 milestone — Orchestration L3 → L1 → L2 Build Pipeline shipped (5 phases / 26 plans / 64 requirements / 235 facts × 3 GREEN, dual-SHA BEFORE=AFTER; milestone audit PASSED, tagged `v3.3.0`). v3.2.0 (Steps API MVP) shipped 2026-05-28. See `milestones/v3.3.0-ROADMAP.md` and `milestones/v3.2.0-ROADMAP.md` for the full phase narratives; per-phase footers preserved below for git-blame continuity. No active milestone — next cycle via `/gsd-new-milestone`.*
 
 <details>
 <summary>Historical phase footers (Phases 1-11, v3.2.0)</summary>
