@@ -46,7 +46,7 @@
   3. With Redis stopped, `GET /health/live` returns 200 AND `GET /health/ready` returns 200 (soft dependency) AND the v3.2.0 HEALTH-01..05 acceptance facts still pass byte-for-byte.
   4. `Phase8WebAppFactory` (or its v3.3.0 successor) boots with the `RedisFixture` attached; per-test-class `KeyPrefix = "test:cls-{Guid:N}:"` isolation works and `RedisFixture.DisposeAsync` SCAN-asserts zero residual keys (fail-loud on violation; `FLUSHDB` never called).
   5. Phase-close gate extended: `redis-cli --scan | sort | sha256sum` BEFORE = AFTER across the full integration suite, in addition to the v3.2.0 `psql \l` SHA-256 invariant.
-**Plans:** 8 plans
+**Plans:** 8/8 plans complete
 Plans:
 - [x] 12-01-PLAN.md — CPM pin StackExchange.Redis 2.13.1 + csproj references + OBSERV-REDIS-01 negative-grep
 - [x] 12-02-PLAN.md — compose.yaml redis service block (7.4.x-alpine, sk-redis, 6380:6379, ping healthcheck) + baseapi-service depends_on + env var
@@ -115,7 +115,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status      | Completed  |
 | ----- | --------- | -------------- | ----------- | ---------- |
 | 1-11  | v3.2.0    | 41/41          | Complete    | 2026-05-28 |
-| 12    | v3.3.0    | 8/8            | Complete    | 2026-05-29 |
+| 12    | v3.3.0    | 8/8 | Complete    | 2026-05-29 |
 | 13    | v3.3.0    | 0/0            | Not started | —          |
 | 14    | v3.3.0    | 0/0            | Not started | —          |
 | 15    | v3.3.0    | 0/0            | Not started | —          |
