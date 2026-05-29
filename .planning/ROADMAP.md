@@ -84,7 +84,13 @@ Plans:
   3. A workflow with a schema-edge mismatch (`parent.Processor.OutputSchemaId != child.Processor.InputSchemaId`) returns 422 with the offending `(parentStepId, childStepId)` pair; null-on-either-side (Phase 10 source/sink/unconfigured processor) passes.
   4. An Assignment whose Payload fails JSON Schema validation against its resolved `Step.Processor.ConfigSchema.Definition` returns 422 with the offending `assignmentId`; per-Start `Dictionary<Guid, JsonSchema>` cache parses each schema at most once.
   5. Validation runs in the exact order existence → cycles → schema-edge → Payload↔ConfigSchema (verified by integration tests that supply multi-failure workflows and assert the FIRST gate's 422); L1 cleanup still runs in the `finally` path on every validation failure.
-**Plans**: TBD
+**Plans**: 5 plans
+Plans:
+- [ ] 14-01-PLAN.md — 422 error path (OrchestrationValidationException + handler), D-04 split-Fallback, shared JsonSchemaConfig + SchemaDtoValidator refactor (foundation)
+- [ ] 14-02-PLAN.md — CycleDetector: two-set iterative DFS cycle + missing-step gate (+ CycleDetectionFacts, MissingStepFacts)
+- [ ] 14-03-PLAN.md — SchemaEdgeValidator: independent edge walk, strict Guid equality, null-passes (+ SchemaEdgeFacts)
+- [ ] 14-04-PLAN.md — PayloadConfigSchemaValidator: JsonSchema.Net evaluate + per-Start parse cache (+ PayloadConfigSchemaFacts)
+- [ ] 14-05-PLAN.md — ValidationOrderFacts (gate-order short-circuit + L1 cleanup on failure) + regression sweep + STATE traceability
 **v3.2.0 invariants MUST NOT regress**: Phase 8 JSON Schema SSRF lockdown (`SchemaRegistry.Global.Fetch = (_, _) => null` + draft 2020-12 + `<500ms` regression assertion); Phase 4 RFC 7807 + X-Correlation-Id + Postgres SQLSTATE → HTTP mapping; Phase 6 FluentValidation 12 wiring (no `AddFluentValidation`; manual `ValidateAsync`); Assignment-PUT / Assignment-POST remain "valid JSON only" (VALID-21 only closes at orchestration-start); Mapperly RMG codes; byte-identical `psql \l` SHA-256.
 
 ### Phase 15: L2 Redis projection write + Stop existence check
@@ -120,9 +126,9 @@ Plans:
 | 1-11  | v3.2.0    | 41/41          | Complete    | 2026-05-28 |
 | 12    | v3.3.0    | 8/8 | Complete    | 2026-05-29 |
 | 13    | v3.3.0    | 3/3 | Complete    | 2026-05-29 |
-| 14    | v3.3.0    | 0/0            | Not started | —          |
+| 14    | v3.3.0    | 0/5            | Planned     | —          |
 | 15    | v3.3.0    | 0/0            | Not started | —          |
 | 16    | v3.3.0    | 0/0            | Not started | —          |
 
 ---
-*v3.3.0 roadmap created 2026-05-28 via `/gsd-new-milestone`. Phase 12 planned 2026-05-29 via `/gsd-plan-phase 12` (8 plans, 4 waves). Next: `/gsd-execute-phase 12` to begin Wave 1.*
+*v3.3.0 roadmap created 2026-05-28 via `/gsd-new-milestone`. Phase 12 planned 2026-05-29 via `/gsd-plan-phase 12` (8 plans, 4 waves). Phase 14 planned 2026-05-29 via `/gsd-plan-phase 14` (5 plans, 3 waves). Next: `/gsd-execute-phase 14` to begin Wave 1.*
