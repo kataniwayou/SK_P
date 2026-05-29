@@ -62,6 +62,11 @@ internal static class OrchestrationServiceCollectionExtensions
         services.AddScoped<SchemaEdgeValidator>();
         services.AddScoped<PayloadConfigSchemaValidator>();
         services.AddScoped<IRedisProjectionWriter, RedisProjectionWriter>();
+
+        // D-04 ordering: registered here so it lands after the Core NotFound/Validation/DbUpdate
+        // handlers and BEFORE the split-out FallbackExceptionHandler (AddBaseApiFallbackHandler is
+        // called last in Program.cs, after AddAppFeatures runs this method). Reachable → emits 422.
+        services.AddExceptionHandler<OrchestrationValidationExceptionHandler>();
         return services;
     }
 }
