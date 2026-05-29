@@ -1,4 +1,4 @@
-Microsoft Visual Studio Solution File, Format Version 12.00
+﻿Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.8.34330.188
 MinimumVisualStudioVersion = 10.0.40219.1
@@ -7,6 +7,10 @@ EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BaseApi.Service", "src\BaseApi.Service\BaseApi.Service.csproj", "{B2B2B2B2-2222-2222-2222-222222222222}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BaseApi.Tests", "tests\BaseApi.Tests\BaseApi.Tests.csproj", "{C3C3C3C3-3333-3333-3333-333333333333}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{EAC83310-2BA8-4E7E-9A90-5C6BD471C231}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Messaging.Contracts", "src\Messaging.Contracts\Messaging.Contracts.csproj", "{97B07C49-ABE6-4311-BD50-B1198C8B322C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -26,8 +30,15 @@ Global
 		{C3C3C3C3-3333-3333-3333-333333333333}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C3C3C3C3-3333-3333-3333-333333333333}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{C3C3C3C3-3333-3333-3333-333333333333}.Release|Any CPU.Build.0 = Release|Any CPU
+		{97B07C49-ABE6-4311-BD50-B1198C8B322C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{97B07C49-ABE6-4311-BD50-B1198C8B322C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{97B07C49-ABE6-4311-BD50-B1198C8B322C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{97B07C49-ABE6-4311-BD50-B1198C8B322C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{97B07C49-ABE6-4311-BD50-B1198C8B322C} = {EAC83310-2BA8-4E7E-9A90-5C6BD471C231}
 	EndGlobalSection
 EndGlobal

@@ -33,6 +33,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BaseApi.Core\BaseApi.Core.csproj" />
+    <!-- Phase 17 (MSG-CONTRACTS-01/04): leaf contracts + moved L2 root read-shape. -->
+    <ProjectReference Include="..\Messaging.Contracts\Messaging.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

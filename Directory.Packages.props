@@ -118,6 +118,13 @@
 
     <!-- v3.3.0 / Phase 12 — Redis L2 projection client (CPM pin, INFRA-REDIS-03). -->
     <PackageVersion Include="StackExchange.Redis" Version="2.13.1" />
+
+    <!-- MassTransit 8.5.5 is the last Apache-2.0 line. v9+ is COMMERCIAL: organizations over
+         $1M revenue pay a $400/mo minimum; v8.x stays open-source + security-patched through
+         end-2026. Do NOT bump to 9.x without a license decision. No PackageReference yet
+         (Phase 17 = CPM pin only; the publisher/consumer wiring lands Phase 18+). -->
+    <PackageVersion Include="MassTransit" Version="8.5.5" />
+    <PackageVersion Include="MassTransit.RabbitMQ" Version="8.5.5" />
   </ItemGroup>
 
 </Project>

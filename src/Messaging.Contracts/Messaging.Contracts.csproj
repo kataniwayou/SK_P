@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Messaging.Contracts — pure-POCO leaf contracts library (Phase 17, D-01).
+    Referenced by BaseApi.Service (publisher) and the future Orchestrator (consumer).
+    NO MassTransit PackageReference (MSG-CONTRACTS-01 / D-01) — the MassTransit 8.5.5
+    entries in Directory.Packages.props are CPM <PackageVersion> pins ONLY (D-03/D-12).
+    NO Microsoft.AspNetCore.App FrameworkReference (stays a leaf, not a host library).
+    Common props (TargetFramework/Nullable/ImplicitUsings/LangVersion/AnalysisMode/
+    EnforceCodeStyleInBuild/TreatWarningsAsErrors) inherit from Directory.Build.props.
+    CPM means no Version= on anything. Pure POCO → no ItemGroup.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Messaging.Contracts</RootNamespace>
+    <AssemblyName>Messaging.Contracts</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+</Project>
