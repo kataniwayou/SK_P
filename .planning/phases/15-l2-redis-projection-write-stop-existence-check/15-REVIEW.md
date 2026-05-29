@@ -36,8 +36,10 @@ files_reviewed_list:
 findings:
   critical: 0
   warning: 3
+  warning_resolved: 1
   info: 4
   total: 7
+  open: 6
 status: issues_found
 ---
 
@@ -68,7 +70,13 @@ runtime types.
 
 ## Warnings
 
-### WR-01: Stop cleanup loop does not tag `redisOp` on a Redis fault (asymmetry with Start)
+### WR-01: Stop cleanup loop does not tag `redisOp` on a Redis fault (asymmetry with Start) — ✅ RESOLVED (commit 44dd29a)
+
+**Resolution (2026-05-29):** Wrapped the Stop post-gate cleanup loop in the same
+`try/catch (RedisException)` guard, tagging the Stop path's stable op name `"KeyExistsAsync"`
+(consistent with the Start pre-clean single-stable-op-name convention, IN-04). Locked by
+`StopGateFacts.Stop_RedisDown_OnPostGateCleanup_500_KeyExistsAsync` (hand-rolled throwing
+`IRedisL2Cleanup` stub). Full suite 227/227 GREEN.
 
 **File:** `src/BaseApi.Service/Features/Orchestration/OrchestrationService.cs:203-206`
 **Issue:** In `StartAsync`, the pre-clean call to `_cleanup.StopCleanupAsync` is wrapped in a
