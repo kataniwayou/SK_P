@@ -33,7 +33,9 @@ Fill the Phase 13 no-op `RedisProjectionWriter` seam so a validated Start popula
 **Locked value shapes:**
 - **Root** `{prefix}{workflowId}` → `{ entryStepIds[], cron, jobId, liveness{timestamp,interval,status}, correlationId }`
 - **Per-step** `{prefix}{workflowId}:{stepId}` → `{ entryCondition, processorId, payload, nextStepIds[] }` (terminal → `[]`, never null; no liveness)
-- **Per-processor** `{prefix}{processorId}` → `{ inputDefinition, outputDefinition, liveness }` (field names ARE `inputDefinition`/`outputDefinition`)
+- **Per-processor** `{prefix}{processorId}` → `{ inputDefinition, outputDefinition, liveness }` (field names ARE `inputDefinition`/`outputDefinition`); written **with a TTL** (D-08); key is **never deleted** (D-06)
+
+**Key scheme (confirmed unchanged — L2-PROJECT-02 stands):** a single shared `KeyPrefix` (`"skp:"` prod; `"test:cls-{Guid:N}:"` in tests) on all three key types — `{prefix}{workflowId}`, `{prefix}{workflowId}:{stepId}`, `{prefix}{processorId}`. **No type discriminator segment** (the `wf:`/`proc:` segmented alternative was considered and rejected; root and processor keys are both `{prefix}{guid}`, disambiguated only by GUID namespace). `RedisProjectionKeys` (created this phase) is the single source of truth for all three formats.
 
 ### D-03 — Start projection batch-write failure semantics
 - `UpsertAsync` uses `CreateBatch()` → queue per-key `StringSetAsync` → `batch.Execute()` → `await Task.WhenAll(tasks)` (per L2-PROJECT-01; batch ≠ transaction, no MULTI/EXEC).
@@ -76,6 +78,13 @@ StartAsync(workflowIds):
 - **Cleanup-then-build consequence (accepted):** a re-Start of a now-invalid workflow deletes its old L2, then 422s without rebuilding — the prior good projection is gone. This is the intended "stop then start" order.
 - **Partial-state across workflows (accepted):** a mid-loop 422 on workflow B leaves A already cleaned + rebuilt and B wiped (consistent with the documented partial-state stance).
 
+### D-08 — Processor-key TTL (refresh-on-write)
+- Processor keys are **never deleted** (D-06) and are **value-updated on every Start** (`POST /start` overwrites `{ inputDefinition, outputDefinition, liveness }`).
+- Each Start's processor `StringSetAsync` carries an **expiry** → `expiry: TimeSpan.FromDays(ttlDays)`. The TTL is therefore **refreshed on every Start (refresh-on-write)**: an actively-referenced processor never expires; an orphaned one (nothing Starts it for `ttlDays`) self-expires. This is the GC mechanism for the shared, never-explicitly-deleted processor keyspace.
+- **Root + per-step keys carry NO TTL** — their lifecycle is the explicit Start-preclean / Stop-cleanup. Only processor keys are TTL'd.
+- **Config:** new `ProcessorKeyTtlDays` (int, **default 100**) on `RedisProjectionOptions` + the `Redis` section of `appsettings.json` / `appsettings.Development.json`. Bound to the `Redis:*` section like the existing `KeyPrefix`.
+- **`ProcessorKeyTtlDays <= 0` ⇒ no expiry** (escape hatch / disable from config). Positive ⇒ `TimeSpan.FromDays(value)`.
+
 ### Claude's Discretion
 - ReadDto → projection-record assembly implementation details.
 - Exact MEL log message wording and levels.
@@ -96,6 +105,9 @@ This discussion intentionally changes the following. Planner SHOULD update REQUI
 - **ORCH-START-05** — CHANGED. Idempotency is now **delete-then-write** (per-workflow pre-clean), not plain overwrite. Fixes orphaned per-step keys when a graph shrinks between Starts.
 - **L2-PROJECT-03** — CHANGED. `jobId` `Guid.Empty` → **`Guid.NewGuid()` per Start**. `correlationId` field name is **unchanged** (the stopCorrelationId/rename idea was considered and dropped). `liveness.status` default stays `"Pending"` (no lifecycle this phase).
 - **L2-PROJECT-07 / Phase 15 SC5** — Stop now performs **targeted GET-and-follow traversal** for cleanup. `KEYS` / `IServer.Keys()` remain forbidden; the SCAN-only enumeration rule is intact (traversal is by GET, not enumeration).
+- **L2-PROJECT-01 / -05** — processor-key writes now carry a **TTL** (D-08); a new `ProcessorKeyTtlDays` field is added to `RedisProjectionOptions` (Phase 12 artifact) + appsettings. Root/step writes are unchanged (no TTL).
+- **L2-PROJECT-02** — **confirmed unchanged**: flat single-`skp:`-prefix scheme, no type discriminator (segmented `wf:`/`proc:` alternative rejected).
+- **TEST-REDIS / Phase 12 `RedisFixture.DisposeAsync` zero-residual SCAN assertion** — the 100-day processor TTL means processor keys written during a test do **not** expire within the run, and Stop deliberately never deletes them. So any test that Starts will leave residual `{prefix}{processorId}` keys → the fail-loud zero-residual assertion would trip. Phase 15/16 MUST make the fixture teardown (or test cleanup) **explicitly delete all keys under its per-class prefix** (`FLUSHDB` still forbidden) — e.g. SCAN the per-class prefix and `KeyDeleteAsync`. This is test-only cleanup, distinct from the production Stop semantics.
 - **Phase 13 pipeline (ORCH-SPLIT)** — restructured from a single batch snapshot to a **per-workflow loop** with a per-workflow snapshot + per-iteration disposal.
 - **Phase 14 `ValidationOrderFacts`** — first-failure semantics change from "first failing gate across the whole batch" to "first failing gate within the first failing workflow, in iteration order." These facts likely need updating.
 - **Phase 16 SC2 / SC5** — REVERSED. Post-Stop, root + per-step keys are **gone** (processor keys remain). The "Stop does NOT delete any L2 keys / post-Stop SCAN matches pre-Stop" facts must be **inverted** (assert root + per-step removed, processors intact). The `redis-cli --scan` BEFORE=AFTER full-suite invariant still holds across a *balanced* suite (residual `test:cls-*` = 0).
@@ -132,7 +144,7 @@ This discussion intentionally changes the following. Planner SHOULD update REQUI
 - `OrchestrationService.StartAsync` / `StopAsync` + private `ExistenceCheckAsync` (Postgres id-projection 404 gate — keep for the upfront batch check).
 - `WorkflowGraphSnapshot` (per-workflow now) + `IWorkflowGraphLoader.LoadL1Async`.
 - `IHttpContextAccessor` — already registered (`AddHttpContextAccessor`, idempotent).
-- `RedisProjectionOptions` (KeyPrefix `skp:`) + `IConnectionMultiplexer`/`IDatabase` from Phase 12 DI; `StackExchange.Redis` 2.13.1.
+- `RedisProjectionOptions` (`src/BaseApi.Core/Configuration/RedisProjectionOptions.cs`; `KeyPrefix = "skp:"`, `Serialization.JsonOptions = "default"`) — **add `ProcessorKeyTtlDays` (int, default 100)** here + appsettings `Redis:ProcessorKeyTtlDays` (D-08). `IConnectionMultiplexer`/`IDatabase` from Phase 12 DI; `StackExchange.Redis` 2.13.1 (`StringSetAsync(key, value, expiry)` is batchable).
 - `RedisProjectionKeys` (L2-PROJECT-02 key formatter — verify exists / create; single source of truth for all key formats).
 
 ### Established Patterns
@@ -157,6 +169,8 @@ This discussion intentionally changes the following. Planner SHOULD update REQUI
 - "Stop will clean up L2 keys of the workflowIds[]: start with root and follow the steps; never remove the processor keys" — D-06 traversal + selective delete.
 - "Don't update the liveness.status (will be discussed further but not now)" — lifecycle deferred (D-05).
 - "Every start generate guid for jobId" — D-05.
+- "One shared `skp:` prefix on all three key types" — flat scheme confirmed, no type discriminator (D-02 key-scheme note).
+- "Processors TTL refresh-on-write, meaning every POST start; the start will update values related to processors" — D-08.
 
 </specifics>
 

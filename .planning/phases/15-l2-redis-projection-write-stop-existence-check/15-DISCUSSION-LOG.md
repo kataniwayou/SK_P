@@ -101,9 +101,27 @@
 
 **Captured as:** D-05.
 
+## Key scheme & processor TTL (follow-up clarification)
+
+**Q: same prefix on all three key types? Is it redundant?**
+- Confirmed: one shared `skp:` prefix on all three (`{prefix}{workflowId}`, `{prefix}{workflowId}:{stepId}`, `{prefix}{processorId}`).
+- Raised the missing-type-discriminator smell (root vs processor both `{prefix}{guid}`) and offered a segmented `wf:`/`proc:` scheme.
+
+| Option | Description | Selected |
+|--------|-------------|----------|
+| Flat single `skp:` prefix | No type segment; root & processor both `{prefix}{guid}`; functions (GUIDs don't collide). L2-PROJECT-02 unchanged. | ✓ |
+| Segmented `wf:`/`proc:` | Type discriminator per key; processors structurally distinct. Would amend L2-PROJECT-02 + SC1/SC2. | |
+
+**User's choice:** Flat single `skp:` prefix — L2-PROJECT-02 unchanged.
+
+**Processor TTL (D-08):**
+- Processor keys never deleted; value-updated every Start; TTL refresh-on-write (every POST /start re-stamps `expiry`).
+- Default 100 days, configurable `Redis:ProcessorKeyTtlDays` (int days) on RedisProjectionOptions. `<=0` ⇒ no expiry. Root/step keys carry no TTL.
+- Known interaction flagged: Phase 12 RedisFixture.DisposeAsync zero-residual SCAN assertion vs un-expired TTL'd processor keys → fixture/test teardown must explicitly delete keys under the per-class prefix.
+
 ## Claude's Discretion
 
-- ReadDto → projection-record assembly details; MEL message wording; DEL vs UNLINK final pick; traversal data structure; liveness.timestamp source (prefer TimeProvider); whether RedisProjectionKeys exists or must be created.
+- ReadDto → projection-record assembly details; MEL message wording; DEL vs UNLINK final pick; traversal data structure; liveness.timestamp source (prefer TimeProvider); whether RedisProjectionKeys exists or must be created; `ProcessorKeyTtlDays <= 0` ⇒ no-expiry default.
 
 ## Deferred Ideas
 
