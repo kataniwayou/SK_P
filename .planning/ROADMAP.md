@@ -106,7 +106,7 @@ Plans:
   5. `OpenTelemetry.Instrumentation.StackExchangeRedis` is NOT referenced anywhere in the solution; Redis ops appear in MEL logs with X-Correlation-Id flowing via AsyncLocal (verified by E2E test extending the Phase 11 `SchemasLogsE2ETests` pattern); `IServer.Keys()` and `KEYS` are forbidden in production code (only SCAN-based enumeration allowed).
 > NOTE: SC3/SC4/SC5 above are superseded by 15-CONTEXT amendments (Stop now DELETES root+per-step via GET-and-follow, non-idempotent 422 on repeat, never deletes processor keys; jobId = Guid.NewGuid(); processor keys TTL'd). Plan 15-05 reconciles this text.
 **Plans**: 5 plans
-- [ ] 15-01-PLAN.md — RedisProjectionKeys + 4 camelCase projection records + ProcessorKeyTtlDays config (Wave 0 unit tests)
+- [x] 15-01-PLAN.md — RedisProjectionKeys + 4 camelCase projection records + ProcessorKeyTtlDays config (Wave 0 unit tests)
 - [ ] 15-02-PLAN.md — Fill RedisProjectionWriter: 3-keyspace batch write + processor TTL + liveness via TimeProvider
 - [ ] 15-03-PLAN.md — Shared RedisL2Cleanup GET-and-follow traverse+delete routine + 422 missing-roots exception
 - [ ] 15-04-PLAN.md — OrchestrationService per-workflow Start loop + Redis Stop gate/cleanup + DI/controller wiring

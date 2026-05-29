@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: planning
-stopped_at: Phase 15 context gathered
-last_updated: "2026-05-29T13:54:59.371Z"
+status: executing
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-05-29T14:09:03.043Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 21
-  completed_plans: 16
-  percent: 76
+  completed_plans: 17
+  percent: 81
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revised 2026-05-28 for Stop scope reduction + correlationId)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship.**
-**Current focus:** Phase 14 — validation-gates-dfs-schema-edge-payload-config-schema
+**Current focus:** Phase 15 — l2-redis-projection-write-stop-existence-check
 
 ## Current Position
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
-Phase: 15
-Plan: Not started
-Status: Ready to plan
+Phase: 15 (l2-redis-projection-write-stop-existence-check) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [██████████] 100%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
@@ -123,6 +123,7 @@ Progress: [██████████] 100%
 | Phase 14 P03 | ~5min | 2 tasks | 2 files |
 | Phase 14 P04 | ~6min | 2 tasks | 2 files |
 | Phase 14 P05 | ~7min | 2 tasks | 2 files |
+| Phase 15 P01 | ~10min | 3 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -338,6 +339,9 @@ Recent decisions affecting current work:
 - Plan 14-05: L1-VALIDATE-10 — TEST-03 (Testcontainers.PostgreSql) + TEST-04 (Respawn) remain DEFERRED; v3.3.0 does NOT close them. Recorded for traceability.
 - Plan 14-05: Gate order proven by ValidationOrderFacts multi-failure workflows (existence 404 → cycle → schema-edge → payload short-circuit) + L1 cleanup (snapshot.IsDisposed) on the 422 validation-failure path. D-04 split-Fallback (AddBaseApiFallbackHandler last in Program.cs) keeps Fallback last-walked; OrchestrationValidationExceptionHandler reachable → 422.
 - Plan 14-05: Gate order proven end-to-end by ValidationOrderFacts multi-failure workflows (existence 404 -> cycle -> schema-edge -> payload short-circuit) + L1 cleanup (snapshot.IsDisposed) on the 422 validation-failure path.
+- Plan 15-01: RedisProjectionKeys is the single source of truth for the 3 flat L2 key formats — no discriminator, Root==Processor by design (D-02), hyphenated GUIDs
+- Plan 15-01: 4 projection records use [property: JsonPropertyName] on every positional member (Pitfall 1 guard); enum-as-int, no string-enum converter (L2-PROJECT-04); round-trip GREEN under default STJ options
+- Plan 15-01: ProcessorKeyTtlDays (int, default 100) added to RedisProjectionOptions + both appsettings; bound via existing cfg.GetSection(Redis) (D-08)
 
 ### Roadmap Milestone Log
 
@@ -431,9 +435,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 15 context gathered
-Resume file: --resume-file
+Last session: 2026-05-29T14:08:53.831Z
+Stopped at: Completed 15-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
