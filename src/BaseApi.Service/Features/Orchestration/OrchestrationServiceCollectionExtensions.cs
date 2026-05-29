@@ -62,6 +62,11 @@ internal static class OrchestrationServiceCollectionExtensions
         services.AddScoped<SchemaEdgeValidator>();
         services.AddScoped<PayloadConfigSchemaValidator>();
         services.AddScoped<IRedisProjectionWriter, RedisProjectionWriter>();
+        // Shared, always-tolerant L2 cleanup routine (D-06 / D-07). Registered here in Plan 03
+        // (not Plan 04) because Plan 03's StopCleanupFacts resolve IRedisL2Cleanup from DI; Plan 04
+        // wires the two CALLERS (StopAsync gated, Start pre-clean tolerant). Scoped to match the
+        // other Scoped orchestration seams (the multiplexer it depends on is Singleton — no captive bug).
+        services.AddScoped<IRedisL2Cleanup, RedisL2Cleanup>();
 
         // D-04 ordering: registered here so it lands after the Core NotFound/Validation/DbUpdate
         // handlers and BEFORE the split-out FallbackExceptionHandler (AddBaseApiFallbackHandler is
