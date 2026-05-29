@@ -2,29 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: roadmap_complete
-stopped_at: v3.4.0 roadmap created — 4 phases (17-20) defined, 37 requirements mapped
-last_updated: "2026-05-30T00:00:00.000Z"
-last_activity: 2026-05-30
+status: completed
+stopped_at: Phase 17 context gathered
+last_updated: "2026-05-29T22:48:38.574Z"
+last_activity: 2026-05-30 — v3.4.0 roadmap created (Phases 17-20)
 progress:
-  total_phases: 4
+  total_phases: 1
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
   percent: 0
-phases:
-  - number: 17
-    name: Messaging.Contracts + Shared L2 Root Extract
-    status: not_started
-  - number: 18
-    name: BaseConsole.Core Library
-    status: not_started
-  - number: 19
-    name: Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier
-    status: not_started
-  - number: 20
-    name: Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout
-    status: not_started
 ---
 
 # Project State
@@ -498,9 +485,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T18:51:39.262Z
-Stopped at: Completed 16-05-PLAN.md (Phase 16 close gate PASSED — 3x235 GREEN, dual-SHA HELD)
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 17 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
