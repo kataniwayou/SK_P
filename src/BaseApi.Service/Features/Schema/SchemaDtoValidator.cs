@@ -12,24 +12,15 @@ namespace BaseApi.Service.Features.Schema;
 /// then evaluate against <c>MetaSchemas.Draft202012</c> to confirm the user-supplied
 /// payload IS itself a valid JSON Schema (semantic — VALID-08).
 /// <para>
-/// <b>Static ctor (VALID-08 + VALID-09):</b> sets <c>Dialect.Default = Dialect.Draft202012</c>
-/// (RESEARCH §JsonSchema.Net "Default dialect (CRITICAL)" — library default is V1, not 2020-12),
-/// and explicitly assigns <c>SchemaRegistry.Global.Fetch = (_, _) =&gt; null</c> as defense-in-depth
-/// against SSRF via external <c>$ref</c> tokens. The library default is already a no-op fetcher;
-/// the explicit assignment encodes the security intent at the source-tree level so a future
-/// dependency upgrade that changes the default would surface here, not in production.
+/// <b>SSRF lockdown (VALID-08 + VALID-09 / D-05 / D-06):</b> the meta-schema dialect pin
+/// (draft 2020-12) and the SSRF no-op global fetcher now live in <see cref="JsonSchemaConfig"/>'s
+/// static ctor — the single source of SSRF truth. It is triggered here by referencing
+/// <see cref="JsonSchemaConfig.DefaultOptions"/> in the meta-schema evaluation below, which fires
+/// the cctor BEFORE any evaluation runs (Pitfall 3).
 /// </para>
 /// </summary>
 public sealed class SchemaCreateDtoValidator : AbstractValidator<SchemaCreateDto>
 {
-    static SchemaCreateDtoValidator()
-    {
-        // VALID-08 — set the meta-schema dialect explicitly (default is V1, not 2020-12).
-        Dialect.Default = Dialect.Draft202012;
-        // VALID-09 — defense-in-depth: explicit no-op even though library default is already (_,_) => null.
-        SchemaRegistry.Global.Fetch = (_, _) => null;
-    }
-
     public SchemaCreateDtoValidator()
     {
         Include(new BaseDtoValidator<SchemaCreateDto>());   // VALID-20
@@ -51,13 +42,14 @@ public sealed class SchemaCreateDtoValidator : AbstractValidator<SchemaCreateDto
                 }
                 try
                 {
+                    // JsonSchemaConfig.DefaultOptions reference fires the SSRF-locking cctor (D-06 / Pitfall 3).
                     var results = MetaSchemas.Draft202012.Evaluate(
                         doc.RootElement,
-                        new EvaluationOptions { OutputFormat = OutputFormat.List });
+                        JsonSchemaConfig.DefaultOptions);
                     if (!results.IsValid)
                     {
                         // VALID-09: any $ref pointing outside the registry fails IsValid=false
-                        // because SchemaRegistry.Global.Fetch returns null -> no outbound HTTP.
+                        // because the global no-op fetcher returns null -> no outbound HTTP.
                         ctx.AddFailure(nameof(SchemaCreateDto.Definition),
                             "Definition is not a valid JSON Schema (draft 2020-12).");
                     }
@@ -71,10 +63,11 @@ public sealed class SchemaCreateDtoValidator : AbstractValidator<SchemaCreateDto
 }
 
 /// <summary>
-/// Update-side validator. Mirrors <see cref="SchemaCreateDtoValidator"/> but does NOT
-/// re-run the static ctor (per-type static state — Dialect.Default + SchemaRegistry.Global.Fetch
-/// are set once on first touch of EITHER validator type, which is sufficient because both
-/// participate in the same DI scan).
+/// Update-side validator. Mirrors <see cref="SchemaCreateDtoValidator"/>. The SSRF lockdown
+/// (dialect pin + global no-op fetcher) is owned by <see cref="JsonSchemaConfig"/>'s
+/// static ctor — set once on first reference to <see cref="JsonSchemaConfig.DefaultOptions"/>
+/// (triggered by the meta-schema evaluation below), which is sufficient regardless of which
+/// validator runs first (D-05 / D-06).
 /// </summary>
 public sealed class SchemaUpdateDtoValidator : AbstractValidator<SchemaUpdateDto>
 {
@@ -99,9 +92,10 @@ public sealed class SchemaUpdateDtoValidator : AbstractValidator<SchemaUpdateDto
                 }
                 try
                 {
+                    // JsonSchemaConfig.DefaultOptions reference fires the SSRF-locking cctor (D-06 / Pitfall 3).
                     var results = MetaSchemas.Draft202012.Evaluate(
                         doc.RootElement,
-                        new EvaluationOptions { OutputFormat = OutputFormat.List });
+                        JsonSchemaConfig.DefaultOptions);
                     if (!results.IsValid)
                     {
                         ctx.AddFailure(nameof(SchemaUpdateDto.Definition),
