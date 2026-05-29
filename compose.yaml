@@ -113,6 +113,43 @@ services:
       retries: 3
       start_period: 10s
 
+  # Phase 12 D-02 — sk-redis container_name mirrors sk-elasticsearch (Phase 11 D-10)
+  # and sk-prometheus (Phase 11 D-13) for mutual exclusion with sk2_1 on a single
+  # Docker daemon. The sk-* prefix is the cross-stack uniqueness convention.
+  #
+  # Phase 12 D-01 — host port 6380:6379 mirrors Phase 2 D-01 Postgres 5433:5432
+  # collision-avoidance. Defends against a developer's local Redis on the default
+  # 6379 AND defines the HealthDeadRedisFixture dead-port (the unbound host 6379)
+  # for TEST-REDIS-05 zero-allocation dead-Redis acceptance facts.
+  #
+  # Phase 12 D-03 — persistence intentionally disabled. L2 is rebuildable from L3
+  # (Postgres) on demand; RDB snapshots + AOF are dead weight and slow boot. The
+  # absence of a volumes entry + the explicit --save "" --appendonly no command
+  # encode this intent so a future operator does NOT re-enable persistence as a
+  # "fix" for some other problem.
+  #
+  # INFRA-REDIS-01 — Redis 7.4.x-alpine pinned deliberately to the 7.4 line
+  # (RSALv2/SSPLv1 dual-license, NOT 8.0+ AGPLv3 tri-license). 7.4.x's licensing
+  # is restrictive but does not have the network-distribution copyleft clause that
+  # would force legal review.
+  redis:
+    image: redis:7.4.9-alpine
+    container_name: sk-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      # INFRA-REDIS-02 — redis-cli ping with exit code 0 on PONG, non-zero on
+      # connection failure. The alpine image ships redis-cli in /usr/local/bin.
+      # CMD form (NOT CMD-SHELL) avoids Alpine BusyBox sh quoting hazards
+      # (RESEARCH Pitfall 5). Cadence 5s/3s/10/5s is INFRA-REDIS-02 locked.
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
   baseapi-service:
     build:
       context: .
@@ -121,6 +158,9 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Postgres: "Host=postgres;Port=5432;Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}"
+      # Phase 12 D-04 — defensive override mirrors ConnectionStrings__Postgres convention.
+      # Docker-internal hostname redis resolves via compose service DNS.
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=5000"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
     ports:
       - "8080:8080"
@@ -138,6 +178,8 @@ services:
       elasticsearch:
         condition: service_healthy
       prometheus:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
 volumes:
