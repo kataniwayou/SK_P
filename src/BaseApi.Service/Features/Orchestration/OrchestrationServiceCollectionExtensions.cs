@@ -1,3 +1,8 @@
+using BaseApi.Core.Persistence;
+using BaseApi.Service.Features.Orchestration.Loading;
+using BaseApi.Service.Features.Orchestration.Projection;
+using BaseApi.Service.Features.Orchestration.Validation;
+using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BaseApi.Service.Features.Orchestration;
@@ -31,7 +36,32 @@ internal static class OrchestrationServiceCollectionExtensions
 {
     public static IServiceCollection AddOrchestrationFeature(this IServiceCollection services)
     {
-        services.AddScoped<OrchestrationService>();
+        // Scoped — the loader + OrchestrationService both depend on the Scoped
+        // BaseDbContext; Singleton would be a captive-dependency bug. The snapshot is
+        // NOT registered (the loader constructs it via `new WorkflowGraphSnapshot(_logger)`);
+        // only ILogger<WorkflowGraphSnapshot> is resolved by the standard logging provider.
+        //
+        // OrchestrationService is registered via an explicit factory (not the
+        // typed-implementation overload) because its constructor is INTERNAL — its
+        // signature exposes the internal seam types (IWorkflowGraphLoader,
+        // CycleDetector, ...), which CS0051 forbids on a public constructor while the
+        // class itself stays `public sealed` (Phase 9 D-06 — the controller injects
+        // the concrete type). The default container's typed registration reflects for
+        // a *public* constructor and would fail at ValidateOnBuild; the factory invokes
+        // the internal ctor directly within this assembly.
+        services.AddScoped<OrchestrationService>(sp => new OrchestrationService(
+            sp.GetRequiredService<BaseDbContext>(),
+            sp.GetRequiredService<IValidator<IReadOnlyList<Guid>>>(),
+            sp.GetRequiredService<IWorkflowGraphLoader>(),
+            sp.GetRequiredService<CycleDetector>(),
+            sp.GetRequiredService<SchemaEdgeValidator>(),
+            sp.GetRequiredService<PayloadConfigSchemaValidator>(),
+            sp.GetRequiredService<IRedisProjectionWriter>()));
+        services.AddScoped<IWorkflowGraphLoader, WorkflowGraphLoader>();
+        services.AddScoped<CycleDetector>();
+        services.AddScoped<SchemaEdgeValidator>();
+        services.AddScoped<PayloadConfigSchemaValidator>();
+        services.AddScoped<IRedisProjectionWriter, RedisProjectionWriter>();
         return services;
     }
 }

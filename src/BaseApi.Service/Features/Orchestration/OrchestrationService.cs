@@ -1,10 +1,8 @@
 using BaseApi.Core.Exceptions;
-using BaseApi.Core.Mapping;
 using BaseApi.Core.Persistence;
-using BaseApi.Service.Features.Assignment;
-using BaseApi.Service.Features.Processor;
-using BaseApi.Service.Features.Schema;
-using BaseApi.Service.Features.Step;
+using BaseApi.Service.Features.Orchestration.Loading;
+using BaseApi.Service.Features.Orchestration.Projection;
+using BaseApi.Service.Features.Orchestration.Validation;
 using BaseApi.Service.Features.Workflow;
 using FluentValidation;
 using FluentValidation.Results;
@@ -13,85 +11,102 @@ using Microsoft.EntityFrameworkCore;
 namespace BaseApi.Service.Features.Orchestration;
 
 /// <summary>
-/// Phase 9 cross-entity composition service. NOT a <c>BaseService&lt;TEntity,...&gt;</c>
-/// subclass — there is no single entity to project (CONTEXT D-04). Composes over
-/// the existing <see cref="WorkflowEntity"/> persistence via direct
-/// <see cref="BaseDbContext"/> access for batch reads.
+/// Phase 13 thin cross-entity orchestrator (ORCH-SPLIT-03). NOT a
+/// <c>BaseService&lt;TEntity,...&gt;</c> subclass — there is no single entity to
+/// project (CONTEXT D-04).
 /// <para>
-/// <b>v1 surface:</b> a single method <see cref="ValidateWorkflowIdsAsync"/> that both
-/// <c>Start</c> and <c>Stop</c> endpoints delegate to (CONTEXT D-12 — Start and Stop
-/// are functionally identical in v1). The method runs the auto-discovered
-/// <see cref="WorkflowIdsValidator"/> as step 1 (mirrors
-/// <c>BaseService.CreateAsync</c> line 97 verbatim), then performs a lightweight
-/// id-projection existence check (CONTEXT D-10) and throws
-/// <see cref="NotFoundException"/> on any missing id. No entity hydration, no
-/// response DTO, no side-effects (SPEC.md amended Acceptance Criteria 2026-05-28).
+/// <b>StartAsync</b> orchestrates the locked pipeline (D-01): existence check →
+/// <see cref="IWorkflowGraphLoader"/> → <see cref="CycleDetector"/> →
+/// <see cref="SchemaEdgeValidator"/> → <see cref="PayloadConfigSchemaValidator"/> →
+/// <see cref="IRedisProjectionWriter"/>, with the transient
+/// <see cref="WorkflowGraphSnapshot"/> disposed via a <c>using</c> declaration on
+/// success AND on any throw. The 5 entity mappers were relocated to
+/// <see cref="WorkflowGraphLoader"/> (D-05); the orchestrator keeps only
+/// <see cref="BaseDbContext"/> + the ids validator for the existence check.
 /// </para>
 /// <para>
-/// <b>v2 ctor surface stability (CONTEXT D-05):</b> all 5 entity mappers are
-/// injected up-front even though v1 uses zero of them. The user has stated future
-/// phases will need all 5 entities; pre-injecting now means future phases add
-/// methods, not ctor params. Known smell accepted for design-mirror stability.
+/// <b>StopAsync</b> is a separate public method (D-07 / ORCH-SPLIT-04) — Start and
+/// Stop no longer share a single <c>ValidateWorkflowIdsAsync</c>. Both run the same
+/// existence semantics via the private <see cref="ExistenceCheckAsync"/> helper
+/// (distinct public surfaces; a shared private helper is not "sharing a method" in
+/// the D-07 sense). Phase 15 swaps StopAsync's body to a Redis EXISTS check.
 /// </para>
 /// </summary>
 public sealed class OrchestrationService
 {
     private readonly BaseDbContext _db;
     private readonly IValidator<IReadOnlyList<Guid>> _idsValidator;
-    // 5 entity mappers injected up-front per CONTEXT D-05 (build for the second use).
-    // IN-01..IN-04 iteration-2 IN-03: each unused-in-v1 mapper carries its own
-    // [SuppressMessage("Style","IDE0052")] attribute (more localized + analyzer-config
-    // robust than the discard-expression pattern previously used in the ctor). The
-    // suppression travels with the field declaration so future readers see the
-    // CONTEXT D-05 justification at the point of declaration.
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
-    private readonly IEntityMapper<SchemaEntity,     SchemaCreateDto,     SchemaUpdateDto,     SchemaReadDto>     _schemaMapper;
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
-    private readonly IEntityMapper<ProcessorEntity,  ProcessorCreateDto,  ProcessorUpdateDto,  ProcessorReadDto>  _processorMapper;
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
-    private readonly IEntityMapper<StepEntity,       StepCreateDto,       StepUpdateDto,       StepReadDto>       _stepMapper;
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
-    private readonly IEntityMapper<AssignmentEntity, AssignmentCreateDto, AssignmentUpdateDto, AssignmentReadDto> _assignmentMapper;
-    [System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0052:Remove unread private members", Justification = "Phase 9 CONTEXT D-05 — pre-injected for v2 ctor stability.")]
-    private readonly IEntityMapper<WorkflowEntity,   WorkflowCreateDto,   WorkflowUpdateDto,   WorkflowReadDto>   _workflowMapper;
+    private readonly IWorkflowGraphLoader _loader;
+    private readonly CycleDetector _cycleDetector;
+    private readonly SchemaEdgeValidator _schemaEdgeValidator;
+    private readonly PayloadConfigSchemaValidator _payloadConfigSchemaValidator;
+    private readonly IRedisProjectionWriter _redisProjectionWriter;
 
-    public OrchestrationService(
+    // Ctor is internal (not public): it accepts the internal seam types
+    // (IWorkflowGraphLoader, CycleDetector, ...) which CS0051 forbids on a public
+    // member. The class stays `public sealed` (Phase 9 D-06 — controller injects the
+    // concrete type). DI resolves this ctor in-assembly; InternalsVisibleTo lets
+    // BaseApi.Tests construct it directly.
+    internal OrchestrationService(
         BaseDbContext db,
         IValidator<IReadOnlyList<Guid>> idsValidator,
-        IEntityMapper<SchemaEntity,     SchemaCreateDto,     SchemaUpdateDto,     SchemaReadDto>     schemaMapper,
-        IEntityMapper<ProcessorEntity,  ProcessorCreateDto,  ProcessorUpdateDto,  ProcessorReadDto>  processorMapper,
-        IEntityMapper<StepEntity,       StepCreateDto,       StepUpdateDto,       StepReadDto>       stepMapper,
-        IEntityMapper<AssignmentEntity, AssignmentCreateDto, AssignmentUpdateDto, AssignmentReadDto> assignmentMapper,
-        IEntityMapper<WorkflowEntity,   WorkflowCreateDto,   WorkflowUpdateDto,   WorkflowReadDto>   workflowMapper)
+        IWorkflowGraphLoader loader,
+        CycleDetector cycleDetector,
+        SchemaEdgeValidator schemaEdgeValidator,
+        PayloadConfigSchemaValidator payloadConfigSchemaValidator,
+        IRedisProjectionWriter redisProjectionWriter)
     {
-        _db                = db                ?? throw new ArgumentNullException(nameof(db));
-        _idsValidator      = idsValidator      ?? throw new ArgumentNullException(nameof(idsValidator));
-        _schemaMapper      = schemaMapper      ?? throw new ArgumentNullException(nameof(schemaMapper));
-        _processorMapper   = processorMapper   ?? throw new ArgumentNullException(nameof(processorMapper));
-        _stepMapper        = stepMapper        ?? throw new ArgumentNullException(nameof(stepMapper));
-        _assignmentMapper  = assignmentMapper  ?? throw new ArgumentNullException(nameof(assignmentMapper));
-        _workflowMapper    = workflowMapper    ?? throw new ArgumentNullException(nameof(workflowMapper));
-
-        // IN-03 (iteration 2) — the prior `_ = _xxxMapper;` discard suppression
-        // pattern was replaced with field-level [SuppressMessage("Style","IDE0052")]
-        // attributes (see field declarations above). The attribute is more localized,
-        // travels with the field, and is robust across analyzer configurations.
+        _db                           = db                           ?? throw new ArgumentNullException(nameof(db));
+        _idsValidator                 = idsValidator                 ?? throw new ArgumentNullException(nameof(idsValidator));
+        _loader                       = loader                       ?? throw new ArgumentNullException(nameof(loader));
+        _cycleDetector                = cycleDetector                ?? throw new ArgumentNullException(nameof(cycleDetector));
+        _schemaEdgeValidator          = schemaEdgeValidator          ?? throw new ArgumentNullException(nameof(schemaEdgeValidator));
+        _payloadConfigSchemaValidator = payloadConfigSchemaValidator ?? throw new ArgumentNullException(nameof(payloadConfigSchemaValidator));
+        _redisProjectionWriter        = redisProjectionWriter        ?? throw new ArgumentNullException(nameof(redisProjectionWriter));
     }
+
+    /// <summary>
+    /// Orchestrates the locked Start pipeline (ORCH-SPLIT-03, order LOCKED by D-01).
+    /// The transient <see cref="WorkflowGraphSnapshot"/> is disposed by the
+    /// <c>using</c> declaration on success AND on any throw above it. In Plan 13-01
+    /// the loader returns an empty snapshot and all 4 validator/writer seams are
+    /// no-ops; the orchestrator body is structurally final.
+    /// </summary>
+    public async Task StartAsync(IReadOnlyList<Guid> workflowIds, CancellationToken ct)
+    {
+        await ExistenceCheckAsync(workflowIds, ct);                          // 1. D-08 404 fast-fail
+        using var snapshot = await _loader.LoadL1Async(workflowIds, ct);     // 2. disposed on success AND throw
+        _cycleDetector.Validate(snapshot);                                  // 3. no-op P13
+        _schemaEdgeValidator.Validate(snapshot);                            // 4. no-op P13
+        _payloadConfigSchemaValidator.Validate(snapshot);                   // 5. no-op P13
+        await _redisProjectionWriter.UpsertAsync(snapshot, ct);             // 6. no-op P13
+        // 7. snapshot.Dispose() runs implicitly here AND on any throw above (using declaration).
+    }
+
+    /// <summary>
+    /// Stop semantics (D-07 / ORCH-SPLIT-04). In v3.3.0 this is the same existence
+    /// check as Start's step 1 — a distinct public method, NOT a shared one. Phase 15
+    /// swaps this body to a Redis EXISTS check.
+    /// </summary>
+    public Task StopAsync(IReadOnlyList<Guid> workflowIds, CancellationToken ct)
+        => ExistenceCheckAsync(workflowIds, ct);
 
     /// <summary>
     /// Validates the supplied <paramref name="ids"/> against the
     /// <see cref="WorkflowIdsValidator"/> rules (duplicates, null/empty, Guid.Empty)
     /// THEN verifies every id resolves to an existing <see cref="WorkflowEntity"/>
-    /// row. Throws <see cref="FluentValidation.ValidationException"/> (→ Phase 4 →
-    /// HTTP 400) on rule violation; throws <see cref="NotFoundException"/> (→ Phase
+    /// row (D-08). Throws <see cref="FluentValidation.ValidationException"/> (→ Phase 4
+    /// → HTTP 400) on rule violation; throws <see cref="NotFoundException"/> (→ Phase
     /// 4 → HTTP 404) listing the missing id(s) when any id is unresolved.
     /// <para>
     /// Existence check uses a single SQL <c>SELECT id WHERE id IN (...)</c>
     /// projection — <c>AsNoTracking()</c> + <c>Select(w =&gt; w.Id)</c> hydrates only
     /// the id column (CONTEXT D-10). No N-query loop, no full entity materialization.
+    /// The error shape is LOCKED — existing Start/Stop facts assert
+    /// <c>string.Join(", ", missing)</c> exactly.
     /// </para>
     /// </summary>
-    public async Task ValidateWorkflowIdsAsync(IReadOnlyList<Guid> ids, CancellationToken ct)
+    private async Task ExistenceCheckAsync(IReadOnlyList<Guid> ids, CancellationToken ct)
     {
         // WR-01 guard: a JSON `null` body (or empty body) binds `ids` to `null`.
         // FluentValidation 11+/12 ValidateAndThrowAsync throws ArgumentNullException
