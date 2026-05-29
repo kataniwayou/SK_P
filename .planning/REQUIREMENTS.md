@@ -24,10 +24,14 @@
 
 ### INFRA-COMP — Composition root + DI
 
-- [ ] **INFRA-COMP-01** — New `AddBaseApiRedis(IServiceCollection, IConfiguration)` extension in `src/BaseApi.Core/DependencyInjection/RedisServiceCollectionExtensions.cs`; chained inside `AddBaseApi<TDbContext>` as call #7 (after Mapping, before Features). Does NOT mirror the Phase 7 D-13 `IHostApplicationBuilder` split (no `ILoggingBuilder` need).
-- [ ] **INFRA-COMP-02** — `IConnectionMultiplexer` registered as Singleton (StackExchange.Redis maintainer-blessed pattern: thread-safe, expensive to construct, long-lived).
-- [ ] **INFRA-COMP-03** — `IDatabase` resolved from the singleton multiplexer per-call (cheap, stateless).
-- [ ] **INFRA-COMP-04** — `RedisProjectionOptions` POCO bound to the `Redis:*` config section via `services.Configure<RedisProjectionOptions>(cfg.GetSection("Redis"))`. Exposes `KeyPrefix` (string) and `Serialization.JsonOptions` (string discriminator).
+- [x] **INFRA-COMP-01
+** — New `AddBaseApiRedis(IServiceCollection, IConfiguration)` extension in `src/BaseApi.Core/DependencyInjection/RedisServiceCollectionExtensions.cs`; chained inside `AddBaseApi<TDbContext>` as call #7 (after Mapping, before Features). Does NOT mirror the Phase 7 D-13 `IHostApplicationBuilder` split (no `ILoggingBuilder` need).
+- [x] **INFRA-COMP-02
+** — `IConnectionMultiplexer` registered as Singleton (StackExchange.Redis maintainer-blessed pattern: thread-safe, expensive to construct, long-lived).
+- [x] **INFRA-COMP-03
+** — `IDatabase` resolved from the singleton multiplexer per-call (cheap, stateless).
+- [x] **INFRA-COMP-04
+** — `RedisProjectionOptions` POCO bound to the `Redis:*` config section via `services.Configure<RedisProjectionOptions>(cfg.GetSection("Redis"))`. Exposes `KeyPrefix` (string) and `Serialization.JsonOptions` (string discriminator).
 
 ### ORCH-SPLIT — OrchestrationService decomposition
 

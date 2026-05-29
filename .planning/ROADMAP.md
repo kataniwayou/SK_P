@@ -51,7 +51,7 @@ Plans:
 - [x] 12-01-PLAN.md — CPM pin StackExchange.Redis 2.13.1 + csproj references + OBSERV-REDIS-01 negative-grep
 - [x] 12-02-PLAN.md — compose.yaml redis service block (7.4.x-alpine, sk-redis, 6380:6379, ping healthcheck) + baseapi-service depends_on + env var
 - [x] 12-03-PLAN.md — appsettings.json (Docker-internal) + appsettings.Development.json (host-side) + Redis defaults section (KeyPrefix=skp:, JsonOptions=default)
-- [ ] 12-04-PLAN.md — RedisProjectionOptions POCO + RedisServiceCollectionExtensions.AddBaseApiRedis + composition-root call #7
+- [x] 12-04-PLAN.md — RedisProjectionOptions POCO + RedisServiceCollectionExtensions.AddBaseApiRedis + composition-root call #7
 - [ ] 12-05-PLAN.md — RedisFixture + RedisFixtureFacts + Phase8WebAppFactory in-place D-07/D-08 extension (TEST-REDIS-01..03)
 - [ ] 12-06-PLAN.md — HealthDeadRedisFixture + 2 soft-dep acceptance facts (INFRA-REDIS-06 + TEST-REDIS-05)
 - [ ] 12-07-PLAN.md — BaseApiCompositionFacts + RedisProjectionOptionsBindingFacts + ComposeYamlFacts + AppsettingsFacts (CI-enforceable INFRA-COMP-01..04 + INFRA-REDIS-01..05 guards)
@@ -115,7 +115,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status      | Completed  |
 | ----- | --------- | -------------- | ----------- | ---------- |
 | 1-11  | v3.2.0    | 41/41          | Complete    | 2026-05-28 |
-| 12    | v3.3.0    | 1/8            | In progress | —          |
+| 12    | v3.3.0    | 4/8            | In progress | —          |
 | 13    | v3.3.0    | 0/0            | Not started | —          |
 | 14    | v3.3.0    | 0/0            | Not started | —          |
 | 15    | v3.3.0    | 0/0            | Not started | —          |

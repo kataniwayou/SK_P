@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
 status: executing
-stopped_at: Completed 12-03-PLAN.md
-last_updated: "2026-05-29T04:02:06.419Z"
+stopped_at: Completed 12-04-PLAN.md
+last_updated: "2026-05-29T04:15:46.080Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 0
   total_plans: 8
-  completed_plans: 3
-  percent: 38
+  completed_plans: 4
+  percent: 50
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
 Phase: 12 (redis-infra-composition-healthcheck-di-registration) — EXECUTING
-Plan: 4 of 8
+Plan: 5 of 8
 Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [████░░░░░░] 38%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -107,6 +107,7 @@ Progress: [████░░░░░░] 38%
 | Phase 12 P01 | 6min | 3 tasks tasks | 3 files files |
 | Phase 12 P02 | 4min | 1 tasks | 1 files |
 | Phase 12 P03 | 2min | 3 tasks | 2 files |
+| Phase 12 P04 | ~12min | 1 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -288,6 +289,9 @@ Recent decisions affecting current work:
 - Plan 12-02: sk-redis added as 5th compose tier (redis:7.4.9-alpine, container_name sk-redis, ports 6380:6379, command --save "" --appendonly no, healthcheck CMD redis-cli ping 5s/3s/10/5s); persistence disabled (D-03, no volumes entry); RepoDigest sha256:6ab0b6e7...1ab99
 - Plan 12-02: baseapi-service gains ConnectionStrings__Redis=redis:6379,abortConnect=false,connectTimeout=5000 (D-04 compose-DNS hostname, abortConnect=false boot-safety, no allowAdmin per T-12-02-04) + depends_on redis:service_healthy; runtime-verified healthy + PONG, host port 6379 confirmed UNBOUND (Plan 12-06 dead-port), git diff additions-only (T-12-02-06), HEALTH source files byte-unchanged (D-05/D-06)
 - Plan 12-03: Redis conn strings split Phase-2-style — appsettings.json prod redis:6379 (Docker DNS), appsettings.Development.json dev localhost:6380 (Plan 12-02 host port); BOTH carry abortConnect=false,connectTimeout=5000 (PITFALLS P2 soft-dep boot). Redis defaults section (KeyPrefix=skp:, Serialization.JsonOptions=default) in appsettings.json ONLY (D-15 YAGNI — no Database/CommandFlags/ConnectionString); Development does not override KeyPrefix (D-08 test-time override). No allowAdmin/ssl/password (T-12-03-03/P32/P3).
+- Plan 12-04: RedisProjectionOptions is public sealed (Phase 15 cross-assembly IOptions read); RedisServiceCollectionExtensions is internal static (same-assembly chain) — mirrors Persistence/Health extension visibility split
+- Plan 12-04: AddBaseApiRedis registers Singleton IConnectionMultiplexer via ConnectionMultiplexer.Connect(RequireConnectionString(Redis)) inside factory closure (D-14, safe due to abortConnect=false from 12-03); IDatabase NOT DI-registered (INFRA-COMP-03, consumers call multiplexer.GetDatabase()); Configure<RedisProjectionOptions>(GetSection Redis) binds options (INFRA-COMP-04)
+- Plan 12-04 deviation [Rule 3]: StackExchange.Redis PackageReference added to BaseApi.Core.csproj (CPM pin from 12-01 had no consuming project reference until this plan); [Rule 1]: AddBaseApiFacts in-memory config gained ConnectionStrings:Redis because call #7 fail-fasts on missing key
 
 ### Roadmap Milestone Log
 
@@ -350,8 +354,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T04:02:06.408Z
-Stopped at: Completed 12-03-PLAN.md
+Last session: 2026-05-29T04:15:34.544Z
+Stopped at: Completed 12-04-PLAN.md
 Resume file: None
 
 **Completed Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each — Run 1: 163s + Run 2: 161s + Run 3: 162s; byte-identical psql `\l` SHA-256 BEFORE/AFTER `0d98b0de57125b164489958eef5fc3da26969d18a7ef8bba845da02f20aac127`; zero leaked test DBs; zero orphan references in `src/**/*.cs` + `tests/**/*.cs` for retired Phase 5 symbols; all 4 new REQ-IDs closed — OBSERV-13, OBSERV-14, INFRA-08, TEST-07; OBSERV-12 superseded; INFRA-06 amendment locked in)
