@@ -124,9 +124,9 @@ Plans:
   5. Byte-identical `redis-cli --scan | sort | sha256sum` BEFORE = AFTER the full suite (new v3.3.0 analogue of the `psql \l` invariant); zero residual `test:cls-*` keys.
 > RESOLVED (Phase 16 Plan 01, 2026-05-29): SC2 above rewritten to the inverted Stop contract (post-Stop root + per-step removed, per-processor intact); the `redis-cli --scan` BEFORE=AFTER balanced-suite invariant in SC5 is unchanged and still holds.
 **Plans**: 5 plans
-- [ ] 16-01-PLAN.md — Doc-first amendment (D-05): rewrite REQUIREMENTS.md TEST-REDIS-09 + ROADMAP SC2/SC5 to the inverted Stop contract; resolve the flagged NOTE
-- [ ] 16-02-PLAN.md — TEST-REDIS-06 HappyPathE2EFacts: full-HTTP Start happy-path, 3-keyspace System.Text.Json round-trip
-- [ ] 16-03-PLAN.md — TEST-REDIS-07 GateNoWriteFacts: 3 HTTP gates each 422 + RFC 7807 + SCAN-zero no-write; Open Q2 missing-step arm resolved
+- [x] 16-01-PLAN.md — Doc-first amendment (D-05): rewrite REQUIREMENTS.md TEST-REDIS-09 + ROADMAP SC2/SC5 to the inverted Stop contract; resolve the flagged NOTE
+- [x] 16-02-PLAN.md — TEST-REDIS-06 HappyPathE2EFacts: full-HTTP Start happy-path, 3-keyspace System.Text.Json round-trip
+- [x] 16-03-PLAN.md — TEST-REDIS-07 GateNoWriteFacts: 3 HTTP gates each 422 + RFC 7807 + SCAN-zero no-write; Open Q2 missing-step arm resolved
 - [ ] 16-04-PLAN.md — TEST-REDIS-08 IdempotencyFacts (second-write-reflected + concurrent observational) + TEST-REDIS-09 thin StopScanFacts
 - [ ] 16-05-PLAN.md — D-06 phase-close gate: copy phase-16-close.{ps1,sh}, run 3-GREEN + dual-SHA BEFORE=AFTER
 **v3.2.0 invariants MUST NOT regress**: Phase 3 D-15 byte-identical `psql \l` SHA-256 no-leak; Phase 3 D-18 3-consecutive-GREEN phase-close cadence; Phase 11 D-03 no-traces-backend; all 11 Phase 1-11 success criteria (142/142 baseline must still GREEN); Mapperly RMG codes; `FLUSHDB` is FORBIDDEN in test cleanup; `KEYS`/`IServer.Keys()` are FORBIDDEN in production code (SCAN-only).
