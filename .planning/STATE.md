@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
 status: executing
-stopped_at: Completed 15-01-PLAN.md
-last_updated: "2026-05-29T14:09:03.043Z"
+stopped_at: Completed 15-02-PLAN.md
+last_updated: "2026-05-29T14:31:06.730Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 21
-  completed_plans: 17
-  percent: 81
+  completed_plans: 18
+  percent: 86
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
 Phase: 15 (l2-redis-projection-write-stop-existence-check) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [████████░░] 81%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -124,6 +124,7 @@ Progress: [████████░░] 81%
 | Phase 14 P04 | ~6min | 2 tasks | 2 files |
 | Phase 14 P05 | ~7min | 2 tasks | 2 files |
 | Phase 15 P01 | ~10min | 3 tasks | 10 files |
+| Phase 15 P02 | ~18min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -342,6 +343,9 @@ Recent decisions affecting current work:
 - Plan 15-01: RedisProjectionKeys is the single source of truth for the 3 flat L2 key formats — no discriminator, Root==Processor by design (D-02), hyphenated GUIDs
 - Plan 15-01: 4 projection records use [property: JsonPropertyName] on every positional member (Pitfall 1 guard); enum-as-int, no string-enum converter (L2-PROJECT-04); round-trip GREEN under default STJ options
 - Plan 15-01: ProcessorKeyTtlDays (int, default 100) added to RedisProjectionOptions + both appsettings; bound via existing cfg.GetSection(Redis) (D-08)
+- Plan 15-02: RedisProjectionWriter step payload uses FirstOrDefault->empty-string fallback (a step is NOT guaranteed an assignment per ENTITY-08); plan's verbatim .First() crashed valid no-assignment workflows (Rule 1)
+- Plan 15-02: when: When.Always disambiguates SE.Redis 2.13.1 StringSetAsync expiry overload from the Expiration/ValueCondition overload; added to processor SET only to keep expiry: exactly once
+- Plan 15-02: OrchestrationService.StartAsync passes string.Empty correlationId interim until Plan 04 wires X-Correlation-Id resolution (D-01); writer stays HTTP-agnostic
 
 ### Roadmap Milestone Log
 
@@ -435,8 +439,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T14:08:53.831Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-05-29T14:30:57.899Z
+Stopped at: Completed 15-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)

@@ -83,7 +83,8 @@
 
 ### L2-PROJECT — Redis projection writer
 
-- [ ] **L2-PROJECT-01** — `IRedisProjectionWriter.UpsertAsync(WorkflowGraphSnapshot)` writes three Redis key spaces using StackExchange.Redis `IDatabase` operations on a `CreateBatch()` pipeline. Atomicity is per-key SET (last-write-wins consistent with the locked concurrency decision); MULTI/EXEC NOT used (avoids server-blocking on large projections).
+- [x] **L2-PROJECT-01
+** — `IRedisProjectionWriter.UpsertAsync(WorkflowGraphSnapshot)` writes three Redis key spaces using StackExchange.Redis `IDatabase` operations on a `CreateBatch()` pipeline. Atomicity is per-key SET (last-write-wins consistent with the locked concurrency decision); MULTI/EXEC NOT used (avoids server-blocking on large projections).
 - [x] **L2-PROJECT-02
 ** — `RedisProjectionKeys` is the single source of truth for key formatters: `Root(workflowId)` → `"{prefix}{workflowId}"`; `Step(workflowId, stepId)` → `"{prefix}{workflowId}:{stepId}"`; `Processor(processorId)` → `"{prefix}{processorId}"`. All other code MUST format keys through this class.
 - [x] **L2-PROJECT-03
@@ -104,7 +105,8 @@
 ** — On any validation failure (existence / cycle / missing-step / schema-edge / payload-config-schema): 422 Unprocessable Entity with RFC 7807 Problem Details, `correlationId`, `instance`, and a structured `errors` extension that identifies the offending entity ids (workflowId / stepId pair / assignmentId).
 - [ ] **ORCH-START-04** — On Redis-side failure (`RedisConnectionException` / timeout): 500 with RFC 7807 + correlationId. L1 cleanup still runs in `finally`.
 - [ ] **ORCH-START-05** — **Idempotency (PUT-like)** — repeated Start with the same WorkflowIds re-runs the full pipeline and overwrites all L2 keys for those workflows. Returns 204 on each call. No staging-then-RENAME; plain `StringSetAsync` is sufficient because the value shape per key is whole-document (not partial).
-- [ ] **ORCH-START-06** — **Concurrency** — two concurrent Starts for the same WorkflowId interleave at the per-key SET level; last-write-wins on each key. NO Redis distributed lock. Documented behavior — a reader between the two writes may observe a mix of partial state across keys. Acceptable per locked concurrency decision.
+- [x] **ORCH-START-06
+** — **Concurrency** — two concurrent Starts for the same WorkflowId interleave at the per-key SET level; last-write-wins on each key. NO Redis distributed lock. Documented behavior — a reader between the two writes may observe a mix of partial state across keys. Acceptable per locked concurrency decision.
 - [ ] **ORCH-START-07** — `X-Correlation-Id` from the request propagates through the entire pipeline (existence → loader → validators → writer) and into all OTel log scopes + RFC 7807 error bodies. Phase 4 correlation invariant preserved.
 - [ ] **ORCH-START-08** — `OrchestrationController.Start` adds `[ProducesResponseType]` for 422 and 500 in addition to the existing 204 / 400; surfaces typed error shapes in Swagger.
 
