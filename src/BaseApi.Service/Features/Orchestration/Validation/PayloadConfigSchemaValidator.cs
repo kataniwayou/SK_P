@@ -66,7 +66,19 @@ internal sealed class PayloadConfigSchemaValidator
             JsonDocument? payloadDoc = null;
             try
             {
-                payloadDoc = JsonDocument.Parse(assignment.Payload);
+                // A malformed Assignment.Payload (e.g. empty string or non-JSON) would otherwise throw a
+                // raw JsonException — not an OrchestrationValidationException — and land as HTTP 500. A
+                // malformed payload is conceptually a payload-conformance failure, so translate it to the
+                // gate's 422 envelope instead, matching the create-side SchemaDtoValidator parse-guard.
+                try
+                {
+                    payloadDoc = JsonDocument.Parse(assignment.Payload);
+                }
+                catch (JsonException)
+                {
+                    throw OrchestrationValidationException.PayloadConfigSchema(
+                        assignment.Id, new[] { "Payload is not valid JSON." });
+                }
                 // JsonSchemaConfig.DefaultOptions reference fires the SSRF-locking cctor (Pitfall 3) and
                 // supplies OutputFormat.List so results.Details is the flat node list (T-14-09).
                 var results = schema.Evaluate(payloadDoc.RootElement, JsonSchemaConfig.DefaultOptions);
