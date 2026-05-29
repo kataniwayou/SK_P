@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.3.0
 milestone_name: Orchestration L3 → L1 → L2 Build Pipeline
-status: executing
-stopped_at: Completed 14-04-PLAN.md
-last_updated: "2026-05-29T11:18:59.339Z"
+status: verifying
+stopped_at: Completed 14-05-PLAN.md
+last_updated: "2026-05-29T11:27:07.041Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 16
-  completed_plans: 15
-  percent: 94
+  completed_plans: 16
+  percent: 100
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-05-28 for milestone v3.3.0 start; revise
 Milestone: v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) — STARTED 2026-05-28
 Phase: 14 (validation-gates-dfs-schema-edge-payload-config-schema) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-05-29
 
-Progress: [█████████░] 94%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -121,6 +121,7 @@ Progress: [█████████░] 94%
 | Phase 14 P02 | ~10min | 3 tasks | 3 files |
 | Phase 14 P03 | ~5min | 2 tasks | 2 files |
 | Phase 14 P04 | ~6min | 2 tasks | 2 files |
+| Phase 14 P05 | ~7min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -335,6 +336,7 @@ Recent decisions affecting current work:
 - Plan 14-05: L1-VALIDATE-09 — VALID-21 closes ONLY at orchestration-start; Assignment PUT/POST remain valid-JSON-only (AssignmentsIntegrationTests unchanged + GREEN). HTTP-write Payload↔Schema conformance is FUTURE-VALID-21-HTTP-WRITE (out of v3.3.0).
 - Plan 14-05: L1-VALIDATE-10 — TEST-03 (Testcontainers.PostgreSql) + TEST-04 (Respawn) remain DEFERRED; v3.3.0 does NOT close them. Recorded for traceability.
 - Plan 14-05: Gate order proven by ValidationOrderFacts multi-failure workflows (existence 404 → cycle → schema-edge → payload short-circuit) + L1 cleanup (snapshot.IsDisposed) on the 422 validation-failure path. D-04 split-Fallback (AddBaseApiFallbackHandler last in Program.cs) keeps Fallback last-walked; OrchestrationValidationExceptionHandler reachable → 422.
+- Plan 14-05: Gate order proven end-to-end by ValidationOrderFacts multi-failure workflows (existence 404 -> cycle -> schema-edge -> payload short-circuit) + L1 cleanup (snapshot.IsDisposed) on the 422 validation-failure path.
 
 ### Roadmap Milestone Log
 
@@ -428,8 +430,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T11:18:47.608Z
-Stopped at: Completed 14-04-PLAN.md
+Last session: 2026-05-29T11:27:07.031Z
+Stopped at: Completed 14-05-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)

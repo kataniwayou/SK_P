@@ -62,7 +62,8 @@
 
 - [x] **L1-VALIDATE-01
 ** — Validation runs in this exact order: existence → cycles → schema-edge compatibility → Payload↔ConfigSchema. Failure at any gate short-circuits with HTTP 422 + RFC 7807 + `X-Correlation-Id`. L1 cleanup still runs in the `finally` path.
-- [ ] **L1-VALIDATE-02** — **Existence gate**: re-uses the v3.2.0 `ValidateWorkflowIdsAsync` path. WorkflowIds not in Postgres → 422 with offending id list.
+- [x] **L1-VALIDATE-02
+** — **Existence gate**: re-uses the v3.2.0 `ValidateWorkflowIdsAsync` path. WorkflowIds not in Postgres → 422 with offending id list.
 - [x] **L1-VALIDATE-03
 ** — **Cycle-detection gate**: `CycleDetector` uses ITERATIVE DFS with an explicit stack/list (NOT recursive — recursion risks `StackOverflowException` which `IExceptionHandler` cannot catch). On each visit, check `visited.Contains(stepId)` BEFORE adding; if true, return cycle-detected 422 with the offending stepId chain.
 - [x] **L1-VALIDATE-04
@@ -75,8 +76,10 @@
 ** — **SSRF lockdown extension** — the new Payload validator MUST use a shared `JsonSchemaConfig.DefaultOptions` factory (or equivalent) that mirrors the Phase 8 SchemaEntity validator's SSRF-disabled `SchemaRegistry.Global.Fetch = (_, _) => null` setting. v3.2.0 SSRF defense-in-depth MUST NOT regress.
 - [x] **L1-VALIDATE-08
 ** — **Schema caching** — within a single Start request, parsed `JsonSchema` instances are cached in a `Dictionary<Guid, JsonSchema>` keyed by `Schema.Id`. Each schema is parsed at most once per Start. (JsonSchema.Net 2025 perf guidance: re-parsing is the slow path.)
-- [ ] **L1-VALIDATE-09** — **Closes deferred VALID-21 (orchestration-start scope only)** — Assignment-PUT and Assignment-POST endpoints remain "valid JSON only" (v3.2.0 behavior preserved). The Payload↔Schema conformance check happens ONLY at orchestration-start time, NOT at HTTP write time. VALID-21 from v2's deferred list closes for orchestration-start; the HTTP-write side is explicitly out of scope.
-- [ ] **L1-VALIDATE-10** — **Closes deferred TEST-03/TEST-04 status** — TEST-03 (Testcontainers.PostgreSql) and TEST-04 (Respawn) remain deferred to a future milestone; v3.3.0 does NOT close them. Documented for traceability.
+- [x] **L1-VALIDATE-09
+** — **Closes deferred VALID-21 (orchestration-start scope only)** — Assignment-PUT and Assignment-POST endpoints remain "valid JSON only" (v3.2.0 behavior preserved). The Payload↔Schema conformance check happens ONLY at orchestration-start time, NOT at HTTP write time. VALID-21 from v2's deferred list closes for orchestration-start; the HTTP-write side is explicitly out of scope.
+- [x] **L1-VALIDATE-10
+** — **Closes deferred TEST-03/TEST-04 status** — TEST-03 (Testcontainers.PostgreSql) and TEST-04 (Respawn) remain deferred to a future milestone; v3.3.0 does NOT close them. Documented for traceability.
 
 ### L2-PROJECT — Redis projection writer
 
