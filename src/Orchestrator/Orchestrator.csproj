@@ -22,6 +22,9 @@
   -->
 
   <PropertyGroup>
+    <!-- A runnable console host: top-level statements in Program.cs require an executable
+         output (CS8805) and the Generic Host RunAsync entry-point produces an .exe. -->
+    <OutputType>Exe</OutputType>
     <RootNamespace>Orchestrator</RootNamespace>
     <AssemblyName>Orchestrator</AssemblyName>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -31,6 +34,13 @@
   <ItemGroup>
     <PackageReference Include="MassTransit" />
     <PackageReference Include="MassTransit.RabbitMQ" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.NET.Sdk (worker) does NOT copy appsettings.json by default (unlike .Web).
+         The runnable console reads Service/RabbitMq/Redis/ConsoleHealth keys from it at boot,
+         so it must land next to the assembly. -->
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
