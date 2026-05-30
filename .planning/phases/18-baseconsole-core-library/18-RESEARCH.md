@@ -488,20 +488,25 @@ Not applicable — Phase 18 is a **greenfield code-only** phase (new library + n
 | A3 | The outbound filter sets `context.CorrelationId` (Guid) only when the ambient id is Guid-parseable; arbitrary HTTP string ids flow through the MEL scope but not the Guid envelope. | Pattern 5, OQ2 | MEDIUM — if Phase 20's synthetic harness asserts envelope `CorrelationId` for a non-Guid id, the filter must also/instead stamp a header. Flag for Phase 19/20 plan; does not block Phase 18 mechanics. |
 | A4 | `AddMassTransitTestHarness` uses the in-memory transport and requires no RabbitMQ, satisfying D-02 fact #6 standalone. | Validation Architecture | LOW — VERIFIED via Context7 + STACK.md; harness ships in core package. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three open questions are resolved by the locked plans 18-01..18-04. Each is annotated below with the plan/task that locks the decision.
 
 1. **Embedded health listener — how does the inner Kestrel's `/health/ready` see the outer MassTransit bus health check?**
    - What we know: D-04 mandates an independent `IHostedService`-hosted Kestrel; the MT `ready` check is auto-registered in the OUTER host DI; the inner listener has its own DI.
    - What's unclear: which of the three resolution options (register MT in inner DI / surface `IBusHealth` via a custom inner check / single container) the plan adopts.
    - Recommendation: prefer surfacing the outer `IBusHealth.CheckHealth()` through a small custom inner `IHealthCheck` tagged `"ready"`, OR register the bus health in the inner container — and add a `/health/ready`-reflects-bus-state test. This is the #1 thing for the planner to lock.
+   - **RESOLVED:** Plan 18-03 (Tasks 1-2) locks Option 2 — a custom inner `BusReadyHealthCheck : IHealthCheck` constructed with the OUTER `IServiceProvider`, resolving `IBusHealth.CheckHealth()` at check time and returning `HealthCheckResult.Unhealthy` when the bus is not resolvable/started, registered in the inner listener DI tagged `"ready"`. Plan 18-04 Task 2 proves the Unhealthy path (`BusReadyHealthCheck_Returns_Unhealthy_When_Bus_Not_Healthy`) and that `/health/live` stays self-only.
 
 2. **Correlation id type: `string` accessor vs `Guid` envelope.**
    - What we know: HTTP edge ids are arbitrary ASCII strings (often 32-hex); MT envelope `CorrelationId` is `Guid?`; D-01 stamps the envelope.
    - What's unclear: whether the Phase 20 synthetic send (and the real E2E) uses Guid-parseable ids so `context.CorrelationId` is set, or whether outbound correlation must also ride a header for non-Guid ids.
    - Recommendation: type the accessor `string?`; in the outbound filter, set `context.CorrelationId` when `Guid.TryParse` succeeds (and optionally also set a `"CorrelationId"` header for non-Guid fidelity). Confirm the harness assertion target in the Phase 18 filter test. Does not block Phase 18.
+   - **RESOLVED:** Plan 18-01 Task 3 (accessor) types it `string?` (`ICorrelationAccessor`/`AsyncLocalCorrelationAccessor`); Plan 18-02 Task 2 (outbound filter) stamps the `Guid` envelope only when `Guid.TryParse` succeeds, gated on `ICorrelated`. Plan 18-04 Task 3 asserts the envelope `CorrelationId` for a Guid-parseable id via the harness. Non-Guid header fidelity is deferred to Phase 19/20.
 
 3. **Redis options binding scope.** `RedisServiceCollectionExtensions` also binds `RedisProjectionOptions`. The console reads L2 in Phase 19 (Orchestrator), not Phase 18.
    - Recommendation: duplicate only the `IConnectionMultiplexer` singleton registration this phase; defer/optionally include the options binding. Confirm whether `BaseConsole.Core` needs `RedisProjectionOptions` (it likely does for Phase 19 reads, but Phase 18's library can register it harmlessly).
+   - **RESOLVED:** Plan 18-01 Task 3 duplicates only the soft-dep `IConnectionMultiplexer` singleton (`abortConnect=false`); the `RedisProjectionOptions` binding is dropped this phase (it is a Phase 19 Orchestrator L2-read concern). Proven boot-safe with a dead Redis port by Plan 18-04 Task 1's fixture.
 
 ## Environment Availability
 
