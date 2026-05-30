@@ -57,6 +57,13 @@ public class ConsoleTestHostFixture : IAsyncLifetime
     /// <summary>HttpClient pointing at the embedded listener (http://127.0.0.1:{HealthPort}).</summary>
     public HttpClient HttpClient { get; }
 
+    /// <summary>
+    /// Snapshot of every registered <see cref="ServiceDescriptor"/> captured immediately before Build().
+    /// Lets container-shape tests (e.g. CONSOLE-02 no-AspNetCore/Http-instrumentation) inspect what the
+    /// three-call seam actually registered without re-resolving the live provider.
+    /// </summary>
+    public IReadOnlyList<ServiceDescriptor> RegisteredDescriptors { get; }
+
     public ConsoleTestHostFixture()
     {
         HealthPort = FindFreeTcpPort();
@@ -67,6 +74,9 @@ public class ConsoleTestHostFixture : IAsyncLifetime
         builder.Configuration.AddInMemoryCollection(BuildConfig(HealthPort));
 
         ConfigureBuilder(builder);
+
+        // Capture the descriptor set BEFORE Build() so container-shape tests can inspect registrations.
+        RegisteredDescriptors = builder.Services.ToList();
 
         Host = builder.Build();
     }
