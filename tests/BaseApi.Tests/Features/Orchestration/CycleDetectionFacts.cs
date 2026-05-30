@@ -27,11 +27,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "14")]
-public sealed class CycleDetectionFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class CycleDetectionFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public CycleDetectionFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public CycleDetectionFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     /// <summary>
     /// Seeds a Processor (all schema FKs null so the schema-edge gate is a no-pass-through —

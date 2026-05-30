@@ -30,11 +30,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "13")]
-public sealed class StartCleanupFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class StartCleanupFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public StartCleanupFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public StartCleanupFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     /// <summary>
     /// Recording loader double — wraps the REAL <see cref="WorkflowGraphLoader"/>,

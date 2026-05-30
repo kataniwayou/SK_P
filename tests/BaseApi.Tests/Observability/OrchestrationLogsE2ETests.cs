@@ -37,12 +37,71 @@ namespace BaseApi.Tests.Observability;
 /// </summary>
 [Trait("Phase", "15")]
 [Trait("Category", "E2E")]
+[Trait("Category", "RealStack")]
 [Collection("Observability")]
-public sealed class OrchestrationLogsE2ETests : IClassFixture<Phase11WebAppFactory>
+public sealed class OrchestrationLogsE2ETests : IClassFixture<OrchestrationLogsE2ETests.RealBrokerLogsWebAppFactory>
 {
-    private readonly Phase11WebAppFactory _factory;
+    private readonly RealBrokerLogsWebAppFactory _factory;
 
-    public OrchestrationLogsE2ETests(Phase11WebAppFactory factory) => _factory = factory;
+    public OrchestrationLogsE2ETests(RealBrokerLogsWebAppFactory factory) => _factory = factory;
+
+    /// <summary>
+    /// Phase 20 (20-04 fix): this E2E asserts the WebApi's OWN request-lifecycle log (spanning the
+    /// Redis projection write) round-trips its <c>X-Correlation-Id</c> into Elasticsearch — it does
+    /// NOT assert orchestrator consumption. But the Start POST publishes <c>StartOrchestration</c> on
+    /// the bus, and the base <see cref="Phase11WebAppFactory"/> points the broker at the compose-DNS
+    /// host <c>rabbitmq:5672</c> (unresolvable from the host test process) → the publish hangs ~1m40s
+    /// → TestHost aborts the request. Unlike the pure feature facts, this test can't move to the
+    /// in-memory <c>HarnessWebAppFactory</c> (that lives on Phase8 and would lose Phase11's OTLP→ES +
+    /// 1s metric-export wiring this E2E needs). So we keep Phase11's full observability wiring and
+    /// only re-point the broker at the host-mapped port 5673 — mirroring the 20-03
+    /// <c>CorrelationPropagationE2ETests.RealStackWebAppFactory</c> broker override. Tagged
+    /// <c>Category=RealStack</c> to match its now-real-broker dependency.
+    /// </summary>
+    public sealed class RealBrokerLogsWebAppFactory : Phase11WebAppFactory
+    {
+        private readonly Dictionary<string, string?> _prior = new();
+
+        public RealBrokerLogsWebAppFactory()
+        {
+            try
+            {
+                // Broker only: reach the host-mapped broker (compose maps host 5673 -> container 5672)
+                // so the Start publish completes instead of hanging on the unresolvable rabbitmq:5672.
+                // Postgres/Redis stay on Phase11's throwaway fixtures — this test reads its OWN logs
+                // from ES, not orchestrator state, so it needs no host DB/Redis. OTLP is already
+                // pinned to http://localhost:4317 by the Phase11WebAppFactory ctor.
+                Set("RabbitMq__Host", "localhost");
+                Set("RabbitMq__Port", "5673");
+                Set("RabbitMq__Username", "guest");
+                Set("RabbitMq__Password", "guest");
+            }
+            catch
+            {
+                Restore();
+                throw;
+            }
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            try { Restore(); } finally { await base.DisposeAsync(); }
+        }
+
+        private void Set(string key, string? value)
+        {
+            _prior[key] = Environment.GetEnvironmentVariable(key);
+            Environment.SetEnvironmentVariable(key, value);
+        }
+
+        private void Restore()
+        {
+            foreach (var kv in _prior)
+            {
+                Environment.SetEnvironmentVariable(kv.Key, kv.Value);
+            }
+        }
+    }
 
     // ---- HTTP seeding helpers (Processor → Step → Workflow) — minimal known-good graph ----
 

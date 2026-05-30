@@ -27,11 +27,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "14")]
-public sealed class SchemaEdgeFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class SchemaEdgeFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public SchemaEdgeFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public SchemaEdgeFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     /// <summary>Minimal valid draft-2020-12 schema body — type:object accepts any object payload.</summary>
     private const string MinimalSchema = "{\"type\":\"object\"}";

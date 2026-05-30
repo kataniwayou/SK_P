@@ -24,11 +24,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "16")]
-public sealed class StopScanFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class StopScanFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public StopScanFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public StopScanFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     // ---- HTTP seeding helpers (Processor → Step → Workflow) ----
 

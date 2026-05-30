@@ -36,11 +36,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// below asserts the observable consequence of that invariant (a non-Upserted workflowId has zero keys).
 /// </summary>
 [Trait("Phase", "16")]
-public sealed class GateNoWriteFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class GateNoWriteFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public GateNoWriteFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public GateNoWriteFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     /// <summary>A constraining draft-2020-12 schema: object requiring a STRING property "foo".</summary>
     private const string ConstrainingSchema =

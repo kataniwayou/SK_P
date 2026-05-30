@@ -13,7 +13,9 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// <summary>
 /// Phase 9 REQ-3 + REQ-5 + REQ-6 integration tests for
 /// <c>POST /api/v1/orchestration/start</c>. Uses
-/// <see cref="Phase8WebAppFactory"/> per CONTEXT D-20.
+/// <see cref="HarnessWebAppFactory"/> (D-01 in-memory bus swap) so the happy-path
+/// publish completes in-process instead of hanging on the real broker; the validation
+/// facts (400/404) short-circuit before publish either way.
 /// <para>
 /// <b>5 facts (REQ-3 happy + REQ-5 validation x 3 + REQ-6 existence):</b>
 /// <list type="number">
@@ -32,11 +34,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "9")]
-public sealed class StartOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class StartOrchestrationFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public StartOrchestrationFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public StartOrchestrationFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     /// <summary>
     /// Seeds a Workflow via the public HTTP API (Processor → Step → Workflow chain).

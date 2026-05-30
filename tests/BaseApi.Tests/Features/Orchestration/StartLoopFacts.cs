@@ -30,11 +30,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "15")]
-public sealed class StartLoopFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class StartLoopFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public StartLoopFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public StartLoopFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     // ---- HTTP seeding helpers (Processor → Step → Workflow) ----
 

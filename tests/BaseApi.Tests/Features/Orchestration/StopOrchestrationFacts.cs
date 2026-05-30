@@ -23,11 +23,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "15")]
-public sealed class StopOrchestrationFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class StopOrchestrationFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public StopOrchestrationFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public StopOrchestrationFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     private static async Task<Guid> SeedWorkflowAsync(HttpClient client, CancellationToken ct)
     {

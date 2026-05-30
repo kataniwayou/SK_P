@@ -61,11 +61,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "14")]
-public sealed class ValidationOrderFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class ValidationOrderFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public ValidationOrderFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public ValidationOrderFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     /// <summary>A constraining draft-2020-12 schema: object requiring a STRING property "foo".</summary>
     private const string ConstrainingSchema =

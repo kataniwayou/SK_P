@@ -30,11 +30,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "16")]
-public sealed class HappyPathE2EFacts : IClassFixture<Phase8WebAppFactory>
+public sealed class HappyPathE2EFacts : IClassFixture<HarnessWebAppFactory>
 {
-    private readonly Phase8WebAppFactory _factory;
+    private readonly HarnessWebAppFactory _factory;
 
-    public HappyPathE2EFacts(Phase8WebAppFactory factory) => _factory = factory;
+    public HappyPathE2EFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     // ---- HTTP seeding helpers (Schema → Processor(in/out) → Step → Workflow) ----
 
