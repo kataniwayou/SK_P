@@ -6,7 +6,9 @@ using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Observability.Helpers;
 using BaseApi.Tests.TestHelpers;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace BaseApi.Tests.Orchestrator;
@@ -90,10 +92,16 @@ public sealed class CorrelationPropagationE2ETests
 
         using var es = new ElasticsearchTestClient();
 
-        // 1. Find the Orchestrator SEAM doc and read back its body-minted Guid (G1). match_phrase on
-        //    the DISTINCT start-seam string so the Stop seam cannot be conflated; require the doc to
-        //    carry attributes.CorrelationId (the inbound filter's body scope). Sort newest-first so a
-        //    re-run picks the latest seam.
+        // 1. Find the Orchestrator SEAM doc and read back its body-minted Guid (G1).
+        //    Discover by the WorkflowId the test itself seeded (a clean term-queryable attribute) on
+        //    the ORCHESTRATOR service, requiring the doc to carry attributes.CorrelationId (the
+        //    inbound filter's body scope). The success path emits exactly one orchestrator log for
+        //    this fresh wfId — the seam — so this is unambiguous. Sort newest-first defensively.
+        //    NOTE: we do NOT query the "body" field — otel maps the message under the nested
+        //    "body.text" object, which is not phrase-searchable; the proven precedent
+        //    (OrchestrationLogsE2ETests) queries attributes via `term`. The distinct seam STRING is
+        //    asserted in C# below via GetRawText() (which includes body.text + {OriginalFormat}),
+        //    keeping the Stop-seam-cannot-be-conflated guarantee.
         var seamQuery = $$"""
           {
             "size": 5,
@@ -101,7 +109,8 @@ public sealed class CorrelationPropagationE2ETests
             "query": {
               "bool": {
                 "must": [
-                  { "match_phrase": { "body": "{{SeamMessage}}" } },
+                  { "term": { "attributes.WorkflowId": "{{wfId}}" } },
+                  { "term": { "resource.attributes.service.name": "orchestrator" } },
                   { "exists": { "field": "{{EsIndexNames.CorrelationIdFieldPath}}" } }
                 ]
               }
@@ -111,7 +120,11 @@ public sealed class CorrelationPropagationE2ETests
         var seam = await es.PollEsForLog(seamQuery, timeoutMs: PollTimeoutMs, ct: ct);
         Assert.NotNull(seam);
 
-        var bodyGuid = ExtractCorrelationId(seam!.Value);
+        // Confirm the matched orchestrator doc is the SUCCESS seam (distinct from the Stop seam and
+        // the "absent from L2" business-failure warning) — semantic guard on the message text.
+        Assert.Contains(SeamMessage, seam!.Value.GetRawText());
+
+        var bodyGuid = ExtractCorrelationId(seam.Value);
         Assert.False(
             string.IsNullOrEmpty(bodyGuid),
             "the orchestrator seam doc must carry attributes.CorrelationId (the body-minted Guid)");
@@ -121,8 +134,11 @@ public sealed class CorrelationPropagationE2ETests
         Assert.NotEqual(httpCorr, bodyGuid);
 
         // 2. Find the WebApi PUBLISHED (D-07) doc under the SAME body Guid: a term on
-        //    attributes.CorrelationId DIRECTLY (Pitfall 4 — never .keyword) AND the publish text.
-        //    Both docs surfacing under the SAME G1 proves equality across the stage boundary.
+        //    attributes.CorrelationId DIRECTLY (Pitfall 4 — never .keyword), scoped to the WebApi
+        //    service (sk-api) so the orchestrator's own G1-scoped seam doc cannot satisfy it. Both
+        //    docs surfacing under the SAME G1 proves equality across the stage boundary. The publish
+        //    message text is asserted in C# (GetRawText covers body.text + {OriginalFormat}) rather
+        //    than as an ES `match_phrase` on the nested "body" object (not phrase-searchable).
         var publishedQuery = $$"""
           {
             "size": 5,
@@ -130,7 +146,7 @@ public sealed class CorrelationPropagationE2ETests
               "bool": {
                 "must": [
                   { "term": { "{{EsIndexNames.CorrelationIdFieldPath}}": "{{bodyGuid}}" } },
-                  { "match_phrase": { "body": "{{PublishedMessage}}" } }
+                  { "term": { "resource.attributes.service.name": "sk-api" } }
                 ]
               }
             }
@@ -139,9 +155,14 @@ public sealed class CorrelationPropagationE2ETests
         var published = await es.PollEsForLog(publishedQuery, timeoutMs: PollTimeoutMs, ct: ct);
         Assert.NotNull(published);
 
-        var publishedGuid = ExtractCorrelationId(published!.Value);
-        Assert.Equal(bodyGuid, publishedGuid);
-        Assert.Contains(PublishedMessage, published.Value.GetRawText());
+        // EQUALITY proof: the publishedQuery filters `term attributes.CorrelationId == bodyGuid`, so a
+        // returned hit cryptographically carries the SAME G1 the orchestrator seam doc carried — that
+        // term match IS the cross-stage equality (mirrors the proven OrchestrationLogsE2ETests pattern,
+        // which asserts NotNull + Contains rather than re-extracting). Confirm the body Guid and the
+        // publish message text are both present in the matched doc's raw source.
+        var publishedRaw = published!.Value.GetRawText();
+        Assert.Contains(bodyGuid!, publishedRaw);
+        Assert.Contains(PublishedMessage, publishedRaw);
     }
 
     /// <summary>
@@ -150,22 +171,43 @@ public sealed class CorrelationPropagationE2ETests
     /// <see cref="EsIndexNames.CorrelationIdFieldPath"/>); a defensive flat-key fallback is included.
     /// Returns null if absent.
     /// </summary>
-    private static string? ExtractCorrelationId(JsonElement source)
+    private static string? ExtractCorrelationId(JsonElement hitOrSource)
     {
-        if (source.TryGetProperty("attributes", out var attrs) &&
+        // PollEsForLog returns the whole ES hit ({_index,_id,_source,sort}); descend into _source
+        // when present so we read the real attributes object rather than the hit envelope.
+        var root = hitOrSource;
+        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("_source", out var src))
+        {
+            root = src;
+        }
+
+        if (root.TryGetProperty("attributes", out var attrs) &&
             attrs.ValueKind == JsonValueKind.Object &&
             attrs.TryGetProperty("CorrelationId", out var corr))
         {
-            return corr.ValueKind == JsonValueKind.String ? corr.GetString() : corr.ToString();
+            return ReadStringScalar(corr);
         }
 
-        if (source.TryGetProperty("attributes.CorrelationId", out var flat))
+        // Defensive flat-key fallback (some otel mapping modes flatten dotted keys).
+        if (root.TryGetProperty("attributes.CorrelationId", out var flat))
         {
-            return flat.ValueKind == JsonValueKind.String ? flat.GetString() : flat.ToString();
+            return ReadStringScalar(flat);
         }
 
         return null;
     }
+
+    /// <summary>
+    /// Reads a single string from an ES field that may be a String or (when a property is stamped by
+    /// more than one source — e.g. a structured log property AND a log scope) an Array. Returns the
+    /// first array element, avoiding the concatenated/duplicated value a naive ToString() produces.
+    /// </summary>
+    private static string? ReadStringScalar(JsonElement el) => el.ValueKind switch
+    {
+        JsonValueKind.String => el.GetString(),
+        JsonValueKind.Array => el.GetArrayLength() > 0 ? el[0].GetString() : null,
+        _ => el.ToString(),
+    };
 
     // ---- HTTP seeding helpers (Processor → Step → Workflow) — mirrors OrchestrationLogsE2ETests ----
 
@@ -268,6 +310,28 @@ public sealed class CorrelationPropagationE2ETests
                 Restore();
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Phase 20 (20-03 fix): align the in-process WebApi's L2 key prefix with the orchestrator
+        /// CONTAINER's prefix ("skp:"). <see cref="Composition.Phase8WebAppFactory"/> forces
+        /// <c>Redis:KeyPrefix = "test:&lt;namespace&gt;"</c> for parallel-class L2 isolation, but the
+        /// orchestrator reads "skp:" (its appsettings). Without this override the WebApi writes the L2
+        /// root under <c>test:…:wf:{id}:root</c> while the orchestrator looks under
+        /// <c>skp:wf:{id}:root</c> → it logs "absent from L2 — business failure, acking" instead of the
+        /// success seam, and the proof never appears. Added AFTER <c>base.ConfigureWebHost</c> so this
+        /// in-memory source overrides the base's test-prefix entry (last source wins).
+        /// </summary>
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            base.ConfigureWebHost(builder);
+            builder.ConfigureAppConfiguration((_, cfg) =>
+            {
+                cfg.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["Redis:KeyPrefix"] = "skp:",
+                });
+            });
         }
 
         private const string HostRedis = "localhost:6380,abortConnect=false,connectTimeout=5000";
