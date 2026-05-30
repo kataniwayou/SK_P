@@ -4,11 +4,11 @@
 
 - ✅ **v3.2.0 Steps API MVP** — Phases 1-11 (shipped 2026-05-28) — see [milestones/v3.2.0-ROADMAP.md](milestones/v3.2.0-ROADMAP.md)
 - ✅ **v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline** — Phases 12-16 (shipped 2026-05-29) — see [milestones/v3.3.0-ROADMAP.md](milestones/v3.3.0-ROADMAP.md)
-- 🚧 **v3.4.0 BaseConsole + Orchestrator Messaging** — Phases 17-20 (active, started 2026-05-30)
+- 🚧 **v3.4.0 BaseConsole + Orchestrator Messaging** — Phases 17-21 (active, started 2026-05-30)
 
 ## Active Milestone: v3.4.0 — BaseConsole + Orchestrator Messaging
 
-**Granularity:** standard · **Phases:** 4 (17-20) · **Coverage:** 37/37 requirements (35 P1 + 2 P2)
+**Granularity:** standard · **Phases:** 5 (17-21; Phase 21 = post-audit gap-closure hardening) · **Coverage:** 40/40 requirements (35 P1 + 2 P2 + 3 hardening)
 
 **Goal:** Stand up a reusable `BaseConsole.Core` Generic-Host library (the console-side mirror of `BaseApi.Core`) and a first `Orchestrator` console that inherits it, connected to the web API over MassTransit/RabbitMQ, with **per-stage CorrelationId observability** proven across stage boundaries: the HTTP `X-Correlation-Id` scopes the request through the L2 write and publish; a **fresh `Guid CorrelationId` minted at publish and carried on the message body via `ICorrelated.CorrelationId`** rides the fan-out message to the Orchestrator, which opens the identical `"CorrelationId"` log scope from that body id and surfaces it in Elasticsearch. Each stage owns its correlationId with a clean handoff at the publish boundary; the HTTP `X-Correlation-Id` is **not** persisted in the L2 root. The milestone stops cleanly at the "scheduler job start" log seam — the next stage (deferred) would mint its own job-trigger correlationId — no Quartz, no round-trip, no Orchestrator Redis writes.
 
@@ -97,6 +97,18 @@ Plans:
 - [x] 20-04-PLAN.md — Triple-SHA close gate (psql+redis+rabbitmq) + 3 smell fixes + 3x-GREEN closeout (TEST-RMQ-04/05)
 **UI hint**: no
 
+### Phase 21: v3.4.0 Closeout Hygiene (gap-closure)
+**Goal**: Close the non-blocking code-hygiene items surfaced by the v3.4.0 milestone audit — the embedded console health-listener lifecycle/robustness gaps and the duplicated L2 key shape across the WebApi→Orchestrator boundary — so the messaging foundation is maintainable before the Processor milestone builds on it.
+**Depends on**: Phase 20 (milestone code complete; this hardens it)
+**Requirements**: HARDEN-01, HARDEN-02, HARDEN-03
+**Gap Closure**: Closes tech-debt items WR-01, WR-02, and cross-phase WARNING-1 from `.planning/milestones/v3.4.0-MILESTONE-AUDIT.md` (no blocking gaps existed; this is opt-in hardening).
+**Success Criteria** (what must be TRUE):
+  1. (HARDEN-01 / WR-01) `EmbeddedHealthEndpointService.StopAsync` disposes the inner `WebApplication` (calls `DisposeAsync` after `StopAsync`), so the inner DI container, Kestrel server, and TCP socket are released deterministically on shutdown — no reliance on the finalizer. A test asserts clean disposal (no leaked listener / port still bound after stop).
+  2. (HARDEN-02 / WR-02) The embedded Kestrel listener isolates bind failure: a port collision on `ConsoleHealth:Port` surfaces as a logged, contained startup failure (or a clearly-reported fatal) rather than an unhandled exception escaping `Host.StartAsync`. Behavior proven by a test that binds the port first, then asserts the documented failure mode.
+  3. (HARDEN-03 / WARNING-1) The L2 root key shape is a single source of truth: the `Root(prefix, workflowId)` computation is hoisted into `Messaging.Contracts` (or otherwise shared) and consumed by BOTH `RedisProjectionKeys` (writer) and `OrchestratorL2Keys` (reader), so a future GUID-format/suffix change cannot silently desynchronize writer and reader. The existing full suite (incl. `CorrelationPropagationE2ETests`) stays GREEN and the triple-SHA close gate still exits 0.
+**Plans**: TBD (run `/gsd-plan-phase 21`)
+**UI hint**: no
+
 ### Coverage (v3.4.0)
 
 ✓ All 37 milestone requirements mapped to exactly one phase (35 P1 + 2 P2)
@@ -115,7 +127,8 @@ Plans:
 | INFRA-RMQ (02, 03) | 2 | 19 |
 | CORR (03, 04) | 2 | 20 |
 | TEST-RMQ (01-05) | 5 | 20 |
-| **Total** | **37** | **17-20** |
+| HARDEN (01-03, audit gap-closure) | 3 | 21 |
+| **Total** | **40** | **17-21** |
 
 ## Phases (shipped milestones)
 
@@ -165,6 +178,7 @@ Plans:
 | 18    | v3.4.0    | 4/4 | Complete    | 2026-05-30 |
 | 19    | v3.4.0    | 4/4 | Complete    | 2026-05-30 |
 | 20    | v3.4.0    | 4/4            | Complete    | 2026-05-31 |
+| 21    | v3.4.0    | 0/?            | Planned     | -          |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 (BaseConsole + Orchestrator Messaging) roadmap created 2026-05-30 — 4 phases (17-20), 37 requirements, dependency-ordered per HIGH-confidence research (`.planning/research/SUMMARY.md`). Next: `/gsd-plan-phase 17`.*

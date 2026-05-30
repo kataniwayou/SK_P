@@ -99,6 +99,14 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 - [x] **TEST-RMQ-04**: Test receive endpoints use temporary/auto-delete, per-test-class-prefixed queues; NO global queue purge in teardown (the `FLUSHDB`-ban analog).
 - [ ] **TEST-RMQ-05**: The phase-close gate is extended to a triple-SHA snapshot — `psql \l` + `redis-cli --scan` + `rabbitmqctl list_queues name` — asserting BEFORE=AFTER, alongside the 3-consecutive-GREEN cadence. [F12]
 
+### Closeout Hardening (Phase 21 — post-audit gap-closure)
+
+Added 2026-05-31 from the v3.4.0 milestone audit (`milestones/v3.4.0-MILESTONE-AUDIT.md`). These close non-blocking tech-debt items, not blocking gaps — the milestone's 37 functional requirements were all satisfied. Tracked here so the hardening is accounted for rather than lost.
+
+- [ ] **HARDEN-01** (WR-01): `EmbeddedHealthEndpointService.StopAsync` disposes the inner `WebApplication` (`DisposeAsync` after `StopAsync`) so the inner DI container / Kestrel / TCP socket are released deterministically on shutdown — not left to the finalizer.
+- [ ] **HARDEN-02** (WR-02): The embedded console health Kestrel listener isolates bind failure — a port collision on `ConsoleHealth:Port` surfaces as a logged, contained failure (or a clearly-reported fatal) instead of an unhandled exception escaping `Host.StartAsync`.
+- [ ] **HARDEN-03** (WARNING-1): The L2 root key shape (`Root(prefix, workflowId)`) is a single shared source of truth consumed by both the writer (`RedisProjectionKeys`) and the reader (`OrchestratorL2Keys`), so a future GUID-format/suffix change cannot silently desynchronize them.
+
 ## Future Requirements (Processor milestone, v3.5.x+)
 
 Deferred. Tracked, not in this roadmap.
@@ -177,13 +185,16 @@ Which phases cover which requirements. Filled by the roadmapper.
 | TEST-RMQ-03 | Phase 20 | Done |
 | TEST-RMQ-04 | Phase 20 | Done |
 | TEST-RMQ-05 | Phase 20 | Pending |
+| HARDEN-01 | Phase 21 | Pending |
+| HARDEN-02 | Phase 21 | Pending |
+| HARDEN-03 | Phase 21 | Pending |
 
 **Coverage:**
-- Milestone requirements: 37 total — 35 P1 + 2 P2 (`MSG-ACK-03`, `MSG-ACK-04`)
-- Mapped to phases: 37 (100% — Phase 17: 5 · Phase 18: 11 · Phase 19: 14 · Phase 20: 7)
+- Milestone requirements: 40 total — 35 P1 + 2 P2 (`MSG-ACK-03`, `MSG-ACK-04`) + 3 hardening (`HARDEN-01..03`, Phase 21 gap-closure)
+- Mapped to phases: 40 (100% — Phase 17: 5 · Phase 18: 11 · Phase 19: 14 · Phase 20: 7 · Phase 21: 3)
 - Unmapped: 0 ✓ (every requirement maps to exactly one phase; no orphans, no duplicates)
 
-> By category: MSG-CONTRACTS 4 · CONSOLE 5 · CONSOLE-HEALTH 4 · MSG-WEBAPI 4 · ORCH-CON 4 · CORR 4 · MSG-ACK 4 · INFRA-RMQ 3 · TEST-RMQ 5 = 37. Future and Out-of-Scope items are not counted.
+> By category: MSG-CONTRACTS 4 · CONSOLE 5 · CONSOLE-HEALTH 4 · MSG-WEBAPI 4 · ORCH-CON 4 · CORR 4 · MSG-ACK 4 · INFRA-RMQ 3 · TEST-RMQ 5 · HARDEN 3 = 40. Future and Out-of-Scope items are not counted.
 
 ---
 *Requirements defined: 2026-05-30*
