@@ -22,16 +22,19 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 - [ ] **CONSOLE-01**: A reusable `BaseConsole.Core` class library provides a Generic-Host composition root (`AddBaseConsole`/`RunAsync` equivalent) that a concrete console wires in a handful of lines (mirrors `AddBaseApi`/`UseBaseApi`).
 - [ ] **CONSOLE-02**: `BaseConsole.Core` configures console-flavored OpenTelemetry — MEL-bridge logs + runtime metrics + MassTransit meter (`InstrumentationOptions.MeterName`) via OTLP — with NO AspNetCore/HttpClient instrumentation and NO `.WithTracing` (no traces backend, preserving Phase 11 D-03).
-- [ ] **CONSOLE-03**: `BaseConsole.Core` registers a singleton `IConnectionMultiplexer` Redis client as a soft dependency (`abortConnect=false`), lifted from the `BaseApi.Core` pattern.
+- [x] **CONSOLE-03
+**: `BaseConsole.Core` registers a singleton `IConnectionMultiplexer` Redis client as a soft dependency (`abortConnect=false`), lifted from the `BaseApi.Core` pattern.
 - [ ] **CONSOLE-04**: `BaseConsole.Core` provides a MassTransit bus skeleton (`AddBaseConsoleMessaging(cfg, configureConsumers)`) that wires the RabbitMQ host + global outbound correlation filter and accepts a concrete callback to register consumers/receive endpoints (base = infra, concrete = consumers — mirrors `AddBaseApi` vs `AddAppFeatures`).
-- [ ] **CONSOLE-05**: `BaseConsole.Core` references `Microsoft.AspNetCore.App` via `FrameworkReference` (stays a library, not the Web SDK); only the runnable `Orchestrator` is the executable host.
+- [x] **CONSOLE-05
+**: `BaseConsole.Core` references `Microsoft.AspNetCore.App` via `FrameworkReference` (stays a library, not the Web SDK); only the runnable `Orchestrator` is the executable host.
 
 ### Console Health Probes (embedded HTTP)
 
 - [ ] **CONSOLE-HEALTH-01**: A console built on `BaseConsole.Core` exposes `/health/live`, `/health/ready`, `/health/startup` over an embedded minimal HTTP listener hosted inside the Generic Host (`MapHealthChecks` is `WebApplication`-only → inner minimal Kestrel in a hosted service).
 - [ ] **CONSOLE-HEALTH-02**: `/health/live` returns 200 without touching RabbitMQ or Redis (tag discipline: live → self only), even when both are down.
 - [ ] **CONSOLE-HEALTH-03**: `/health/ready` reports Healthy only once the MassTransit bus has started (reuses MassTransit's auto-registered `ready`-tagged bus health check — no hand-rolled latch) and Unhealthy while the broker is unreachable.
-- [ ] **CONSOLE-HEALTH-04**: `IStartupGate` + `StartupHealthCheck` are duplicated into `BaseConsole.Core` (no `BaseConsole.Core → BaseApi.Core` dependency that would drag EF Core/MVC into a worker). [F11]
+- [x] **CONSOLE-HEALTH-04
+**: `IStartupGate` + `StartupHealthCheck` are duplicated into `BaseConsole.Core` (no `BaseConsole.Core → BaseApi.Core` dependency that would drag EF Core/MVC into a worker). [F11]
 
 ### WebApi Bus Integration (publisher / fan-out)
 

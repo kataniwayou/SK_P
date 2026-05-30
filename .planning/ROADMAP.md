@@ -56,7 +56,7 @@
   4. `AddBaseConsoleMessaging(cfg, configureConsumers)` wires the RabbitMQ host + the bus-wide outbound correlation send/publish filters and accepts a concrete callback for consumers/receive endpoints (base = infra, concrete = consumers).
   5. The inbound consume filter resolves the correlation value, pushes it into an AsyncLocal accessor, and opens a MEL log scope under the literal `"CorrelationId"` key; the outbound filter stamps the ambient correlationId onto every outgoing `ICorrelated` message.
 **Plans**: 4 plans
-  - [ ] 18-01-PLAN.md — Create BaseConsole.Core project + sln entry + foundational primitives (csproj/FrameworkReference, RequiredConfig, startup gate trio, Phase-5 StartupCompletionService, soft-dep Redis, AsyncLocal correlation accessor)
+  - [x] 18-01-PLAN.md — Create BaseConsole.Core project + sln entry + foundational primitives (csproj/FrameworkReference, RequiredConfig, startup gate trio, Phase-5 StartupCompletionService, soft-dep Redis, AsyncLocal correlation accessor)
   - [ ] 18-02-PLAN.md — Console OTel (metrics-only, no traces) + the three correlation filters + AddBaseConsoleMessaging bus skeleton wiring filters bus-wide
   - [ ] 18-03-PLAN.md — Embedded minimal-Kestrel health listener (/live|ready|startup) + BusReadyHealthCheck bridge + ConsoleHealth registration + non-generic AddBaseConsole root
   - [ ] 18-04-PLAN.md — ConsoleTestHostFixture + five Console validation test classes (D-02 six proof points) + dual-SHA 3-consecutive close gate

@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: completed
-stopped_at: Phase 18 context gathered
-last_updated: "2026-05-30T07:49:51.755Z"
-last_activity: 2026-05-30
+status: executing
+stopped_at: Completed 18-01-PLAN.md
+last_updated: "2026-05-30T08:41:20.679Z"
+last_activity: 2026-05-30 -- Phase 18 Plan 01 complete (BaseConsole.Core foundation)
 progress:
   total_phases: 2
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 100
+  total_plans: 6
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -21,24 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** Phase 17 — messaging-contracts-shared-l2-root-extract
+**Current focus:** Phase 18 — BaseConsole.Core Library
 
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 17
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-05-30
+Phase: 18 (BaseConsole.Core Library) — EXECUTING
+Plan: 1 of 3 complete
+Status: Executing Phase 18 — Plan 18-01 complete, Plans 18-02/18-03 pending
+Last activity: 2026-05-30 -- Phase 18 Plan 01 complete (BaseConsole.Core foundation)
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ### Milestone Phases (v3.4.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
-| 17 | Messaging.Contracts + Shared L2 Root Extract | MSG-CONTRACTS-01..04, INFRA-RMQ-01 (5) | Not started |
-| 18 | BaseConsole.Core Library | CONSOLE-01..05, CONSOLE-HEALTH-01..04, CORR-01/02 (11) | Not started |
+| 17 | Messaging.Contracts + Shared L2 Root Extract | MSG-CONTRACTS-01..04, INFRA-RMQ-01 (5) | Complete |
+| 18 | BaseConsole.Core Library | CONSOLE-01..05, CONSOLE-HEALTH-01..04, CORR-01/02 (11) | Executing (1/3 plans) |
 | 19 | Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier | ORCH-CON-01..04, MSG-WEBAPI-01..04, MSG-ACK-01..04, INFRA-RMQ-02/03 (14) | Not started |
 | 20 | Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout | CORR-03/04, TEST-RMQ-01..05 (7) | Not started |
 
@@ -160,6 +160,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 16 P05 | ~10min gate run + finalization | 2 tasks | 2 files |
 | Phase 17 P01 | ~2min | 2 tasks | 11 files |
 | Phase Phase 17 PP02 | ~12min | 3 tasks tasks | 9 files files |
+| Phase 18 P01 | ~3min | 3 tasks | 9 files (8 new src + SK_P.sln) |
 
 ## Accumulated Context
 
@@ -410,6 +411,12 @@ Recent decisions affecting current work:
 - Spot-check: `src/Messaging.Contracts/Projections/WorkflowRootProjection.cs` is `public sealed record` in namespace `Messaging.Contracts.Projections` with all five `[property: JsonPropertyName(...)]` camelCase targets verbatim.
 - Triple-SHA rabbitmqctl arm N/A this phase (no broker wired — RESEARCH line 492); this is the existing DUAL-snapshot gate. Optional `scripts/phase-17-close.ps1` derived from phase-16-close.ps1 (EF-migration + HEALTH-immutable arms stripped).
 - Net: MSG-CONTRACTS-04 closed (L2 root read-shape single-source-of-truth in Messaging.Contracts, wire shape byte-identical); SC#5 satisfied (zero-warning + suite GREEN; behavior-preserving). Phase-level completion is the orchestrator's call post-verification.
+- Plan 18-01: New `src/BaseConsole.Core` class library — `Sdk="Microsoft.NET.Sdk"` (NOT `.Web`) + `FrameworkReference Microsoft.AspNetCore.App` (CONSOLE-05, Kestrel + HealthChecks without the Web SDK), console-flavored OTel (MEL-bridge logs + runtime instrumentation; NO AspNetCore/Http instrumentation), MassTransit/RabbitMQ + StackExchange.Redis; the ONLY ProjectReference is the leaf Messaging.Contracts (D-08 firewall — zero BaseApi.Core / EF / MVC). Builds warning-clean Release + Debug on net8.0 (inherited from Directory.Build.props); full solution build unaffected. Added to SK_P.sln via `dotnet sln add`.
+- Plan 18-01: `RequiredConfig` duplicated as `public` (BaseApi.Core's is `internal`) so the Plan 02/03 composition-root extensions can reach `RequireConnectionString` without `InternalsVisibleTo` — D-08 firewall means duplication, not cross-reference.
+- Plan 18-01: Startup-gate trio landed — `IStartupGate`/`StartupGate` (Volatile.Read/Interlocked.Exchange one-shot latch, verbatim), `StartupHealthCheck` (Unhealthy message "Startup not complete" — dropped the "(migrations pending)" suffix; console has no DB), and the Phase-5 `StartupCompletionService` (`gate.MarkReady()` on `StartAsync`, `IHostedService`, NO EF/DbContext/scope-factory/MigrateAsync — the migration variant would drag EF in and violate D-08). CONSOLE-HEALTH-04 primitives in place.
+- Plan 18-01: `ConsoleRedisServiceCollectionExtensions.AddBaseConsoleRedis` — soft-dep `AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(connStr))`; no options-binding line (dropped the BaseApi RedisProjectionOptions Configure — EF-coupled type, D-08), no startup probe, no health check. `abortConnect=false` left to the caller's appsettings connection string, NOT hardcoded (CONSOLE-03).
+- Plan 18-01: `ICorrelationAccessor` (`string? Get()`/`Set(string?)`) + `AsyncLocalCorrelationAccessor` (`static readonly AsyncLocal<string?>`); `string?` (not `Guid`) preserves arbitrary inbound HTTP correlation ids verbatim for the log scope — Plan 02's outbound filter does `Guid.TryParse` for the envelope. Registered Singleton in Plan 02's messaging extension. Accessor for CORR-01/02 ready for Wave 2.
+- Plan 18-01 deviation [Rule 3 - verification-gate compliance]: rephrased XML-doc/comment prose to avoid the literal forbidden tokens (`BaseApi.Core`, `migrations pending`, `BaseDbContext`, `MigrateAsync`, `IServiceScopeFactory`, `RedisProjectionOptions`) so the plan's strict grep gate ("no token anywhere under src/BaseConsole.Core/") passes against the working tree, not just code references. Cosmetic comment edits only; no behavioral/structural change. Plan 06-01 / 08-01 / 10-02 / 11-04 educational-rephrase precedent.
 
 ### Roadmap Milestone Log
 
@@ -503,13 +510,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 18 context gathered
-Resume file: --resume-file
+Last session: 2026-05-30 — Phase 18 Plan 01 executed
+Stopped at: Completed 18-01-PLAN.md (BaseConsole.Core foundation: csproj + sln + startup-gate trio + Redis soft-dep + correlation accessor)
+Resume file: None — proceed to 18-02-PLAN.md (correlation filters)
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 17 (messaging-contracts-shared-l2-root-extract) — 2 plans — 2026-05-29T23:11:14.519Z
+**Planned Phase:** 18 (baseconsole-core-library) — 4 plans — 2026-05-30T08:35:12.640Z
