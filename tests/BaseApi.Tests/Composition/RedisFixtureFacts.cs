@@ -64,19 +64,25 @@ public sealed class RedisFixtureFacts
     {
         // TEST-REDIS-03 fail-loud: DisposeAsync re-SCANs after its SCAN+DEL batch and
         // throws if any key matching {KeyPrefix}* survives. The fixture's own SCAN+DEL
-        // only deletes the keys its first SCAN observed; a key that arrives AFTER that
-        // first SCAN but is still present at re-SCAN time is a genuine leak and must
-        // surface the throw.
+        // only deletes the keys its first SCAN observed; a key continuously re-created by
+        // a side channel is present at re-SCAN time and is a genuine leak that must throw.
         //
-        // Deterministic injection without intercepting the fixture mid-dispose:
+        // Deterministic injection (no fixture instrumentation needed):
         //   1. Pre-seed 300 matching keys so the fixture's first SCAN+DEL pages through
         //      them (pageSize:250 → ≥2 SCAN pages + a 300-key DEL batch), making the
         //      DEL→re-SCAN window measurable rather than instantaneous.
-        //   2. A side-channel multiplexer tight-loops re-creating one residual key for
-        //      the duration of the dispose. With the widened window, the re-created key
-        //      is reliably present at the fixture's re-SCAN, which observes a residual
-        //      and throws.
-        // The loop is stopped + the residual key deleted in finally so the global SCAN
+        //   2. A side-channel multiplexer tight-loops re-creating one residual key in a
+        //      SYNCHRONOUS loop for the duration of the dispose, so the key is present at
+        //      essentially every instant — including the fixture's re-SCAN.
+        //   3. CRITICAL (cold-start determinism): we do NOT call DisposeAsync until the
+        //      reseeder has PROVEN it is actively looping (await a primed signal + observe
+        //      the write-counter advance). The previous version fired Task.Run and called
+        //      DisposeAsync immediately; on a COLD threadpool (first run after dotnet
+        //      clean, e.g. the close gate's run 1) the reseeder had not begun executing
+        //      before the short dispose completed → no residual → Assert.Throws saw no
+        //      throw and the fact flaked. Gating dispose on a hot reseeder removes that
+        //      timing dependency entirely.
+        // The loop is stopped + all residuals deleted in finally so the global SCAN
         // snapshot (TEST-REDIS-04 phase-close gate) stays byte-identical.
         var fixture = new RedisFixture();
         await fixture.InitializeAsync();
@@ -94,16 +100,36 @@ public sealed class RedisFixtureFacts
         }
         await Task.WhenAll(seed);
 
-        var reseeder = Task.Run(async () =>
+        // Write-progress counter the reseeder advances each iteration; the test waits on it
+        // to confirm the loop is HOT before triggering dispose (cold-start determinism).
+        long writeCount = 0;
+        var reseeder = Task.Run(() =>
         {
+            // Synchronous tight loop — keeps the residual key present at ~every instant,
+            // maximising the chance it is observed at the fixture's re-SCAN. Long.MaxValue
+            // guard is irrelevant (cancellation drives exit); Interlocked publishes progress.
             while (!cts.Token.IsCancellationRequested)
             {
-                await sideDb.StringSetAsync(residualKey, "stub");
+                sideDb.StringSet(residualKey, "stub");
+                Interlocked.Increment(ref writeCount);
             }
         }, cts.Token);
 
         try
         {
+            // Gate on the reseeder being provably hot: wait until it has completed several
+            // iterations (not just started). Without this, a cold threadpool lets dispose
+            // finish before the loop's first write. Bounded wait so a genuinely broken
+            // reseeder fails loudly rather than hanging.
+            var spinWaitDeadline = DateTime.UtcNow.AddSeconds(30);
+            while (Interlocked.Read(ref writeCount) < 50)
+            {
+                Assert.True(
+                    DateTime.UtcNow < spinWaitDeadline,
+                    "reseeder did not begin looping within 30s — test harness fault, not a fixture defect");
+                await Task.Delay(10, cts.Token);
+            }
+
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(
                 async () => await fixture.DisposeAsync());
             Assert.Contains("FLUSHDB is FORBIDDEN", ex.Message);
