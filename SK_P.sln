@@ -12,6 +12,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{EAC83310-2BA
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Messaging.Contracts", "src\Messaging.Contracts\Messaging.Contracts.csproj", "{97B07C49-ABE6-4311-BD50-B1198C8B322C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaseConsole.Core", "src\BaseConsole.Core\BaseConsole.Core.csproj", "{39915BDB-F7FA-4A05-93BC-A0C2E63A6D9A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -34,11 +36,16 @@ Global
 		{97B07C49-ABE6-4311-BD50-B1198C8B322C}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{97B07C49-ABE6-4311-BD50-B1198C8B322C}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{97B07C49-ABE6-4311-BD50-B1198C8B322C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{39915BDB-F7FA-4A05-93BC-A0C2E63A6D9A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{39915BDB-F7FA-4A05-93BC-A0C2E63A6D9A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{39915BDB-F7FA-4A05-93BC-A0C2E63A6D9A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{39915BDB-F7FA-4A05-93BC-A0C2E63A6D9A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{97B07C49-ABE6-4311-BD50-B1198C8B322C} = {EAC83310-2BA8-4E7E-9A90-5C6BD471C231}
+		{39915BDB-F7FA-4A05-93BC-A0C2E63A6D9A} = {EAC83310-2BA8-4E7E-9A90-5C6BD471C231}
 	EndGlobalSection
 EndGlobal

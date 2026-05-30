@@ -1,0 +1,68 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    BaseConsole.Core — reusable Generic-Host infrastructure class library (Phase 18).
+    The console-side mirror of BaseApi.Core, consumed by the Orchestrator console (Phase 19+).
+
+    Sdk="Microsoft.NET.Sdk" (NOT .Web) — this is a worker/Generic-Host library, not an MVC
+    web app. ASP.NET Core surface (minimal Kestrel + health checks) is obtained via
+    FrameworkReference Microsoft.AspNetCore.App (CONSOLE-05), which provides Kestrel and the
+    HealthChecks middleware without dragging in the MVC/Web SDK.
+
+    D-08 (hard constraint): NO BaseApi.Core ProjectReference. The worker host MUST NOT
+    transitively gain EF Core / MVC / Npgsql / Swagger attack surface. The only
+    ProjectReference is the leaf Messaging.Contracts assembly.
+
+    Common props (TargetFramework=net8.0, Nullable, ImplicitUsings, LangVersion, AnalysisMode,
+    EnforceCodeStyleInBuild, TreatWarningsAsErrors) inherit from Directory.Build.props at the
+    repo root — DO NOT redeclare them (CRITICAL: net8.0, never net9.0).
+
+    CPM: NuGet versions are pinned in Directory.Packages.props. NO Version= attribute on any
+    PackageReference here.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>BaseConsole.Core</RootNamespace>
+    <AssemblyName>BaseConsole.Core</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- CONSOLE-05: Kestrel + HealthChecks middleware without the Web SDK. Zero runtime
+         weight (framework lives on the host). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- MassTransit bus skeleton (Phase 19 AddBaseConsoleMessaging) + RabbitMQ transport.
+         CPM-pinned at 8.5.5 in Directory.Packages.props (Phase 17). -->
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Redis soft-dependency client (CONSOLE-03 — ConsoleRedisServiceCollectionExtensions
+         Singleton multiplexer). -->
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Console-flavored OpenTelemetry: MEL-bridge logs + runtime metrics + OTLP exporter.
+         No AspNetCore/Http instrumentation (worker host has no inbound HTTP request surface
+         beyond the minimal health probes). HealthChecks UI.Client provides the JSON writer
+         for the health endpoints. -->
+    <PackageReference Include="AspNetCore.HealthChecks.UI.Client" />
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The ONLY ProjectReference (D-08). Leaf contracts: ICorrelated vocabulary +
+         Start/Stop control contracts + the shared L2 root read-shape. -->
+    <ProjectReference Include="..\Messaging.Contracts\Messaging.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
