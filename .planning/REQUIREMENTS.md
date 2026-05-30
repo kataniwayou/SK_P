@@ -51,11 +51,14 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 ### Orchestrator (concrete console)
 
-- [ ] **ORCH-CON-01**: A runnable `Orchestrator` console inherits `BaseConsole.Core` and is a thin shell (registers only its consumers + fan-out endpoint; no infrastructure code).
-- [ ] **ORCH-CON-02**: The Orchestrator binds an instance-unique, temporary/auto-delete receive endpoint via `InstanceId`, so every replica receives its own copy of each published Start/Stop (fan-out, NOT load-balanced); scaling 1→N requires no code change.
+- [x] **ORCH-CON-01
+**: A runnable `Orchestrator` console inherits `BaseConsole.Core` and is a thin shell (registers only its consumers + fan-out endpoint; no infrastructure code).
+- [x] **ORCH-CON-02
+**: The Orchestrator binds an instance-unique, temporary/auto-delete receive endpoint via `InstanceId`, so every replica receives its own copy of each published Start/Stop (fan-out, NOT load-balanced); scaling 1→N requires no code change.
 - [x] **ORCH-CON-03
 **: On consuming `StartOrchestration`/`StopOrchestration`, the Orchestrator opens the correlated log scope from the **message-body `ICorrelated.CorrelationId`** (minted fresh at publish) and reads the Redis L2 root per `WorkflowId` for existence/payload (a `WorkflowId` absent from L2 is the MSG-ACK-01 business-failure path). [AMENDED 2026-05-30, Phase 19 D-01: per-stage correlation model — correlation rides the message body via the slim `ICorrelated` contract (not the MassTransit envelope); the HTTP `X-Correlation-Id` is not stored in or read from the L2 root; correlation is handed off at the publish boundary, not carried across the hop.]
-- [ ] **ORCH-CON-04**: The Orchestrator logs its processing up to the "scheduler job start" seam under the correlated log scope, and performs no Redis writes and no Quartz scheduling this milestone (logs are the deliverable).
+- [x] **ORCH-CON-04
+**: The Orchestrator logs its processing up to the "scheduler job start" seam under the correlated log scope, and performs no Redis writes and no Quartz scheduling this milestone (logs are the deliverable).
 
 ### Correlation Propagation
 
@@ -68,10 +71,14 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 ### Acknowledgement Semantics
 
-- [ ] **MSG-ACK-01**: Business failures in a consumer (e.g., a `WorkflowId` absent from L2) are caught, logged at the correlated scope, and the consume completes (message acked) — they are NOT thrown.
-- [ ] **MSG-ACK-02**: Genuine infrastructure faults are allowed to throw → bounded retry → dead-letter to the `_error` queue; a process crash mid-consume leaves the message unacked for broker redelivery (the crash-safety guarantee).
-- [ ] **MSG-ACK-03** (P2): Consumers configure bounded `UseMessageRetry` with `Ignore<>` for the business-failure exception type, so business failures never retry or dead-letter. [F13]
-- [ ] **MSG-ACK-04** (P2): Each consumer has a `ConsumerDefinition` class as the config seam for retry / InstanceId / endpoint settings (matches the project's "base + per-entity definition" idiom; future-proofs the Processor milestone). [F13]
+- [x] **MSG-ACK-01
+**: Business failures in a consumer (e.g., a `WorkflowId` absent from L2) are caught, logged at the correlated scope, and the consume completes (message acked) — they are NOT thrown.
+- [x] **MSG-ACK-02
+**: Genuine infrastructure faults are allowed to throw → bounded retry → dead-letter to the `_error` queue; a process crash mid-consume leaves the message unacked for broker redelivery (the crash-safety guarantee).
+- [x] **MSG-ACK-03
+** (P2): Consumers configure bounded `UseMessageRetry` with `Ignore<>` for the business-failure exception type, so business failures never retry or dead-letter. [F13]
+- [x] **MSG-ACK-04
+** (P2): Each consumer has a `ConsumerDefinition` class as the config seam for retry / InstanceId / endpoint settings (matches the project's "base + per-entity definition" idiom; future-proofs the Processor milestone). [F13]
 
 ### Infrastructure (RabbitMQ + pins)
 
