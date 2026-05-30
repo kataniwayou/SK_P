@@ -73,9 +73,11 @@ completed: 2026-05-30
 
 ## Task Commits
 
-1. **Task 1: D-13 Stop seam fix + locked assertion + D-07 publish log** - `1696b96` (fix)
-2. **Task 2: RabbitMq:Port read in AddBaseApiMessaging** - `8b6f8e7` (feat)
-3. **Task 3: HarnessWebAppFactory + Dockerfile wget layer** - `4e9b9d8` (feat)
+1. **Task 1: D-13 Stop seam fix + locked assertion + D-07 publish log** - `dee1414` (fix)
+2. **Task 2: RabbitMq:Port read in AddBaseApiMessaging** - `94d78b7` (feat)
+3. **Task 3: HarnessWebAppFactory + Dockerfile wget layer** - `a1c05d4` (feat)
+
+**Plan metadata:** `f98b9f3` (docs: complete plan)
 
 ## Files Created/Modified
 
@@ -105,11 +107,24 @@ All task `<acceptance_criteria>` re-verified via grep: stop(seam)=1, start(seam)
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+**1. [Rule 3 - Blocking] Updated OrchestrationService DI factory registration for the new ILogger ctor arg**
+- **Found during:** Task 1 (D-07 ctor change), surfaced by the full-solution Release build.
+- **Issue:** The plan stated "DI in Program.cs resolves ILogger automatically — no Program.cs change needed." That is true for typed registrations, but `OrchestrationService` is registered via an **explicit factory** (`AddScoped<OrchestrationService>(sp => new OrchestrationService(...))`) in `OrchestrationServiceCollectionExtensions.cs:57` because its ctor is `internal`. Adding the `ILogger<OrchestrationService>` ctor parameter therefore broke the positional factory call (`CS7036: no argument given for 'options'`). The plan's `<interfaces>` block did not flag this factory caller (it named only the test BuildService caller).
+- **Fix:** Added `sp.GetRequiredService<ILogger<OrchestrationService>>()` as the second-to-last factory argument (matching the new ctor parameter order, before `IOptions<RedisProjectionOptions>`), plus `using Microsoft.Extensions.Logging;` to the file.
+- **Files modified:** `src/BaseApi.Service/Features/Orchestration/OrchestrationServiceCollectionExtensions.cs`
+- **Verification:** `dotnet build SK_P.sln -c Release` exits 0, zero warnings.
+- **Committed in:** `4c… (Task-1 amend / follow-up build-fix commit — see Task Commits)`
+
+---
+
+**Total deviations:** 1 auto-fixed (1 blocking).
+**Impact on plan:** Necessary for the solution to compile under the D-07 ctor change. The plan's "no Program.cs change" note held literally (Program.cs untouched); the missed caller was the per-feature DI factory, not Program.cs. No scope creep.
 
 ## Issues Encountered
 
-None.
+- The per-task acceptance grep checks for Task 1/2/3 all passed, but the full-solution Release build was initially red because of the DI factory caller above (the test-project-only build the plan specified for Task 3 had linked against a previously-built BaseApi.Service.dll and masked the source break). Fixed by updating the factory registration; the full `dotnet build SK_P.sln -c Release` is the authoritative gate and is now GREEN.
 
 ## User Setup Required
 
@@ -124,7 +139,7 @@ None - no external service configuration required.
 ## Self-Check: PASSED
 
 - Created files verified on disk: `HarnessWebAppFactory.cs`, `20-01-SUMMARY.md`.
-- Commits verified in git log: `1696b96`, `8b6f8e7`, `4e9b9d8`.
+- Commits verified in git log: `dee1414`, `94d78b7`, `a1c05d4`, `f98b9f3`.
 
 ---
 *Phase: 20-correlation-propagation-proof-synthetic-harness-triple-sha-c*
