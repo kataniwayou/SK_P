@@ -20,7 +20,8 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 ### BaseConsole.Core (reusable Generic-Host library)
 
-- [ ] **CONSOLE-01**: A reusable `BaseConsole.Core` class library provides a Generic-Host composition root (`AddBaseConsole`/`RunAsync` equivalent) that a concrete console wires in a handful of lines (mirrors `AddBaseApi`/`UseBaseApi`).
+- [x] **CONSOLE-01
+**: A reusable `BaseConsole.Core` class library provides a Generic-Host composition root (`AddBaseConsole`/`RunAsync` equivalent) that a concrete console wires in a handful of lines (mirrors `AddBaseApi`/`UseBaseApi`).
 - [x] **CONSOLE-02
 **: `BaseConsole.Core` configures console-flavored OpenTelemetry — MEL-bridge logs + runtime metrics + MassTransit meter (`InstrumentationOptions.MeterName`) via OTLP — with NO AspNetCore/HttpClient instrumentation and NO `.WithTracing` (no traces backend, preserving Phase 11 D-03).
 - [x] **CONSOLE-03
@@ -32,9 +33,12 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 ### Console Health Probes (embedded HTTP)
 
-- [ ] **CONSOLE-HEALTH-01**: A console built on `BaseConsole.Core` exposes `/health/live`, `/health/ready`, `/health/startup` over an embedded minimal HTTP listener hosted inside the Generic Host (`MapHealthChecks` is `WebApplication`-only → inner minimal Kestrel in a hosted service).
-- [ ] **CONSOLE-HEALTH-02**: `/health/live` returns 200 without touching RabbitMQ or Redis (tag discipline: live → self only), even when both are down.
-- [ ] **CONSOLE-HEALTH-03**: `/health/ready` reports Healthy only once the MassTransit bus has started (reuses MassTransit's auto-registered `ready`-tagged bus health check — no hand-rolled latch) and Unhealthy while the broker is unreachable.
+- [x] **CONSOLE-HEALTH-01
+**: A console built on `BaseConsole.Core` exposes `/health/live`, `/health/ready`, `/health/startup` over an embedded minimal HTTP listener hosted inside the Generic Host (`MapHealthChecks` is `WebApplication`-only → inner minimal Kestrel in a hosted service).
+- [x] **CONSOLE-HEALTH-02
+**: `/health/live` returns 200 without touching RabbitMQ or Redis (tag discipline: live → self only), even when both are down.
+- [x] **CONSOLE-HEALTH-03
+**: `/health/ready` reports Healthy only once the MassTransit bus has started (reuses MassTransit's auto-registered `ready`-tagged bus health check — no hand-rolled latch) and Unhealthy while the broker is unreachable.
 - [x] **CONSOLE-HEALTH-04
 **: `IStartupGate` + `StartupHealthCheck` are duplicated into `BaseConsole.Core` (no `BaseConsole.Core → BaseApi.Core` dependency that would drag EF Core/MVC into a worker). [F11]
 
