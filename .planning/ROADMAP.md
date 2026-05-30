@@ -111,8 +111,8 @@ Plans:
 
 ### Coverage (v3.4.0)
 
-✓ All 37 milestone requirements mapped to exactly one phase (35 P1 + 2 P2)
-✓ No orphaned requirements · ✓ Phase numbering continues from v3.3.0 (16 → 17-20; no reset to 1)
+✓ All 40 milestone requirements mapped to exactly one phase (35 P1 + 2 P2 + 3 hardening; HARDEN-01..03 added post-audit for Phase 21)
+✓ No orphaned requirements · ✓ Phase numbering continues from v3.3.0 (16 → 17-21; no reset to 1)
 
 | Category | Count | Phase(s) |
 |----------|-------|----------|
