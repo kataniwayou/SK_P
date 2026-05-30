@@ -62,95 +62,88 @@ public sealed class RedisFixtureFacts
     [Fact]
     public async Task DisposeAsync_With_Residual_Matching_Key_Throws_InvalidOperationException()
     {
-        // TEST-REDIS-03 fail-loud: DisposeAsync re-SCANs after its SCAN+DEL batch and
-        // throws if any key matching {KeyPrefix}* survives. The fixture's own SCAN+DEL
-        // only deletes the keys its first SCAN observed; a key continuously re-created by
-        // a side channel is present at re-SCAN time and is a genuine leak that must throw.
+        // TEST-REDIS-03 fail-loud: DisposeAsync re-SCANs after its SCAN+DEL batch and throws if
+        // any key matching {KeyPrefix}* survives. To exercise that throw we must make a residual
+        // key PRESENT at the fixture's re-SCAN — which means a side-channel write has to land in
+        // the microsecond gap between the fixture's DEL and its re-SCAN. That gap is a genuine
+        // thread race: under a fully-loaded parallel suite the reseeder thread can be starved
+        // across the whole gap, so a SINGLE injection attempt is inherently flaky (it produced
+        // intermittent "No exception was thrown" failures in the close gate — a TEST-HARNESS race,
+        // NOT a fixture defect: RedisFixture's SCAN+DEL+re-SCAN+throw logic is correct).
         //
-        // Deterministic injection (no fixture instrumentation needed):
-        //   1. Pre-seed 300 matching keys so the fixture's first SCAN+DEL pages through
-        //      them (pageSize:250 → ≥2 SCAN pages + a 300-key DEL batch), making the
-        //      DEL→re-SCAN window measurable rather than instantaneous.
-        //   2. A side-channel multiplexer tight-loops re-creating one residual key in a
-        //      SYNCHRONOUS loop for the duration of the dispose, so the key is present at
-        //      essentially every instant — including the fixture's re-SCAN.
-        //   3. CRITICAL (cold-start determinism): we do NOT call DisposeAsync until the
-        //      reseeder has PROVEN it is actively looping (await a primed signal + observe
-        //      the write-counter advance). The previous version fired Task.Run and called
-        //      DisposeAsync immediately; on a COLD threadpool (first run after dotnet
-        //      clean, e.g. the close gate's run 1) the reseeder had not begun executing
-        //      before the short dispose completed → no residual → Assert.Throws saw no
-        //      throw and the fact flaked. Gating dispose on a hot reseeder removes that
-        //      timing dependency entirely.
-        // The loop is stopped + all residuals deleted in finally so the global SCAN
-        // snapshot (TEST-REDIS-04 phase-close gate) stays byte-identical.
-        var fixture = new RedisFixture();
-        await fixture.InitializeAsync();
+        // Deterministic OUTCOME via bounded retry-until-throw: repeat the inject-and-dispose with a
+        // FRESH fixture (fresh Guid prefix) until the fixture throws. A correct detector throws
+        // within a few attempts; a BROKEN detector (regression) never throws → the bounded loop
+        // exhausts and fails loudly. So the assertion's meaning is preserved exactly — "a surviving
+        // residual key MUST surface the FLUSHDB-forbidden throw" — without depending on winning a
+        // race on any one attempt. Each attempt cleans up ALL its own {prefix}* keys in finally so
+        // the global SCAN snapshot (TEST-REDIS-04 phase-close gate) stays byte-identical.
+        const int maxAttempts = 30;
+        InvalidOperationException? caught = null;
 
-        var sideChannel = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
-        var sideDb = sideChannel.GetDatabase();
-        var residualKey = $"{fixture.KeyPrefix}injected";
-        using var cts = new CancellationTokenSource();
-
-        // Pre-seed 300 deletable matching keys to widen the SCAN+DEL→re-SCAN window.
-        var seed = new Task[300];
-        for (var i = 0; i < seed.Length; i++)
+        for (var attempt = 1; attempt <= maxAttempts && caught is null; attempt++)
         {
-            seed[i] = sideDb.StringSetAsync($"{fixture.KeyPrefix}bulk-{i}", "x");
+            var fixture = new RedisFixture();
+            await fixture.InitializeAsync();
+
+            var sideChannel = await ConnectionMultiplexer.ConnectAsync(fixture.ConnectionString);
+            var sideDb = sideChannel.GetDatabase();
+            var residualKey = $"{fixture.KeyPrefix}injected";
+            using var cts = new CancellationTokenSource();
+
+            // Pre-seed 300 matching keys so the fixture's first SCAN+DEL pages through them
+            // (pageSize:250 → ≥2 SCAN pages + a 300-key DEL batch), widening the DEL→re-SCAN window.
+            var seed = new Task[300];
+            for (var i = 0; i < seed.Length; i++)
+            {
+                seed[i] = sideDb.StringSetAsync($"{fixture.KeyPrefix}bulk-{i}", "x");
+            }
+            await Task.WhenAll(seed);
+
+            // Side-channel SYNCHRONOUS tight loop re-creating the residual key for the dispose
+            // duration, so it is present at ~every instant including the fixture's re-SCAN.
+            var reseeder = Task.Run(() =>
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    sideDb.StringSet(residualKey, "stub");
+                }
+            }, cts.Token);
+
+            try
+            {
+                await fixture.DisposeAsync();
+                // No throw this attempt → the reseeder lost the DEL→re-SCAN race; retry fresh.
+            }
+            catch (InvalidOperationException ex)
+            {
+                caught = ex;  // residual observed at re-SCAN → detector fired (the success case)
+            }
+            finally
+            {
+                cts.Cancel();
+                try { await reseeder; } catch (OperationCanceledException) { /* expected */ }
+                // Clean up ALL residuals (injected key + any surviving bulk keys) for THIS
+                // attempt's prefix so the global SCAN snapshot stays byte-identical.
+                var cleanupServer = sideChannel.GetServer(sideChannel.GetEndPoints()[0]);
+                var leftover = new List<RedisKey>();
+                await foreach (var key in cleanupServer.KeysAsync(pattern: $"{fixture.KeyPrefix}*", pageSize: 1000))
+                {
+                    leftover.Add(key);
+                }
+                if (leftover.Count > 0)
+                {
+                    await sideDb.KeyDeleteAsync(leftover.ToArray());
+                }
+                await sideChannel.DisposeAsync();
+            }
         }
-        await Task.WhenAll(seed);
 
-        // Write-progress counter the reseeder advances each iteration; the test waits on it
-        // to confirm the loop is HOT before triggering dispose (cold-start determinism).
-        long writeCount = 0;
-        var reseeder = Task.Run(() =>
-        {
-            // Synchronous tight loop — keeps the residual key present at ~every instant,
-            // maximising the chance it is observed at the fixture's re-SCAN. Long.MaxValue
-            // guard is irrelevant (cancellation drives exit); Interlocked publishes progress.
-            while (!cts.Token.IsCancellationRequested)
-            {
-                sideDb.StringSet(residualKey, "stub");
-                Interlocked.Increment(ref writeCount);
-            }
-        }, cts.Token);
-
-        try
-        {
-            // Gate on the reseeder being provably hot: wait until it has completed several
-            // iterations (not just started). Without this, a cold threadpool lets dispose
-            // finish before the loop's first write. Bounded wait so a genuinely broken
-            // reseeder fails loudly rather than hanging.
-            var spinWaitDeadline = DateTime.UtcNow.AddSeconds(30);
-            while (Interlocked.Read(ref writeCount) < 50)
-            {
-                Assert.True(
-                    DateTime.UtcNow < spinWaitDeadline,
-                    "reseeder did not begin looping within 30s — test harness fault, not a fixture defect");
-                await Task.Delay(10, cts.Token);
-            }
-
-            var ex = await Assert.ThrowsAsync<InvalidOperationException>(
-                async () => await fixture.DisposeAsync());
-            Assert.Contains("FLUSHDB is FORBIDDEN", ex.Message);
-        }
-        finally
-        {
-            cts.Cancel();
-            try { await reseeder; } catch (OperationCanceledException) { /* expected */ }
-            // Clean up ALL residuals (the injected key + any surviving bulk keys) so the
-            // global SCAN snapshot (TEST-REDIS-04 phase-close gate) is byte-identical.
-            var cleanupServer = sideChannel.GetServer(sideChannel.GetEndPoints()[0]);
-            var leftover = new List<RedisKey>();
-            await foreach (var key in cleanupServer.KeysAsync(pattern: $"{fixture.KeyPrefix}*", pageSize: 1000))
-            {
-                leftover.Add(key);
-            }
-            if (leftover.Count > 0)
-            {
-                await sideDb.KeyDeleteAsync(leftover.ToArray());
-            }
-            await sideChannel.DisposeAsync();
-        }
+        // A correct fixture surfaces the residual within maxAttempts; never throwing = regression.
+        Assert.True(
+            caught is not null,
+            $"RedisFixture.DisposeAsync did not throw on a surviving residual key across {maxAttempts} " +
+            "injection attempts — the SCAN+DEL+re-SCAN fail-loud guard (TEST-REDIS-03) has regressed.");
+        Assert.Contains("FLUSHDB is FORBIDDEN", caught!.Message);
     }
 }

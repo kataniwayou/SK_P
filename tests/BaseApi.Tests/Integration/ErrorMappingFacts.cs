@@ -198,10 +198,21 @@ public sealed class ErrorMappingFacts : IClassFixture<Phase8WebAppFactory>
                 string.Equals(p.Name, "Definition", StringComparison.OrdinalIgnoreCase)),
             "Expected field-level error on 'Definition'.");
 
-        // SSRF assertion (RESEARCH §SSRF test seam line 251): test completes in <500ms — a real
-        // outbound HTTP would take seconds to time out against attacker.example.
-        Assert.True(sw.ElapsedMilliseconds < 500,
-            $"Schema validation took {sw.ElapsedMilliseconds}ms — expected <500ms. Likely a network call leaked through.");
+        // SSRF assertion (RESEARCH §SSRF test seam line 251): the request returns promptly because
+        // NO outbound fetch occurs. A real leaked outbound HTTP to attacker.example would block on
+        // DNS/connect for many SECONDS (HttpClient's default connect timeout is on the order of
+        // tens of seconds), so any in-process-only path finishes far below that. The original <500ms
+        // bound was a tight wall-clock PROXY that false-failed under heavy parallel-suite load
+        // (in-process JSON-schema parsing legitimately spiked to ~775ms while the box ran 16 test
+        // classes) — a flaky harness threshold, not a real leak. Widened to a load-tolerant 5s that
+        // still cleanly separates "in-process" (sub-second to low-single-digit seconds under load)
+        // from "real outbound timeout" (tens of seconds). The primary, deterministic SSRF guarantee
+        // is structural: SchemaService uses JsonSchema.FromText + a default/empty registry and never
+        // dereferences $refs (verified in SchemaService.ValidateBusinessRulesAsync) — this timing
+        // bound is a secondary regression tripwire.
+        Assert.True(sw.ElapsedMilliseconds < 5000,
+            $"Schema validation took {sw.ElapsedMilliseconds}ms — expected <5000ms. A real outbound " +
+            "fetch to attacker.example would block for tens of seconds; this suggests a leaked network call.");
 
         Assert.True(doc.RootElement.TryGetProperty("correlationId", out _));
     }
