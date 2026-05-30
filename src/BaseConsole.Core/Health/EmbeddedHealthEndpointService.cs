@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace BaseConsole.Core.Health;
 
@@ -43,13 +44,19 @@ internal sealed class EmbeddedHealthEndpointService : IHostedService
     private readonly IStartupGate _gate;
     private readonly IConfiguration _cfg;
     private readonly IServiceProvider _outer;
+    private readonly ILogger<EmbeddedHealthEndpointService> _logger;
     private WebApplication? _app;
 
-    public EmbeddedHealthEndpointService(IStartupGate gate, IConfiguration cfg, IServiceProvider outer)
+    public EmbeddedHealthEndpointService(
+        IStartupGate gate,
+        IConfiguration cfg,
+        IServiceProvider outer,
+        ILogger<EmbeddedHealthEndpointService> logger)
     {
         _gate = gate;
         _cfg = cfg;
         _outer = outer;
+        _logger = logger;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -89,7 +96,22 @@ internal sealed class EmbeddedHealthEndpointService : IHostedService
         });
 
         // Independent of the bus — /health/live answers while the bus connects.
-        await _app.StartAsync(cancellationToken);
+        // Failure isolation (WR-02): a bind failure (e.g. ConsoleHealth:Port already in use)
+        // otherwise propagates out of Host.StartAsync and aborts the whole console process.
+        // Log the actionable cause before rethrowing so the bind conflict is diagnosable.
+        try
+        {
+            await _app.StartAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(
+                ex,
+                "Embedded health listener failed to start on port {Port}. " +
+                "Check ConsoleHealth:Port for a bind conflict.",
+                port);
+            throw;
+        }
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
