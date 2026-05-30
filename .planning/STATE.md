@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: Completed 19-02-PLAN.md
-last_updated: "2026-05-30T13:04:58.748Z"
+stopped_at: Completed 19-03-PLAN.md
+last_updated: "2026-05-30T13:40:59.150Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 10
-  completed_plans: 8
-  percent: 80
+  completed_plans: 9
+  percent: 90
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 19 (orchestrator-console-webapi-bus-wiring-rabbitmq-tier) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-05-30
 
@@ -40,7 +40,7 @@ Last activity: 2026-05-30
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 90%
 
 ### Milestone Phases (v3.4.0)
 
@@ -176,6 +176,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 18 P04 | ~35min impl + ~10min gate run (3×245 GREEN) + finalization | 4 tasks (3 auto + 1 operator checkpoint) | 9 files (7 new test + 1 csproj + 1 src filter fix) |
 | Phase 19 P01 | ~12min | 3 tasks | 5 files |
 | Phase 19 P02 | ~8min | 3 tasks | 13 files |
+| Phase 19 P03 | 23min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -443,6 +444,10 @@ Recent decisions affecting current work:
 - Plan 19-01: body-vs-envelope filter test discriminator requires a DIFFERENT envelope CorrelationId than the body (MassTransit by-convention envelope population from the CorrelationId property otherwise masks the difference)
 - Plan 19-02: Orchestrator console is the first concrete BaseConsole.Core inheritor — thin Generic-Host shell (Program.cs + 2 consumers + 2 ConsumerDefinitions); OutputType=Exe + Content-copy appsettings.json required for Microsoft.NET.Sdk worker (Rule 3)
 - Plan 19-02: both consumers share EndpointName 'orchestrator' + one captured instanceId via .Endpoint(e => { e.InstanceId; e.Temporary = true; }) -> single per-replica temporary/auto-delete fan-out queue (ORCH-CON-02); business-ack vs infra-throw split (no catch(Exception)); 256/256 GREEN
+- Plan 19-03: AddBaseApiMessaging is publish-only (no consumers/endpoints/filters); bus health capped MinimalFailureStatus=Degraded so CRUD /health/ready stays 200 with broker down (MSG-WEBAPI-04)
+- Plan 19-03: OrchestrationService publishes Start/Stop after their L2 stage with body-only correlation { CorrelationId = NewId.NextGuid() }; envelope id never explicitly stamped (MassTransit by-convention populates envelope==body — 19-01 masking effect)
+- Plan 19-03: BaseApi.* references Messaging.Contracts only, never BaseConsole.Core (dependency firewall T-19-dep-firewall held)
+- Plan 19-03 deferred (Plan 04/Phase 20): orchestration HTTP happy-path integration facts now require a live RabbitMQ broker (publish→500 when broker down, the intended MSG-WEBAPI-03 contract); ~20 facts fail until 19-04 adds the compose tier. Health unaffected (9/9 GREEN, bus Degraded)
 
 ### Roadmap Milestone Log
 
@@ -536,8 +541,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T13:04:49.990Z
-Stopped at: Completed 19-02-PLAN.md
+Last session: 2026-05-30T13:40:47.908Z
+Stopped at: Completed 19-03-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)

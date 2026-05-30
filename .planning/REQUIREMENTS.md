@@ -44,10 +44,14 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 ### WebApi Bus Integration (publisher / fan-out)
 
-- [ ] **MSG-WEBAPI-01**: `BaseApi.Service` joins the MassTransit bus as a publisher and references `Messaging.Contracts`, without referencing `BaseConsole.Core`.
-- [ ] **MSG-WEBAPI-02**: A successful `POST /api/v1/orchestration/start` publishes a `StartOrchestration{WorkflowIds[]}` message; `stop` publishes `StopOrchestration{WorkflowIds[]}`.
-- [ ] **MSG-WEBAPI-03**: RabbitMQ is a hard dependency for the Start/Stop path only — Start/Stop fail (5xx + RFC 7807) when the broker is unreachable, while the CRUD surface is unaffected.
-- [ ] **MSG-WEBAPI-04**: The WebApi bus health check does NOT flip CRUD `/health/ready` when RabbitMQ is down (`MinimalFailureStatus=Degraded` or re-tagged off `ready`), mirroring the Redis soft-dependency posture. [F10]
+- [x] **MSG-WEBAPI-01
+**: `BaseApi.Service` joins the MassTransit bus as a publisher and references `Messaging.Contracts`, without referencing `BaseConsole.Core`.
+- [x] **MSG-WEBAPI-02
+**: A successful `POST /api/v1/orchestration/start` publishes a `StartOrchestration{WorkflowIds[]}` message; `stop` publishes `StopOrchestration{WorkflowIds[]}`.
+- [x] **MSG-WEBAPI-03
+**: RabbitMQ is a hard dependency for the Start/Stop path only — Start/Stop fail (5xx + RFC 7807) when the broker is unreachable, while the CRUD surface is unaffected.
+- [x] **MSG-WEBAPI-04
+**: The WebApi bus health check does NOT flip CRUD `/health/ready` when RabbitMQ is down (`MinimalFailureStatus=Degraded` or re-tagged off `ready`), mirroring the Redis soft-dependency posture. [F10]
 
 ### Orchestrator (concrete console)
 
