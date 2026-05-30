@@ -53,7 +53,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 - [ ] **ORCH-CON-01**: A runnable `Orchestrator` console inherits `BaseConsole.Core` and is a thin shell (registers only its consumers + fan-out endpoint; no infrastructure code).
 - [ ] **ORCH-CON-02**: The Orchestrator binds an instance-unique, temporary/auto-delete receive endpoint via `InstanceId`, so every replica receives its own copy of each published Start/Stop (fan-out, NOT load-balanced); scaling 1→N requires no code change.
-- [ ] **ORCH-CON-03**: On consuming `StartOrchestration`/`StopOrchestration`, the Orchestrator reads the Redis L2 root per `WorkflowId` and extracts the stored `X-CorrelationId`.
+- [ ] **ORCH-CON-03**: On consuming `StartOrchestration`/`StopOrchestration`, the Orchestrator opens the correlated log scope from the **message envelope `CorrelationId`** (minted fresh at publish) and reads the Redis L2 root per `WorkflowId` for existence/payload (a `WorkflowId` absent from L2 is the MSG-ACK-01 business-failure path). [AMENDED 2026-05-30, Phase 19 D-01: per-stage correlation model — the HTTP `X-Correlation-Id` is not stored in or read from the L2 root; correlation is handed off at the publish boundary, not carried across the hop.]
 - [ ] **ORCH-CON-04**: The Orchestrator logs its processing up to the "scheduler job start" seam under the correlated log scope, and performs no Redis writes and no Quartz scheduling this milestone (logs are the deliverable).
 
 ### Correlation Propagation
@@ -63,7 +63,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 - [x] **CORR-02
 **: `BaseConsole.Core` includes an outbound send/publish filter that stamps the ambient AsyncLocal correlationId onto every outgoing `ICorrelated` message.
 - [ ] **CORR-03**: The outbound filter is exercised this milestone by a synthetic test-harness downstream send that asserts the correlationId is stamped (no real downstream consumer required).
-- [ ] **CORR-04**: Correlation is proven end-to-end — an HTTP `X-Correlation-Id` on Start flows HTTP → Redis L2 root → fan-out message → Orchestrator log line in Elasticsearch carrying the same value under the `"CorrelationId"` attribute.
+- [ ] **CORR-04**: Per-stage correlation is proven across stage boundaries — an HTTP `X-Correlation-Id` scopes the HTTP stage (request → L2 write → publish); a fresh envelope `CorrelationId` minted at publish rides the fan-out message and is the value the Orchestrator log line surfaces in Elasticsearch under the `"CorrelationId"` attribute. Clean per-stage handoff at the publish boundary, not a single value carried across all hops. [AMENDED 2026-05-30, Phase 19 D-01.]
 
 ### Acknowledgement Semantics
 
@@ -82,7 +82,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 ### Test Discipline
 
 - [ ] **TEST-RMQ-01**: A fan-out test runs two in-process bus instances (two `InstanceId`s) and asserts BOTH receive a copy of a single published Start message (broadcast proven, not load-balanced) — the #1 topology trap, tested now rather than deferred.
-- [ ] **TEST-RMQ-02**: An end-to-end test drives a real HTTP Start with an `X-Correlation-Id` and asserts the Orchestrator's correlated log line surfaces in Elasticsearch with the matching correlation attribute.
+- [ ] **TEST-RMQ-02**: An end-to-end test drives a real HTTP Start (carrying an `X-Correlation-Id` scoping the HTTP stage) and asserts the Orchestrator's correlated log line surfaces in Elasticsearch under the `"CorrelationId"` attribute carrying the **envelope `CorrelationId` minted at publish** (the per-stage handoff value), proving the chain HTTP stage → publish-mint → fan-out → orchestrator log. [AMENDED 2026-05-30, Phase 19 D-01.]
 - [ ] **TEST-RMQ-03**: A "broker down" test asserts WebApi CRUD `/health/ready` and `/health/live` both stay 200 with RabbitMQ unreachable (a `HealthDeadRabbitFixture` mirroring `HealthDeadRedisFixture`).
 - [ ] **TEST-RMQ-04**: Test receive endpoints use temporary/auto-delete, per-test-class-prefixed queues; NO global queue purge in teardown (the `FLUSHDB`-ban analog).
 - [ ] **TEST-RMQ-05**: The phase-close gate is extended to a triple-SHA snapshot — `psql \l` + `redis-cli --scan` + `rabbitmqctl list_queues name` — asserting BEFORE=AFTER, alongside the 3-consecutive-GREEN cadence. [F12]
