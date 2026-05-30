@@ -73,13 +73,13 @@ completed: 2026-05-30
 1. **Task 1: FanOutBroadcastTests (TEST-RMQ-01)** — `7cda768` (test)
 2. **Task 2: OutboundFilterSyntheticTests (CORR-03)** — `e575251` (test)
 3. **Task 3: HealthDeadRabbitFixture + 2 broker-down facts (TEST-RMQ-03)** — `28735a0` (test)
-4. **Fix: fan-out count proof uses per-consumer sum (bus-level count was flaky)** — `5e7e9bc` (fix) — see Deviations
+4. **Fix: fan-out count proof uses per-consumer sum (bus-level count was flaky)** — `c1ac8ff` (fix) — see Deviations
 
 ## Verification Results
 
 - `dotnet build SK_P.sln -c Release` → exit 0, 0 warnings / 0 errors.
 - `dotnet build SK_P.sln -c Debug` → exit 0, 0 warnings / 0 errors.
-- `*FanOutBroadcastTests` → GREEN, **5× consecutive** after the per-consumer-sum fix `5e7e9bc` (the prior bus-level count was flaky — Expected:2 Actual:1 intermittently; see Deviations).
+- `*FanOutBroadcastTests` → GREEN, **5× consecutive** after the per-consumer-sum fix `c1ac8ff` (the prior bus-level count was flaky — Expected:2 Actual:1 intermittently; see Deviations).
 - `*OutboundFilterSyntheticTests` → 1/1 passed.
 - `*HealthEndpointsTests` → 11/11 passed (9 pre-existing + 2 new broker-down facts) with NO production change — the D-05 `MinimalFailureStatus=Degraded` cap was already present in `AddBaseApiMessaging` (Plan 19-03). No regression in the 9 pre-existing facts.
 - Acceptance greps: `class FanOutBroadcastTests`=1, `e.Temporary = true`/InstanceId/`t01-fanout`/both `GetConsumerHarness<...>` present, purge=0; `OutboundCorrelationPublishFilter`+`UsePublishFilter`+`ambient.Set`+`pub.Context.CorrelationId` present; `class HealthDeadRabbitFixture`=1, `RabbitMq__Host`=2 (set+restore), two new facts present, no `Password=` leak assertion drift.
@@ -108,7 +108,7 @@ completed: 2026-05-30
 - **Fix:** Count over each PER-CONSUMER harness (each already awaited to settlement via `.Any()`) and sum: `consumerA.Consumed.Select<T>(ct).Count()` (==1) + `consumerB...` (==1) == 2. A load-balance regression would give 1 + 0 == 1, preserving the Pitfall-1 broadcast/load-balance discrimination. Fault check also moved to the two awaited per-consumer lists.
 - **Files modified:** `tests/BaseApi.Tests/Orchestrator/FanOutBroadcastTests.cs`
 - **Verification:** `*FanOutBroadcastTests` GREEN 5× consecutive after the fix.
-- **Committed in:** `5e7e9bc`.
+- **Committed in:** `c1ac8ff`.
 
 **Not a deviation — TEST-RMQ-03 production posture already in place:** the plan and ROADMAP both call for the WebApi bus check to stay Degraded (not 503) when the broker is down. On first run I suspected this was unimplemented, but inspection confirmed `AddBaseApiMessaging` already wires `ConfigureHealthCheckOptions(o => o.MinimalFailureStatus = HealthStatus.Degraded)` (Plan 19-03 / MSG-WEBAPI-04). No production change was made or needed; the two broker-down facts passed against the existing code.
 
@@ -127,7 +127,7 @@ completed: 2026-05-30
 
 - Created files verified on disk: `FanOutBroadcastTests.cs`, `OutboundFilterSyntheticTests.cs`, `20-02-SUMMARY.md`.
 - Modified file verified: `HealthEndpointsTests.cs` (HealthDeadRabbitFixture + 2 facts).
-- Commits verified in git log: `7cda768`, `e575251`, `28735a0`, `5e7e9bc`.
+- Commits verified in git log: `7cda768`, `e575251`, `28735a0`, `c1ac8ff`.
 
 ---
 *Phase: 20-correlation-propagation-proof-synthetic-harness-triple-sha-c*
