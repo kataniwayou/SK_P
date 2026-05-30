@@ -21,6 +21,13 @@ RUN dotnet publish "src/Orchestrator/Orchestrator.csproj" -c Release -o /publish
 FROM mcr.microsoft.com/dotnet/aspnet:8.0-bookworm-slim AS runtime
 WORKDIR /app
 COPY --from=build /publish .
+# Phase 19 fix(19-04): the aspnet:8.0-bookworm-slim runtime ships NEITHER wget NOR curl, so the
+# compose `["CMD", "wget", "--spider", ...]` /health/ready healthcheck cannot exec ("wget: not found")
+# and Docker marks the container unhealthy even though the app + bus start fine. Install wget (root,
+# so BEFORE `USER app`) in a single clean layer to make the established wget --spider idiom work.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends wget \
+    && rm -rf /var/lib/apt/lists/*
 USER app
 ENV ASPNETCORE_URLS=http://+:8081
 EXPOSE 8081
