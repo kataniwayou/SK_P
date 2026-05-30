@@ -214,7 +214,7 @@ public sealed class StartStopConsumerAckTests
 
             Assert.True(await harness.Consumed.Any<StopOrchestration>(ct));
             Assert.False(await harness.Consumed.Any<StopOrchestration>(m => m.Exception != null, ct));
-            Assert.Contains(logs.Messages, m => m.Contains("Scheduler job start"));
+            Assert.Contains(logs.Messages, m => m.Contains("Scheduler job stop"));
             await db.DidNotReceive().StringSetAsync(
                 Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(),
                 Arg.Any<When>(), Arg.Any<CommandFlags>());

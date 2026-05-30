@@ -116,6 +116,7 @@ public sealed class OrchestrationServicePublishTests
             NoHttpContext(),
             mux ?? AllKeysExist(),
             publishEndpoint,
+            NullLogger<OrchestrationService>.Instance,
             Options());
 
     // ----- MSG-WEBAPI-02: Start publishes StartOrchestration with body CorrelationId -------------

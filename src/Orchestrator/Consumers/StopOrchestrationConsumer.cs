@@ -39,7 +39,7 @@ public sealed class StopOrchestrationConsumer(
             _ = JsonSerializer.Deserialize<WorkflowRootProjection>(raw!);
 
             // ORCH-CON-04 seam — NO Redis write, NO Quartz schedule.
-            logger.LogInformation("Scheduler job start (seam) for {WorkflowId}", workflowId);
+            logger.LogInformation("Scheduler job stop (seam) for {WorkflowId}", workflowId);
         }
         // returns normally → ACK
     }

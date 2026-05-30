@@ -11,6 +11,7 @@ using MassTransit;
 using Messaging.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -59,6 +60,7 @@ public sealed class OrchestrationService
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IConnectionMultiplexer _multiplexer;
     private readonly IPublishEndpoint _publishEndpoint;
+    private readonly ILogger<OrchestrationService> _logger;
     private readonly string _keyPrefix;
 
     // Ctor is internal (not public): it accepts the internal seam types
@@ -78,6 +80,7 @@ public sealed class OrchestrationService
         IHttpContextAccessor httpContextAccessor,
         IConnectionMultiplexer multiplexer,
         IPublishEndpoint publishEndpoint,
+        ILogger<OrchestrationService> logger,
         IOptions<RedisProjectionOptions> options)
     {
         _db                           = db                           ?? throw new ArgumentNullException(nameof(db));
@@ -91,6 +94,7 @@ public sealed class OrchestrationService
         _httpContextAccessor          = httpContextAccessor          ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         _multiplexer                  = multiplexer                  ?? throw new ArgumentNullException(nameof(multiplexer));
         _publishEndpoint              = publishEndpoint              ?? throw new ArgumentNullException(nameof(publishEndpoint));
+        _logger                       = logger                       ?? throw new ArgumentNullException(nameof(logger));
         _keyPrefix                    = (options ?? throw new ArgumentNullException(nameof(options))).Value.KeyPrefix;
     }
 
@@ -160,9 +164,11 @@ public sealed class OrchestrationService
         // above is a SEPARATE stage and is deliberately NOT carried onto the bus message (per-stage
         // handoff, D-01). A publish failure (broker unreachable) PROPAGATES out of this method —
         // the broker is a hard dep for Start (MSG-WEBAPI-03) → FallbackExceptionHandler → 500.
+        var startCorr = NewId.NextGuid();
         await _publishEndpoint.Publish(
-            new StartOrchestration(workflowIds.ToArray()) { CorrelationId = NewId.NextGuid() },
+            new StartOrchestration(workflowIds.ToArray()) { CorrelationId = startCorr },
             ct);
+        _logger.LogInformation("Published StartOrchestration CorrelationId={CorrelationId}", startCorr);
     }
 
     /// <summary>
