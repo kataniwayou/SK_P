@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: "19-04-PLAN.md COMPLETE (4/4 plans) — Tasks 1-2 (d624c6e, c3d3c30) + wget healthcheck fix (e4fcf67); live stack re-verified healthy (sk-rabbitmq + sk-orchestrator). Phase 19 execution done."
+stopped_at: "Phase 19 COMPLETE (4/4 plans, verified human_needed=approved). Milestone v3.4.0 has 4 phases (17-20); Phase 20 (closeout) still pending — milestone NOT complete."
 last_updated: "2026-05-30T14:30:00.000Z"
 last_activity: 2026-05-30
 progress:
-  total_phases: 3
-  completed_phases: 2
+  total_phases: 4
+  completed_phases: 3
   total_plans: 10
   completed_plans: 10
-  percent: 100
+  percent: 75
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** Phase 19 — orchestrator-console-webapi-bus-wiring-rabbitmq-tier
+**Current focus:** Phase 20 — correlation-propagation-proof-synthetic-harness-triple-sha-closeout (next; not started)
 
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 19 (orchestrator-console-webapi-bus-wiring-rabbitmq-tier) — EXECUTION COMPLETE (4/4 plans)
-Plan: 4 of 4 — COMPLETE (Tasks 1-2 committed d624c6e/c3d3c30; Task 3 blocking human-verify PASSED after the wget healthcheck fix e4fcf67)
-Status: Phase 19 execution done. Live RabbitMQ + Orchestrator stack re-verified healthy — sk-rabbitmq AND sk-orchestrator both report `healthy`; orchestrator fan-out queues (StartOrchestration/StopOrchestration for orchestrator-1) bind on the broker. Deviation: aspnet:8.0-bookworm-slim ships no wget/curl, so the compose `wget --spider` /health/ready check could not exec — fixed by apt-installing wget in the Orchestrator runtime image (e4fcf67, Rule 3). FINDING: the root-Dockerfile baseapi-service healthcheck carries the identical latent defect (out-of-scope tech debt for a later phase). INFRA-RMQ-02/03 closed; Release build 0 Warning / 0 Error. Stack torn down with `docker compose down` (no -v).
+Phase: 20 (next — not started); Phases 17/18/19 complete (3/4)
+Plan: Not started
+Status: Phase 19 complete (verified, approved); Phase 20 closeout pending — milestone NOT complete
 Last activity: 2026-05-30
 
 ### Phase 18 Plan 04 — Close Gate Evidence (Task 4, operator-approved)
@@ -48,7 +48,7 @@ Progress: [██████████] 100% (Phase 19 execution complete; Ph
 |-------|------|--------------|--------|
 | 17 | Messaging.Contracts + Shared L2 Root Extract | MSG-CONTRACTS-01..04, INFRA-RMQ-01 (5) | Complete |
 | 18 | BaseConsole.Core Library | CONSOLE-01..05, CONSOLE-HEALTH-01..04, CORR-01/02 (11) | Complete (4/4 plans) |
-| 19 | Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier | ORCH-CON-01..04, MSG-WEBAPI-01..04, MSG-ACK-01..04, INFRA-RMQ-02/03 (14) | Execution complete (4/4 plans) |
+| 19 | Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier | ORCH-CON-01..04, MSG-WEBAPI-01..04, MSG-ACK-01..04, INFRA-RMQ-02/03 (14) | Complete (4/4 plans, verified — 1 human-UAT item pending/deferred to P20) |
 | 20 | Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout | CORR-03/04, TEST-RMQ-01..05 (7) | Not started |
 
 Build order (locked): 17 (leaf contracts) -> 18 (console base) -> 19 (Orchestrator || WebApi wiring + RabbitMQ) -> 20 (correlation proof + triple-SHA closeout). See .planning/ROADMAP.md for full success criteria + cross-phase hard constraints.
@@ -67,7 +67,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 77
+- Total plans completed: 81
 - Average duration: —
 - Total execution time: —
 
@@ -93,6 +93,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 16 | 5 | - | - |
 | 17 | 2 | - | - |
 | 18 | 4 | - | - |
+| 19 | 4 | - | - |
 
 **Recent Trend:**
 
