@@ -113,6 +113,11 @@
     <!-- Phase 4 addition (Plan 04-02 PATTERNS.md line 398): WebApplicationFactory<Program>
          resolves the partial-class marker in BaseApi.Service/Program.cs line 72. -->
     <ProjectReference Include="..\..\src\BaseApi.Service\BaseApi.Service.csproj" />
+    <!-- Phase 18 addition (Plan 18-04): the BaseConsole.Core library under standalone
+         validation (D-02). The ConsoleTestHostFixture composes the three AddBaseConsole*
+         calls in-memory; the Console/* test classes assert the library's boot, health,
+         observability, and correlation behavior with no real broker. -->
+    <ProjectReference Include="..\..\src\BaseConsole.Core\BaseConsole.Core.csproj" />
   </ItemGroup>
 
 </Project>
