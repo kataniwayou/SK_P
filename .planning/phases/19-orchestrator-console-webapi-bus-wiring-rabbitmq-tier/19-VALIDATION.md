@@ -2,7 +2,7 @@
 phase: 19
 slug: orchestrator-console-webapi-bus-wiring-rabbitmq-tier
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-05-30
 ---
@@ -90,4 +90,4 @@ created: 2026-05-30
 - [ ] Feedback latency < 180s
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** planner-finalized 2026-05-30 — each Phase 19 task maps to an anchor with an automated dotnet command; Wave 0 (ConsoleCorrelationFilterTests rewrite + Orchestrator ack harness + WebApi publish harness) is covered by Plan 01 Task 2, Plan 02 Task 3, Plan 03 Task 3 respectively.
