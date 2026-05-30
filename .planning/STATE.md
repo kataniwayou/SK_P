@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: Completed 18-03-PLAN.md
-last_updated: "2026-05-30T08:59:15.625Z"
+stopped_at: "18-04-PLAN.md Task 4 — human-verify checkpoint (gate automation GREEN; awaiting operator approval)"
+last_updated: "2026-05-30T12:25:00.000Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 2
@@ -27,9 +27,18 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 18 (BaseConsole.Core Library) — EXECUTING
-Plan: 3 of 4 complete
-Status: Executing Phase 18 — Plans 18-01/18-02/18-03 complete, Plan 18-04 pending
-Last activity: 2026-05-30 -- Phase 18 Plan 03 complete (embedded health listener + BusReadyHealthCheck + non-generic AddBaseConsole root)
+Plan: 3 of 4 complete (18-04 at Task 4 human-verify checkpoint)
+Status: Executing Phase 18 — Plan 18-04 Tasks 1-3 complete + committed; Task 4 gate automation GREEN; PAUSED at the checkpoint:human-verify gate awaiting operator approval
+Last activity: 2026-05-30 -- Phase 18 Plan 04 Tasks 1-3 done (ConsoleTestHostFixture + 5 validation classes, 10 Console tests GREEN); Task 4 close gate ran GREEN (3x dotnet test = 245 Passed each; dual-SHA psql\l + redis-cli BEFORE==AFTER; Release+Debug zero-warning) — awaiting human-verify approval before SUMMARY/finalize
+
+### Phase 18 Plan 04 — Checkpoint Evidence (Task 4, awaiting operator approval)
+
+- 3-consecutive GREEN: Run 1/2/3 each = Passed: 245, Failed: 0, Total: 245 (durations 3m18s / 3m17s / 3m17s). Console subset (10 tests) GREEN every run.
+- Dual-SHA (D-03, no rabbitmqctl — no real broker this phase):
+  - psql \l SHA-256:        BEFORE = b202692d34f71ca254b71b9468435735c8c1a5f3b048f78bb971c55eadf40d55 ; AFTER = (same) — MATCH
+  - redis-cli --scan SHA-256: BEFORE = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (0 keys) ; AFTER = (same) — MATCH
+- Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
+- Resume signal: operator types "approved" to finalize (SUMMARY + STATE/ROADMAP/REQUIREMENTS), or describes failures.
 
 Progress: [████████░░] 83%
 
