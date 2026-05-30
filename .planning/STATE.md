@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: "19-04-PLAN.md Tasks 1-2 committed (d624c6e, c3d3c30); PAUSED at Task 3 checkpoint:human-verify (blocking) — awaiting operator live-stack health verification"
-last_updated: "2026-05-30T13:40:59.150Z"
+stopped_at: "19-04-PLAN.md COMPLETE (4/4 plans) — Tasks 1-2 (d624c6e, c3d3c30) + wget healthcheck fix (e4fcf67); live stack re-verified healthy (sk-rabbitmq + sk-orchestrator). Phase 19 execution done."
+last_updated: "2026-05-30T14:30:00.000Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 10
-  completed_plans: 9
-  percent: 90
+  completed_plans: 10
+  percent: 100
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 19 (orchestrator-console-webapi-bus-wiring-rabbitmq-tier) — EXECUTING
-Plan: 4 of 4 — IN PROGRESS (Tasks 1-2 committed; PAUSED at Task 3 checkpoint:human-verify)
-Status: Awaiting operator verification of the live RabbitMQ + Orchestrator stack health (Task 3 blocking checkpoint). Tasks 1 (compose.yaml: rabbitmq + orchestrator services + baseapi rabbitmq dep/env, d624c6e) and 2 (src/Orchestrator/Dockerfile net8.0 aspnet:8.0, c3d3c30) done; `docker compose config --quiet` exit 0 + Orchestrator Release publish exit 0 both verified. Plan NOT complete — no SUMMARY yet.
+Phase: 19 (orchestrator-console-webapi-bus-wiring-rabbitmq-tier) — EXECUTION COMPLETE (4/4 plans)
+Plan: 4 of 4 — COMPLETE (Tasks 1-2 committed d624c6e/c3d3c30; Task 3 blocking human-verify PASSED after the wget healthcheck fix e4fcf67)
+Status: Phase 19 execution done. Live RabbitMQ + Orchestrator stack re-verified healthy — sk-rabbitmq AND sk-orchestrator both report `healthy`; orchestrator fan-out queues (StartOrchestration/StopOrchestration for orchestrator-1) bind on the broker. Deviation: aspnet:8.0-bookworm-slim ships no wget/curl, so the compose `wget --spider` /health/ready check could not exec — fixed by apt-installing wget in the Orchestrator runtime image (e4fcf67, Rule 3). FINDING: the root-Dockerfile baseapi-service healthcheck carries the identical latent defect (out-of-scope tech debt for a later phase). INFRA-RMQ-02/03 closed; Release build 0 Warning / 0 Error. Stack torn down with `docker compose down` (no -v).
 Last activity: 2026-05-30
 
 ### Phase 18 Plan 04 — Close Gate Evidence (Task 4, operator-approved)
@@ -40,7 +40,7 @@ Last activity: 2026-05-30
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100% (Phase 19 execution complete; Phase 20 closeout next)
 
 ### Milestone Phases (v3.4.0)
 
@@ -48,7 +48,7 @@ Progress: [█████████░] 90%
 |-------|------|--------------|--------|
 | 17 | Messaging.Contracts + Shared L2 Root Extract | MSG-CONTRACTS-01..04, INFRA-RMQ-01 (5) | Complete |
 | 18 | BaseConsole.Core Library | CONSOLE-01..05, CONSOLE-HEALTH-01..04, CORR-01/02 (11) | Complete (4/4 plans) |
-| 19 | Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier | ORCH-CON-01..04, MSG-WEBAPI-01..04, MSG-ACK-01..04, INFRA-RMQ-02/03 (14) | Not started |
+| 19 | Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier | ORCH-CON-01..04, MSG-WEBAPI-01..04, MSG-ACK-01..04, INFRA-RMQ-02/03 (14) | Execution complete (4/4 plans) |
 | 20 | Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout | CORR-03/04, TEST-RMQ-01..05 (7) | Not started |
 
 Build order (locked): 17 (leaf contracts) -> 18 (console base) -> 19 (Orchestrator || WebApi wiring + RabbitMQ) -> 20 (correlation proof + triple-SHA closeout). See .planning/ROADMAP.md for full success criteria + cross-phase hard constraints.
@@ -177,6 +177,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 19 P01 | ~12min | 3 tasks | 5 files |
 | Phase 19 P02 | ~8min | 3 tasks | 13 files |
 | Phase 19 P03 | 23min | 3 tasks | 9 files |
+| Phase 19 P04 | ~25min (incl. operator checkpoint + continuation fix) | 3 tasks (2 auto + 1 blocking human-verify) | 2 files (compose.yaml + src/Orchestrator/Dockerfile) |
 
 ## Accumulated Context
 
@@ -448,6 +449,9 @@ Recent decisions affecting current work:
 - Plan 19-03: OrchestrationService publishes Start/Stop after their L2 stage with body-only correlation { CorrelationId = NewId.NextGuid() }; envelope id never explicitly stamped (MassTransit by-convention populates envelope==body — 19-01 masking effect)
 - Plan 19-03: BaseApi.* references Messaging.Contracts only, never BaseConsole.Core (dependency firewall T-19-dep-firewall held)
 - Plan 19-03 deferred (Plan 04/Phase 20): orchestration HTTP happy-path integration facts now require a live RabbitMQ broker (publish→500 when broker down, the intended MSG-WEBAPI-03 contract); ~20 facts fail until 19-04 adds the compose tier. Health unaffected (9/9 GREEN, bus Degraded)
+- Plan 19-04: RabbitMQ tier (rabbitmq:4.1.8-management-alpine, sk-rabbitmq, rabbitmq-diagnostics -q ping) + runnable orchestrator container (src/Orchestrator/Dockerfile, net8.0 aspnet:8.0) + baseapi-service broker hard-dep; INFRA-RMQ-02/03 closed; first runnable Orchestrator stack live-verified healthy
+- Plan 19-04 deviation (fix e4fcf67, Rule 3 blocking): aspnet:8.0-bookworm-slim ships NEITHER wget NOR curl, so the compose `["CMD","wget","--spider"]` /health/ready check could not exec (sk-orchestrator marked unhealthy though app+bus ran fine). Fixed by apt-installing wget in the Orchestrator runtime stage BEFORE USER app. Re-verified: sk-rabbitmq + sk-orchestrator both healthy
+- Plan 19-04 FINDING (out-of-scope tech debt): the root-Dockerfile baseapi-service healthcheck (compose.yaml ~line 230) carries the identical wget-missing latent defect — will mark baseapi-service unhealthy the same way whenever health-gated; install wget in the root Dockerfile runtime stage in a later phase (NOT fixed here — Phase 19 does not own the root Dockerfile)
 
 ### Roadmap Milestone Log
 

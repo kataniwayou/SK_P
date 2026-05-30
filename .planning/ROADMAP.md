@@ -76,7 +76,7 @@
   - [x] 19-01-PLAN.md — Reconcile shipped Phase 17/18 to body-carried correlation (slim ICorrelated, Start/Stop implement it, re-point inbound filter, rewrite ConsoleCorrelationFilterTests) — the compile prerequisite for both streams
   - [x] 19-02-PLAN.md — Runnable Orchestrator console (thin shell, two consumers + definitions, instance-unique fan-out endpoint, read-L2 → seam, business-ack/infra-throw split, harness ack tests)
   - [x] 19-03-PLAN.md — WebApi publish-only bus join (AddBaseApiMessaging, Degraded bus health, publish Start/Stop with body CorrelationId, publish harness tests)
-  - [ ] 19-04-PLAN.md — RabbitMQ compose tier + runnable orchestrator container + WebApi broker hard-dep (Dockerfile, compose services)
+  - [x] 19-04-PLAN.md — RabbitMQ compose tier + runnable orchestrator container + WebApi broker hard-dep (Dockerfile, compose services)
 **UI hint**: no
 
 ### Phase 20: Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout

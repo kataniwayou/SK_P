@@ -88,8 +88,8 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 - [x] **INFRA-RMQ-01
 **: `MassTransit` and `MassTransit.RabbitMQ` are pinned at `8.5.5` (Apache-2.0) in Central Package Management with a blocking comment that v9+ is commercial ($400/mo) — mirroring the existing Npgsql cautionary pin.
-- [ ] **INFRA-RMQ-02**: A `rabbitmq:4.1.8-management-alpine` service is added to `compose.yaml` with a `rabbitmq-diagnostics -q ping` healthcheck; the Start/Stop path depends on `service_healthy`.
-- [ ] **INFRA-RMQ-03**: appsettings carry RabbitMQ connection configuration for both `BaseApi.Service` and `Orchestrator`; the bus connects with the locked host/credentials.
+- [x] **INFRA-RMQ-02**: A `rabbitmq:4.1.8-management-alpine` service is added to `compose.yaml` with a `rabbitmq-diagnostics -q ping` healthcheck; the Start/Stop path depends on `service_healthy`.
+- [x] **INFRA-RMQ-03**: appsettings carry RabbitMQ connection configuration for both `BaseApi.Service` and `Orchestrator`; the bus connects with the locked host/credentials.
 
 ### Test Discipline
 
@@ -168,8 +168,8 @@ Which phases cover which requirements. Filled by the roadmapper.
 | MSG-ACK-02 | Phase 19 | Pending |
 | MSG-ACK-03 (P2) | Phase 19 | Pending |
 | MSG-ACK-04 (P2) | Phase 19 | Pending |
-| INFRA-RMQ-02 | Phase 19 | Pending |
-| INFRA-RMQ-03 | Phase 19 | Pending |
+| INFRA-RMQ-02 | Phase 19 | Complete |
+| INFRA-RMQ-03 | Phase 19 | Complete |
 | CORR-03 | Phase 20 | Pending |
 | CORR-04 | Phase 20 | Pending |
 | TEST-RMQ-01 | Phase 20 | Pending |
