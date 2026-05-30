@@ -171,9 +171,9 @@ Which phases cover which requirements. Filled by the roadmapper.
 | INFRA-RMQ-02 | Phase 19 | Complete |
 | INFRA-RMQ-03 | Phase 19 | Complete |
 | CORR-03 | Phase 20 | Done |
-| CORR-04 | Phase 20 | Pending |
+| CORR-04 | Phase 20 | Done |
 | TEST-RMQ-01 | Phase 20 | Done |
-| TEST-RMQ-02 | Phase 20 | Pending |
+| TEST-RMQ-02 | Phase 20 | Done |
 | TEST-RMQ-03 | Phase 20 | Done |
 | TEST-RMQ-04 | Phase 20 | Done |
 | TEST-RMQ-05 | Phase 20 | Pending |
