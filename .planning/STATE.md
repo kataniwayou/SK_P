@@ -5,7 +5,7 @@ milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
 stopped_at: Phase 20 Stage A complete — full Docker stack healthy; 20-03 E2E proof pending
 last_updated: "2026-05-30T16:13:33.944Z"
-last_activity: 2026-05-30 -- Phase --phase execution started
+last_activity: 2026-05-30 -- Phase 20 Stage A: full Docker stack up and healthy
 progress:
   total_phases: 4
   completed_phases: 3
@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** Phase --phase — 20
+**Current focus:** Phase 20 — correlation-propagation-proof-synthetic-harness-triple-sha-closeout
 
 ## Current Position
 
