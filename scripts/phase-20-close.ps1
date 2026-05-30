@@ -44,8 +44,13 @@ try {
     $services = @('postgres', 'redis', 'rabbitmq', 'otel-collector', 'elasticsearch', 'prometheus', 'orchestrator', 'baseapi-service')
     foreach ($svc in $services) {
         # Smell B — tolerate object-OR-array compose ps --format json output (shape varies by compose version).
-        $parsed = docker compose ps $svc --format json | ConvertFrom-Json
-        $health = if ($parsed -is [array]) { $parsed[0].Health } else { $parsed.Health }
+        # A stopped/absent service yields empty output → ConvertFrom-Json is $null; report it as not-running
+        # (StrictMode would otherwise throw on a missing .Health property).
+        $raw = docker compose ps $svc --format json 2>$null | Out-String
+        $parsed = if ([string]::IsNullOrWhiteSpace($raw)) { $null } else { $raw | ConvertFrom-Json }
+        $health = if ($null -eq $parsed) { 'not-running' }
+                  elseif ($parsed -is [array]) { $parsed[0].Health }
+                  else { $parsed.Health }
         # otel-collector has no in-image healthcheck (distroless) — allowed non-healthy.
         if ($health -ne 'healthy' -and $svc -ne 'otel-collector') {
             Write-Host "Service '$svc' is not healthy (Health=$health). Aborting." -ForegroundColor Red
