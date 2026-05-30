@@ -89,7 +89,12 @@
   3. The outbound correlation filter is exercised by a synthetic test-harness downstream send that asserts the ambient correlationId is stamped (no real downstream consumer required).
   4. A "broker down" test asserts WebApi CRUD `/health/ready` and `/health/live` both stay 200 with RabbitMQ unreachable (a `HealthDeadRabbitFixture` mirroring `HealthDeadRedisFixture`); test receive endpoints use temporary/auto-delete per-class-prefixed queues with no global queue purge in teardown.
   5. The phase-close gate runs 3× consecutive GREEN with a triple-SHA snapshot (`psql \l` + `redis-cli --scan` + `rabbitmqctl list_queues name`) asserting BEFORE=AFTER.
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 20-01-PLAN.md — Source/test prerequisites: D-13 Stop seam + assertion fix, D-07 publish-side correlation log, OQ#1 RabbitMq:Port read, D-01 HarnessWebAppFactory in-memory swap, D-12 Dockerfile wget
+- [ ] 20-02-PLAN.md — Hermetic in-memory tests: TEST-RMQ-01 fan-out broadcast, CORR-03 synthetic outbound filter, TEST-RMQ-03 HealthDeadRabbitFixture broker-down (TEST-RMQ-04 temporary/auto-delete discipline)
+- [ ] 20-03-PLAN.md — Real-stack ES E2E: TEST-RMQ-02/CORR-04 two-doc correlation proof (body Guid == seam == published, != HTTP X-Correlation-Id)
+- [ ] 20-04-PLAN.md — Triple-SHA close gate (psql+redis+rabbitmq) + 3 smell fixes + 3x-GREEN closeout (TEST-RMQ-04/05)
 **UI hint**: no
 
 ### Coverage (v3.4.0)
