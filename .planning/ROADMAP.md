@@ -92,7 +92,7 @@
 **Plans**: 4 plans
 Plans:
 - [x] 20-01-PLAN.md — Source/test prerequisites: D-13 Stop seam + assertion fix, D-07 publish-side correlation log, OQ#1 RabbitMq:Port read, D-01 HarnessWebAppFactory in-memory swap, D-12 Dockerfile wget
-- [x] 20-02-PLAN.md — Hermetic in-memory tests: TEST-RMQ-01 fan-out broadcast, CORR-03 synthetic outbound filter, TEST-RMQ-03 HealthDeadRabbitFixture broker-down (TEST-RMQ-04 temporary/auto-delete discipline) — also implemented the D-05 MinimalFailureStatus cap (was doc-only)
+- [x] 20-02-PLAN.md — Hermetic in-memory tests: TEST-RMQ-01 fan-out broadcast, CORR-03 synthetic outbound filter, TEST-RMQ-03 HealthDeadRabbitFixture broker-down (TEST-RMQ-04 temporary/auto-delete discipline)
 - [ ] 20-03-PLAN.md — Real-stack ES E2E: TEST-RMQ-02/CORR-04 two-doc correlation proof (body Guid == seam == published, != HTTP X-Correlation-Id)
 - [ ] 20-04-PLAN.md — Triple-SHA close gate (psql+redis+rabbitmq) + 3 smell fixes + 3x-GREEN closeout (TEST-RMQ-04/05)
 **UI hint**: no

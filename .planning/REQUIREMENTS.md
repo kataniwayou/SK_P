@@ -70,7 +70,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 **: `BaseConsole.Core` includes an inbound consume filter that resolves the correlation value **from the message body (`message is ICorrelated → CorrelationId`)**, pushes it into an AsyncLocal accessor, and opens a MEL log scope under the literal key `"CorrelationId"` (same key as `CorrelationIdMiddleware`, so OTel `IncludeScopes` serializes it to the identical Elasticsearch attribute). [AMENDED 2026-05-30, Phase 19 D-01: the shipped Phase 18 filter reads the MassTransit *envelope* `CorrelationId`; Phase 19 re-points it to the message-body `ICorrelated.CorrelationId` per the body-carried correlation model.]
 - [x] **CORR-02
 **: `BaseConsole.Core` includes an outbound send/publish filter that stamps the ambient AsyncLocal correlationId onto every outgoing `ICorrelated` message.
-- [ ] **CORR-03**: The outbound filter is exercised this milestone by a synthetic test-harness downstream send that asserts the correlationId is stamped (no real downstream consumer required).
+- [x] **CORR-03**: The outbound filter is exercised this milestone by a synthetic test-harness downstream send that asserts the correlationId is stamped (no real downstream consumer required).
 - [ ] **CORR-04**: Per-stage correlation is proven across stage boundaries — an HTTP `X-Correlation-Id` scopes the HTTP stage (request → L2 write → publish); a fresh `Guid CorrelationId` minted at publish and carried on the **message body** via `ICorrelated.CorrelationId` rides the fan-out message and is the value the Orchestrator log line surfaces in Elasticsearch under the `"CorrelationId"` attribute. Clean per-stage handoff at the publish boundary, not a single value carried across all hops. [AMENDED 2026-05-30, Phase 19 D-01.]
 
 ### Acknowledgement Semantics
@@ -93,10 +93,10 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 ### Test Discipline
 
-- [ ] **TEST-RMQ-01**: A fan-out test runs two in-process bus instances (two `InstanceId`s) and asserts BOTH receive a copy of a single published Start message (broadcast proven, not load-balanced) — the #1 topology trap, tested now rather than deferred.
+- [x] **TEST-RMQ-01**: A fan-out test runs two in-process bus instances (two `InstanceId`s) and asserts BOTH receive a copy of a single published Start message (broadcast proven, not load-balanced) — the #1 topology trap, tested now rather than deferred.
 - [ ] **TEST-RMQ-02**: An end-to-end test drives a real HTTP Start (carrying an `X-Correlation-Id` scoping the HTTP stage) and asserts the Orchestrator's correlated log line surfaces in Elasticsearch under the `"CorrelationId"` attribute carrying the **body `ICorrelated.CorrelationId` minted at publish** (the per-stage handoff value), proving the chain HTTP stage → publish-mint → fan-out message body → orchestrator log. [AMENDED 2026-05-30, Phase 19 D-01.]
-- [ ] **TEST-RMQ-03**: A "broker down" test asserts WebApi CRUD `/health/ready` and `/health/live` both stay 200 with RabbitMQ unreachable (a `HealthDeadRabbitFixture` mirroring `HealthDeadRedisFixture`).
-- [ ] **TEST-RMQ-04**: Test receive endpoints use temporary/auto-delete, per-test-class-prefixed queues; NO global queue purge in teardown (the `FLUSHDB`-ban analog).
+- [x] **TEST-RMQ-03**: A "broker down" test asserts WebApi CRUD `/health/ready` and `/health/live` both stay 200 with RabbitMQ unreachable (a `HealthDeadRabbitFixture` mirroring `HealthDeadRedisFixture`).
+- [x] **TEST-RMQ-04**: Test receive endpoints use temporary/auto-delete, per-test-class-prefixed queues; NO global queue purge in teardown (the `FLUSHDB`-ban analog).
 - [ ] **TEST-RMQ-05**: The phase-close gate is extended to a triple-SHA snapshot — `psql \l` + `redis-cli --scan` + `rabbitmqctl list_queues name` — asserting BEFORE=AFTER, alongside the 3-consecutive-GREEN cadence. [F12]
 
 ## Future Requirements (Processor milestone, v3.5.x+)
@@ -170,12 +170,12 @@ Which phases cover which requirements. Filled by the roadmapper.
 | MSG-ACK-04 (P2) | Phase 19 | Pending |
 | INFRA-RMQ-02 | Phase 19 | Complete |
 | INFRA-RMQ-03 | Phase 19 | Complete |
-| CORR-03 | Phase 20 | Pending |
+| CORR-03 | Phase 20 | Done |
 | CORR-04 | Phase 20 | Pending |
-| TEST-RMQ-01 | Phase 20 | Pending |
+| TEST-RMQ-01 | Phase 20 | Done |
 | TEST-RMQ-02 | Phase 20 | Pending |
-| TEST-RMQ-03 | Phase 20 | Pending |
-| TEST-RMQ-04 | Phase 20 | Pending |
+| TEST-RMQ-03 | Phase 20 | Done |
+| TEST-RMQ-04 | Phase 20 | Done |
 | TEST-RMQ-05 | Phase 20 | Pending |
 
 **Coverage:**
