@@ -150,6 +150,62 @@ services:
       retries: 10
       start_period: 5s
 
+  # Phase 19 D-09 (INFRA-RMQ-02) — RabbitMQ broker tier. sk-rabbitmq container_name mirrors
+  # the sk-* cross-stack uniqueness convention (sk-redis line 137, sk-elasticsearch line 30).
+  # Host ports 5673:5672 (AMQP) + 15673:15672 (management UI) mirror redis 6380:6379
+  # collision-avoidance (Phase 12 D-01) — avoids a developer's local broker on default 5672/15672.
+  # Dev creds guest/guest (T-19-broker-creds: accepted dev-only posture; k8s/prod override via
+  # secrets, never committed). CMD-form healthcheck matches the redis idiom (line 147, no shell).
+  # start_period: 40s + retries: 5 accommodate broker cold-start before service_healthy gates
+  # dependents (T-19-broker-cold-start mitigation).
+  rabbitmq:
+    image: rabbitmq:4.1.8-management-alpine
+    container_name: sk-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5673:5672"    # AMQP (host 5673 — collision-avoidance, mirrors redis 6380)
+      - "15673:15672"  # management UI (host 15673)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  # Phase 19 D-09 (INFRA-RMQ-02) — first runnable Orchestrator container. Builds from the new
+  # multi-stage net8.0 Dockerfile (aspnet:8.0 runtime — BaseConsole.Core's embedded Kestrel health
+  # listener needs the ASP.NET shared framework). Its /health/ready is HARD-on-broker (Phase 18
+  # BusReadyHealthCheck — the INVERSE of baseapi-service's soft posture), so it goes healthy only
+  # after the bus starts; depends_on rabbitmq + redis service_healthy gate that. Compose-DNS host
+  # `rabbitmq` (NOT the host-side 5673 port) + ConnectionStrings__Redis copied verbatim from
+  # baseapi-service (line 163) to keep the Redis connection shape identical.
+  orchestrator:
+    build:
+      context: .
+      dockerfile: src/Orchestrator/Dockerfile
+    container_name: sk-orchestrator
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: guest
+      RabbitMq__Password: guest
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=5000"
+      Orchestrator__InstanceId: orchestrator-1
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
   baseapi-service:
     build:
       context: .
@@ -162,6 +218,12 @@ services:
       # Docker-internal hostname redis resolves via compose service DNS.
       ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=5000"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      # Phase 19 D-09 (INFRA-RMQ-02/03) — Start/Stop path RabbitMq config. Compose-DNS host
+      # `rabbitmq` (NOT the host-side 5673 port). Bus is SOFT-on-CRUD here (MSG-WEBAPI-04,
+      # MinimalFailureStatus=Degraded) — broker-down never flips /health/ready to 503.
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: guest
+      RabbitMq__Password: guest
     ports:
       - "8080:8080"
     healthcheck:
@@ -180,6 +242,9 @@ services:
       prometheus:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      # Phase 19 D-09 (INFRA-RMQ-02) — Start/Stop path hard-dep on a healthy broker.
+      rabbitmq:
         condition: service_healthy
 
 volumes:
