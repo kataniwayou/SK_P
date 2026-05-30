@@ -65,21 +65,34 @@ public sealed class FanOutBroadcastTests
                 new StartOrchestration([Guid.NewGuid()]) { CorrelationId = NewId.NextGuid() }, ct);
 
             // BROADCAST: BOTH consumer harnesses observed the SAME single message.
-            Assert.True(await harness.GetConsumerHarness<FanOutConsumerA>()
-                .Consumed.Any<StartOrchestration>(ct));
-            Assert.True(await harness.GetConsumerHarness<FanOutConsumerB>()
-                .Consumed.Any<StartOrchestration>(ct));
+            // The per-consumer .Any<T>(ct) AWAITS each harness's consume to settle (the bus-level
+            // harness.Consumed list is NOT awaited per-endpoint and races the second delivery).
+            var consumerA = harness.GetConsumerHarness<FanOutConsumerA>();
+            var consumerB = harness.GetConsumerHarness<FanOutConsumerB>();
+            Assert.True(await consumerA.Consumed.Any<StartOrchestration>(ct));
+            Assert.True(await consumerB.Consumed.Any<StartOrchestration>(ct));
 
-            // ANTI-LOAD-BALANCE (Pitfall 1): total consumed == 2 (one per endpoint), NOT 1.
-            // A bare .Any() would be true for load-balance too — count==2 is the discriminating proof.
-            // 8.5.5 API NOTE: ITestHarness.Consumed has no Count<T>() (its element type is not
-            // IAsyncListElement). The per-message-type count is the LINQ .Count() over the
-            // materialized Select<T>(ct) list — the same Select<T>(ct) idiom used by
-            // OrchestrationServicePublishTests.cs:144 (.Single()).
-            Assert.Equal(2, harness.Consumed.Select<StartOrchestration>(ct).Count());
+            // ANTI-LOAD-BALANCE (Pitfall 1): the TOTAL consume operations across the two distinct-
+            // InstanceId endpoints == 2 (one delivery per endpoint), NOT 1.
+            // 8.5.5 API NOTES (both empirically confirmed this run):
+            //  - ITestHarness.Consumed has no Count<T>() (element type is not IAsyncListElement),
+            //    so per-message-type counting uses LINQ .Count() over Select<T>(ct) — the same
+            //    Select<T>(ct) idiom as OrchestrationServicePublishTests.cs:144 (.Single()).
+            //  - Counting the BUS-level harness.Consumed list is FLAKY: it is settled-after-await
+            //    only via the per-consumer .Any() above, and reading its raw count races the second
+            //    endpoint's delivery (observed Actual:1 intermittently). The robust broadcast proof
+            //    is the SUM of the two PER-CONSUMER harness consumed lists, each already awaited to
+            //    settlement: A==1 + B==1 == 2. A competing-consumer (load-balance) regression would
+            //    give 1 + 0 == 1, so the assertion still discriminates broadcast from load-balance.
+            var countA = consumerA.Consumed.Select<StartOrchestration>(ct).Count();
+            var countB = consumerB.Consumed.Select<StartOrchestration>(ct).Count();
+            Assert.Equal(1, countA);
+            Assert.Equal(1, countB);
+            Assert.Equal(2, countA + countB);
 
-            // No consume faulted.
-            Assert.False(await harness.Consumed.Any<StartOrchestration>(m => m.Exception != null, ct));
+            // No consume faulted (per-consumer lists, already awaited above).
+            Assert.False(await consumerA.Consumed.Any<StartOrchestration>(m => m.Exception != null, ct));
+            Assert.False(await consumerB.Consumed.Any<StartOrchestration>(m => m.Exception != null, ct));
         }
         finally { await harness.Stop(ct); }
     }
