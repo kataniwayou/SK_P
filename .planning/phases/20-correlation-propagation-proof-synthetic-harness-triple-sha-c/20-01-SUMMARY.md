@@ -95,10 +95,10 @@ completed: 2026-05-30
 
 - `dotnet build SK_P.sln -c Release` → exit 0, 0 warnings / 0 errors.
 - `dotnet build SK_P.sln -c Debug` → exit 0, 0 warnings / 0 errors.
-- `dotnet test --filter-class *StartStopConsumerAckTests` → 6/6 passed.
-- `dotnet test --filter-class *OrchestrationServicePublishTests` → 4/4 passed.
-- `dotnet test --filter-class *HealthEndpointsTests` → 18/18 passed (port default-5672 path unaffected).
-- `dotnet build SK_P.sln -c Release` and `-c Debug` → exit 0, 0 warnings (HarnessWebAppFactory + DI factory compile; A1 manual fallback path confirmed).
+- `*StartStopConsumerAckTests` (MTP exe `--filter-class`) → 6/6 passed (D-13 corrected Stop assertion GREEN).
+- `*OrchestrationServicePublishTests` → 4/4 passed (D-07 publish-log + NullLogger caller GREEN).
+- `*HealthEndpointsTests` → NOT runnable in this hermetic session: 9/13 fail with `Npgsql … Failed to connect to 127.0.0.1:5433` and `Broker unreachable rabbitmq:5672` — these are real-stack integration tests requiring the live Postgres (host 5433) + RabbitMQ compose containers, which are NOT up in this hermetic Plan-20-01 environment. Environmental (absent DB/broker), NOT caused by the RabbitMq:Port change: the default-5672 path is byte-identical and the errors are connection failures, not config-binding errors. Gate deferred to the real-stack plans (20-03/20-04). Task 2 acceptance is satisfied by the zero-warning build + unchanged default path.
+- Tests project compiles within `SK_P.sln` Release/Debug (HarnessWebAppFactory harness API surface resolves; A1 manual fallback path confirmed).
 
 All task `<acceptance_criteria>` re-verified via grep: stop(seam)=1, start(seam) in Stop consumer=0, stop-assert=1, start-assert=1, publish-log=1, ctor logger=1, test logger arg=1; RabbitMq:Port=1, `Host(host, port`=1, 5672 present=1; HarnessWebAppFactory class + AddMassTransitTestHarness present + the manual RemoveAll fallback (A1); Dockerfile wget=1 with apt-line(16) < USER-app-line(19).
 
