@@ -95,7 +95,7 @@ completed: 2026-05-31
 - `47e5dba` — HarnessWebAppFactory complete MassTransit strip + dedup; 13 fact classes → HarnessWebAppFactory; OrchestrationLogsE2ETests → real-broker @5673.
 - `b60971f` — RedisFixtureFacts initial cold-start determinism (superseded by b86c3d4 but kept).
 - `dc855fd` → reverted by `e2dfd2c` — gate warm-up (drafted, then reverted as ineffective).
-- `b86c3d4` — RedisFixtureFacts bounded retry-until-throw + ErrorMappingFacts load-tolerant SSRF bound.
+- `1b71d80` — RedisFixtureFacts bounded retry-until-throw + ErrorMappingFacts load-tolerant SSRF bound.
 - `3936346` — CorrelationPropagationE2ETests net-zero L2 teardown.
 
 ## Verification
@@ -117,7 +117,7 @@ The plan assumed the gate would pass once the scripts were committed and the sta
 ## Self-Check: PASSED
 
 - `GATE_V6_EXIT=0` + single "Phase 20 close gate PASSED." + 3 "invariant HELD" confirmed via grep of the gate log.
-- Commits `47e5dba`, `b86c3d4`, `3936346` (+ revert `e2dfd2c`) in git log; working tree clean (source).
+- Commits `47e5dba`, `1b71d80`, `3936346` (+ revert `e2dfd2c`) in git log; working tree clean (source).
 
 ---
 *Phase: 20-correlation-propagation-proof-synthetic-harness-triple-sha-c*
