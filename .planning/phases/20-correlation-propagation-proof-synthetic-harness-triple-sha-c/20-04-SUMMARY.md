@@ -68,12 +68,12 @@ completed: 2026-05-31
 
 **The Phase 20 close gate reaches exit 0: zero-warning build (Release+Debug), 3× consecutive 265-fact GREEN with the full v3.4.0 stack up (TEST-RMQ-02 live), and all three SHA-256 snapshots (psql `\l` + redis `--scan` + rabbitmqctl `list_queues`) BEFORE==AFTER. Four independent blockers were resolved in order: the half-delivered D-01 harness (17 RED), two pre-existing flaky tests (RedisFixtureFacts, ErrorMappingFacts), and a Redis L2 key leak (CorrelationPropagationE2ETests).**
 
-## Close-Gate Evidence (operator-grade) — gate run `GATE_V6_EXIT=0`
+## Close-Gate Evidence (operator-grade) — final gate run, exit 0
 
 - **3-consecutive GREEN** (full suite, no Category filter — TEST-RMQ-02 RealStack ran live):
-  - Run 1: Exit 0, Passed 265 — 3m28s
-  - Run 2: Exit 0, Passed 265 — 3m30s
-  - Run 3: Exit 0, Passed 265 — 3m30s
+  - Run 1: Exit 0, Passed 265 — 3m31s
+  - Run 2: Exit 0, Passed 265 — 3m25s
+  - Run 3: Exit 0, Passed 265 — 3m26s
 - **Zero-warning build:** Release exit 0 (0 warnings); Debug exit 0 (0 warnings).
 - **Triple-SHA invariants HELD (BEFORE == AFTER):**
   - psql `\l`              SHA-256: `94ac978c670a1dd11ea3d0ad03cb57d50032dc0c3ee670d0d7e14dce6acb0240`
@@ -90,13 +90,13 @@ completed: 2026-05-31
 3. **ErrorMappingFacts flake** — SSRF guard used `<500ms` wall-clock as a no-outbound-call proxy; in-process schema parsing spiked to ~775ms under load → false fail. Validator is structurally SSRF-safe.
 4. **TEST-REDIS-04 leak** — CorrelationPropagationE2ETests projects 3 `skp:` L2 keys via a real Start but runs `skipRedisFixture=true`, so the base SCAN+DEL never deletes them → +3 keys/run, breaking net-zero. Surfaced only now because the gate previously died at the test step before reaching the snapshot.
 
-## Fix (commits)
+## Fix (commits, in order)
 
 - `47e5dba` — HarnessWebAppFactory complete MassTransit strip + dedup; 13 fact classes → HarnessWebAppFactory; OrchestrationLogsE2ETests → real-broker @5673.
-- `b60971f` — RedisFixtureFacts initial cold-start determinism (superseded by b86c3d4 but kept).
-- `dc855fd` → reverted by `e2dfd2c` — gate warm-up (drafted, then reverted as ineffective).
-- `1b71d80` — RedisFixtureFacts bounded retry-until-throw + ErrorMappingFacts load-tolerant SSRF bound.
-- `3936346` — CorrelationPropagationE2ETests net-zero L2 teardown.
+- `b60971f` — RedisFixtureFacts initial cold-start determinism (superseded by `b86c3d4` but retained as a genuine improvement).
+- `dc855fd` → reverted by `e2dfd2c` — gate warm-up (drafted, then reverted as ineffective against the real flakes).
+- `b86c3d4` — RedisFixtureFacts bounded retry-until-throw + ErrorMappingFacts load-tolerant SSRF bound.
+- `6d9d048` — CorrelationPropagationE2ETests net-zero L2 teardown.
 
 ## Verification
 
@@ -116,8 +116,8 @@ The plan assumed the gate would pass once the scripts were committed and the sta
 
 ## Self-Check: PASSED
 
-- `GATE_V6_EXIT=0` + single "Phase 20 close gate PASSED." + 3 "invariant HELD" confirmed via grep of the gate log.
-- Commits `47e5dba`, `1b71d80`, `3936346` (+ revert `e2dfd2c`) in git log; working tree clean (source).
+- Gate exit 0 + single "Phase 20 close gate PASSED." + 3 "invariant HELD" confirmed via grep of the gate log.
+- Commits `47e5dba`, `b60971f`, `b86c3d4`, `6d9d048` (+ revert `e2dfd2c`) verified in git log; working tree clean (source).
 
 ---
 *Phase: 20-correlation-propagation-proof-synthetic-harness-triple-sha-c*
