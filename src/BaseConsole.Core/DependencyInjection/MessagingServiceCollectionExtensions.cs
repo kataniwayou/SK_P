@@ -38,7 +38,7 @@ public static class MessagingServiceCollectionExtensions
             x.UsingRabbitMq((ctx, c) =>
             {
                 c.Host(rabbitHost, h => { h.Username(rabbitUser); h.Password(rabbitPass); });
-                c.UseConsumeFilter(typeof(InboundCorrelationConsumeFilter), ctx);     // CORR-01 bus-wide
+                c.UseConsumeFilter(typeof(InboundCorrelationConsumeFilter<>), ctx);   // CORR-01 bus-wide (open-generic)
                 c.UseSendFilter(typeof(OutboundCorrelationSendFilter<>), ctx);        // CORR-02
                 c.UsePublishFilter(typeof(OutboundCorrelationPublishFilter<>), ctx);  // CORR-02
                 c.ConfigureEndpoints(ctx);

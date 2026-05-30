@@ -11,16 +11,25 @@ namespace BaseConsole.Core.Messaging;
 /// so OTel <c>IncludeScopes</c> serializes one shared correlation attribute end-to-end.
 ///
 /// <para>
+/// <b>Open-generic by design.</b> The scoped/DI registration surface
+/// (<c>UseConsumeFilter(typeof(InboundCorrelationConsumeFilter&lt;&gt;), ctx)</c>) requires a generic
+/// type definition — MassTransit resolves a closed instance per consumed message type from the
+/// container. Implementing <c>IFilter&lt;ConsumeContext&lt;T&gt;&gt;</c> (not the non-generic
+/// <c>IFilter&lt;ConsumeContext&gt;</c>) mirrors the two outbound open-generic filters and is the
+/// shape MassTransit 8.5.5 accepts for a bus-wide scoped consume filter.
+/// </para>
+///
+/// <para>
 /// Security (T-18-04): the inbound id is treated as opaque untrusted text — placed only as a
 /// scope VALUE under the fixed key, never interpolated into a message template. The
 /// <see cref="Guid.NewGuid"/> fallback bounds the value when the envelope id is absent.
 /// </para>
 /// </summary>
-public sealed class InboundCorrelationConsumeFilter(
-    ICorrelationAccessor accessor, ILogger<InboundCorrelationConsumeFilter> logger)
-    : IFilter<ConsumeContext>
+public sealed class InboundCorrelationConsumeFilter<T>(
+    ICorrelationAccessor accessor, ILogger<InboundCorrelationConsumeFilter<T>> logger)
+    : IFilter<ConsumeContext<T>> where T : class
 {
-    public async Task Send(ConsumeContext context, IPipe<ConsumeContext> next)
+    public async Task Send(ConsumeContext<T> context, IPipe<ConsumeContext<T>> next)
     {
         var corrId = context.CorrelationId?.ToString() ?? Guid.NewGuid().ToString();
         accessor.Set(corrId);
