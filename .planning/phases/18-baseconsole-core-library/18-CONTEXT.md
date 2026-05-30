@@ -36,6 +36,16 @@ This is a library-only phase: no concrete host ships, no real broker is required
 ## Implementation Decisions
 
 ### ICorrelated stamping mechanism (Area 1 — CORR-02)
+> **[AMENDED 2026-05-30, Phase 19 D-01 — correlation model changed to body-carried]** The v3.4.0
+> correlation model now carries correlation on the **message body** via a slimmed `ICorrelated`
+> `{ Guid CorrelationId }` (init-set), NOT the MassTransit envelope. Consequences for Phase 18's
+> shipped filters, reconciled in Phase 19: (a) the **inbound consume filter** (CORR-01) reads
+> `message is ICorrelated → CorrelationId` from the body, not `ctx.CorrelationId` from the envelope;
+> (b) the WebApi publisher sets the body field at construction (no envelope stamp needed for the
+> operational Start/Stop path); (c) the **outbound** send/publish filter (D-01 below) remains valid
+> for the future ambient-stamping case but is exercised only by the Phase 20 synthetic harness. The
+> original D-01 text is preserved below for history.
+
 - **D-01:** The outbound send/publish filter stamps the **MassTransit envelope**
   (`SendContext.CorrelationId` / `PublishContext.CorrelationId`) from the ambient AsyncLocal
   accessor, gated on `message is ICorrelated`. It does **NOT** mutate the record body, so

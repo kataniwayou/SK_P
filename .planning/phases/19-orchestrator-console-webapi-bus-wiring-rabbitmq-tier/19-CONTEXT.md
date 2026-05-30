@@ -36,40 +36,59 @@ per-job-trigger `Guid CorrelationId` that becomes the bus-world id traveling orc
 <decisions>
 ## Implementation Decisions
 
-### Correlation model — per-stage handoff (Area: Fork 1) ⭐ LOAD-BEARING — amends locked specs
-- **D-01:** Correlation is **per-stage with a clean handoff at each boundary**, NOT a single value
-  carried across the HTTP→bus hop. Three stages, fresh id at each boundary:
+### Correlation model — body-carried, per-stage handoff, slim `ICorrelated` (Area: Fork 1) ⭐ LOAD-BEARING — amends shipped Phase 17 + Phase 18
+- **D-01:** Correlation rides the **message body** via a **slimmed `ICorrelated` contract**, NOT the
+  MassTransit envelope, and is **per-stage with a clean handoff at each boundary** (not one value
+  carried across the HTTP→bus hop). Two parts:
+
+  **(i) Contract shape — interface segregation.** `ICorrelated` is slimmed to the single universal
+  field `{ Guid CorrelationId }`, changed to **init-set** (publisher sets it at construction). Every
+  bus message implements it. The five execution ids (`ExecutionId, WorkflowId, StepId, ProcessorId,
+  EntryId`) move to a **derived `IExecutionCorrelated : ICorrelated`** for the orchestrator↔processor
+  execution round-trip — **defined later in the Processor milestone where those ids are real**
+  (DEFERRED, not defined this milestone). This kills the `Guid.Empty`-slot awkwardness of a fat
+  6-id interface on operational messages. `StartOrchestration`/`StopOrchestration` implement just the
+  slim `ICorrelated` (CorrelationId only), keeping `Guid[] WorkflowIds` as their operational payload.
+
+  **(ii) Per-stage values.** Three stages, fresh id at each boundary:
   1. **HTTP stage** — `CorrelationIdMiddleware`'s `X-Correlation-Id` scopes the request through L1
      build, validation, L2 write, and publish. It is **NOT persisted to the L2 root** and the
-     orchestrator never reads it.
-  2. **Bus stage** — a **fresh envelope `CorrelationId` is minted at publish** and rides the message.
-     The inbound consume filter (CORR-01, already built in Phase 18) opens the `"CorrelationId"` MEL
-     scope from that envelope id; the orchestrator logs under it up to the scheduler-job-start seam.
-     This envelope value is what CORR-04 / TEST-RMQ-02 (Phase 20) assert surfaces in Elasticsearch.
+     orchestrator never reads it. (HTTP id is a `string`; the bus id is a `Guid` — distinct types,
+     distinct stages.)
+  2. **Bus stage** — a **fresh `Guid CorrelationId` is minted at publish and set on the message body**
+     (`ICorrelated.CorrelationId`). The inbound consume filter (CORR-01, shipped Phase 18 — Phase 19
+     re-points it from envelope to body) reads `message is ICorrelated → CorrelationId` and opens the
+     `"CorrelationId"` MEL scope from it; the orchestrator logs under it up to the scheduler-job-start
+     seam. This body value is what CORR-04 / TEST-RMQ-02 (Phase 20) assert surfaces in Elasticsearch.
   3. **Scheduler stage (FUTURE)** — the job trigger would mint yet another fresh `Guid CorrelationId`
-     (the bus-world source for orchestrator↔processor). The milestone STOPS at the seam, which is
-     exactly where stage-2 hands off to stage-3 — so no minting, no Quartz here.
+     (the bus-world source for the orchestrator↔processor execution messages that carry the full
+     `IExecutionCorrelated` vocabulary). The milestone STOPS at the seam — exactly where stage-2 hands
+     off to stage-3 — so no minting, no Quartz here.
   The `"CorrelationId"` log-scope KEY is the shared cross-stage join (CorrelationKeys.LogScope,
-  Phase 17 D-11); only the VALUE under it changes per stage. This is the "consistency behavior":
-  every stage owns its own correlationId.
-- **D-01a (amendment record):** This model **contradicted and now amends** three locked specs +
-  the milestone goal line, all edited 2026-05-30:
-  - ROADMAP milestone goal (line 13) + Phase 19 SC#2 + cross-phase correlation constraint (line 19).
-  - ORCH-CON-03 (was "extracts the stored X-CorrelationId" → now "scope from envelope id; reads L2
-    for existence/payload").
-  - CORR-04 + TEST-RMQ-02 (was "same value HTTP→L2→message→log" → now "envelope-mint value,
-    per-stage handoff"). Downstream agents read the AMENDED text; do not re-introduce the
-    L2-carries-X-CorrelationId chain.
+  Phase 17 D-11); only the VALUE under it changes per stage. This is the user's "consistency behavior":
+  one universal correlation contract, every stage owns its own correlationId.
+- **D-01a (amendment record):** This model **amends shipped phases + locked specs**, all edited
+  2026-05-30 (Phase 19 reconciles the shipped Phase 17/18 *code* during execution):
+  - **Phase 17 code+context:** `ICorrelated` slimmed to `{ Guid CorrelationId }` init-set (was 6-id
+    get-only, D-09); Start/Stop now implement it (were POCO non-implementers, D-10). MSG-CONTRACTS-02,
+    MSG-CONTRACTS-03 amended.
+  - **Phase 18 code+context:** the inbound consume filter (CORR-01) reads the **body**
+    `ICorrelated.CorrelationId`, not the envelope `ctx.CorrelationId` (D-01); the outbound filter
+    (CORR-02/D-01) stays for the future ambient case, exercised by the Phase 20 harness only.
+  - **ROADMAP** milestone goal + Phase 19 SC#2 + Phase 20 SC#1 + cross-phase correlation constraint.
+  - **REQUIREMENTS** ORCH-CON-03, CORR-04, TEST-RMQ-02. Downstream agents read the AMENDED text; do
+    NOT re-introduce the envelope-carried or L2-carried-X-CorrelationId chains.
 
 ### Publish-side wiring (Area: Fork 2)
 - **D-02:** WebApi joins the bus **publish-only** with **no correlation filter / no AsyncLocal
-  accessor**. Because the orchestrator's correlation source is the freshly-minted envelope id (D-01),
-  and `StartOrchestration`/`StopOrchestration` do NOT implement `ICorrelated` (Phase 17 D-10), the
-  publish explicitly mints the envelope id at the call site:
-  `Publish(new StartOrchestration(ids.ToArray()), ctx => ctx.CorrelationId = NewId.NextGuid())`
-  (NewId.NextGuid() — MassTransit's sequential-Guid generator). No outbound filter is duplicated
-  into BaseApi (the BaseConsole filter is inapplicable to non-`ICorrelated` messages anyway, and
-  lives in `BaseConsole.Core` which WebApi must not reference per MSG-WEBAPI-01).
+  accessor**. The publisher sets the correlation on the **message body at construction** (the slim
+  `ICorrelated.CorrelationId`), minting a fresh sequential Guid:
+  `Publish(new StartOrchestration(ids.ToArray()) { CorrelationId = NewId.NextGuid() })`
+  (NewId.NextGuid() — MassTransit's sequential-Guid generator; init-set property per D-01). No
+  outbound filter is needed on the WebApi side (the BaseConsole outbound filter lives in
+  `BaseConsole.Core`, which WebApi must not reference per MSG-WEBAPI-01; and the body is set directly
+  at the call site). Note: do NOT also set the MT envelope `CorrelationId` — correlation is body-only
+  in this model, and the inbound filter reads the body.
 - **D-03:** Bus registration lives in a new **`AddBaseApiMessaging(cfg)` extension in `BaseApi.Core`**
   (publish-only: `AddMassTransit` → `UsingRabbitMq` host config, no receive endpoints, no consumers),
   mirroring `AddBaseConsoleMessaging` symmetry. APIs that don't publish simply don't call it.
@@ -156,12 +175,14 @@ per-job-trigger `Guid CorrelationId` that becomes the bus-world id traveling orc
   RabbitMQ soft-on-CRUD = WebApi, hard = Orchestrator; no global purge / triple-SHA = Phase 20).
 
 ### Prior-phase context (locked decisions this phase builds on)
-- `.planning/phases/17-messaging-contracts-shared-l2-root-extract/17-CONTEXT.md` — D-10 (control records
-  carry `Guid[] WorkflowIds`, do NOT implement `ICorrelated` → forces explicit publish-mint, D-02),
-  D-08 (camelCase wire shape frozen), D-11 (`CorrelationKeys.LogScope = "CorrelationId"` shared const).
-- `.planning/phases/18-baseconsole-core-library/18-CONTEXT.md` — D-01 (outbound filter stamps envelope,
-  `ICorrelated`-gated → inapplicable to control records), D-06 (the `AddBaseConsole*` seam the
-  Orchestrator wires), the `BusReadyHealthCheck` hard-on-broker posture (Orchestrator = inverse of D-05).
+- `.planning/phases/17-messaging-contracts-shared-l2-root-extract/17-CONTEXT.md` — **D-09/D-10 AMENDED
+  2026-05-30** (`ICorrelated` slimmed to `{ Guid CorrelationId }` init-set; Start/Stop now implement it
+  — read the amendment notes, not the original text), D-08 (camelCase wire shape frozen),
+  D-11 (`CorrelationKeys.LogScope = "CorrelationId"` shared const).
+- `.planning/phases/18-baseconsole-core-library/18-CONTEXT.md` — **D-01 AMENDED 2026-05-30** (inbound
+  filter reads body not envelope; outbound filter kept for the Phase 20 harness case), D-06 (the
+  `AddBaseConsole*` seam the Orchestrator wires), the `BusReadyHealthCheck` hard-on-broker posture
+  (Orchestrator = inverse of D-05).
 
 ### BaseConsole.Core public API (built Phase 18 — the Orchestrator consumes this)
 - `src/BaseConsole.Core/DependencyInjection/MessagingServiceCollectionExtensions.cs` —
@@ -170,14 +191,18 @@ per-job-trigger `Guid CorrelationId` that becomes the bus-world id traveling orc
   x.AddConsumer<StopConsumer, StopDef>(); }`. Filters + `ConfigureEndpoints` already wired bus-wide.
 - `src/BaseConsole.Core/DependencyInjection/BaseConsoleServiceCollectionExtensions.cs` —
   `AddBaseConsole(cfg)` (Redis soft-dep + embedded health).
-- `src/BaseConsole.Core/Messaging/InboundCorrelationConsumeFilter.cs` — opens the `"CorrelationId"`
-  scope from the envelope id (CORR-01); this is the orchestrator's correlation source under D-01.
+- `src/BaseConsole.Core/Messaging/InboundCorrelationConsumeFilter.cs` — shipped Phase 18 reading the
+  **envelope** `ctx.CorrelationId`; **Phase 19 re-points it to the message body**
+  (`message is ICorrelated → CorrelationId`, D-01) and opens the `"CorrelationId"` scope from it.
 - `src/BaseConsole.Core/Messaging/{ICorrelationAccessor,AsyncLocalCorrelationAccessor}.cs`,
   `OutboundCorrelation{Send,Publish}Filter.cs` — console-side outbound stamping (Phase 20 harness).
 - `src/BaseConsole.Core/Health/BusReadyHealthCheck.cs` — Orchestrator `/health/ready` hard-on-broker.
 
 ### Messaging.Contracts (Phase 17 — reference, do not modify)
-- `src/Messaging.Contracts/{StartOrchestration,StopOrchestration}.cs` — `(Guid[] WorkflowIds)` records.
+- `src/Messaging.Contracts/{StartOrchestration,StopOrchestration}.cs` — `(Guid[] WorkflowIds)` records;
+  Phase 19 makes them implement the slim `ICorrelated` (adds init-set `Guid CorrelationId`).
+- `src/Messaging.Contracts/ICorrelated.cs` — **Phase 19 slims this to `{ Guid CorrelationId }` init-set**
+  (shipped Phase 17 as 6-id get-only; see Phase 17 D-09/D-10 amendment notes).
 - `src/Messaging.Contracts/CorrelationKeys.cs` — `LogScope = "CorrelationId"`.
 - `src/Messaging.Contracts/Projections/{WorkflowRootProjection,LivenessProjection}.cs` — the L2 root
   read-shape the orchestrator deserializes (camelCase frozen; `correlationId` field now vestigial).
@@ -245,14 +270,23 @@ per-job-trigger `Guid CorrelationId` that becomes the bus-world id traveling orc
 <specifics>
 ## Specific Ideas
 
-- The correlation model (D-01) is the user's deliberate "consistency behavior": each stage owns its
-  own correlationId with a clean handoff at the boundary, rather than threading one HTTP value across
-  the whole pipeline. The `"CorrelationId"` log-scope KEY is the constant join across stages; the VALUE
-  is per-stage. The scheduler-job-start seam is the precise edge where stage-2 (envelope) would hand off
-  to stage-3 (future per-job Guid) — which is exactly where the milestone stops.
+- The correlation model (D-01) is the user's deliberate "consistency behavior": **one universal
+  correlation contract (slim `ICorrelated`), carried on the message body**, with each stage owning its
+  own correlationId and a clean handoff at the boundary — rather than threading one HTTP value across
+  the whole pipeline OR coupling to MassTransit envelope semantics. Interface segregation (slim base +
+  future derived `IExecutionCorrelated`) keeps operational messages free of `Guid.Empty` slots. The
+  `"CorrelationId"` log-scope KEY is the constant join across stages; the VALUE is per-stage. The
+  scheduler-job-start seam is the precise edge where stage-2 (the publish-minted bus Guid) would hand
+  off to stage-3 (the future per-job Guid on `IExecutionCorrelated` messages) — exactly where the
+  milestone stops.
 - Phase 19 deliverable is logs-to-the-seam + a runnable stack; the *proof* that correlation surfaces in
   Elasticsearch and that fan-out broadcasts (not load-balances) is Phase 20. Design the consumer logging
-  + the publish-mint so the Phase 20 ES assertion reads the envelope `CorrelationId` under `"CorrelationId"`.
+  + the publish-mint so the Phase 20 ES assertion reads the **body `ICorrelated.CorrelationId`** under
+  the `"CorrelationId"` scope key.
+- This model amends shipped Phase 17 + Phase 18 *code* (slim `ICorrelated`, init-set, Start/Stop
+  implement it, inbound filter reads body) — that reconciliation is Phase 19 implementation work, not a
+  separate phase. The v3.3.0/Phase-17/18 test suites must stay GREEN through the change (the contract
+  slim is a narrowing; the filter re-point is a one-line source change + its filter test updates).
 - Two parallel waves with no mutual dependency: (A) Orchestrator console + consumers + container;
   (B) WebApi publish-join + RabbitMQ compose tier + appsettings. They meet only at the shared contract
   + the live broker — plan them as independent waves.
@@ -262,9 +296,23 @@ per-job-trigger `Guid CorrelationId` that becomes the bus-world id traveling orc
 <deferred>
 ## Deferred Ideas
 
+- **Derived `IExecutionCorrelated : ICorrelated`** (the five execution ids `ExecutionId, WorkflowId,
+  StepId, ProcessorId, EntryId` on top of the slim base) → **DEFERRED to the Processor milestone**
+  (FUT-CONTRACTS-01), defined alongside the first execution message (`JobTrigger`/`ExecutionResult`)
+  where those ids are real. Slimming `ICorrelated` to `{ CorrelationId }` now; the 5-id execution
+  vocabulary is recorded here so it isn't lost. Deliberately NOT defined this milestone (no unused
+  contract in `Messaging.Contracts`).
 - **Stage-3 per-job-trigger `Guid CorrelationId`** (the bus-world correlation source that travels
-  orchestrator→processor→orchestrator) → FUTURE / Processor milestone (FUT-QUARTZ-01, FUT-SEND-01/02).
-  Minted at the job trigger, i.e. one step past this milestone's seam. Tracked, not lost.
+  orchestrator→processor→orchestrator on the `IExecutionCorrelated` messages) → FUTURE / Processor
+  milestone (FUT-QUARTZ-01, FUT-SEND-01/02). Minted at the job trigger, i.e. one step past this
+  milestone's seam. Tracked, not lost.
+- **Processor → WebApi startup self-id message** (operational, implements slim `ICorrelated`) — user
+  flagged as "discuss further"; relates to FUT-REQRESP-01 (`GetProcessorBySourceHash` responder).
+  OUT of v3.4.0; revisit when the Processor console lands.
+- **`CorrelatedBy<Guid>` (MassTransit's body→envelope auto-bridge)** → rejected as the mechanism
+  because it would drag a MassTransit reference into `Messaging.Contracts` (reopens Phase 17 D-01
+  pure-POCO). The hand-rolled slim `ICorrelated` + body-reading inbound filter is the chosen path; the
+  envelope `CorrelationId` slot is left unused this model.
 - **Stop writing `WorkflowRootProjection.correlationId`** to the L2 root (vestigial under D-01) →
   optional later cleanup; left written this milestone for zero churn / GREEN-preservation.
 - **Hoisting `RedisProjectionKeys` to `Messaging.Contracts`** (so writer + orchestrator-reader share one

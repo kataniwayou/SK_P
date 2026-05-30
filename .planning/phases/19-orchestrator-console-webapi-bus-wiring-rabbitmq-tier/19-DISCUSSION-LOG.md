@@ -9,15 +9,26 @@
 
 ---
 
-## Fork 1 — Correlation model (which correlationId the orchestrator logs)
+## Fork 1 — Correlation model (carrier + contract shape) — iterated 4×
 
-| Option | Description | Selected |
+This fork went through four refinements as the user clarified intent. Final model = body-carried, slim `ICorrelated`, per-stage handoff.
+
+| Option (in order proposed) | Description | Selected |
 |--------|-------------|----------|
-| L2-root carries X-CorrelationId | HTTP X-Correlation-Id stored in L2 root; orchestrator reads it back per WorkflowId and logs under it. Matches original ROADMAP/ORCH-CON-03/CORR-04 wording. | |
-| Per-stage handoff (envelope-mint) | HTTP X-Correlation-Id scopes the HTTP stage only (not persisted to L2); a fresh envelope CorrelationId minted at publish is the orchestrator's logged value; a third fresh Guid would be minted at the future job trigger. Each stage owns its id. | ✓ |
+| 1. L2-root carries X-CorrelationId | HTTP X-Correlation-Id stored in L2 root; orchestrator reads it back per WorkflowId and logs under it. Original ROADMAP/ORCH-CON-03/CORR-04 wording. | |
+| 2. Per-stage handoff, envelope-carried | HTTP id scopes HTTP stage (not persisted); fresh **envelope** CorrelationId minted at publish; 3rd fresh Guid at future job trigger. | superseded |
+| 3. Fat ICorrelated (all 6) on control msgs | Start/Stop implement the full 6-id ICorrelated; unused ids = Guid.Empty; body-carried. | rejected by user ("I don't like … WorkflowId = Empty") |
+| 4. Slim ICorrelated + derived per category | ICorrelated = `{ CorrelationId }` only; operational msgs (Start/Stop) implement just it; execution msgs implement a derived `IExecutionCorrelated : ICorrelated` (5 more ids) defined later where real; body-carried; per-stage handoff. | ✓ FINAL |
 
-**User's choice:** Per-stage handoff. User: "http request use the x-correlationId up to the stage that publish to orchestrator. not storing x correlation in redis at all. the publish generate envelope correlationId to the orchestrator. orchestrator use the correlationId up to scheduler job, this one generate new correlationId. this is consistency behavior."
-**Notes:** This contradicted 3 locked specs + the milestone goal line. With explicit user approval ("amend them now"), the following were AMENDED 2026-05-30: ROADMAP milestone goal (line 13), ROADMAP Phase 19 SC#2, ROADMAP cross-phase correlation constraint (line 19), REQUIREMENTS ORCH-CON-03, CORR-04, TEST-RMQ-02. The `"CorrelationId"` log-scope KEY stays the shared cross-stage join (Phase 17 D-11); only the VALUE is per-stage. Captured as CONTEXT D-01/D-01a. Stage-3 (per-job-trigger Guid) deferred to Processor milestone.
+**User's reasoning (verbatim, condensed):**
+- (→opt 2) "http request use the x-correlationId up to the stage that publish to orchestrator. not storing x correlation in redis at all. the publish generate … correlationId to the orchestrator. orchestrator use the correlationId up to scheduler job, this one generate new correlationId. this is consistency behavior."
+- (→opt 3 then 4) "ICorrelated interface is perfect to messages between orchestrator to processor vice versa … the message between webapi to orchestrator … are operational, meaning part of the Id's will be guid.empty … still we want consistency."
+- (→opt 4 final) "another approach … ICorrelated only contains CorrelationId, and inherit and create dedicated messages for each (I don't like … Guid[] WorkflowIds payload retained, ICorrelated.WorkflowId = Empty)."
+- Approval: "go ahead, defer the derived interface."
+
+**Carrier question (envelope vs body):** Resolved to **body** — user explicitly wants their own `ICorrelated` contract to carry correlation, not the MassTransit envelope slot. The envelope `CorrelationId` slot is left unused. `CorrelatedBy<Guid>` (MT's auto-bridge) rejected — would drag MassTransit into the pure-POCO `Messaging.Contracts` (Phase 17 D-01).
+
+**Notes / amendments (all 2026-05-30, Phase 19 D-01):** This model amends **shipped** Phase 17 (ICorrelated 6-id get-only → slim 1-id init-set, D-09; Start/Stop non-implementers → implementers, D-10; MSG-CONTRACTS-02/03) and **shipped** Phase 18 (inbound filter envelope→body, D-01/CORR-01), plus ROADMAP goal + Phase 19 SC#2 + Phase 20 SC#1 + correlation constraint, and REQUIREMENTS ORCH-CON-03/CORR-04/TEST-RMQ-02. Code reconciliation is Phase 19 implementation work. The `"CorrelationId"` log-scope KEY stays the shared join (Phase 17 D-11); VALUE is per-stage. Derived `IExecutionCorrelated` + stage-3 per-job Guid deferred to Processor milestone. Captured as CONTEXT D-01/D-01a/D-02.
 
 ---
 
@@ -25,11 +36,11 @@
 
 | Option | Description | Selected |
 |--------|-------------|----------|
-| Publish-only, explicit envelope mint, AddBaseApiMessaging in BaseApi.Core | WebApi joins publish-only; no correlation filter; mints envelope CorrelationId at the Publish call site; registration extension in BaseApi.Core for symmetry with AddBaseConsoleMessaging. | ✓ |
+| Publish-only, body mint, AddBaseApiMessaging in BaseApi.Core | WebApi joins publish-only; no correlation filter; sets the body `ICorrelated.CorrelationId` at construction (NewId.NextGuid); registration extension in BaseApi.Core for symmetry with AddBaseConsoleMessaging. | ✓ |
 | Inline registration in Program.cs (keep BaseApi.Core MassTransit-free) | Same publish-only behavior but wired inline in BaseApi.Service/Program.cs; BaseApi.Core stays free of MassTransit. | |
 
-**User's choice:** Publish-only + explicit envelope mint + AddBaseApiMessaging in BaseApi.Core. Resolved under the new model — the envelope mint became mandatory (it's the orchestrator's correlation source) rather than omitted. User: "check if fork 2 still unclear then amend them now and write the context" → confirmed clear, recommendation adopted.
-**Notes:** StartOrchestration/StopOrchestration don't implement ICorrelated (Phase 17 D-10), so the BaseConsole outbound filter is inapplicable and the mint is explicit: `Publish(msg, ctx => ctx.CorrelationId = NewId.NextGuid())`. CONTEXT D-02/D-03/D-04.
+**User's choice:** Publish-only + body mint + AddBaseApiMessaging in BaseApi.Core. Resolved under the final body-carried model — Start/Stop now implement slim ICorrelated (Fork-1 opt 4), so the publisher sets the body field at construction: `Publish(new StartOrchestration(ids) { CorrelationId = NewId.NextGuid() })`. The envelope is NOT set (body-only model). User: "check if fork 2 still unclear then amend them now" → confirmed clear, recommendation adopted.
+**Notes:** CONTEXT D-02/D-03/D-04. (Earlier intermediate framing used an envelope mint; superseded when Fork 1 settled on body-carried.)
 
 ---
 

@@ -63,9 +63,19 @@ behavior-preserving using-swap. The correlation filters + AsyncLocal accessor ar
   zero implementers (the control records deliberately do not implement it per MSG-CONTRACTS-02;
   it is the future `JobTrigger`/`ExecutionResult` vocabulary). Get-only is the safe minimal — a
   future phase revisits mutability when the outbound filter actually stamps it.
+  > **[AMENDED 2026-05-30, Phase 19 D-01]** Superseded. `ICorrelated` is **slimmed to the single
+  > field `{ Guid CorrelationId }`** and changed to **init-set** (so the publisher sets it at
+  > construction). The five execution ids move to a derived `IExecutionCorrelated : ICorrelated`
+  > defined in the future Processor milestone (interface segregation — avoids `Guid.Empty` slots on
+  > operational messages). The control records (Start/Stop) DO now implement `ICorrelated`. Phase 19
+  > reconciles the shipped Phase 17 code to this shape; see Phase 19 CONTEXT D-01.
 - **D-10:** `StartOrchestration` / `StopOrchestration` are POCO records each carrying exactly
   `Guid[] WorkflowIds` and no correlation field (MSG-CONTRACTS-02). They do NOT implement
   `ICorrelated` this milestone.
+  > **[AMENDED 2026-05-30, Phase 19 D-01]** Superseded. The control records **now implement
+  > `ICorrelated`** (the slim `{ Guid CorrelationId }`), keeping `Guid[] WorkflowIds` as their
+  > operational payload. Correlation rides the message body (not the MassTransit envelope). Phase 19
+  > reconciles the shipped code; see Phase 19 CONTEXT D-01/D-02.
 - **D-11:** The `"CorrelationId"` PascalCase log-scope key becomes a **shared constant** in
   `Messaging.Contracts` (the exact literal `CorrelationIdMiddleware` uses —
   `CorrelationIdMiddleware.cs:52` — and what OTel `IncludeScopes=true` serializes to Elasticsearch).
