@@ -73,7 +73,7 @@
   4. A `WorkflowId` absent from L2 is caught, logged at the correlated scope, and the consume completes (acked — not thrown, not dead-lettered); genuine infrastructure faults throw → bounded `UseMessageRetry` (with `Ignore<>` for the business-failure type) → `_error` queue, and a mid-consume crash leaves the message unacked for broker redelivery.
   5. A `rabbitmq:4.1.8-management-alpine` service is healthy in `compose.yaml` (`rabbitmq-diagnostics -q ping`), the Start/Stop path `depends_on service_healthy`, both hosts carry RabbitMQ connection configuration in appsettings, and each consumer has a `ConsumerDefinition` class as the retry/InstanceId/endpoint config seam.
 **Plans**: 4 plans
-  - [ ] 19-01-PLAN.md — Reconcile shipped Phase 17/18 to body-carried correlation (slim ICorrelated, Start/Stop implement it, re-point inbound filter, rewrite ConsoleCorrelationFilterTests) — the compile prerequisite for both streams
+  - [x] 19-01-PLAN.md — Reconcile shipped Phase 17/18 to body-carried correlation (slim ICorrelated, Start/Stop implement it, re-point inbound filter, rewrite ConsoleCorrelationFilterTests) — the compile prerequisite for both streams
   - [ ] 19-02-PLAN.md — Runnable Orchestrator console (thin shell, two consumers + definitions, instance-unique fan-out endpoint, read-L2 → seam, business-ack/infra-throw split, harness ack tests)
   - [ ] 19-03-PLAN.md — WebApi publish-only bus join (AddBaseApiMessaging, Degraded bus health, publish Start/Stop with body CorrelationId, publish harness tests)
   - [ ] 19-04-PLAN.md — RabbitMQ compose tier + runnable orchestrator container + WebApi broker hard-dep (Dockerfile, compose services)
