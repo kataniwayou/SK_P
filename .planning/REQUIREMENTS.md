@@ -21,10 +21,12 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 ### BaseConsole.Core (reusable Generic-Host library)
 
 - [ ] **CONSOLE-01**: A reusable `BaseConsole.Core` class library provides a Generic-Host composition root (`AddBaseConsole`/`RunAsync` equivalent) that a concrete console wires in a handful of lines (mirrors `AddBaseApi`/`UseBaseApi`).
-- [ ] **CONSOLE-02**: `BaseConsole.Core` configures console-flavored OpenTelemetry — MEL-bridge logs + runtime metrics + MassTransit meter (`InstrumentationOptions.MeterName`) via OTLP — with NO AspNetCore/HttpClient instrumentation and NO `.WithTracing` (no traces backend, preserving Phase 11 D-03).
+- [x] **CONSOLE-02
+**: `BaseConsole.Core` configures console-flavored OpenTelemetry — MEL-bridge logs + runtime metrics + MassTransit meter (`InstrumentationOptions.MeterName`) via OTLP — with NO AspNetCore/HttpClient instrumentation and NO `.WithTracing` (no traces backend, preserving Phase 11 D-03).
 - [x] **CONSOLE-03
 **: `BaseConsole.Core` registers a singleton `IConnectionMultiplexer` Redis client as a soft dependency (`abortConnect=false`), lifted from the `BaseApi.Core` pattern.
-- [ ] **CONSOLE-04**: `BaseConsole.Core` provides a MassTransit bus skeleton (`AddBaseConsoleMessaging(cfg, configureConsumers)`) that wires the RabbitMQ host + global outbound correlation filter and accepts a concrete callback to register consumers/receive endpoints (base = infra, concrete = consumers — mirrors `AddBaseApi` vs `AddAppFeatures`).
+- [x] **CONSOLE-04
+**: `BaseConsole.Core` provides a MassTransit bus skeleton (`AddBaseConsoleMessaging(cfg, configureConsumers)`) that wires the RabbitMQ host + global outbound correlation filter and accepts a concrete callback to register consumers/receive endpoints (base = infra, concrete = consumers — mirrors `AddBaseApi` vs `AddAppFeatures`).
 - [x] **CONSOLE-05
 **: `BaseConsole.Core` references `Microsoft.AspNetCore.App` via `FrameworkReference` (stays a library, not the Web SDK); only the runnable `Orchestrator` is the executable host.
 
@@ -52,8 +54,10 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 ### Correlation Propagation
 
-- [ ] **CORR-01**: `BaseConsole.Core` includes an inbound consume filter that resolves the correlation value, pushes it into an AsyncLocal accessor, and opens a MEL log scope under the literal key `"CorrelationId"` (same key as `CorrelationIdMiddleware`, so OTel `IncludeScopes` serializes it to the identical Elasticsearch attribute).
-- [ ] **CORR-02**: `BaseConsole.Core` includes an outbound send/publish filter that stamps the ambient AsyncLocal correlationId onto every outgoing `ICorrelated` message.
+- [x] **CORR-01
+**: `BaseConsole.Core` includes an inbound consume filter that resolves the correlation value, pushes it into an AsyncLocal accessor, and opens a MEL log scope under the literal key `"CorrelationId"` (same key as `CorrelationIdMiddleware`, so OTel `IncludeScopes` serializes it to the identical Elasticsearch attribute).
+- [x] **CORR-02
+**: `BaseConsole.Core` includes an outbound send/publish filter that stamps the ambient AsyncLocal correlationId onto every outgoing `ICorrelated` message.
 - [ ] **CORR-03**: The outbound filter is exercised this milestone by a synthetic test-harness downstream send that asserts the correlationId is stamped (no real downstream consumer required).
 - [ ] **CORR-04**: Correlation is proven end-to-end — an HTTP `X-Correlation-Id` on Start flows HTTP → Redis L2 root → fan-out message → Orchestrator log line in Elasticsearch carrying the same value under the `"CorrelationId"` attribute.
 
