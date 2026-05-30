@@ -774,34 +774,42 @@ ENTRYPOINT ["dotnet", "Orchestrator.dll"]
 | A10 | Compose RabbitMQ `start_period: 40s` adequate for cold-start | ⚠️ ASSUMED | §Compose | LOW — tune empirically; healthcheck cmd verified |
 | A11 | Optional envelope fallback in re-pointed inbound filter is acceptable (planner may drop for body-only) | ⚠️ design choice | §Inbound filter | LOW |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Two consumers, one per-instance temporary endpoint — VERIFIED resolved; spike to confirm in this repo's exact wiring.**
+1. **RESOLVED: Two consumers, one per-instance temporary endpoint — verified in this repo's exact wiring (Q1 endpoint grouping verified).**
    - VERIFIED: same-`EndpointName` consumers are grouped onto one endpoint; `.Endpoint(e => { e.InstanceId;
      e.Temporary; })` makes the per-replica temporary queue; `AddBaseConsoleMessaging` already calls
-     `ConfigureEndpoints(ctx)`. **No BaseConsole.Core change expected.**
+     `ConfigureEndpoints(ctx)`. **No BaseConsole.Core change expected.** Resolution carried into Plan 19-02
+     Task 2 (both consumers share `EndpointName = "orchestrator"` + same `instanceId`) and asserted by the
+     19-02 Task 3 in-memory harness.
    - Recommendation: **First planning task = a 20-line in-memory harness spike** registering both
      consumers' definitions at the same name + InstanceId; assert both consume one published message on one
      endpoint. If grouping behaves oddly → fall to Pattern 2 (explicit `ReceiveEndpoint` + a small optional
      bus-factory seam on `AddBaseConsoleMessaging`). Low risk; the verified docs say it should just work.
 
-2. **InstanceId flow into the consumer endpoint (DI vs closure).**
+2. **RESOLVED: InstanceId flow into the consumer endpoint — closure chosen (Q2 InstanceId via closure).**
    - Known: `InstanceId` from `Orchestrator:InstanceId` ?? generated GUID (D-06).
    - Recommendation: read `cfg["Orchestrator:InstanceId"] ?? Guid.NewGuid().ToString("N")` in `Program.cs`
      and capture it in the `configureConsumers` lambda's `.Endpoint(e => e.InstanceId = instanceId)` (a
      closure is simplest; the `ConsumerDefinition` only needs `EndpointName = "orchestrator"`). No
-     `InstanceIdProvider` DI type needed if the closure is used.
+     `InstanceIdProvider` DI type needed if the closure is used. **Chosen: closure** — wired in Plan 19-02
+     Task 2 `Program.cs`.
 
-3. **RedisProjectionKeys reuse (hoist vs duplicate) + prefix config.**
+3. **RESOLVED: RedisProjectionKeys reuse — duplicate as `OrchestratorL2Keys` (Q3 duplicate key shape → OrchestratorL2Keys in 19-02 T1).**
    - Known: `RedisProjectionKeys` is `internal` in `BaseApi.Service`, `Root(prefix, id) = "{prefix}{workflowId}"`
      ("D" Guid format); prefix from `RedisProjectionOptions.KeyPrefix` (VERIFIED). Orchestrator can't ref it.
    - Recommendation: hoist `RedisProjectionKeys.Root` + the prefix shape to `Messaging.Contracts`, OR
-     duplicate the literal with a comment. Orchestrator needs its own prefix config read.
+     duplicate the literal with a comment. Orchestrator needs its own prefix config read. **Chosen:
+     duplicate** as `Orchestrator.Messaging.OrchestratorL2Keys.Root` in Plan 19-02 Task 1; the executor
+     diffs the produced string against `RedisProjectionKeys.Root` to confirm the "D" Guid format matches
+     (a format mismatch would cause silent L2 read misses).
 
-4. **`Orchestrator.csproj` SDK + `Program.cs` host shape (A8).**
+4. **RESOLVED: `Orchestrator.csproj` SDK + `Program.cs` host shape (A8) — Generic Host confirmed (Q4 Generic Host confirmed).**
    - Recommendation: read `src/BaseConsole.Core/DependencyInjection/BaseConsoleObservabilityExtensions.cs`,
      `BaseConsoleServiceCollectionExtensions.cs`, `EmbeddedHealthEndpointService.cs` to confirm whether the
      chain expects a `WebApplicationBuilder` or `HostApplicationBuilder` before writing `Program.cs`.
+     **Confirmed: `Host.CreateApplicationBuilder` (Generic Host)** — `BaseConsoleObservabilityExtensions`
+     extends `IHostApplicationBuilder`; wired in Plan 19-02 Task 2 `Program.cs`.
 
 ## Sources
 
