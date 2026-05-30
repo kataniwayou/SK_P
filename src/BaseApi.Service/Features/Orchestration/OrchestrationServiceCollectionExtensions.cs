@@ -4,6 +4,7 @@ using BaseApi.Service.Features.Orchestration.Loading;
 using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Service.Features.Orchestration.Validation;
 using FluentValidation;
+using MassTransit;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -64,6 +65,7 @@ internal static class OrchestrationServiceCollectionExtensions
             sp.GetRequiredService<IRedisL2Cleanup>(),               // NEW (Plan 04) — Start pre-clean + Stop cleanup
             sp.GetRequiredService<IHttpContextAccessor>(),          // NEW (D-01) — correlationId resolution
             sp.GetRequiredService<IConnectionMultiplexer>(),        // NEW — Stop EXISTS gate
+            sp.GetRequiredService<IPublishEndpoint>(),              // NEW (Plan 19-03) — publish Start/Stop (registered by AddBaseApiMessaging)
             sp.GetRequiredService<IOptions<RedisProjectionOptions>>())); // NEW — KeyPrefix for the Stop gate keys
         services.AddScoped<IWorkflowGraphLoader, WorkflowGraphLoader>();
         services.AddScoped<CycleDetector>();

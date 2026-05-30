@@ -7,6 +7,8 @@ using BaseApi.Service.Features.Orchestration.Validation;
 using BaseApi.Service.Features.Workflow;
 using FluentValidation;
 using FluentValidation.Results;
+using MassTransit;
+using Messaging.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -56,6 +58,7 @@ public sealed class OrchestrationService
     private readonly IRedisL2Cleanup _cleanup;
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly IConnectionMultiplexer _multiplexer;
+    private readonly IPublishEndpoint _publishEndpoint;
     private readonly string _keyPrefix;
 
     // Ctor is internal (not public): it accepts the internal seam types
@@ -74,6 +77,7 @@ public sealed class OrchestrationService
         IRedisL2Cleanup cleanup,
         IHttpContextAccessor httpContextAccessor,
         IConnectionMultiplexer multiplexer,
+        IPublishEndpoint publishEndpoint,
         IOptions<RedisProjectionOptions> options)
     {
         _db                           = db                           ?? throw new ArgumentNullException(nameof(db));
@@ -86,6 +90,7 @@ public sealed class OrchestrationService
         _cleanup                      = cleanup                      ?? throw new ArgumentNullException(nameof(cleanup));
         _httpContextAccessor          = httpContextAccessor          ?? throw new ArgumentNullException(nameof(httpContextAccessor));
         _multiplexer                  = multiplexer                  ?? throw new ArgumentNullException(nameof(multiplexer));
+        _publishEndpoint              = publishEndpoint              ?? throw new ArgumentNullException(nameof(publishEndpoint));
         _keyPrefix                    = (options ?? throw new ArgumentNullException(nameof(options))).Value.KeyPrefix;
     }
 
@@ -147,6 +152,17 @@ public sealed class OrchestrationService
             }
             // snapshot.Dispose() runs here AND on any throw above (using declaration).
         }
+
+        // MSG-WEBAPI-02 / D-02: all roots written to L2 — broadcast the StartOrchestration control
+        // message. Correlation is set on the message BODY ONLY via a freshly-minted NewId
+        // (sequential — better broker/ES locality); the MassTransit envelope CorrelationId is left
+        // unset (single source of truth, T-19-envelope-leak). The HTTP-stage correlationId resolved
+        // above is a SEPARATE stage and is deliberately NOT carried onto the bus message (per-stage
+        // handoff, D-01). A publish failure (broker unreachable) PROPAGATES out of this method —
+        // the broker is a hard dep for Start (MSG-WEBAPI-03) → FallbackExceptionHandler → 500.
+        await _publishEndpoint.Publish(
+            new StartOrchestration(workflowIds.ToArray()) { CorrelationId = NewId.NextGuid() },
+            ct);
     }
 
     /// <summary>
@@ -216,6 +232,14 @@ public sealed class OrchestrationService
             ex.Data["redisOp"] = "KeyExistsAsync";
             throw;
         }
+
+        // MSG-WEBAPI-02 / D-02: Stop gate passed and cleanup completed — broadcast the
+        // StopOrchestration control message. Same body-only correlation contract as Start
+        // (NewId on the BODY, envelope CorrelationId left unset; HTTP-stage id not carried onto the
+        // bus). A publish failure PROPAGATES out of StopAsync (MSG-WEBAPI-03 hard dep) → 500.
+        await _publishEndpoint.Publish(
+            new StopOrchestration(workflowIds.ToArray()) { CorrelationId = NewId.NextGuid() },
+            ct);
     }
 
     /// <summary>
