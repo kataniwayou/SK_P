@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: Completed 20-02-PLAN.md (hermetic in-memory / dead-host proofs)
+stopped_at: Phase 20 Stage A complete — full Docker stack healthy; 20-03 E2E proof pending
 last_updated: "2026-05-30T16:13:33.944Z"
 last_activity: 2026-05-30 -- Phase --phase execution started
 progress:
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: --phase (20) — EXECUTING
-Plan: 1 of --name
-Status: Executing Phase --phase
-Last activity: 2026-05-30 -- Phase --phase execution started
+Phase: 20 (correlation-propagation-proof-synthetic-harness-triple-sha-closeout) — EXECUTING
+Plan: 2 of 4 complete (20-01, 20-02 done; 20-03 next, 20-04 close gate)
+Status: Executing Phase 20 — 20-03 environment (full Docker stack) up and healthy; E2E proof pending
+Last activity: 2026-05-30 — Phase 20 Stage A: rabbitmq + elasticsearch + otel-collector + orchestrator container brought up healthy
 
 ### Phase 18 Plan 04 — Close Gate Evidence (Task 4, operator-approved)
 
