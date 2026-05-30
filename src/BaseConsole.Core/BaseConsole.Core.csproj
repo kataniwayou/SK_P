@@ -2,14 +2,15 @@
 
   <!--
     BaseConsole.Core — reusable Generic-Host infrastructure class library (Phase 18).
-    The console-side mirror of BaseApi.Core, consumed by the Orchestrator console (Phase 19+).
+    The console-side mirror of the API base library, consumed by the Orchestrator console
+    (Phase 19+).
 
     Sdk="Microsoft.NET.Sdk" (NOT .Web) — this is a worker/Generic-Host library, not an MVC
     web app. ASP.NET Core surface (minimal Kestrel + health checks) is obtained via
     FrameworkReference Microsoft.AspNetCore.App (CONSOLE-05), which provides Kestrel and the
     HealthChecks middleware without dragging in the MVC/Web SDK.
 
-    D-08 (hard constraint): NO BaseApi.Core ProjectReference. The worker host MUST NOT
+    D-08 (hard constraint): NO ProjectReference to the API base library. The worker host MUST NOT
     transitively gain EF Core / MVC / Npgsql / Swagger attack surface. The only
     ProjectReference is the leaf Messaging.Contracts assembly.
 
