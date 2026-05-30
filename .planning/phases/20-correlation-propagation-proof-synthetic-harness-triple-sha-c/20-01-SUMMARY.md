@@ -14,7 +14,7 @@ provides:
   - "OQ#1/A3 RabbitMq:Port config read (default 5672) + 4-arg Host bind so the in-process test WebApi can target host port 5673"
   - "D-01 HarnessWebAppFactory: in-memory MassTransit harness swap (RemoveMassTransit then AddMassTransitTestHarness)"
   - "D-12 Dockerfile wget layer before USER app for the baseapi-service healthcheck"
-  - "A1 resolved: RemoveMassTransit() is public in MassTransit 8.5.5 (no manual RemoveAll fallback needed)"
+  - "A1 resolved: RemoveMassTransit() is NOT public in MassTransit 8.5.5 (CS1061) — used the manual RemoveAll fallback (remove bus descriptors + MassTransit IHostedService before AddMassTransitTestHarness)"
 affects: [20-02, 20-03, 20-04]
 
 # Tech tracking
@@ -31,12 +31,13 @@ key-files:
     - src/Orchestrator/Consumers/StopOrchestrationConsumer.cs
     - tests/BaseApi.Tests/Orchestrator/StartStopConsumerAckTests.cs
     - src/BaseApi.Service/Features/Orchestration/OrchestrationService.cs
+    - src/BaseApi.Service/Features/Orchestration/OrchestrationServiceCollectionExtensions.cs
     - tests/BaseApi.Tests/Orchestration/OrchestrationServicePublishTests.cs
     - src/BaseApi.Core/DependencyInjection/MessagingServiceCollectionExtensions.cs
     - Dockerfile
 
 key-decisions:
-  - "A1 resolution: RemoveMassTransit() compiles against MassTransit 8.5.5's public IServiceCollection surface — the manual RemoveAll(IBusControl/IBus/IHostedService) fallback was NOT required"
+  - "A1 resolution: RemoveMassTransit() does NOT compile against MassTransit 8.5.5 (CS1061; absent from MassTransit.dll) — used the manual fallback: Remove the bus descriptors (IBusControl/IBus/IPublishEndpoint/ISendEndpointProvider) + the MassTransit IHostedService before AddMassTransitTestHarness. (Generic RemoveAll<T>() collided with MassTransit's overload — CS0305 — so a descriptor-filter Remove loop is used.)"
   - "RabbitMq:Port read uses cfg.GetValue<ushort>('RabbitMq:Port', 5672) (explicit ushort generic form); default 5672 keeps the compose-internal rabbitmq:5672 path byte-unaffected"
   - "Host bind switched to the 4-arg Host(host, port, '/', ...) overload (vhost '/' preserved)"
   - "D-07 publish log added for Start only (the plan names only Start); the minted Guid is captured into a local 'startCorr' and logged at Information level after publish"
@@ -60,15 +61,15 @@ completed: 2026-05-30
 - **Duration:** ~13 min
 - **Started:** 2026-05-30T09:33:01Z
 - **Completed:** 2026-05-30T09:46:13Z
-- **Tasks:** 3
-- **Files modified:** 7 (1 created, 6 modified)
+- **Tasks:** 3 (+ 1 build-fix follow-up for the 2 auto-fixed deviations)
+- **Files modified:** 8 (1 created, 7 modified)
 
 ## Accomplishments
 
 - **D-13:** `StopOrchestrationConsumer` now logs the distinct `"Scheduler job stop (seam)"` string (was copy-pasting the Start string), and its locked assertion at `StartStopConsumerAckTests.cs:217` tracks `"Scheduler job stop"`. The `Start_Present_...` test (line 156) was left untouched.
 - **D-07:** `OrchestrationService` injects `ILogger<OrchestrationService>` and logs `"Published StartOrchestration CorrelationId={CorrelationId}"` (Information level) with the minted body Guid captured into `startCorr`. The direct-ctor test caller passes `NullLogger<OrchestrationService>.Instance`.
 - **OQ#1 / A3:** `AddBaseApiMessaging` reads `RabbitMq:Port` (default 5672) and binds host+port via the 4-arg `Host(host, port, "/", ...)` overload; the compose-internal `rabbitmq:5672` path is byte-unaffected; the in-process test WebApi has a config seam to reach host port 5673.
-- **D-01 / A1:** New `HarnessWebAppFactory` swaps the real bus for the in-memory MassTransit harness via `RemoveMassTransit()` → `AddMassTransitTestHarness()`. **A1 resolved: `RemoveMassTransit()` is public in MassTransit 8.5.5 — the manual `RemoveAll` fallback was not needed.**
+- **D-01 / A1:** New `HarnessWebAppFactory` swaps the real bus for the in-memory MassTransit harness via a manual `Remove` of the bus descriptors (IBusControl/IBus/IPublishEndpoint/ISendEndpointProvider) + the MassTransit `IHostedService`, then `AddMassTransitTestHarness()`. **A1 resolved: `RemoveMassTransit()` is NOT public in MassTransit 8.5.5 (CS1061) — the documented manual `RemoveAll` fallback was required.**
 - **D-12:** Root `Dockerfile` installs `wget` (apt layer with `--no-install-recommends` + cache cleanup) before `USER app` so `baseapi-service`'s `wget --spider` healthcheck can execute.
 
 ## Task Commits
@@ -76,8 +77,9 @@ completed: 2026-05-30
 1. **Task 1: D-13 Stop seam fix + locked assertion + D-07 publish log** - `dee1414` (fix)
 2. **Task 2: RabbitMq:Port read in AddBaseApiMessaging** - `94d78b7` (feat)
 3. **Task 3: HarnessWebAppFactory + Dockerfile wget layer** - `a1c05d4` (feat)
+4. **Build-fix: A1 manual RemoveAll fallback + DI logger arg** - `6f2cb2e` (fix) — see Deviations
 
-**Plan metadata:** `f98b9f3` (docs: complete plan)
+**Plan metadata:** `f98b9f3` (docs: complete plan) + `2f9d3f1` (docs: A1 resolution + ROADMAP progress)
 
 ## Files Created/Modified
 
@@ -96,7 +98,7 @@ completed: 2026-05-30
 - `dotnet test --filter-class *StartStopConsumerAckTests` → 6/6 passed.
 - `dotnet test --filter-class *OrchestrationServicePublishTests` → 4/4 passed.
 - `dotnet test --filter-class *HealthEndpointsTests` → 18/18 passed (port default-5672 path unaffected).
-- `dotnet build tests/BaseApi.Tests/BaseApi.Tests.csproj -c Release` → exit 0 (HarnessWebAppFactory harness API surface resolves; A1 confirmed).
+- `dotnet build SK_P.sln -c Release` and `-c Debug` → exit 0, 0 warnings (HarnessWebAppFactory + DI factory compile; A1 manual fallback path confirmed).
 
 All task `<acceptance_criteria>` re-verified via grep: stop(seam)=1, start(seam) in Stop consumer=0, stop-assert=1, start-assert=1, publish-log=1, ctor logger=1, test logger arg=1; RabbitMq:Port=1, `Host(host, port`=1, 5672 present=1; HarnessWebAppFactory class + AddMassTransitTestHarness + RemoveMassTransit() all present; Dockerfile wget=1 with apt-line(15) < USER-app-line(18).
 
@@ -115,12 +117,20 @@ All task `<acceptance_criteria>` re-verified via grep: stop(seam)=1, start(seam)
 - **Fix:** Added `sp.GetRequiredService<ILogger<OrchestrationService>>()` as the second-to-last factory argument (matching the new ctor parameter order, before `IOptions<RedisProjectionOptions>`), plus `using Microsoft.Extensions.Logging;` to the file.
 - **Files modified:** `src/BaseApi.Service/Features/Orchestration/OrchestrationServiceCollectionExtensions.cs`
 - **Verification:** `dotnet build SK_P.sln -c Release` exits 0, zero warnings.
-- **Committed in:** `4c… (Task-1 amend / follow-up build-fix commit — see Task Commits)`
+- **Committed in:** `6f2cb2e` (build-fix commit)
+
+**2. [Rule 1 - Bug / A1 resolution] HarnessWebAppFactory: RemoveMassTransit() not in MassTransit 8.5.5 → manual RemoveAll fallback**
+- **Found during:** Task 3, surfaced by the full-solution Release build (CS1061).
+- **Issue:** The plan's primary path used `services.RemoveMassTransit()`. That extension is NOT part of MassTransit 8.5.5's public IServiceCollection surface — it fails to compile (CS1061), and the symbol is absent from `MassTransit.dll`. (An earlier binary string-grep gave a false positive; the compiler is authoritative.)
+- **Fix:** Applied the plan's documented A1 fallback — `Remove` the bus service descriptors (`IBusControl`, `IBus`, `IPublishEndpoint`, `ISendEndpointProvider`) plus the MassTransit `IHostedService` descriptor before `AddMassTransitTestHarness()`. Used a single `.Where(...).ToList()` + `services.Remove(d)` loop (the generic `RemoveAll<T>()` collided with MassTransit's own overload — CS0305 — so the descriptor-filter form is used to disambiguate).
+- **Files modified:** `tests/BaseApi.Tests/Composition/HarnessWebAppFactory.cs`
+- **Verification:** `dotnet build SK_P.sln -c Release` and `-c Debug` both exit 0, zero warnings; tests project compiles (harness API surface resolves).
+- **Committed in:** `6f2cb2e` (build-fix commit)
 
 ---
 
-**Total deviations:** 1 auto-fixed (1 blocking).
-**Impact on plan:** Necessary for the solution to compile under the D-07 ctor change. The plan's "no Program.cs change" note held literally (Program.cs untouched); the missed caller was the per-feature DI factory, not Program.cs. No scope creep.
+**Total deviations:** 2 auto-fixed (2 blocking — 1 DI factory caller, 1 A1 fallback path).
+**Impact on plan:** Both necessary for the solution to compile under the D-07 ctor change and the D-01 harness swap. The plan's "no Program.cs change" note held literally; the missed caller was the per-feature DI factory. A1 resolved to the manual fallback the plan itself anticipated. No scope creep.
 
 ## Issues Encountered
 
