@@ -97,6 +97,8 @@ internal sealed class EmbeddedHealthEndpointService : IHostedService
         if (_app is not null)
         {
             await _app.StopAsync(cancellationToken);
+            await _app.DisposeAsync();
+            _app = null;
         }
     }
 }
