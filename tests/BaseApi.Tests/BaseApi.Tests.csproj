@@ -118,6 +118,10 @@
          calls in-memory; the Console/* test classes assert the library's boot, health,
          observability, and correlation behavior with no real broker. -->
     <ProjectReference Include="..\..\src\BaseConsole.Core\BaseConsole.Core.csproj" />
+    <!-- Phase 19 addition (Plan 19-02): the Orchestrator console under harness validation.
+         StartStopConsumerAckTests registers the real consumers + definitions on an in-memory
+         bus to prove the business-ack / infra-throw split + no-Redis-writes + seam log. -->
+    <ProjectReference Include="..\..\src\Orchestrator\Orchestrator.csproj" />
   </ItemGroup>
 
 </Project>
