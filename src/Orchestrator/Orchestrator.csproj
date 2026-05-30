@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Orchestrator — the first concrete inheritor of BaseConsole.Core (Phase 19, Stream A).
+    A thin Generic-Host shell: composition root + two consumers + two consumer definitions.
+
+    Sdk="Microsoft.NET.Sdk" (NOT .Web) — this is a worker/Generic-Host console, not an MVC web
+    app. The ASP.NET Core surface (minimal Kestrel + health checks) needed at runtime for the
+    embedded health listener flows TRANSITIVELY via BaseConsole.Core's FrameworkReference
+    Microsoft.AspNetCore.App — no FrameworkReference is declared here.
+
+    Hard constraint (D-08): NO ProjectReference to any BaseApi.* project. The orchestrator MUST
+    NOT couple to the API (no EF Core / MVC / Npgsql / Swagger attack surface). The only
+    ProjectReferences are BaseConsole.Core (infra base) + the leaf Messaging.Contracts assembly.
+
+    Common props (TargetFramework=net8.0, Nullable, ImplicitUsings, LangVersion, AnalysisMode,
+    EnforceCodeStyleInBuild, TreatWarningsAsErrors) inherit from Directory.Build.props at the
+    repo root — DO NOT redeclare them.
+
+    CPM: NuGet versions are pinned in Directory.Packages.props. NO Version= attribute on any
+    PackageReference here.
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>Orchestrator</RootNamespace>
+    <AssemblyName>Orchestrator</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BaseConsole.Core\BaseConsole.Core.csproj" />
+    <ProjectReference Include="..\Messaging.Contracts\Messaging.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
