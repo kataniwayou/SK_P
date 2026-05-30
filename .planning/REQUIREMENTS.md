@@ -117,11 +117,11 @@ Which phases cover which requirements. Filled by the roadmapper.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MSG-CONTRACTS-01 | Phase 17 | Pending |
-| MSG-CONTRACTS-02 | Phase 17 | Pending |
-| MSG-CONTRACTS-03 | Phase 17 | Pending |
+| MSG-CONTRACTS-01 | Phase 17 | Complete |
+| MSG-CONTRACTS-02 | Phase 17 | Complete |
+| MSG-CONTRACTS-03 | Phase 17 | Complete |
 | MSG-CONTRACTS-04 | Phase 17 | Complete |
-| INFRA-RMQ-01 | Phase 17 | Pending |
+| INFRA-RMQ-01 | Phase 17 | Complete |
 | CONSOLE-01 | Phase 18 | Pending |
 | CONSOLE-02 | Phase 18 | Pending |
 | CONSOLE-03 | Phase 18 | Pending |
