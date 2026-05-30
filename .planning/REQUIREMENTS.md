@@ -15,7 +15,8 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 **: `StartOrchestration` and `StopOrchestration` records each carry exactly `Guid[] WorkflowIds` and no correlation field (no correlationId on the wire).
 - [x] **MSG-CONTRACTS-03
 **: An `ICorrelated` contract declares the mandatory fields `Guid CorrelationId, ExecutionId, WorkflowId, StepId, ProcessorId, EntryId` as the frozen shared vocabulary.
-- [ ] **MSG-CONTRACTS-04**: The L2 root read-shape (the `WorkflowRootProjection` correlationId + fields) lives in `Messaging.Contracts`; `BaseApi.Service` writes it and `Orchestrator` reads it from this single source of truth (no duplicated shape).
+- [x] **MSG-CONTRACTS-04
+**: The L2 root read-shape (the `WorkflowRootProjection` correlationId + fields) lives in `Messaging.Contracts`; `BaseApi.Service` writes it and `Orchestrator` reads it from this single source of truth (no duplicated shape).
 
 ### BaseConsole.Core (reusable Generic-Host library)
 
@@ -119,7 +120,7 @@ Which phases cover which requirements. Filled by the roadmapper.
 | MSG-CONTRACTS-01 | Phase 17 | Pending |
 | MSG-CONTRACTS-02 | Phase 17 | Pending |
 | MSG-CONTRACTS-03 | Phase 17 | Pending |
-| MSG-CONTRACTS-04 | Phase 17 | Pending |
+| MSG-CONTRACTS-04 | Phase 17 | Complete |
 | INFRA-RMQ-01 | Phase 17 | Pending |
 | CONSOLE-01 | Phase 18 | Pending |
 | CONSOLE-02 | Phase 18 | Pending |

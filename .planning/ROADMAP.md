@@ -43,7 +43,7 @@
   5. The solution still builds zero-warning Release + Debug and the existing v3.3.0 test suite stays GREEN (the L2 root move is a behavior-preserving using-swap).
 **Plans**: 2 plans
   - [x] 17-01-PLAN.md — Create Messaging.Contracts leaf (frozen vocabulary + moved L2 records), MassTransit 8.5.5 CPM pins, sln + ProjectReference wiring
-  - [ ] 17-02-PLAN.md — Using-swap all 8 consumers to the new namespace + terminal gate (zero-warning Release/Debug, 3-consecutive-GREEN, dual-snapshot BEFORE=AFTER)
+  - [x] 17-02-PLAN.md — Using-swap all 8 consumers to the new namespace + terminal gate (zero-warning Release/Debug, 3-consecutive-GREEN, dual-snapshot BEFORE=AFTER)
 
 ### Phase 18: BaseConsole.Core Library
 **Goal**: A reusable `BaseConsole.Core` Generic-Host library exists — the console-side mirror of `BaseApi.Core` — providing observability, Redis, embedded health probes, and a MassTransit bus skeleton with correlation filters, validated standalone before any concrete console inherits it.
@@ -148,7 +148,7 @@
 | 14    | v3.3.0    | 5/5            | Complete    | 2026-05-29 |
 | 15    | v3.3.0    | 5/5            | Complete    | 2026-05-29 |
 | 16    | v3.3.0    | 5/5            | Complete    | 2026-05-29 |
-| 17    | v3.4.0    | 1/2            | In progress | -          |
+| 17    | v3.4.0    | 2/2            | In progress | -          |
 | 18    | v3.4.0    | 0/?            | Not started | -          |
 | 19    | v3.4.0    | 0/?            | Not started | -          |
 | 20    | v3.4.0    | 0/?            | Not started | -          |

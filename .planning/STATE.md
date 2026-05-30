@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: executing
-stopped_at: Completed 17-01-PLAN.md
-last_updated: "2026-05-29T23:22:46.363Z"
-last_activity: 2026-05-29
+status: verifying
+stopped_at: Completed 17-02-PLAN.md
+last_updated: "2026-05-30T07:13:06.490Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 50
+  completed_plans: 2
+  percent: 100
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 17 (messaging-contracts-shared-l2-root-extract) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-05-29
+Status: Phase complete — ready for verification
+Last activity: 2026-05-30
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -158,6 +158,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 16 P05 | ~10min gate run (3×235 GREEN) + finalization | 2 tasks (1 script-copy + 1 operator checkpoint) | 2 files (2 close-gate scripts) |
 | Phase 16 P05 | ~10min gate run + finalization | 2 tasks | 2 files |
 | Phase 17 P01 | ~2min | 2 tasks | 11 files |
+| Phase Phase 17 PP02 | ~12min | 3 tasks tasks | 9 files files |
 
 ## Accumulated Context
 
@@ -396,6 +397,18 @@ Recent decisions affecting current work:
 - Plan 17-01: MassTransit pinned in CPM only (D-03/D-12) — no PackageReference until Phase 18+ wiring; zero-PackageReference grep asserted GREEN
 - Plan 17-01: flat root namespace Messaging.Contracts for net-new types, Messaging.Contracts.Projections for the two moved records (co-located so the nested Liveness ctor param resolves)
 - Plan 17-01: CorrelationIdMiddleware.cs:52 literal NOT repointed (RESEARCH Open Q1) — would force a BaseApi.Core -> Messaging.Contracts edge for zero behavior change; deferred to Phase 18
+- Plan 17-02: using-swapped all 8 consumers (3 production + 5 test) of the moved WorkflowRootProjection/LivenessProjection to `using Messaging.Contracts.Projections;` — behavior-preserving, no logic/visibility/assertion edits; solution-wide CS0246 safety net held (including the CONTEXT-omitted RedisL2Cleanup.cs + 4 extra test files per RESEARCH Pitfall 1)
+
+**Phase 17 close gate (Plan 17-02 — operator-approved 2026-05-30, blocking human-verify Task 3 = "approved"):**
+
+- 3-consecutive-GREEN full v3.3.0 suite: 235 / 235 / 235 Passed (== v3.3.0 baseline of 235; no facts dropped or added by the using-swap). Wire-shape guard ProjectionRecordRoundTripTests: 8 passed (MSG-CONTRACTS-04 / SC#3 byte-identical proof).
+- psql `\l` SHA-256 BEFORE == AFTER: `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (v3.3.0 baseline; Phase 3 D-15 HELD — no schema change).
+- redis-cli `--scan` SHA-256 BEFORE == AFTER: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (SHA-256 of empty input — empty keyspace at rest, no leak, no runtime state change).
+- Zero-warning Release + Debug (after `dotnet clean`): both exit 0, 0 warnings (SC#5 cross-cutting).
+- CPM-pin invariant (D-03) held: no MassTransit PackageReference under `src/`.
+- Spot-check: `src/Messaging.Contracts/Projections/WorkflowRootProjection.cs` is `public sealed record` in namespace `Messaging.Contracts.Projections` with all five `[property: JsonPropertyName(...)]` camelCase targets verbatim.
+- Triple-SHA rabbitmqctl arm N/A this phase (no broker wired — RESEARCH line 492); this is the existing DUAL-snapshot gate. Optional `scripts/phase-17-close.ps1` derived from phase-16-close.ps1 (EF-migration + HEALTH-immutable arms stripped).
+- Net: MSG-CONTRACTS-04 closed (L2 root read-shape single-source-of-truth in Messaging.Contracts, wire shape byte-identical); SC#5 satisfied (zero-warning + suite GREEN; behavior-preserving). Phase-level completion is the orchestrator's call post-verification.
 
 ### Roadmap Milestone Log
 
@@ -489,8 +502,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T23:22:46.355Z
-Stopped at: Completed 17-01-PLAN.md
+Last session: 2026-05-30T07:13:06.480Z
+Stopped at: Completed 17-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
