@@ -48,6 +48,11 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="8.0.27" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.27" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.27" />
+    <!-- Plan 19-03 (test-only): EF Core InMemory provider lets OrchestrationServicePublishTests
+         drive the REAL OrchestrationService.StartAsync existence check against a seeded
+         WorkflowEntity without a real Postgres. The provider ignores relational annotations
+         (xmin xid column type, snake_case naming) so the BaseDbContext model builds cleanly. -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.27" />
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="8.0.10" />
     <!-- Npgsql 8.0.9 is the latest 8.x release (Npgsql skipped 8.0.10; the 9.x line followed).
          Npgsql.EntityFrameworkCore.PostgreSQL 8.0.10's nuspec declares Npgsql >= 8.0.5; pinning

@@ -66,6 +66,9 @@
          Versions resolve from Directory.Packages.props (CPM — no Version= per Phase 1 D-05/D-06). -->
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <!-- Plan 19-03 (test-only): EF Core InMemory provider for OrchestrationServicePublishTests —
+         drives the real OrchestrationService existence check against a seeded WorkflowEntity. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
