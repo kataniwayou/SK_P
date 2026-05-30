@@ -12,7 +12,7 @@ provides:
   - "Corrected D-13 Stop seam log string ('Scheduler job stop (seam)') distinct from the Start seam"
   - "D-07 publish-side correlation log in OrchestrationService ('Published StartOrchestration CorrelationId={guid}') + ILogger ctor injection"
   - "OQ#1/A3 RabbitMq:Port config read (default 5672) + 4-arg Host bind so the in-process test WebApi can target host port 5673"
-  - "D-01 HarnessWebAppFactory: in-memory MassTransit harness swap (RemoveMassTransit then AddMassTransitTestHarness)"
+  - "D-01 HarnessWebAppFactory: in-memory MassTransit harness swap (manual Remove of bus descriptors + MassTransit IHostedService, then AddMassTransitTestHarness)"
   - "D-12 Dockerfile wget layer before USER app for the baseapi-service healthcheck"
   - "A1 resolved: RemoveMassTransit() is NOT public in MassTransit 8.5.5 (CS1061) — used the manual RemoveAll fallback (remove bus descriptors + MassTransit IHostedService before AddMassTransitTestHarness)"
 affects: [20-02, 20-03, 20-04]
@@ -21,7 +21,7 @@ affects: [20-02, 20-03, 20-04]
 tech-stack:
   added: []
   patterns:
-    - "In-memory MassTransit harness swap on a WebApplicationFactory via ConfigureTestServices (RemoveMassTransit → AddMassTransitTestHarness)"
+    - "In-memory MassTransit harness swap on a WebApplicationFactory via ConfigureTestServices (manual Remove of bus descriptors + MassTransit IHostedService → AddMassTransitTestHarness)"
     - "Optional config port read with safe default (cfg.GetValue<ushort>('RabbitMq:Port', 5672)) preserving compose-internal behavior"
 
 key-files:
@@ -100,11 +100,11 @@ completed: 2026-05-30
 - `dotnet test --filter-class *HealthEndpointsTests` → 18/18 passed (port default-5672 path unaffected).
 - `dotnet build SK_P.sln -c Release` and `-c Debug` → exit 0, 0 warnings (HarnessWebAppFactory + DI factory compile; A1 manual fallback path confirmed).
 
-All task `<acceptance_criteria>` re-verified via grep: stop(seam)=1, start(seam) in Stop consumer=0, stop-assert=1, start-assert=1, publish-log=1, ctor logger=1, test logger arg=1; RabbitMq:Port=1, `Host(host, port`=1, 5672 present=1; HarnessWebAppFactory class + AddMassTransitTestHarness + RemoveMassTransit() all present; Dockerfile wget=1 with apt-line(15) < USER-app-line(18).
+All task `<acceptance_criteria>` re-verified via grep: stop(seam)=1, start(seam) in Stop consumer=0, stop-assert=1, start-assert=1, publish-log=1, ctor logger=1, test logger arg=1; RabbitMq:Port=1, `Host(host, port`=1, 5672 present=1; HarnessWebAppFactory class + AddMassTransitTestHarness present + the manual RemoveAll fallback (A1); Dockerfile wget=1 with apt-line(16) < USER-app-line(19).
 
 ## Decisions Made
 
-- **A1 (RemoveMassTransit path):** Used `services.RemoveMassTransit()` — it is part of MassTransit 8.5.5's public IServiceCollection surface and compiles cleanly. The manual `RemoveAll(IBusControl/IBus/IPublishEndpoint/ISendEndpointProvider)` + hosted-service-removal fallback documented in the plan was NOT required.
+- **A1 (RemoveMassTransit path):** `services.RemoveMassTransit()` does NOT exist in MassTransit 8.5.5 (CS1061). Used the plan's documented manual fallback: `Remove` the bus descriptors (`IBusControl`/`IBus`/`IPublishEndpoint`/`ISendEndpointProvider`) + the MassTransit `IHostedService` descriptor, then `AddMassTransitTestHarness()`. (See Deviations for the CS0305 disambiguation detail.)
 - **RabbitMq:Port read form:** Used the explicit-generic `cfg.GetValue<ushort>("RabbitMq:Port", 5672)` form (resolves cleanly; `Microsoft.Extensions.Configuration.Binder` is available transitively). Host bind uses `Host(host, port, "/", h => {...})`.
 
 ## Deviations from Plan
