@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: "18-04-PLAN.md Task 4 — human-verify checkpoint (gate automation GREEN; awaiting operator approval)"
-last_updated: "2026-05-30T12:25:00.000Z"
+stopped_at: "18-04-PLAN.md complete — Phase 18 closed (4/4 plans); ready for Phase 19 planning"
+last_updated: "2026-05-30T12:40:00.000Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -21,33 +21,33 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** Phase 18 — BaseConsole.Core Library
+**Current focus:** Phase 18 complete — ready for Phase 19 (Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier)
 
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 18 (BaseConsole.Core Library) — EXECUTING
-Plan: 3 of 4 complete (18-04 at Task 4 human-verify checkpoint)
-Status: Executing Phase 18 — Plan 18-04 Tasks 1-3 complete + committed; Task 4 gate automation GREEN; PAUSED at the checkpoint:human-verify gate awaiting operator approval
-Last activity: 2026-05-30 -- Phase 18 Plan 04 Tasks 1-3 done (ConsoleTestHostFixture + 5 validation classes, 10 Console tests GREEN); Task 4 close gate ran GREEN (3x dotnet test = 245 Passed each; dual-SHA psql\l + redis-cli BEFORE==AFTER; Release+Debug zero-warning) — awaiting human-verify approval before SUMMARY/finalize
+Phase: 18 (BaseConsole.Core Library) — COMPLETE (4/4 plans)
+Plan: 4 of 4 complete (18-04 finalized; operator approved the close gate)
+Status: Phase 18 closed. BaseConsole.Core validated standalone (D-02 six proof points + dual-SHA D-03 close gate). Ready for Phase 19 planning.
+Last activity: 2026-05-30 -- Phase 18 Plan 04 finalized: operator approved the checkpoint:human-verify close gate. SUMMARY written, STATE/ROADMAP/REQUIREMENTS updated. All 11 Phase 18 requirements (CONSOLE-01..05, CONSOLE-HEALTH-01..04, CORR-01/02) closed.
 
-### Phase 18 Plan 04 — Checkpoint Evidence (Task 4, awaiting operator approval)
+### Phase 18 Plan 04 — Close Gate Evidence (Task 4, operator-approved)
 
 - 3-consecutive GREEN: Run 1/2/3 each = Passed: 245, Failed: 0, Total: 245 (durations 3m18s / 3m17s / 3m17s). Console subset (10 tests) GREEN every run.
 - Dual-SHA (D-03, no rabbitmqctl — no real broker this phase):
   - psql \l SHA-256:        BEFORE = b202692d34f71ca254b71b9468435735c8c1a5f3b048f78bb971c55eadf40d55 ; AFTER = (same) — MATCH
   - redis-cli --scan SHA-256: BEFORE = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (0 keys) ; AFTER = (same) — MATCH
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
-- Resume signal: operator types "approved" to finalize (SUMMARY + STATE/ROADMAP/REQUIREMENTS), or describes failures.
+- Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
 | Phase | Name | Requirements | Status |
 |-------|------|--------------|--------|
 | 17 | Messaging.Contracts + Shared L2 Root Extract | MSG-CONTRACTS-01..04, INFRA-RMQ-01 (5) | Complete |
-| 18 | BaseConsole.Core Library | CONSOLE-01..05, CONSOLE-HEALTH-01..04, CORR-01/02 (11) | Executing (3/4 plans) |
+| 18 | BaseConsole.Core Library | CONSOLE-01..05, CONSOLE-HEALTH-01..04, CORR-01/02 (11) | Complete (4/4 plans) |
 | 19 | Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier | ORCH-CON-01..04, MSG-WEBAPI-01..04, MSG-ACK-01..04, INFRA-RMQ-02/03 (14) | Not started |
 | 20 | Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout | CORR-03/04, TEST-RMQ-01..05 (7) | Not started |
 
@@ -172,6 +172,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 18 P01 | ~3min | 3 tasks | 9 files (8 new src + SK_P.sln) |
 | Phase 18 P02 | 4min | 3 tasks | 5 files |
 | Phase 18 P03 | 3min | 3 tasks | 4 files |
+| Phase 18 P04 | ~35min impl + ~10min gate run (3×245 GREEN) + finalization | 4 tasks (3 auto + 1 operator checkpoint) | 9 files (7 new test + 1 csproj + 1 src filter fix) |
 
 ## Accumulated Context
 

@@ -59,7 +59,7 @@
   - [x] 18-01-PLAN.md — Create BaseConsole.Core project + sln entry + foundational primitives (csproj/FrameworkReference, RequiredConfig, startup gate trio, Phase-5 StartupCompletionService, soft-dep Redis, AsyncLocal correlation accessor)
   - [x] 18-02-PLAN.md — Console OTel (metrics-only, no traces) + the three correlation filters + AddBaseConsoleMessaging bus skeleton wiring filters bus-wide
   - [x] 18-03-PLAN.md — Embedded minimal-Kestrel health listener (/live|ready|startup) + BusReadyHealthCheck bridge + ConsoleHealth registration + non-generic AddBaseConsole root
-  - [ ] 18-04-PLAN.md — ConsoleTestHostFixture + five Console validation test classes (D-02 six proof points) + dual-SHA 3-consecutive close gate
+  - [x] 18-04-PLAN.md — ConsoleTestHostFixture + five Console validation test classes (D-02 six proof points) + dual-SHA 3-consecutive close gate
 **UI hint**: no
 
 ### Phase 19: Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier
@@ -153,7 +153,7 @@
 | 15    | v3.3.0    | 5/5            | Complete    | 2026-05-29 |
 | 16    | v3.3.0    | 5/5            | Complete    | 2026-05-29 |
 | 17    | v3.4.0    | 2/2 | Complete    | 2026-05-30 |
-| 18    | v3.4.0    | 3/4            | Executing   | -          |
+| 18    | v3.4.0    | 4/4            | Complete    | 2026-05-30 |
 | 19    | v3.4.0    | 0/?            | Not started | -          |
 | 20    | v3.4.0    | 0/?            | Not started | -          |
 
