@@ -97,4 +97,19 @@
     <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Phase 19 MSG-WEBAPI-01: publish-only MassTransit join. AddBaseApiMessaging wires
+         AddMassTransit + UsingRabbitMq with NO consumers / NO receive endpoints / NO filters.
+         Pins resolve from Directory.Packages.props (MassTransit 8.5.5, CPM — no Version= per
+         Phase 1 D-05/D-06). The WebApi references Messaging.Contracts ONLY for the
+         StartOrchestration/StopOrchestration control records — NEVER BaseConsole.Core
+         (dependency firewall — D-03 / T-19-dep-firewall). -->
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Messaging.Contracts\Messaging.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>
