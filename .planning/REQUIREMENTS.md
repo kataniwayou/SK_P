@@ -71,7 +71,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 - [x] **CORR-02
 **: `BaseConsole.Core` includes an outbound send/publish filter that stamps the ambient AsyncLocal correlationId onto every outgoing `ICorrelated` message.
 - [x] **CORR-03**: The outbound filter is exercised this milestone by a synthetic test-harness downstream send that asserts the correlationId is stamped (no real downstream consumer required).
-- [ ] **CORR-04**: Per-stage correlation is proven across stage boundaries — an HTTP `X-Correlation-Id` scopes the HTTP stage (request → L2 write → publish); a fresh `Guid CorrelationId` minted at publish and carried on the **message body** via `ICorrelated.CorrelationId` rides the fan-out message and is the value the Orchestrator log line surfaces in Elasticsearch under the `"CorrelationId"` attribute. Clean per-stage handoff at the publish boundary, not a single value carried across all hops. [AMENDED 2026-05-30, Phase 19 D-01.]
+- [x] **CORR-04**: Per-stage correlation is proven across stage boundaries — an HTTP `X-Correlation-Id` scopes the HTTP stage (request → L2 write → publish); a fresh `Guid CorrelationId` minted at publish and carried on the **message body** via `ICorrelated.CorrelationId` rides the fan-out message and is the value the Orchestrator log line surfaces in Elasticsearch under the `"CorrelationId"` attribute. Clean per-stage handoff at the publish boundary, not a single value carried across all hops. [AMENDED 2026-05-30, Phase 19 D-01.]
 
 ### Acknowledgement Semantics
 
@@ -94,7 +94,7 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 ### Test Discipline
 
 - [x] **TEST-RMQ-01**: A fan-out test runs two in-process bus instances (two `InstanceId`s) and asserts BOTH receive a copy of a single published Start message (broadcast proven, not load-balanced) — the #1 topology trap, tested now rather than deferred.
-- [ ] **TEST-RMQ-02**: An end-to-end test drives a real HTTP Start (carrying an `X-Correlation-Id` scoping the HTTP stage) and asserts the Orchestrator's correlated log line surfaces in Elasticsearch under the `"CorrelationId"` attribute carrying the **body `ICorrelated.CorrelationId` minted at publish** (the per-stage handoff value), proving the chain HTTP stage → publish-mint → fan-out message body → orchestrator log. [AMENDED 2026-05-30, Phase 19 D-01.]
+- [x] **TEST-RMQ-02**: An end-to-end test drives a real HTTP Start (carrying an `X-Correlation-Id` scoping the HTTP stage) and asserts the Orchestrator's correlated log line surfaces in Elasticsearch under the `"CorrelationId"` attribute carrying the **body `ICorrelated.CorrelationId` minted at publish** (the per-stage handoff value), proving the chain HTTP stage → publish-mint → fan-out message body → orchestrator log. [AMENDED 2026-05-30, Phase 19 D-01.]
 - [x] **TEST-RMQ-03**: A "broker down" test asserts WebApi CRUD `/health/ready` and `/health/live` both stay 200 with RabbitMQ unreachable (a `HealthDeadRabbitFixture` mirroring `HealthDeadRedisFixture`).
 - [x] **TEST-RMQ-04**: Test receive endpoints use temporary/auto-delete, per-test-class-prefixed queues; NO global queue purge in teardown (the `FLUSHDB`-ban analog).
 - [ ] **TEST-RMQ-05**: The phase-close gate is extended to a triple-SHA snapshot — `psql \l` + `redis-cli --scan` + `rabbitmqctl list_queues name` — asserting BEFORE=AFTER, alongside the 3-consecutive-GREEN cadence. [F12]

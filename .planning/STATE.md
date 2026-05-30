@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: Phase 20 Stage A complete — full Docker stack healthy; 20-03 E2E proof pending
-last_updated: "2026-05-30T16:13:33.944Z"
-last_activity: 2026-05-30 -- Phase 20 Stage A: full Docker stack up and healthy
+stopped_at: Completed 20-03-PLAN.md (real-stack correlation E2E proof — CORR-04/TEST-RMQ-02 GREEN)
+last_updated: "2026-05-30T21:05:00.000Z"
+last_activity: 2026-05-30 -- Phase 20: 20-03 E2E correlation proof passing (2x GREEN) on live stack
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 14
-  completed_plans: 12
-  percent: 86
+  completed_plans: 13
+  percent: 93
 ---
 
 # Project State
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 20 (correlation-propagation-proof-synthetic-harness-triple-sha-closeout) — EXECUTING
-Plan: 2 of 4 complete (20-01, 20-02 done; 20-03 next, 20-04 close gate)
-Status: Executing Phase 20 — 20-03 environment (full Docker stack) up and healthy; E2E proof pending
+Plan: 3 of 4 complete (20-01, 20-02, 20-03 done; 20-04 triple-SHA close gate next — operator checkpoint)
+Status: Executing Phase 20 — 20-03 real-stack correlation E2E GREEN (2x); only 20-04 close gate remains
 Last activity: 2026-05-30 — Phase 20 Stage A: rabbitmq + elasticsearch + otel-collector + orchestrator container brought up healthy
 
 ### Phase 18 Plan 04 — Close Gate Evidence (Task 4, operator-approved)
