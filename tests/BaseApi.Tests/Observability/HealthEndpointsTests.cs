@@ -217,6 +217,40 @@ public sealed class HealthEndpointsTests
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
 
+    [Fact]
+    public async Task Health_Live_Returns_200_When_Broker_Dead()  // TEST-RMQ-03
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var factory = new HealthDeadRabbitFixture();
+        await factory.InitializeAsync();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health/live", ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Health_Ready_Returns_200_When_Broker_Dead()  // TEST-RMQ-03
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // WebApi soft-on-broker posture (Phase 19 D-05): the MassTransit bus check is capped at
+        // Degraded via MinimalFailureStatus (MessagingServiceCollectionExtensions.cs:49-54), so a
+        // broker-down condition never flips /health/ready to 503. Postgres + Redis stay live.
+        await using var factory = new HealthDeadRabbitFixture();
+        await factory.InitializeAsync();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/health/ready", ct);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        // T-20-04 (inherited T-19): the broker-down ready body must not leak secrets. Assert only
+        // the documented secret-free contract (HealthEndpointsTests.cs:113-134) — never connection
+        // strings or passwords.
+        var body = await response.Content.ReadAsStringAsync(ct);
+        Assert.DoesNotContain("Password=", body);
+        Assert.DoesNotContain("password=", body);
+    }
+
     // -------- Specialized fixtures for HealthEndpointsTests -----------------------------------
 
     /// <summary>
@@ -374,6 +408,55 @@ public sealed class HealthEndpointsTests
             {
                 // Expected — port is unbound. Continue.
             }
+        }
+    }
+
+    /// <summary>
+    /// Phase 20 TEST-RMQ-03 / D-03: broker-down variant proving the WebApi soft-on-broker posture
+    /// — <c>/health/live</c> AND <c>/health/ready</c> BOTH return 200 when RabbitMQ is unreachable.
+    /// Mirrors <see cref="HealthDeadRedisFixture"/>: keeps Postgres + Redis LIVE
+    /// (<c>skipRedisFixture:false</c>) and points ONLY the broker at a dead host via the
+    /// env-var-in-ctor pattern documented on <see cref="HealthDeadPostgresFixture"/>.
+    ///
+    /// <para>
+    /// <c>RabbitMq__Host</c> is set BEFORE the base <c>WebApplicationFactory&lt;Program&gt;</c> ctor
+    /// runs (env-var configuration source is read by Program.cs's <c>AddBaseApiMessaging</c> at
+    /// registration). Captured+restored in <see cref="DisposeAsync"/>; the
+    /// <c>SetEnvironmentVariable</c> is wrapped in try/catch that restores on throw. The
+    /// <c>[Collection("Observability")]</c> serialization prevents env-var nesting races
+    /// (T-20-05).
+    /// </para>
+    ///
+    /// <para>
+    /// Why <c>/health/ready</c> stays 200: the auto-registered MassTransit bus check is capped at
+    /// <c>Degraded</c> via <c>MinimalFailureStatus</c>
+    /// (<c>MessagingServiceCollectionExtensions.cs:49-54</c>) — a broker-down condition never flips
+    /// ready to 503 (Phase 19 D-05). A dead-host name (not a dead port) makes the bus connection
+    /// attempt fail at name resolution.
+    /// </para>
+    /// </summary>
+    private sealed class HealthDeadRabbitFixture : Phase8WebAppFactory
+    {
+        private readonly string? _prior;
+
+        public HealthDeadRabbitFixture()  // live Postgres + live Redis kept; only the broker is dead
+        {
+            _prior = Environment.GetEnvironmentVariable("RabbitMq__Host");
+            try
+            {
+                Environment.SetEnvironmentVariable("RabbitMq__Host", "localhost-rabbit-dead.invalid");
+            }
+            catch
+            {
+                Environment.SetEnvironmentVariable("RabbitMq__Host", _prior);
+                throw;
+            }
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            Environment.SetEnvironmentVariable("RabbitMq__Host", _prior);
+            await base.DisposeAsync();
         }
     }
 
