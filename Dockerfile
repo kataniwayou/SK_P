@@ -12,6 +12,9 @@ RUN dotnet publish "src/BaseApi.Service/BaseApi.Service.csproj" -c Release -o /p
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0-bookworm-slim AS runtime
 WORKDIR /app
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends wget \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=build /publish .
 USER app
 ENV ASPNETCORE_URLS=http://+:8080
