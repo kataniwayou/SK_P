@@ -9,6 +9,7 @@ using BaseApi.Tests.TestHelpers;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using StackExchange.Redis;
 using Xunit;
 
 namespace BaseApi.Tests.Orchestrator;
@@ -89,6 +90,16 @@ public sealed class CorrelationPropagationE2ETests
         Assert.Equal(HttpStatusCode.NoContent, startResp.StatusCode);
         // The HTTP-stage id is echoed back (OBSERV-11) — confirm it is the value we will assert AGAINST.
         Assert.Equal(httpCorr, startResp.Headers.GetValues("X-Correlation-Id").Single());
+
+        // TEST-REDIS-04 net-zero teardown: this real Start projected three L2 keys under the
+        // production "skp:" prefix into the host Redis. RealStackWebAppFactory runs with
+        // skipRedisFixture=true, so the base Phase8WebAppFactory SCAN+DEL cleanup does NOT cover the
+        // skp: prefix — register the exact keys for deletion in the factory's DisposeAsync (fires via
+        // `await using` even if an assertion below throws). Key shapes per HappyPathE2EFacts:
+        // root skp:{wfId}, per-step skp:{wfId}:{stepId}, per-processor skp:{procId}.
+        factory.L2KeysToCleanup.Add($"skp:{wfId}");
+        factory.L2KeysToCleanup.Add($"skp:{wfId}:{stepId}");
+        factory.L2KeysToCleanup.Add($"skp:{procId}");
 
         using var es = new ElasticsearchTestClient();
 
@@ -352,8 +363,23 @@ public sealed class CorrelationPropagationE2ETests
             }
         }
 
+        /// <summary>
+        /// L2 keys (production "skp:" prefix) the test registers for deletion on teardown — populated
+        /// AFTER the real Start projects them. This factory runs with skipRedisFixture=true, so the
+        /// base <see cref="Composition.Phase8WebAppFactory"/> SCAN+DEL cleanup does NOT cover the skp:
+        /// prefix; without this, the close gate's TEST-REDIS-04 redis-cli --scan BEFORE==AFTER
+        /// net-zero invariant fails. Drained in <see cref="DisposeAsync"/> (runs via `await using`
+        /// even if a mid-test assertion throws — true teardown semantics).
+        /// </summary>
+        public List<RedisKey> L2KeysToCleanup { get; } = new();
+
         public override async ValueTask DisposeAsync()
         {
+            if (L2KeysToCleanup.Count > 0)
+            {
+                await using var cleanupMux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+                await cleanupMux.GetDatabase().KeyDeleteAsync(L2KeysToCleanup.ToArray());
+            }
             Restore();
             await base.DisposeAsync();
         }
