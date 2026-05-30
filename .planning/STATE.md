@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: Completed 20-03-PLAN.md (real-stack correlation E2E proof — CORR-04/TEST-RMQ-02 GREEN)
-last_updated: "2026-05-30T21:05:00.000Z"
-last_activity: 2026-05-30 -- Phase 20: 20-03 E2E correlation proof passing (2x GREEN) on live stack
+stopped_at: Completed 20-04-PLAN.md — triple-SHA close gate PASSED (exit 0): 3x 265-GREEN, zero-warning build, all three SHA invariants BEFORE==AFTER. Phase 20 complete; milestone v3.4.0 ready to close.
+last_updated: "2026-05-31T00:45:00.000Z"
+last_activity: 2026-05-31 -- Phase 20: 20-04 close gate exit 0. Fixed D-01 harness wiring (17 RED), 2 pre-existing flaky tests (RedisFixtureFacts/ErrorMappingFacts), 1 redis L2 leak (CorrelationPropagationE2ETests). 3x265 GREEN + triple-SHA HELD.
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 13
-  percent: 93
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State

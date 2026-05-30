@@ -93,8 +93,8 @@
 Plans:
 - [x] 20-01-PLAN.md — Source/test prerequisites: D-13 Stop seam + assertion fix, D-07 publish-side correlation log, OQ#1 RabbitMq:Port read, D-01 HarnessWebAppFactory in-memory swap, D-12 Dockerfile wget
 - [x] 20-02-PLAN.md — Hermetic in-memory tests: TEST-RMQ-01 fan-out broadcast, CORR-03 synthetic outbound filter, TEST-RMQ-03 HealthDeadRabbitFixture broker-down (TEST-RMQ-04 temporary/auto-delete discipline)
-- [ ] 20-03-PLAN.md — Real-stack ES E2E: TEST-RMQ-02/CORR-04 two-doc correlation proof (body Guid == seam == published, != HTTP X-Correlation-Id)
-- [ ] 20-04-PLAN.md — Triple-SHA close gate (psql+redis+rabbitmq) + 3 smell fixes + 3x-GREEN closeout (TEST-RMQ-04/05)
+- [x] 20-03-PLAN.md — Real-stack ES E2E: TEST-RMQ-02/CORR-04 two-doc correlation proof (body Guid == seam == published, != HTTP X-Correlation-Id)
+- [x] 20-04-PLAN.md — Triple-SHA close gate (psql+redis+rabbitmq) + 3 smell fixes + 3x-GREEN closeout (TEST-RMQ-04/05)
 **UI hint**: no
 
 ### Coverage (v3.4.0)
@@ -164,7 +164,7 @@ Plans:
 | 17    | v3.4.0    | 2/2 | Complete    | 2026-05-30 |
 | 18    | v3.4.0    | 4/4 | Complete    | 2026-05-30 |
 | 19    | v3.4.0    | 4/4 | Complete    | 2026-05-30 |
-| 20    | v3.4.0    | 2/4            | In Progress | -          |
+| 20    | v3.4.0    | 4/4            | Complete    | 2026-05-31 |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 (BaseConsole + Orchestrator Messaging) roadmap created 2026-05-30 — 4 phases (17-20), 37 requirements, dependency-ordered per HIGH-confidence research (`.planning/research/SUMMARY.md`). Next: `/gsd-plan-phase 17`.*
