@@ -516,16 +516,21 @@ ENTRYPOINT ["dotnet", "BaseApi.Service.dll"]
 | A5 | `rabbitmqctl -q list_queues name` output is stable BEFORE==AFTER given temporary/auto-delete test queues + the stable orchestrator queue. | Pattern 4, Pitfall 3 | If a test queue lingers (slow auto-delete on connection close), the gate false-fails. Mitigate with a short settle delay before the AFTER snapshot. Medium. |
 | A6 | The seam-doc → read-back-body-Guid → published-doc two-query strategy works because the test does not know the minted Guid a priori. | Pattern 3 | If reading `attributes.CorrelationId` off the seam doc is awkward, the WebApi published-doc text `CorrelationId=G1` can be parsed first instead. Low — symmetric fallback. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three resolved during planning (2026-05-30). Resolutions landed in the Phase 20 plans; annotations below for traceability.
 
 1. **RabbitMQ host port for the in-process WebApi in TEST-RMQ-02 (A3).**
    - What we know: host AMQP port is 5673 (`compose.yaml:166`); `AddBaseApiMessaging` reads only `RabbitMq:Host` (no port, `MessagingServiceCollectionExtensions.cs:43-45`); MT `Host(host, ...)` defaults to 5672.
    - What's unclear: whether the in-process WebApi needs a small `RabbitMq:Port` config-read (or a `rabbitmq://localhost:5673` host form) to reach the host broker — or whether the proof should be driven another way.
    - Recommendation: planner adds a `RabbitMq:Port` read to `AddBaseApiMessaging` (defaulting to 5672 so compose-internal `rabbitmq:5672` is unaffected) and the TEST-RMQ-02 fixture sets `RabbitMq__Port=5673`. Small, in-scope, unblocks the proof. CONFIRM with user if it counts as "new runtime capability" (it is test-enablement, not behavior).
+   - **RESOLVED:** Plan 20-01 Task 2 — `RabbitMq:Port` read added to `AddBaseApiMessaging` (defaults to 5672, compose-internal unaffected); the TEST-RMQ-02 real-stack fixture sets `RabbitMq__Port=5673`. Landed in Wave 1, before the Plan 20-03 ES proof. Treated as test-enablement, not new runtime behavior.
 
 2. **Two-bus harness idiom (A2).** Single harness + two distinct consumer types/endpoints vs two `IServiceProvider`s. Resolve in Wave 0 with a spike; both prove broadcast — pick the one whose per-consumer assertion is unambiguous.
+   - **RESOLVED:** Plan 20-02 Task 1 — resolved inline (no separate spike plan) with a documented fallback to two `IServiceProvider` harnesses; the test asserts per-consumer-harness presence + total consumed count == 2 (not `Consumed.Any()`). Recorded in 20-02-SUMMARY.
 
 3. **Stop seam string wording (D-13).** CONTEXT says "correct the Stop log message"; this research proposes `"Scheduler job stop (seam) for {WorkflowId}"`. Confirm the exact desired wording with the planner (must stay distinct from the Start seam string so the ES proof and ack tests don't conflate them).
+   - **RESOLVED:** Plan 20-01 Task 1 — wording locked as `"Scheduler job stop (seam) for {WorkflowId}"`, distinct from the Start seam string; the carried-over assertion at `StartStopConsumerAckTests.cs:217` (STOP test) is updated, and the Start-test assertion (~line 156) is explicitly left untouched.
 
 ## Environment Availability
 
