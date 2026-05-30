@@ -9,7 +9,7 @@ On top of the v3.2.0 CRUD foundation, v3.3.0 added the orchestration build pipel
 
 v3.2.0 delivered the reusable `BaseApi.Core` library + runnable `BaseApi.Service` exposing CRUD over 5 entities (Schema, Processor, Step, Assignment, Workflow) + 3 junctions against Postgres 17 in Docker Compose; OpenTelemetry logs → Elasticsearch, metrics → Prometheus, no traces (Phase 11 D-03); RFC 7807 + `X-Correlation-Id` end-to-end; three K8s-style health probes with migration-gated readiness.
 
-_Active milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30._
+_Active milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30. Phase 17 (Messaging.Contracts + Shared L2 Root Extract) complete: leaf contracts library with frozen vocabulary + moved L2 root read-shape, MassTransit 8.5.5 CPM-pinned; 235×3 GREEN, dual-SHA BEFORE=AFTER held._
 
 ## Current Milestone: v3.4.0 BaseConsole + Orchestrator Messaging
 
@@ -228,7 +228,7 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-30 — milestone v3.4.0 (BaseConsole + Orchestrator Messaging) started; PROJECT.md updated with the Current Milestone section, requirements being defined. v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) shipped 2026-05-29 (5 phases / 26 plans / 64 requirements / 235 facts × 3 GREEN, dual-SHA BEFORE=AFTER; milestone audit PASSED, tagged `v3.3.0`). v3.2.0 (Steps API MVP) shipped 2026-05-28. See `milestones/v3.3.0-ROADMAP.md` and `milestones/v3.2.0-ROADMAP.md` for the full phase narratives; per-phase footers preserved below for git-blame continuity.*
+*Last updated: 2026-05-30 — milestone v3.4.0 (BaseConsole + Orchestrator Messaging) started; Phase 17 (Messaging.Contracts + Shared L2 Root Extract) complete (MSG-CONTRACTS-01..04 + INFRA-RMQ-01). v3.3.0 (Orchestration L3 → L1 → L2 Build Pipeline) shipped 2026-05-29 (5 phases / 26 plans / 64 requirements / 235 facts × 3 GREEN, dual-SHA BEFORE=AFTER; milestone audit PASSED, tagged `v3.3.0`). v3.2.0 (Steps API MVP) shipped 2026-05-28. See `milestones/v3.3.0-ROADMAP.md` and `milestones/v3.2.0-ROADMAP.md` for the full phase narratives; per-phase footers preserved below for git-blame continuity.*
 
 <details>
 <summary>Historical phase footers (Phases 1-11, v3.2.0)</summary>
