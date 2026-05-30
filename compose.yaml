@@ -199,6 +199,13 @@ services:
       RabbitMq__Password: guest
       ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=5000"
       Orchestrator__InstanceId: orchestrator-1
+      # Phase 20 (20-03 fix) — the OTLP exporter is wired bare (AddOtlpExporter() with no
+      # endpoint), so it reads the standard OTEL_EXPORTER_OTLP_ENDPOINT env var and otherwise
+      # defaults to localhost:4317 (the container itself → telemetry lost). baseapi-service sets
+      # this (line ~220) but the orchestrator omitted it, so its seam logs never reached ES —
+      # blocking the CORR-04/TEST-RMQ-02 correlation proof. Compose-DNS host otel-collector:4317
+      # (the appsettings OpenTelemetry:Endpoint key is dead config, consumed nowhere in code).
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8081/health/ready"]
       interval: 10s
