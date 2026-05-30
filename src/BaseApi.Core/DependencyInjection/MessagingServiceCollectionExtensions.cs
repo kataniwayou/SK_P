@@ -34,13 +34,18 @@ namespace BaseApi.Core.DependencyInjection;
 public static class MessagingServiceCollectionExtensions
 {
     /// <summary>
-    /// Wires the publish-only RabbitMQ bus. Host/credentials are read via the <c>cfg.Require</c>
-    /// fail-fast helper (the missing-key exception names the key, never the value).
+    /// Wires the publish-only RabbitMQ bus. Host/port/credentials are read via configuration:
+    /// host/username/password use the <c>cfg.Require</c> fail-fast helper (the missing-key
+    /// exception names the key, never the value); <c>RabbitMq:Port</c> is OPTIONAL and defaults
+    /// to 5672 so the compose-internal <c>rabbitmq:5672</c> path used by running containers is
+    /// byte-unaffected. The in-process TEST WebApi overrides <c>RabbitMq__Port=5673</c> to reach
+    /// the host-mapped broker port (TEST-RMQ-02 test-enablement, not new runtime behavior).
     /// </summary>
     public static IServiceCollection AddBaseApiMessaging(
         this IServiceCollection services, IConfiguration cfg)
     {
         var host = cfg.Require("RabbitMq:Host");
+        var port = cfg.GetValue<ushort>("RabbitMq:Port", 5672);
         var user = cfg.Require("RabbitMq:Username");
         var pass = cfg.Require("RabbitMq:Password");
 
@@ -56,7 +61,7 @@ public static class MessagingServiceCollectionExtensions
 
             bus.UsingRabbitMq((context, busCfg) =>
             {
-                busCfg.Host(host, h => { h.Username(user); h.Password(pass); });
+                busCfg.Host(host, port, "/", h => { h.Username(user); h.Password(pass); });
                 // Publish-only — NO ConfigureEndpoints, NO consumers, NO correlation filters (D-02).
             });
         });
