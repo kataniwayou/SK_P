@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using Orchestrator.Consumers;
-using Orchestrator.Messaging;
 using StackExchange.Redis;
 using Xunit;
 
@@ -26,8 +25,6 @@ namespace BaseApi.Tests.Orchestrator;
 /// </summary>
 public sealed class StartStopConsumerAckTests
 {
-    private const string Prefix = "skp:";
-
     // ----- log capture --------------------------------------------------------------------------
 
     private sealed class CapturingLoggerProvider : ILoggerProvider
@@ -92,7 +89,6 @@ public sealed class StartStopConsumerAckTests
         IConnectionMultiplexer mux, CapturingLoggerProvider? logs = null)
         => new ServiceCollection()
             .AddSingleton(mux)
-            .AddSingleton(new OrchestratorRedisOptions(Prefix))
             .AddLogging(b => { if (logs is not null) b.AddProvider(logs); })
             .AddMassTransitTestHarness(x =>
             {
@@ -105,7 +101,6 @@ public sealed class StartStopConsumerAckTests
         IConnectionMultiplexer mux, CapturingLoggerProvider? logs = null)
         => new ServiceCollection()
             .AddSingleton(mux)
-            .AddSingleton(new OrchestratorRedisOptions(Prefix))
             .AddLogging(b => { if (logs is not null) b.AddProvider(logs); })
             .AddMassTransitTestHarness(x =>
             {

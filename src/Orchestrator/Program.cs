@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Orchestrator.Consumers;
-using Orchestrator.Messaging;
 
 // Thin-shell composition root (ORCH-CON-01). Generic Host — Host.CreateApplicationBuilder, NOT
 // WebApplication. The base library supplies all infra (observability, Redis soft-dep, embedded
@@ -14,10 +13,6 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.AddBaseConsoleObservability(builder.Configuration);   // metrics-only OTel (no tracer — Pitfall 4)
 builder.Services.AddBaseConsole(builder.Configuration);       // Redis soft-dep + embedded health
-
-// The configured L2 key prefix, surfaced to the consumers as a typed Singleton.
-builder.Services.AddSingleton(
-    new OrchestratorRedisOptions(builder.Configuration["Redis:KeyPrefix"] ?? "skp:"));
 
 // D-06: a stable instance id per replica (fall back to a fresh GUID when unset). Captured by the
 // closure below so BOTH consumers share the SAME instance id → one temporary/auto-delete fan-out
