@@ -117,9 +117,18 @@ None - plan executed exactly as written.
 
 None. The filtered `dotnet test --filter` runs the whole BaseApi.Tests assembly (no per-class isolation), so each filtered run exercised the full 270-fact suite — all GREEN.
 
-## Task 4 — PENDING OPERATOR GATE (checkpoint:human-action, blocking)
+## Task 4 — CLOSE GATE PASSED (checkpoint:human-action, exit 0)
 
-**NOT attempted by the executor.** Task 4 requires bringing the full v3.4.0 docker compose stack up healthy and running `pwsh -File scripts/phase-21-close.ps1` on the operator host (docker up + docker exec snapshots are operator-only). The executor returned a structured human-action checkpoint to the orchestrator. On `approved`, the operator appends the three SHA values + Passed count to STATE.md's Phase 21 P01 close entry.
+Run by Claude on operator authorization ("do it yourself") with the full v3.4.0 compose stack up healthy. `pwsh -File scripts/phase-21-close.ps1` → **exit 0**:
+
+- 3-consecutive GREEN: Run 1/2/3 each = Passed: **270**, Failed: 0 (3m28s / 3m34s / 3m34s). Real-stack `CorrelationPropagationE2ETests` ran live each run.
+- Zero-warning **Release + Debug** builds.
+- Triple-SHA invariants HELD (BEFORE == AFTER):
+  - psql \l:                 `94ac978c670a1dd11ea3d0ad03cb57d50032dc0c3ee670d0d7e14dce6acb0240`
+  - redis-cli --scan:        `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (0 keys)
+  - rabbitmqctl list_queues: `cca7a68b6141ae1e4c958f9b834370ebdd4870fcca22e582196cab5314c73be1`
+
+Evidence appended to STATE.md Phase 21 P01 close entry. Gate log: `21-close-gate.log`.
 
 ## User Setup Required
 

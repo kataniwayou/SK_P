@@ -29,7 +29,17 @@ Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 21 (v3.4.0-closeout-hygiene) — EXECUTING
 Plan: 1 of 1
 Status: Executing Phase 21
-Last activity: 2026-05-31 -- Phase 21 execution started
+Last activity: 2026-05-31 -- Phase 21 close gate PASSED (exit 0), HARDEN-03 complete
+
+### Phase 21 Plan 01 — Close Gate Evidence (Task 4, approved)
+
+- 3-consecutive GREEN: Run 1/2/3 each = Passed: 270, Failed: 0 (durations 3m28s / 3m34s / 3m34s). Real-stack CorrelationPropagationE2ETests ran live in each run (full v3.4.0 stack up healthy).
+- Triple-SHA (psql \l + redis-cli --scan + rabbitmqctl list_queues), BEFORE == AFTER:
+  - psql \l SHA-256:                  94ac978c670a1dd11ea3d0ad03cb57d50032dc0c3ee670d0d7e14dce6acb0240 — HELD
+  - redis-cli --scan SHA-256:         e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (0 keys) — HELD
+  - rabbitmqctl list_queues SHA-256:  cca7a68b6141ae1e4c958f9b834370ebdd4870fcca22e582196cab5314c73be1 — HELD
+- Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
+- Operator confirmation: "do it yourself" — gate run by Claude on operator authorization; exit 0. HARDEN-03 closed.
 
 ### Phase 18 Plan 04 — Close Gate Evidence (Task 4, operator-approved)
 
