@@ -11,9 +11,8 @@ namespace Orchestrator.Hydration;
 /// <summary>
 /// Shared hydrate-one + teardown-one unit (D-15) reused by the startup
 /// <see cref="HydrationBackgroundService"/> AND both consumers (Start = teardown+hydrate+schedule,
-/// Stop = teardown-only). All L2 access is READ-ONLY — this type never issues a
-/// <c>StringSetAsync</c>/<c>SetAddAsync</c>/<c>KeyDeleteAsync</c> against any <c>skp:</c> key
-/// (ORCH-STOP-01 / T-23-11).
+/// Stop = teardown-only). All L2 access is READ-ONLY — this type never issues any string-set /
+/// set-add / key-delete mutation against any <c>skp:</c> key (ORCH-STOP-01 / T-23-11).
 /// <para>
 /// <b>Business vs infra split (ORCH-ACK-01):</b> absent root, malformed JSON, and missing/corrupt
 /// steps are BUSINESS outcomes — logged + skipped, never thrown. Redis connection/timeout faults are
