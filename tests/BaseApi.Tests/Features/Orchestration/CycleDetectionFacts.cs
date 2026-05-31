@@ -27,6 +27,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "14")]
+[Collection("ParentIndex")]
 public sealed class CycleDetectionFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -157,12 +158,30 @@ public sealed class CycleDetectionFacts : IClassFixture<HarnessWebAppFactory>
 
         var wfId = await CreateWorkflowAsync(client, new List<Guid> { stepA }, ct);
 
-        var resp = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start",
-            new List<Guid> { wfId },
-            ct);
+        // PROC-LIVE-01: all four steps share one processor — seed it live so the liveness gate
+        // (post-cycle, pre-Upsert) accepts this acyclic 204 path. Track root + step keys + SREM the
+        // parent index so the close-gate scan SHA holds.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
+        var prefix = _factory.RedisKeyPrefix;
+        _factory.TrackRedisKey($"{prefix}{wfId}");
+        foreach (var s in new[] { stepA, stepB, stepC, stepD })
+        {
+            _factory.TrackRedisKey($"{prefix}{wfId}:{s}");
+        }
 
-        // D-14: a fan-in/diamond DAG is acyclic — the two-set algorithm must NOT flag it.
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        try
+        {
+            var resp = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start",
+                new List<Guid> { wfId },
+                ct);
+
+            // D-14: a fan-in/diamond DAG is acyclic — the two-set algorithm must NOT flag it.
+            Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 }

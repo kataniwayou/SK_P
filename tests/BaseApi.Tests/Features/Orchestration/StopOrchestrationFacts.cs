@@ -23,13 +23,14 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "15")]
+[Collection("ParentIndex")]
 public sealed class StopOrchestrationFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
 
     public StopOrchestrationFacts(HarnessWebAppFactory factory) => _factory = factory;
 
-    private static async Task<Guid> SeedWorkflowAsync(HttpClient client, CancellationToken ct)
+    private async Task<Guid> SeedWorkflowAsync(HttpClient client, CancellationToken ct)
     {
         var procDto = new ProcessorCreateDto(
             Name: $"orch-stop-proc-{Guid.NewGuid():N}",
@@ -42,6 +43,9 @@ public sealed class StopOrchestrationFacts : IClassFixture<HarnessWebAppFactory>
         var procResp = await client.PostAsJsonAsync("/api/v1/processors", procDto, ct);
         procResp.EnsureSuccessStatusCode();
         var proc = await procResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+        // PROC-LIVE-01: seed the processor live so the subsequent Start (Stop gates on a Started wf)
+        // passes the liveness gate; the writer no longer creates this key (PROC-NOCREATE-01).
+        await _factory.SeedLiveProcessorAsync(proc!.Id, ct);
 
         var stepDto = new StepCreateDto(
             Name: $"orch-stop-step-{Guid.NewGuid():N}",

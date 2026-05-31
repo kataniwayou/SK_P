@@ -28,6 +28,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "15")]
+[Collection("ParentIndex")]
 public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -82,12 +83,21 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         return wf!.Id;
     }
 
-    /// <summary>Seeds a workflow (with one terminal step + its processor) and Starts it (204).</summary>
+    /// <summary>
+    /// Seeds a workflow (with one terminal step + its processor) and Starts it (204). PROC-LIVE-01:
+    /// seeds the processor's self-registered skp:{procId} liveness entry LIVE first (the writer no
+    /// longer creates it — PROC-NOCREATE-01 — and the Start path gates on it). Tracks the root + step
+    /// keys for known-key cleanup so a Stop-failure path (422/500, no SREM-delete) leaves no residue.
+    /// </summary>
     private async Task<(Guid wfId, Guid stepId, Guid procId)> SeedAndStartAsync(HttpClient client, CancellationToken ct)
     {
         var procId = await SeedProcessorAsync(client, ct);
         var stepId = await SeedStepAsync(client, ct, procId);
         var wfId = await SeedWorkflowAsync(client, ct, new List<Guid> { stepId });
+        await _factory.SeedLiveProcessorAsync(procId, ct);
+        var prefix = _factory.RedisKeyPrefix;
+        _factory.TrackRedisKey($"{prefix}{wfId}");
+        _factory.TrackRedisKey($"{prefix}{wfId}:{stepId}");
         var start = await client.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
         Assert.Equal(HttpStatusCode.NoContent, start.StatusCode);
         return (wfId, stepId, procId);
@@ -141,6 +151,10 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         var db = _factory.RedisMultiplexer.GetDatabase();
         Assert.True(await db.KeyExistsAsync($"{prefix}{startedWf}"), "started root key must survive a failed gate");
         Assert.True(await db.KeyExistsAsync($"{prefix}{startedWf}:{startedStep}"), "started step key must survive a failed gate");
+
+        // The 422 gate fails before cleanup, so the started wf's parent-index SADD was NOT SREMed —
+        // remove it here (root/step keys are tracked by SeedAndStartAsync) so the close-gate scan SHA holds.
+        await _factory.SremParentIndexAsync(startedWf);
     }
 
     // ----------------------------- ORCH-STOP-06 (rev): repeated Stop → 422 -----------------------------
@@ -257,6 +271,10 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         Assert.Equal(correlationId, doc.RootElement.GetProperty("correlationId").GetString());
         Assert.DoesNotContain("localhost", body);
         Assert.DoesNotContain("RedisConnectionException", body);
+
+        // The cleanup threw before SREM, so the started wf's parent-index member persists — remove it
+        // (root/step keys tracked by SeedAndStartAsync) so the close-gate scan SHA returns to BEFORE.
+        await _factory.SremParentIndexAsync(wfId);
     }
 
     /// <summary>Throwing cleanup — simulates a Redis fault on the POST-gate Stop delete loop (WR-01).</summary>

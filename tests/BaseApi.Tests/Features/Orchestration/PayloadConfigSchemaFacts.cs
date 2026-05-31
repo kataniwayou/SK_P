@@ -34,6 +34,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "14")]
+[Collection("ParentIndex")]
 public sealed class PayloadConfigSchemaFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -172,12 +173,25 @@ public sealed class PayloadConfigSchemaFacts : IClassFixture<HarnessWebAppFactor
         var assignmentId = await SeedAssignmentAsync(client, stepId, "{}", ct);
         var wfId = await SeedWorkflowAsync(client, new List<Guid> { stepId }, new List<Guid> { assignmentId }, ct);
 
-        var resp = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start",
-            new List<Guid> { wfId },
-            ct);
+        // PROC-LIVE-01: seed the processor live so the liveness gate accepts this 204 path.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
+        var prefix = _factory.RedisKeyPrefix;
+        _factory.TrackRedisKey($"{prefix}{wfId}");
+        _factory.TrackRedisKey($"{prefix}{wfId}:{stepId}");
 
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        try
+        {
+            var resp = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start",
+                new List<Guid> { wfId },
+                ct);
+
+            Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 
     [Fact]
@@ -204,11 +218,25 @@ public sealed class PayloadConfigSchemaFacts : IClassFixture<HarnessWebAppFactor
             new List<Guid> { asn1, asn2 },
             ct);
 
-        var resp = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start",
-            new List<Guid> { wfId },
-            ct);
+        // PROC-LIVE-01: both steps share one processor — seed it live so the liveness gate accepts 204.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
+        var prefix = _factory.RedisKeyPrefix;
+        _factory.TrackRedisKey($"{prefix}{wfId}");
+        _factory.TrackRedisKey($"{prefix}{wfId}:{step1}");
+        _factory.TrackRedisKey($"{prefix}{wfId}:{step2}");
 
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        try
+        {
+            var resp = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start",
+                new List<Guid> { wfId },
+                ct);
+
+            Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 }
