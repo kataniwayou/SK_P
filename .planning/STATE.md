@@ -27,9 +27,20 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 24 (orchestrator-result-consume-step-advancement) — EXECUTING
-Plan: 4 of 5
-Status: Ready to execute
-Last activity: 2026-05-31
+Plan: 5 of 5
+Status: Ready to execute (24-04 complete)
+Last activity: 2026-06-01
+
+### Phase 24 Plan 04 — COMPLETE (result consumer + shared competing endpoint + scheduler wiring)
+
+- ResultConsumer + ResultConsumerDefinition: gate-closed THROW (D-06), L1-only TryGet (D-08, no L2/stripe), StepAdvancement match, IStepDispatcher continuation; shared competing-consumer EndpointName = OrchestratorQueues.Result; UseScheduledRedelivery(5s/15s/30s/60s) BEFORE UseMessageRetry(Immediate(3)); GateClosedException NOT Ignore-listed.
+- Program.cs: AddConsumer<ResultConsumer, ResultConsumerDefinition>() (no InstanceId/Temporary) + AddDelayedMessageScheduler() + configureBus: (ctx,c) => c.UseDelayedMessageScheduler() + AddSingleton<IStepDispatcher,StepDispatcher>/<StepAdvancement>.
+- 3 new test files (ResultConsume x2, ResultAck x4, GateClosedRedeliver x1). Orchestrator slice 71 passed / 0 failed against a FRESHLY-built DLL. Orchestrator (Debug+Release) + test projects build 0 Warning / 0 Error.
+- Rule 1/3 fixes: commits 0040b17/9f58ec4 built BROKEN (the per-task --no-build runs matched a stale green DLL, masking CS9113 + CS1061 x2). Corrected in 094cb32 (scheduler API + base seam) and 4577ed1 (ResultConsumer logger). Lesson: never trust --no-build after a source edit.
+- KEY CORRECTION: MassTransit 8.5.5 has NO in-memory message scheduler (the plan/research assumed AddInMemoryMessageScheduler/UseInMemoryScheduler — they do not exist). Used the transport delayed scheduler (AddDelayedMessageScheduler/UseDelayedMessageScheduler). Widened BaseConsole.Core's configureBus seam to Action<IBusRegistrationContext, IRabbitMqBusFactoryConfigurator>.
+- REVIEW FLAG (FLAG-24-04-SCHEDULER): the delayed scheduler defers on RabbitMQ only with the rabbitmq_delayed_message_exchange plugin, which is NOT enabled in the compose broker. Live gate-closed redelivery needs that plugin OR MassTransit.Quartz (new dep) — an architectural decision deferred to review / 24-05. Unit/harness tests pass (they exercise the consumer THROW directly, not the live broker pipeline).
+- Commits: 0040b17 (Task 1), 9f58ec4 (Task 2 initial), 094cb32 (Rule 3 fix), 4577ed1 (Rule 1 fix).
+- ORCH-RESULT-02, ORCH-ADVANCE-01/02, ORCH-RESULT-ACK-01, ORCH-GATE-01 (result-consumer slice) satisfied (GATE-01 live-deferral subject to FLAG-24-04-SCHEDULER). Phase 24 = 3/5 plans; 24-05 (conditionless Start/Stop + gate-closed-throw for Start/Stop) remains.
 
 ### Phase 23 Plan 05 — COMPLETE (Task 4 checkpoint APPROVED, plan finalized)
 
@@ -72,7 +83,7 @@ Last activity: 2026-05-31
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████████░] 93%
+Progress: [██████████] 97%
 
 ### Milestone Phases (v3.4.0)
 
@@ -226,6 +237,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 23 P03 | ~5min | 3 tasks | 9 files |
 | Phase 23 P04 | 5min | 3 tasks | 6 files |
 | Phase 23 P05 | ~30min (Tasks 1-3) + blocking checkpoint | 4 tasks (3 auto + 1 gate) tasks | 8 files (6 created + 2 modified) files |
+| Phase 24 P04 | ~30min (incl. Rule 1/3 build-fix cycle) | 2 tasks | 7 files (5 created + 2 modified) |
 | Phase 24 P01 | ~12min | 2 tasks | 5 files |
 | Phase 24 P02 | ~55min | 2 tasks tasks | 7 files files |
 | Phase 24 P03 | ~17min | 2 tasks | 6 files |
