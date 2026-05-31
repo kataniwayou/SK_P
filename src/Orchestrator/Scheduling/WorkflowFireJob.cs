@@ -2,6 +2,7 @@ using MassTransit;
 using Messaging.Contracts;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
+using Orchestrator.Dispatch;
 using Orchestrator.L1;
 using Quartz;
 
@@ -28,7 +29,7 @@ namespace Orchestrator.Scheduling;
 [DisallowConcurrentExecution]
 public sealed class WorkflowFireJob(
     IWorkflowL1Store store,
-    ISendEndpointProvider sendProvider,
+    IStepDispatcher dispatcher,
     WorkflowScheduler scheduler,
     TimeProvider timeProvider,
     ILogger<WorkflowFireJob> logger) : IJob
@@ -63,14 +64,11 @@ public sealed class WorkflowFireJob(
                 continue;
             }
 
-            var msg = new EntryStepDispatch(workflowId, entryStepId, step.ProcessorId, step.Payload)
-            {
-                CorrelationId = correlationId, // entry condition is irrelevant for entry steps
-            };
-
-            // D-10: Send (NOT Publish) to the per-processor queue. An infra fault here propagates.
-            var endpoint = await sendProvider.GetSendEndpoint(new Uri($"queue:{step.ProcessorId:D}"));
-            await endpoint.Send(msg, context.CancellationToken);
+            // D-01: the build-and-Send shape now lives in IStepDispatcher (the single owner). The
+            // initial fire passes executionId = entryId = Guid.Empty; an infra fault on Send propagates.
+            await dispatcher.DispatchAsync(
+                workflowId, entryStepId, step.ProcessorId, step.Payload,
+                correlationId, Guid.Empty, Guid.Empty, context.CancellationToken);
         }
 
         // L1 liveness refresh — in-memory only (NO L2 write). Replace the immutable LivenessProjection
