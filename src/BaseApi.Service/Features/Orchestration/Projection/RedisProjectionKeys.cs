@@ -1,25 +1,18 @@
+using Messaging.Contracts.Projections;
+
 namespace BaseApi.Service.Features.Orchestration.Projection;
 
 /// <summary>
-/// Single source of truth for the three L2 (Redis) projection key formats (L2-PROJECT-02).
-/// <para>
-/// The scheme is FLAT: a single configured prefix followed by GUID(s), with NO type
-/// discriminator (D-02). Consequently <see cref="Root"/> and <see cref="Processor"/> produce
-/// byte-identical strings for the same prefix + GUID — they are disambiguated only by their
-/// GUID namespace (a workflow id is never a processor id). GUIDs render in the default
-/// <c>Guid.ToString()</c> ("D") format — hyphenated — NOT the "N" (32-digit) format.
-/// </para>
-/// <list type="bullet">
-///   <item><description>Root: <c>{prefix}{workflowId}</c></description></item>
-///   <item><description>Step: <c>{prefix}{workflowId}:{stepId}</c></description></item>
-///   <item><description>Processor: <c>{prefix}{processorId}</c></description></item>
-/// </list>
+/// Writer-side L2 (Redis) projection key forwarder. The authoritative key shapes live in
+/// <see cref="L2ProjectionKeys"/> (Messaging.Contracts) — this thin shim preserves the existing
+/// internal call sites (<c>RedisProjectionWriter</c>, <c>RedisL2Cleanup</c>) while sharing one
+/// source of truth with the orchestrator reader (HARDEN-03).
 /// </summary>
 internal static class RedisProjectionKeys
 {
-    public static string Root(string prefix, Guid workflowId) => $"{prefix}{workflowId}";
+    public static string Root(string prefix, Guid workflowId) => L2ProjectionKeys.Root(prefix, workflowId);
 
-    public static string Step(string prefix, Guid workflowId, Guid stepId) => $"{prefix}{workflowId}:{stepId}";
+    public static string Step(string prefix, Guid workflowId, Guid stepId) => L2ProjectionKeys.Step(prefix, workflowId, stepId);
 
-    public static string Processor(string prefix, Guid processorId) => $"{prefix}{processorId}";
+    public static string Processor(string prefix, Guid processorId) => L2ProjectionKeys.Processor(prefix, processorId);
 }
