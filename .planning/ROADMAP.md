@@ -111,12 +111,17 @@ Plans:
 ### Phase 22: L2 Root-Parent Restructure + Processor Self-Registration Boundary
 **Goal**: Restructure the L2 Redis projection into a two-level hierarchy — a hardcoded-prefix root-parent key holding the array of workflow IDs, and per-workflow child keys holding steps/crons/jobs/liveness — and remove orchestrator-side creation of processor L2 entries, replacing it with a processor existence-check plus timestamp-based liveness read while keeping processor edge-schema validation intact.
 **Depends on**: Phase 21 (builds on the shared `L2ProjectionKeys` single source of truth)
-**Requirements**: TBD (defined at `/gsd-spec-phase` — candidate IDs: L2ROOT-*, L2PREFIX-*, PROC-LIVE-*)
+**Requirements**: L2IDX-01, L2PREFIX-01, PROC-NOCREATE-01, PROC-LIVE-01, PROC-EDGE-01 (5 locked via 22-SPEC.md; L2IDX-02 dropped)
 **Success Criteria** (what must be TRUE):
   1. (mod 1) A root-parent L2 key `{prefix}` holds the set of workflow IDs; each workflow has a child key `{prefix}:{workflowId}` holding its steps/crons/jobs/liveness members; both writer and reader build these via the shared `L2ProjectionKeys`.
   2. (mod 2) `{prefix}` is a hardcoded compile-time constant, no longer read from configuration/options; no appsettings key controls it.
   3. (mod 3) The orchestrator no longer creates processor L2 entries (processor self-registration write path deferred to its own phase/discussion). The workflow checks processor existence in L2 and computes liveness via `timestamp + interval*2 > now` (processor refreshes its own timestamp); processor edge-schema validation is unchanged.
-**Plans**: 0 plans (run `/gsd-plan-phase 22`)
+**Plans**: 5 plans
+  - [ ] 22-01-PLAN.md — Const prefix + ParentIndex() + no-prefix builders in L2ProjectionKeys + forwarders + golden tests
+  - [ ] 22-02-PLAN.md — Reader-side prefix de-config (delete OrchestratorRedisOptions, consumers, Program.cs, appsettings)
+  - [ ] 22-03-PLAN.md — Writer SADD parent index + remove processor-create + cleanup SREM + writer/service prefix removal
+  - [ ] 22-04-PLAN.md — ProcessorLivenessValidator (422) + exception factory + StartAsync wiring + DI
+  - [ ] 22-05-PLAN.md — Test-isolation rewrite + ProcessorLivenessFacts + golden/gate updates + triple-SHA close gate
 **UI hint**: no
 
 ### Phase 23: Orchestrator Stop + Reload Lifecycle Over the New L2 Structure
