@@ -3,6 +3,7 @@ using Messaging.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Orchestrator.Consumers;
+using Orchestrator.Dispatch;
 using Orchestrator.Hydration;
 using Orchestrator.L1;
 using Orchestrator.Scheduling;
@@ -11,15 +12,16 @@ using Quartz.Impl;
 using Quartz.Impl.Matchers;
 using StackExchange.Redis;
 using Xunit;
+using ExecutionResult = Messaging.Contracts.ExecutionResult;
 
 namespace BaseApi.Tests.Orchestrator;
 
 /// <summary>
-/// ORCH-STOP-01 goal-backward proof: the gated <see cref="StopOrchestrationConsumer"/> resolves the
-/// workflow's jobId from L1, deletes the Quartz job, clears the L1 entry, and performs ZERO L2
-/// writes — the byte-identical-L2 invariant (T-23-12) enforced by extended
-/// <c>DidNotReceive().StringSetAsync/SetAddAsync/KeyDeleteAsync</c> guards. The gate-closed path drops
-/// cleanly with no teardown.
+/// ORCH-STOP-DRAIN-01 goal-backward proof (supersedes Phase 23 ORCH-STOP-01): the conditionless
+/// <see cref="StopOrchestrationConsumer"/> resolves the workflow's jobId from L1, deletes the Quartz
+/// job, but KEEPS the L1 entry (D-07 drain) and performs ZERO L2 writes. Because L1 persists, a late
+/// <see cref="ExecutionResult"/> for the stopped workflow still resolves in L1 and dispatches its next
+/// steps. The gate-closed path THROWS <see cref="GateClosedException"/> (D-06 redelivery, NOT ack-drop).
 /// </summary>
 public sealed class StopConsumerLifecycleTests
 {
@@ -45,23 +47,23 @@ public sealed class StopConsumerLifecycleTests
         var lifecycle = new WorkflowLifecycle(
             mux, store, workflowScheduler, TimeProvider.System, NullLogger<WorkflowLifecycle>.Instance);
         var consumer = new StopOrchestrationConsumer(
-            gate, store, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
+            gate, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
         return (consumer, store, lifecycle);
     }
 
     private static async Task AssertZeroL2Writes(IDatabase db)
     {
-        // Byte-identical L2: the orchestrator NEVER mutates any skp: key (T-23-12 / ORCH-STOP-01).
+        // Byte-identical L2: the orchestrator NEVER mutates any skp: key (T-23-12 / ORCH-STOP-DRAIN-01).
         await db.DidNotReceive().StringSetAsync(
             Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<When>(), Arg.Any<CommandFlags>());
         await db.DidNotReceive().SetAddAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<CommandFlags>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
     }
 
-    // ----- ORCH-STOP-01: stop deletes job + clears L1 + zero L2 writes --------------------------
+    // ----- ORCH-STOP-DRAIN-01: stop deletes job but KEEPS L1, zero L2 writes --------------------
 
     [Fact]
-    public async Task StopDeletesJob_ClearsL1_ZeroL2Writes()
+    public async Task StopDeletesJob_KeepsL1_ZeroL2Writes()
     {
         var ct = TestContext.Current.CancellationToken;
 
@@ -87,16 +89,16 @@ public sealed class StopConsumerLifecycleTests
             Assert.True(await scheduler.CheckExists(jobKey, ct));
 
             // Reads during hydration are allowed; the zero-WRITE invariant covers only mutations,
-            // so clear the received-call log before the teardown under test.
+            // so clear the received-call log before the unschedule under test.
             db.ClearReceivedCalls();
 
             await consumer.Consume(OrchestratorTestStubs.Context(new StopOrchestration([workflowId]), ct));
 
-            // Job gone, L1 entry removed.
+            // Job gone, but the L1 entry REMAINS (D-07 drain).
             Assert.False(await scheduler.CheckExists(jobKey, ct));
             Assert.Empty(await scheduler.GetJobKeys(GroupMatcher<JobKey>.AnyGroup(), ct));
-            Assert.Equal(0, store.Count);
-            Assert.False(store.TryGet(workflowId, out _));
+            Assert.Equal(1, store.Count);
+            Assert.True(store.TryGet(workflowId, out _));
 
             await AssertZeroL2Writes(db);
         }
@@ -106,10 +108,81 @@ public sealed class StopConsumerLifecycleTests
         }
     }
 
-    // ----- ORCH-STOP-01 / D-12: gate-closed drops the stop, no teardown -------------------------
+    // ----- ORCH-STOP-DRAIN-01: a late result for the stopped workflow still resolves in L1 + ----
+    // dispatches its next step (drain). Reuses the result-consume path over the kept L1 entry.
 
     [Fact]
-    public async Task GateClosed_DropsStop()
+    public async Task LateResult_AfterStop_StillResolvesInL1_AndDispatches()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var workflowId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var entryStepId = Guid.NewGuid();
+        var entryProcessorId = Guid.NewGuid();
+        var nextStepId = Guid.NewGuid();
+        var nextProcessorId = Guid.NewGuid();
+
+        // Seed an L1 entry directly whose entry step has a matching next step (EntryCondition 1 ==
+        // (int)StepOutcome.Completed). The Stop must KEEP this so the late result can still advance.
+        var store = new WorkflowL1Store();
+        var steps = new Dictionary<Guid, Messaging.Contracts.Projections.StepProjection>
+        {
+            [entryStepId] = new(EntryCondition: 0, ProcessorId: entryProcessorId, Payload: "{}", NextStepIds: [nextStepId]),
+            [nextStepId] = new(EntryCondition: (int)StepOutcome.Completed, ProcessorId: nextProcessorId, Payload: "{\"k\":1}", NextStepIds: []),
+        };
+        store.Upsert(workflowId, new WorkflowL1([entryStepId], "*/5 * * * *", jobId, steps));
+
+        var gate = new StartupGate();
+        gate.MarkReady();
+
+        var scheduler = await NewRamSchedulerAsync(ct);
+        try
+        {
+            // Stop: unschedule-only, KEEP L1. (No Quartz job was scheduled here — Stop is a no-op unschedule
+            // because UnscheduleAsync(jobId) is idempotent; the point is the L1 entry must survive.)
+            var workflowScheduler = new WorkflowScheduler(scheduler, TimeProvider.System);
+            var mux = OrchestratorTestStubs.AbsentL2(out _); // result path never reads L2 anyway
+            var lifecycle = new WorkflowLifecycle(
+                mux, store, workflowScheduler, TimeProvider.System, NullLogger<WorkflowLifecycle>.Instance);
+            var stop = new StopOrchestrationConsumer(gate, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
+
+            await stop.Consume(OrchestratorTestStubs.Context(new StopOrchestration([workflowId]), ct));
+            Assert.True(store.TryGet(workflowId, out _)); // L1 kept (drain)
+
+            // Drive a late result for the stopped workflow's entry step through the ResultConsumer; it
+            // resolves in the kept L1 entry and dispatches the matching next step.
+            var dispatcher = Substitute.For<IStepDispatcher>();
+            var advancement = new StepAdvancement();
+            var resultConsumer = new ResultConsumer(
+                gate, store, advancement, dispatcher, NullLogger<ResultConsumer>.Instance);
+
+            var correlationId = Guid.NewGuid();
+            var executionId = Guid.NewGuid();
+            var entryId = Guid.NewGuid();
+            var result = new ExecutionResult(executionId, workflowId, entryStepId, entryProcessorId, StepOutcome.Completed)
+            {
+                CorrelationId = correlationId,
+                EntryId = entryId,
+            };
+
+            await resultConsumer.Consume(OrchestratorTestStubs.Context(result, ct));
+
+            // The continuation for the matching next step was dispatched (ids from result, step data from L1).
+            await dispatcher.Received(1).DispatchAsync(
+                workflowId, nextStepId, nextProcessorId, "{\"k\":1}",
+                correlationId, executionId, entryId, Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            await scheduler.Shutdown(waitForJobsToComplete: false, ct);
+        }
+    }
+
+    // ----- ORCH-GATE-01 / D-06: gate-closed Stop THROWS (redelivery), no teardown ---------------
+
+    [Fact]
+    public async Task GateClosed_Stop_Throws_NoTeardown()
     {
         var ct = TestContext.Current.CancellationToken;
 
@@ -119,9 +192,6 @@ public sealed class StopConsumerLifecycleTests
         var processorId = Guid.NewGuid();
         var values = OrchestratorTestStubs.RootWithStep(workflowId, jobId, stepId, processorId);
         var mux = OrchestratorTestStubs.PresentL2(values, out var db);
-
-        var readyGate = new StartupGate();
-        readyGate.MarkReady();
 
         var scheduler = await NewRamSchedulerAsync(ct);
         try
@@ -138,10 +208,13 @@ public sealed class StopConsumerLifecycleTests
 
             var closedGate = new StartupGate(); // NOT ready
             var consumer = new StopOrchestrationConsumer(
-                closedGate, store, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
+                closedGate, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
 
             db.ClearReceivedCalls();
-            await consumer.Consume(OrchestratorTestStubs.Context(new StopOrchestration([workflowId]), ct)); // clean ack
+
+            // D-06: gate closed -> THROW (so the message is scheduled-redelivered, NOT ack-dropped).
+            await Assert.ThrowsAsync<GateClosedException>(
+                () => consumer.Consume(OrchestratorTestStubs.Context(new StopOrchestration([workflowId]), ct)));
 
             // No teardown: job + L1 entry survive.
             Assert.True(await scheduler.CheckExists(jobKey, ct));

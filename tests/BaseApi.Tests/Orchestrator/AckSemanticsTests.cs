@@ -48,8 +48,8 @@ public sealed class AckSemanticsTests
         var workflowScheduler = new WorkflowScheduler(scheduler, TimeProvider.System);
         var lifecycle = new WorkflowLifecycle(
             mux, store, workflowScheduler, TimeProvider.System, NullLogger<WorkflowLifecycle>.Instance);
-        var start = new StartOrchestrationConsumer(gate, store, lifecycle, NullLogger<StartOrchestrationConsumer>.Instance);
-        var stop = new StopOrchestrationConsumer(gate, store, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
+        var start = new StartOrchestrationConsumer(gate, lifecycle, NullLogger<StartOrchestrationConsumer>.Instance);
+        var stop = new StopOrchestrationConsumer(gate, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
         return (start, stop, store, lifecycle);
     }
 
