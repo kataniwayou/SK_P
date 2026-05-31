@@ -1,4 +1,3 @@
-using BaseApi.Core.Configuration;
 using BaseApi.Core.Persistence;
 using BaseApi.Service.Features.Orchestration.Loading;
 using BaseApi.Service.Features.Orchestration.Projection;
@@ -8,7 +7,6 @@ using MassTransit;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace BaseApi.Service.Features.Orchestration;
@@ -67,8 +65,7 @@ internal static class OrchestrationServiceCollectionExtensions
             sp.GetRequiredService<IHttpContextAccessor>(),          // NEW (D-01) — correlationId resolution
             sp.GetRequiredService<IConnectionMultiplexer>(),        // NEW — Stop EXISTS gate
             sp.GetRequiredService<IPublishEndpoint>(),              // NEW (Plan 19-03) — publish Start/Stop (registered by AddBaseApiMessaging)
-            sp.GetRequiredService<ILogger<OrchestrationService>>(), // NEW (Plan 20-01 D-07) — publish-side correlation log
-            sp.GetRequiredService<IOptions<RedisProjectionOptions>>())); // NEW — KeyPrefix for the Stop gate keys
+            sp.GetRequiredService<ILogger<OrchestrationService>>())); // NEW (Plan 20-01 D-07) — publish-side correlation log
         services.AddScoped<IWorkflowGraphLoader, WorkflowGraphLoader>();
         services.AddScoped<CycleDetector>();
         services.AddScoped<SchemaEdgeValidator>();

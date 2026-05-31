@@ -1,7 +1,5 @@
 using System.Text.Json;
-using BaseApi.Core.Configuration;
 using Messaging.Contracts.Projections;
-using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace BaseApi.Service.Features.Orchestration.Projection;
@@ -21,26 +19,34 @@ namespace BaseApi.Service.Features.Orchestration.Projection;
 /// constructed and processor keys are NEVER deleted. The walk targets keys by GET-and-follow only —
 /// it never enumerates the keyspace via a server scan or wildcard match (L2-PROJECT-07).
 /// </para>
+/// <para>
+/// <b>Parent index (Phase 22 L2IDX-01 / D-10):</b> the routine FIRST <c>SREM</c>s the workflow id
+/// (rendered <c>D</c>-format) from <c>RedisProjectionKeys.ParentIndex()</c> — hoisted ABOVE the
+/// absent-root early-return so the GC is idempotent (the workflow leaves the index even when the
+/// root is already gone).
+/// </para>
 /// </summary>
 internal sealed class RedisL2Cleanup : IRedisL2Cleanup
 {
     private readonly IConnectionMultiplexer _multiplexer;
-    private readonly RedisProjectionOptions _options;
 
-    public RedisL2Cleanup(IConnectionMultiplexer multiplexer, IOptions<RedisProjectionOptions> options)
+    public RedisL2Cleanup(IConnectionMultiplexer multiplexer)
     {
         _multiplexer = multiplexer ?? throw new ArgumentNullException(nameof(multiplexer));
-        _options     = options?.Value ?? throw new ArgumentNullException(nameof(options));
     }
 
     public async Task StopCleanupAsync(Guid workflowId, CancellationToken ct)
     {
-        var prefix = _options.KeyPrefix;
         var db = _multiplexer.GetDatabase();
+
+        // Parent index (L2IDX-01 / D-10 step 1) — SREM this workflow id, HOISTED above the
+        // absent-root early-return so the index entry is removed even when the root is already
+        // gone (idempotent GC). Do NOT also SREM in the delete batch below (no double-SREM).
+        await db.SetRemoveAsync(RedisProjectionKeys.ParentIndex(), workflowId.ToString("D"));
 
         // GET the root. Absent root → tolerant no-op (no throw). The 422 existence gate lives in
         // StopAsync, never here (Pitfall D).
-        var rootJson = await db.StringGetAsync(RedisProjectionKeys.Root(prefix, workflowId));
+        var rootJson = await db.StringGetAsync(RedisProjectionKeys.Root(workflowId));
         if (rootJson.IsNullOrEmpty) return;
 
         var entryStepIds = JsonSerializer.Deserialize<WorkflowRootProjection>(rootJson!)!.EntryStepIds;
@@ -60,7 +66,7 @@ internal sealed class RedisL2Cleanup : IRedisL2Cleanup
             foreach (var stepId in toLoad)
             {
                 visited.Add(stepId);                             // mark visited (termination on cycle)
-                var key = RedisProjectionKeys.Step(prefix, workflowId, stepId);
+                var key = RedisProjectionKeys.Step(workflowId, stepId);
                 var stepJson = await db.StringGetAsync(key);
                 if (stepJson.IsNullOrEmpty) continue;            // dangling step → skip + continue (Pitfall 4)
                 stepKeysToDelete.Add(key);
@@ -74,7 +80,7 @@ internal sealed class RedisL2Cleanup : IRedisL2Cleanup
         // Collect-then-delete: one batch deleting the root unconditionally + the per-step keys
         // (UNLINK-style array delete) only when there is at least one (Pitfall 7).
         var batch = db.CreateBatch();
-        var delTasks = new List<Task> { batch.KeyDeleteAsync(RedisProjectionKeys.Root(prefix, workflowId)) };
+        var delTasks = new List<Task> { batch.KeyDeleteAsync(RedisProjectionKeys.Root(workflowId)) };
         if (stepKeysToDelete.Count > 0) delTasks.Add(batch.KeyDeleteAsync(stepKeysToDelete.ToArray()));
         batch.Execute();
         await Task.WhenAll(delTasks);

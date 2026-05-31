@@ -11,8 +11,8 @@ namespace BaseApi.Tests.Composition;
 /// <summary>
 /// Phase 12 INFRA-REDIS-05 + INFRA-COMP-04 — verifies RedisProjectionOptions binding
 /// from cfg.GetSection("Redis") through services.Configure&lt;&gt; into IOptions
-/// resolution. Defaults (D-15: KeyPrefix "skp:" + Serialization.JsonOptions "default")
-/// and override flow.
+/// resolution. Phase 22 (L2PREFIX-01) removed the configurable key-prefix, so the binding
+/// surface is now Serialization.JsonOptions only (default "default" + override flow).
 /// </summary>
 [Trait("Phase12Wave", "C")]
 public sealed class RedisProjectionOptionsBindingFacts
@@ -45,30 +45,11 @@ public sealed class RedisProjectionOptionsBindingFacts
     }
 
     [Fact]
-    public void Defaults_Bind_KeyPrefix_skp()
-    {
-        using var provider = BuildProvider();
-        var opts = provider.GetRequiredService<IOptions<RedisProjectionOptions>>();
-        Assert.Equal("skp:", opts.Value.KeyPrefix);
-    }
-
-    [Fact]
     public void Defaults_Bind_Serialization_JsonOptions_default()
     {
         using var provider = BuildProvider();
         var opts = provider.GetRequiredService<IOptions<RedisProjectionOptions>>();
         Assert.Equal("default", opts.Value.Serialization.JsonOptions);
-    }
-
-    [Fact]
-    public void InjectedOverride_Reflects_In_IOptions_KeyPrefix()
-    {
-        using var provider = BuildProvider(new Dictionary<string, string?>
-        {
-            ["Redis:KeyPrefix"] = "test:override:",
-        });
-        var opts = provider.GetRequiredService<IOptions<RedisProjectionOptions>>();
-        Assert.Equal("test:override:", opts.Value.KeyPrefix);
     }
 
     [Fact]

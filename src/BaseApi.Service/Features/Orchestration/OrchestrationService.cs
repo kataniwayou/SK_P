@@ -1,4 +1,3 @@
-using BaseApi.Core.Configuration;
 using BaseApi.Core.Exceptions;
 using BaseApi.Core.Persistence;
 using BaseApi.Service.Features.Orchestration.Loading;
@@ -12,7 +11,6 @@ using Messaging.Contracts;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace BaseApi.Service.Features.Orchestration;
@@ -61,7 +59,6 @@ public sealed class OrchestrationService
     private readonly IConnectionMultiplexer _multiplexer;
     private readonly IPublishEndpoint _publishEndpoint;
     private readonly ILogger<OrchestrationService> _logger;
-    private readonly string _keyPrefix;
 
     // Ctor is internal (not public): it accepts the internal seam types
     // (IWorkflowGraphLoader, CycleDetector, ...) which CS0051 forbids on a public
@@ -80,8 +77,7 @@ public sealed class OrchestrationService
         IHttpContextAccessor httpContextAccessor,
         IConnectionMultiplexer multiplexer,
         IPublishEndpoint publishEndpoint,
-        ILogger<OrchestrationService> logger,
-        IOptions<RedisProjectionOptions> options)
+        ILogger<OrchestrationService> logger)
     {
         _db                           = db                           ?? throw new ArgumentNullException(nameof(db));
         _idsValidator                 = idsValidator                 ?? throw new ArgumentNullException(nameof(idsValidator));
@@ -95,7 +91,6 @@ public sealed class OrchestrationService
         _multiplexer                  = multiplexer                  ?? throw new ArgumentNullException(nameof(multiplexer));
         _publishEndpoint              = publishEndpoint              ?? throw new ArgumentNullException(nameof(publishEndpoint));
         _logger                       = logger                       ?? throw new ArgumentNullException(nameof(logger));
-        _keyPrefix                    = (options ?? throw new ArgumentNullException(nameof(options))).Value.KeyPrefix;
     }
 
     /// <summary>
@@ -203,7 +198,7 @@ public sealed class OrchestrationService
         try
         {
             var checks = workflowIds
-                .Select(id => (Id: id, Task: db.KeyExistsAsync(RedisProjectionKeys.Root(_keyPrefix, id))))
+                .Select(id => (Id: id, Task: db.KeyExistsAsync(RedisProjectionKeys.Root(id))))
                 .ToList();
             await Task.WhenAll(checks.Select(c => c.Task));
             missing = checks.Where(c => !c.Task.Result).Select(c => c.Id).ToList();

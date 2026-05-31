@@ -1,4 +1,3 @@
-using BaseApi.Core.Configuration;
 using BaseApi.Core.Exceptions.Handlers;
 using BaseApi.Core.Persistence;
 using BaseApi.Service;
@@ -18,7 +17,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 using StackExchange.Redis;
 using Xunit;
@@ -44,8 +42,6 @@ namespace BaseApi.Tests.Orchestration;
 /// </summary>
 public sealed class OrchestrationServicePublishTests
 {
-    private const string Prefix = "skp:";
-
     // ----- collaborators ------------------------------------------------------------------------
 
     /// <summary>A real <see cref="AppDbContext"/> over EF-InMemory seeded with the given workflow ids.</summary>
@@ -98,9 +94,6 @@ public sealed class OrchestrationServicePublishTests
         return acc;
     }
 
-    private static IOptions<RedisProjectionOptions> Options()
-        => Microsoft.Extensions.Options.Options.Create(new RedisProjectionOptions { KeyPrefix = Prefix });
-
     /// <summary>Builds the REAL OrchestrationService with stubbed seams against the supplied publish endpoint.</summary>
     private static OrchestrationService BuildService(
         BaseDbContext db, IPublishEndpoint publishEndpoint, IConnectionMultiplexer? mux = null)
@@ -116,8 +109,7 @@ public sealed class OrchestrationServicePublishTests
             NoHttpContext(),
             mux ?? AllKeysExist(),
             publishEndpoint,
-            NullLogger<OrchestrationService>.Instance,
-            Options());
+            NullLogger<OrchestrationService>.Instance);
 
     // ----- MSG-WEBAPI-02: Start publishes StartOrchestration with body CorrelationId -------------
 
