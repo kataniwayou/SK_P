@@ -6,58 +6,64 @@ using Xunit;
 namespace BaseApi.Tests.Orchestrator;
 
 /// <summary>
-/// Pins the pure outcome->entry-condition match + NextStepIds traversal (SPEC req 3 / D-02):
-/// <see cref="StepAdvancement.SelectNext"/> selects exactly the next steps whose
-/// <c>EntryCondition</c> equals <c>(int)outcome</c> OR equals <c>Always</c>(4); <c>Never</c>(5) is
-/// never selected for any outcome, and a dangling <c>NextStepIds</c> id (absent from the step map)
-/// is silently skipped (T-24-06). Pure helper — instantiated directly, fed an in-memory step map,
-/// NO harness / NO Redis (mirrors <c>CronIntervalTests</c>).
+/// Pins the pure outcome-to-entry-condition match + NextStepIds traversal (SPEC req 3 / D-02):
+/// StepAdvancement.SelectNext selects exactly the next steps whose EntryCondition equals
+/// (int)outcome OR equals Always(4); Never(5) is never selected for any outcome, and a dangling
+/// NextStepIds id (absent from the step map) is silently skipped (T-24-06). Pure helper:
+/// instantiated directly, fed an in-memory step map, NO harness / NO Redis (mirrors CronIntervalTests).
+/// <para>
+/// The map is built fresh per test with one next-step per EntryCondition value 0..5, keyed by a
+/// deterministic id derived from the condition value (so a test can assert selection by stepId).
+/// </para>
 /// </summary>
 public sealed class StepAdvancementTests
 {
     private readonly StepAdvancement _sut = new();
 
-    // One next-step id per EntryCondition value 0..5 (0=Processing, 1=Completed, 2=Failed,
-    // 3=Cancelled, 4=Always, 5=Never). The "completed" step's NextStepIds points at all six.
-    private static readonly Guid Cond0 = Guid.Parse("00000000-0000-0000-0000-000000000010");
-    private static readonly Guid Cond1 = Guid.Parse("00000000-0000-0000-0000-000000000011");
-    private static readonly Guid Cond2 = Guid.Parse("00000000-0000-0000-0000-000000000012");
-    private static readonly Guid Cond3 = Guid.Parse("00000000-0000-0000-0000-000000000013");
-    private static readonly Guid CondAlways = Guid.Parse("00000000-0000-0000-0000-000000000014");
-    private static readonly Guid CondNever = Guid.Parse("00000000-0000-0000-0000-000000000015");
-    private static readonly Guid Dangling = Guid.Parse("00000000-0000-0000-0000-0000000000ff");
+    // Deterministic, distinct, non-empty stepId per condition value. Avoids the all-zero Guid for 0.
+    private static Guid IdFor(int cond) => new($"11111111-1111-1111-1111-1111111111{cond:D2}");
 
-    private static StepProjection Step(int entryCondition, params Guid[] nextStepIds) =>
-        new(entryCondition, Guid.NewGuid(), "{}", new List<Guid>(nextStepIds));
+    private const int Always = 4;
+    private const int Never = 5;
+    private static readonly Guid DanglingId = new("99999999-9999-9999-9999-999999999999");
 
-    /// <summary>Builds the step map: one step per EntryCondition 0..5 (no onward edges).</summary>
-    private static Dictionary<Guid, StepProjection> BuildMap() => new()
+    /// <summary>A next-step whose EntryCondition is the given value (distinct random ProcessorId, empty edges).</summary>
+    private static StepProjection StepWithCondition(int entryCondition) =>
+        new(entryCondition, Guid.NewGuid(), "{}", []);
+
+    /// <summary>The step map: one step per EntryCondition 0..5, keyed by IdFor(condition).</summary>
+    private static Dictionary<Guid, StepProjection> BuildMap()
     {
-        [Cond0] = Step(0),
-        [Cond1] = Step(1),
-        [Cond2] = Step(2),
-        [Cond3] = Step(3),
-        [CondAlways] = Step(4),
-        [CondNever] = Step(5),
-    };
+        var map = new Dictionary<Guid, StepProjection>();
+        for (var cond = 0; cond <= 5; cond++)
+            map[IdFor(cond)] = StepWithCondition(cond);
+        return map;
+    }
 
-    /// <summary>The completed step whose NextStepIds fans out to every condition (incl. a dangling id).</summary>
-    private static StepProjection Completed() =>
-        Step(99, Cond0, Cond1, Cond2, Cond3, CondAlways, CondNever, Dangling);
+    /// <summary>The completed step whose NextStepIds fans out to every condition 0..5 + a dangling id.</summary>
+    private static StepProjection Completed()
+    {
+        var next = new List<Guid>();
+        for (var cond = 0; cond <= 5; cond++)
+            next.Add(IdFor(cond));
+        next.Add(DanglingId);
+        return new StepProjection(EntryCondition: 7, ProcessorId: Guid.NewGuid(), Payload: "{}", NextStepIds: next);
+    }
 
     [Theory]
     [InlineData(StepOutcome.Processing, 0)] // Processing -> EntryCondition 0 + Always(4)
     [InlineData(StepOutcome.Completed, 1)]  // Completed  -> EntryCondition 1 + Always(4)
     [InlineData(StepOutcome.Failed, 2)]     // Failed     -> EntryCondition 2 + Always(4)
     [InlineData(StepOutcome.Cancelled, 3)]  // Cancelled  -> EntryCondition 3 + Always(4)
-    public void SelectsMatchingOutcomeConditionPlusAlways(StepOutcome outcome, int matchedCondition)
+    public void SelectsExactlyMatchingConditionPlusAlways(StepOutcome outcome, int matchedCondition)
     {
         var map = BuildMap();
 
-        var selected = _sut.SelectNext(outcome, Completed(), map).ToList();
+        var selectedIds = _sut.SelectNext(outcome, Completed(), map)
+            .Select(s => s.stepId)
+            .ToHashSet();
 
-        var selectedConditions = selected.Select(s => s.step.EntryCondition).OrderBy(c => c).ToList();
-        Assert.Equal(new[] { matchedCondition, 4 }.OrderBy(c => c).ToList(), selectedConditions);
+        Assert.Equal(new HashSet<Guid> { IdFor(matchedCondition), IdFor(Always) }, selectedIds);
     }
 
     [Theory]
@@ -65,58 +71,60 @@ public sealed class StepAdvancementTests
     [InlineData(StepOutcome.Completed)]
     [InlineData(StepOutcome.Failed)]
     [InlineData(StepOutcome.Cancelled)]
-    public void NeverIsNeverSelected_ForAnyOutcome(StepOutcome outcome)
+    public void NeverConditionStep_IsNeverSelected_ForAnyOutcome(StepOutcome outcome)
     {
         var map = BuildMap();
 
         var selected = _sut.SelectNext(outcome, Completed(), map).ToList();
 
-        Assert.DoesNotContain(selected, s => s.step.EntryCondition == 5); // Never(5)
-        Assert.DoesNotContain(selected, s => s.stepId == CondNever);
+        Assert.DoesNotContain(selected, s => s.stepId == IdFor(Never));
+        Assert.DoesNotContain(selected, s => s.step.EntryCondition == Never);
     }
 
     [Theory]
-    [InlineData(StepOutcome.Processing, 1, 2, 3)] // when outcome=0, conditions 1/2/3 are NOT selected
-    [InlineData(StepOutcome.Completed, 0, 2, 3)]
-    [InlineData(StepOutcome.Failed, 0, 1, 3)]
-    [InlineData(StepOutcome.Cancelled, 0, 1, 2)]
-    public void NonMatchingOutcomeConditionsAreNotSelected(StepOutcome outcome, int a, int b, int c)
+    [InlineData(StepOutcome.Processing)]
+    [InlineData(StepOutcome.Completed)]
+    [InlineData(StepOutcome.Failed)]
+    [InlineData(StepOutcome.Cancelled)]
+    public void NonMatchingOutcomeConditionSteps_AreExcluded(StepOutcome outcome)
     {
         var map = BuildMap();
 
-        var selectedConditions = _sut.SelectNext(outcome, Completed(), map)
-            .Select(s => s.step.EntryCondition).ToHashSet();
+        var selectedIds = _sut.SelectNext(outcome, Completed(), map)
+            .Select(s => s.stepId)
+            .ToHashSet();
 
-        Assert.DoesNotContain(a, selectedConditions);
-        Assert.DoesNotContain(b, selectedConditions);
-        Assert.DoesNotContain(c, selectedConditions);
+        // Every condition step in 0..3 other than the matched one is excluded (Always stays; Never never).
+        for (var cond = 0; cond <= 3; cond++)
+            if (cond != (int)outcome)
+                Assert.DoesNotContain(IdFor(cond), selectedIds);
     }
 
     [Fact]
     public void DanglingNextStepId_IsSkipped_NoThrow()
     {
-        var map = BuildMap(); // does NOT contain Dangling
+        var map = BuildMap(); // does NOT contain DanglingId
 
-        // Completed() includes Dangling in its NextStepIds; SelectNext must skip it, not throw.
-        var selected = _sut.SelectNext(StepOutcome.Completed, Completed(), map).ToList();
+        var selectedIds = _sut.SelectNext(StepOutcome.Completed, Completed(), map)
+            .Select(s => s.stepId)
+            .ToHashSet();
 
-        Assert.DoesNotContain(selected, s => s.stepId == Dangling);
-        // sanity: the real matches (Completed=1, Always=4) still came through
-        Assert.Contains(selected, s => s.stepId == Cond1);
-        Assert.Contains(selected, s => s.stepId == CondAlways);
+        Assert.DoesNotContain(DanglingId, selectedIds);
+        Assert.Contains(IdFor(1), selectedIds);      // matched (Completed == 1)
+        Assert.Contains(IdFor(Always), selectedIds); // Always(4)
     }
 
     [Fact]
     public void HelperPerformsNoIo_TakesStepMapAsArgument()
     {
-        // The signature itself proves no I/O: SelectNext takes the step map as an argument and
-        // returns synchronously (IEnumerable, not Task). No Redis / store dependency is constructed.
+        // The signature proves no I/O: SelectNext takes the step map as an argument and returns
+        // synchronously (IEnumerable, not Task). No Redis / store dependency is constructed.
         var map = BuildMap();
-        var completed = Step(99, Cond1);
+        var completed = new StepProjection(7, Guid.NewGuid(), "{}", [IdFor(1)]);
 
         var selected = _sut.SelectNext(StepOutcome.Completed, completed, map).ToList();
 
         Assert.Single(selected);
-        Assert.Equal(Cond1, selected[0].stepId);
+        Assert.Equal(IdFor(1), selected[0].stepId);
     }
 }
