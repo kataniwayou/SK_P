@@ -4,11 +4,11 @@
 
 - ✅ **v3.2.0 Steps API MVP** — Phases 1-11 (shipped 2026-05-28) — see [milestones/v3.2.0-ROADMAP.md](milestones/v3.2.0-ROADMAP.md)
 - ✅ **v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline** — Phases 12-16 (shipped 2026-05-29) — see [milestones/v3.3.0-ROADMAP.md](milestones/v3.3.0-ROADMAP.md)
-- 🚧 **v3.4.0 BaseConsole + Orchestrator Messaging** — Phases 17-21 (active, started 2026-05-30)
+- 🚧 **v3.4.0 BaseConsole + Orchestrator Messaging** — Phases 17-23 (active, started 2026-05-30)
 
 ## Active Milestone: v3.4.0 — BaseConsole + Orchestrator Messaging
 
-**Granularity:** standard · **Phases:** 5 (17-21; Phase 21 = post-audit gap-closure hardening) · **Coverage:** 40/40 requirements (35 P1 + 2 P2 + 3 hardening)
+**Granularity:** standard · **Phases:** 7 (17-21 complete; 22-23 = post-audit L2 restructure + orchestrator lifecycle follow-ups, requirements TBD at spec) · **Coverage:** 40/40 original requirements (35 P1 + 2 P2 + 3 hardening); Phases 22-23 add follow-up requirements defined at `/gsd-spec-phase`
 
 **Goal:** Stand up a reusable `BaseConsole.Core` Generic-Host library (the console-side mirror of `BaseApi.Core`) and a first `Orchestrator` console that inherits it, connected to the web API over MassTransit/RabbitMQ, with **per-stage CorrelationId observability** proven across stage boundaries: the HTTP `X-Correlation-Id` scopes the request through the L2 write and publish; a **fresh `Guid CorrelationId` minted at publish and carried on the message body via `ICorrelated.CorrelationId`** rides the fan-out message to the Orchestrator, which opens the identical `"CorrelationId"` log scope from that body id and surfaces it in Elasticsearch. Each stage owns its correlationId with a clean handoff at the publish boundary; the HTTP `X-Correlation-Id` is **not** persisted in the L2 root. The milestone stops cleanly at the "scheduler job start" log seam — the next stage (deferred) would mint its own job-trigger correlationId — no Quartz, no round-trip, no Orchestrator Redis writes.
 
@@ -108,6 +108,28 @@ Plans:
   - [x] 21-01-PLAN.md — Hoist L2 key builders into shared L2ProjectionKeys, convert writer+reader to forwarders, fix WARNING-2 doc-nit, author triple-SHA close gate
 **UI hint**: no
 
+### Phase 22: L2 Root-Parent Restructure + Processor Self-Registration Boundary
+**Goal**: Restructure the L2 Redis projection into a two-level hierarchy — a hardcoded-prefix root-parent key holding the array of workflow IDs, and per-workflow child keys holding steps/crons/jobs/liveness — and remove orchestrator-side creation of processor L2 entries, replacing it with a processor existence-check plus timestamp-based liveness read while keeping processor edge-schema validation intact.
+**Depends on**: Phase 21 (builds on the shared `L2ProjectionKeys` single source of truth)
+**Requirements**: TBD (defined at `/gsd-spec-phase` — candidate IDs: L2ROOT-*, L2PREFIX-*, PROC-LIVE-*)
+**Success Criteria** (what must be TRUE):
+  1. (mod 1) A root-parent L2 key `{prefix}` holds the set of workflow IDs; each workflow has a child key `{prefix}:{workflowId}` holding its steps/crons/jobs/liveness members; both writer and reader build these via the shared `L2ProjectionKeys`.
+  2. (mod 2) `{prefix}` is a hardcoded compile-time constant, no longer read from configuration/options; no appsettings key controls it.
+  3. (mod 3) The orchestrator no longer creates processor L2 entries (processor self-registration write path deferred to its own phase/discussion). The workflow checks processor existence in L2 and computes liveness via `timestamp + interval*2 > now` (processor refreshes its own timestamp); processor edge-schema validation is unchanged.
+**Plans**: 0 plans (run `/gsd-plan-phase 22`)
+**UI hint**: no
+
+### Phase 23: Orchestrator Stop + Reload Lifecycle Over the New L2 Structure
+**Goal**: Rework the orchestrator lifecycle flows on top of the Phase 22 root-parent structure — stop-orchestration unlinks the workflow from the root array and cascade-deletes its child keys (publishing jobIds, not the already-deleted workflowIds), and the startup + start-orchestration consume flows hydrate L1 transiently from L2, excluding both the processors and the root-parent key.
+**Depends on**: Phase 22 (consumes the new root-parent + child-key L2 structure)
+**Requirements**: TBD (defined at `/gsd-spec-phase` — candidate IDs: ORCH-STOP-*, ORCH-RELOAD-*)
+**Success Criteria** (what must be TRUE):
+  1. (mod 4) Stop-orchestration removes the workflow id from the root-parent array AND deletes all that workflow's related child keys from L2.
+  2. (mod 5) The stop operation publishes `jobId`s (not `workflowId`s), since the workflows are already deleted by the time stop runs.
+  3. (mod 6) Startup reads ALL workflow ids from the L2 root-parent and reloads each into L1; start-orchestration consume reads the specific workflow id from its own L2 workflow key (not the root-parent) and reloads into L1. Both hydrate L1 **transiently** — L1 never contains the processors or the root-parent key.
+**Plans**: 0 plans (run `/gsd-plan-phase 23`)
+**UI hint**: no
+
 ### Coverage (v3.4.0)
 
 ✓ All 40 milestone requirements mapped to exactly one phase (35 P1 + 2 P2 + 3 hardening; HARDEN-01..03 added post-audit for Phase 21)
@@ -178,6 +200,8 @@ Plans:
 | 19    | v3.4.0    | 4/4 | Complete    | 2026-05-30 |
 | 20    | v3.4.0    | 4/4            | Complete    | 2026-05-31 |
 | 21    | v3.4.0    | 1/1 | Complete    | 2026-05-31 |
+| 22    | v3.4.0    | 0/0            | Not planned | —          |
+| 23    | v3.4.0    | 0/0            | Not planned | —          |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 (BaseConsole + Orchestrator Messaging) roadmap created 2026-05-30 — 4 phases (17-20), 37 requirements, dependency-ordered per HIGH-confidence research (`.planning/research/SUMMARY.md`). Next: `/gsd-plan-phase 17`.*

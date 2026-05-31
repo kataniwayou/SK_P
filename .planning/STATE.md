@@ -532,6 +532,8 @@ Forward-looking notes:
 - Phase 9 added: Add GetBySourceHash to Processor controller and new Orchestration controller with Start/Stop endpoints accepting List<guid> WorkflowIds, following the existing GetById design pattern
 - Phase 10 added: Remove SchemaId on AssignmentEntity (analyze the effect) and add nullable Guid? ConfigSchemaId on ProcessorEntity with same behavior as InputSchemaId
 - Phase 11 added: Migrate Prometheus and Elastic containers from compose stack sk2_1 to sk_p, wire OpenTelemetry collector to ship logs to Elastic and metrics to Prometheus. Smoke test: verify logs appear in Elastic and metrics appear in Prometheus.
+- Phase 22 added (v3.4.0 follow-up): L2 root-parent restructure + processor self-registration boundary — two-level L2 hierarchy (root-parent array of workflowIds → per-workflow child keys), hardcoded `{prefix}` const, remove orchestrator-side processor L2 creation in favor of existence-check + timestamp liveness (keep edge-schema validation). Covers mods 1-3. Requirements TBD at spec.
+- Phase 23 added (v3.4.0 follow-up): Orchestrator stop + reload lifecycle over the new L2 structure — stop unlinks workflow from root + cascade-deletes child keys + publishes jobIds (not workflowIds); startup reloads all workflowIds from root, start-orchestration reloads the specific workflowId from its own key; both hydrate L1 transiently (no processors, no root-parent). Covers mods 4-6. Requirements TBD at spec.
 
 ### Pending Todos
 
