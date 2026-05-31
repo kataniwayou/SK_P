@@ -1,6 +1,7 @@
 using System.Text.Json;
 using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Service.Features.Step;
+using WriterStepProjection = BaseApi.Service.Features.Orchestration.Projection.StepProjection;
 using BaseApi.Tests.Composition;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,7 +55,7 @@ public sealed class StopCleanupFacts : IClassFixture<Phase8WebAppFactory>
 
     private async Task SeedStepAsync(IDatabase db, Guid wf, Guid stepId, List<Guid> nextStepIds, CancellationToken ct)
     {
-        var step = new StepProjection(
+        var step = new WriterStepProjection(
             EntryCondition: StepEntryCondition.Always,
             ProcessorId: Guid.NewGuid(),
             Payload: "{}",

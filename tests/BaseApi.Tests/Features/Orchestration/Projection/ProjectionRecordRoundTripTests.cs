@@ -4,6 +4,7 @@ using System.Text.Json;
 using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Service.Features.Step;
 using Messaging.Contracts.Projections;
+using WriterStepProjection = BaseApi.Service.Features.Orchestration.Projection.StepProjection;
 using Xunit;
 
 namespace BaseApi.Tests.Features.Orchestration.Projection;
@@ -61,7 +62,7 @@ public sealed class ProjectionRecordRoundTripTests
     [Fact]
     public void StepProjection_Serializes_EntryCondition_As_Int_Not_String()
     {
-        var step = new StepProjection(
+        var step = new WriterStepProjection(
             EntryCondition: StepEntryCondition.Always,
             ProcessorId: Proc,
             Payload: "{}",
@@ -91,7 +92,7 @@ public sealed class ProjectionRecordRoundTripTests
     [Fact]
     public void StepProjection_Serializes_Empty_NextStepIds_As_Empty_Array()
     {
-        var step = new StepProjection(
+        var step = new WriterStepProjection(
             EntryCondition: StepEntryCondition.PreviousCompleted,
             ProcessorId: Proc,
             Payload: "{}",
@@ -143,13 +144,13 @@ public sealed class ProjectionRecordRoundTripTests
     [Fact]
     public void StepProjection_RoundTrips_By_Value()
     {
-        var step = new StepProjection(
+        var step = new WriterStepProjection(
             EntryCondition: StepEntryCondition.PreviousFailed,
             ProcessorId: Proc,
             Payload: "{\"a\":1}",
             NextStepIds: new List<Guid> { Step, Proc });
 
-        var rt = JsonSerializer.Deserialize<StepProjection>(
+        var rt = JsonSerializer.Deserialize<WriterStepProjection>(
             JsonSerializer.Serialize(step, Default), Default);
 
         Assert.NotNull(rt);

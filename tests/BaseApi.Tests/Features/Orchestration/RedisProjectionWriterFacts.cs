@@ -6,6 +6,7 @@ using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Schema;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
+using WriterStepProjection = BaseApi.Service.Features.Orchestration.Projection.StepProjection;
 using BaseApi.Tests.Composition;
 using BaseApi.Tests.TestHelpers;
 using Messaging.Contracts.Projections;
@@ -194,7 +195,7 @@ public sealed class RedisProjectionWriterFacts : IClassFixture<Phase8WebAppFacto
                 Assert.Equal(JsonValueKind.Number, doc.RootElement.GetProperty("entryCondition").ValueKind);
                 Assert.Equal((int)StepEntryCondition.Always, doc.RootElement.GetProperty("entryCondition").GetInt32());
             }
-            var step = JsonSerializer.Deserialize<StepProjection>(stepJson);
+            var step = JsonSerializer.Deserialize<WriterStepProjection>(stepJson);
             Assert.NotNull(step);
             Assert.Equal(StepEntryCondition.Always, step!.EntryCondition);
             Assert.Equal(procId, step.ProcessorId);
@@ -250,7 +251,7 @@ public sealed class RedisProjectionWriterFacts : IClassFixture<Phase8WebAppFacto
         {
             var stepValue = await db.StringGetAsync(L2ProjectionKeys.Step(wfId, stepId));
             Assert.True(stepValue.HasValue, "step key should be set even without an assignment");
-            var step = JsonSerializer.Deserialize<StepProjection>(stepValue.ToString());
+            var step = JsonSerializer.Deserialize<WriterStepProjection>(stepValue.ToString());
             Assert.NotNull(step);
             Assert.Equal(string.Empty, step!.Payload);
         }

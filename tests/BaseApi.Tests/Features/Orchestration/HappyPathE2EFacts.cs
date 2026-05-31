@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using BaseApi.Service.Features.Orchestration;
 using BaseApi.Service.Features.Orchestration.Projection;
+using WriterStepProjection = BaseApi.Service.Features.Orchestration.Projection.StepProjection;
 using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
@@ -150,7 +151,7 @@ public sealed class HappyPathE2EFacts : IClassFixture<HarnessWebAppFactory>
             // --- Per-step keyspace --- key $"{prefix}{wfId}:{stepId}"
             var stepVal = await db.StringGetAsync($"{prefix}{wfId}:{stepId}");
             Assert.True(stepVal.HasValue, "per-step key set after 204 Start");
-            var step = JsonSerializer.Deserialize<StepProjection>(stepVal.ToString());
+            var step = JsonSerializer.Deserialize<WriterStepProjection>(stepVal.ToString());
             Assert.NotNull(step);
             Assert.Equal(procId, step!.ProcessorId);
             Assert.Empty(step.NextStepIds);                                  // terminal → [] not null
