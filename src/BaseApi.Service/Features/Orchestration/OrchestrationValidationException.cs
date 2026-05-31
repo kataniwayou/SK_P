@@ -20,7 +20,7 @@ namespace BaseApi.Service.Features.Orchestration;
 /// </summary>
 public sealed partial class OrchestrationValidationException : Exception
 {
-    /// <summary>Gate discriminator: "cycle" | "missingStep" | "schemaEdge" | "payloadConfigSchema".</summary>
+    /// <summary>Gate discriminator: "cycle" | "missingStep" | "schemaEdge" | "payloadConfigSchema" | "processorLiveness".</summary>
     public string Gate { get; }
 
     /// <summary>Gate-specific RFC 7807 problem title.</summary>
@@ -71,6 +71,14 @@ public sealed partial class OrchestrationValidationException : Exception
             "Assignment payload does not conform to its config schema",
             $"Assignment '{assignmentId}' payload does not conform to its config schema.",
             new PayloadConfigSchemaOffending(assignmentId, errors));
+
+    /// <summary>Processor-liveness gate — a participating processor's L2 entry is absent or stale.</summary>
+    public static OrchestrationValidationException ProcessorNotLive(Guid procId, string reason)
+        => new(
+            "processorLiveness",
+            "Participating processor is not live",
+            $"Processor '{procId}' is not live: {reason}.",
+            new ProcessorLivenessOffending(procId, reason));
 }
 
 /// <summary>Offending payload for the "cycle" gate — the chain of step ids forming the cycle.</summary>
@@ -84,3 +92,6 @@ public sealed record SchemaEdgeOffending(Guid parentStepId, Guid childStepId);
 
 /// <summary>Offending payload for the "payloadConfigSchema" gate — assignment id + flattened messages.</summary>
 public sealed record PayloadConfigSchemaOffending(Guid assignmentId, IReadOnlyList<string> errors);
+
+/// <summary>Offending payload for the "processorLiveness" gate — processor id + reason ("absent"|"stale").</summary>
+public sealed record ProcessorLivenessOffending(Guid procId, string reason);
