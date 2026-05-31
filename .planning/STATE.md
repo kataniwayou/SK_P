@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: milestone_complete
-stopped_at: Phase 21-01 Tasks 1-3 complete; Task 4 operator triple-SHA gate pending
-last_updated: "2026-05-31T06:12:01.587Z"
-last_activity: 2026-05-31 -- Phase 21 execution started
+status: completed
+stopped_at: Phase 22 context gathered
+last_updated: "2026-05-31T08:16:09.974Z"
+last_activity: 2026-05-31
 progress:
-  total_phases: 5
-  completed_phases: 6
+  total_phases: 7
+  completed_phases: 5
   total_plans: 15
   completed_plans: 15
-  percent: 120
+  percent: 100
 ---
 
 # Project State
@@ -559,9 +559,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T06:12:01.571Z
-Stopped at: Phase 21-01 Tasks 1-3 complete; Task 4 operator triple-SHA gate pending
-Resume file: Run pwsh -File scripts/phase-21-close.ps1 with full v3.4.0 stack up; reply approved
+Last session: --stopped-at
+Stopped at: Phase 22 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
