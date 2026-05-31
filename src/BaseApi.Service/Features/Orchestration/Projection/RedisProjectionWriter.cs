@@ -10,13 +10,16 @@ namespace BaseApi.Service.Features.Orchestration.Projection;
 
 /// <summary>
 /// L1→L2 write engine (L2-PROJECT-01). Projects a single-workflow
-/// <see cref="WorkflowGraphSnapshot"/> into the three flat Redis keyspaces
-/// (<c>{prefix}{wf}</c>, <c>{prefix}{wf}:{step}</c>, <c>{prefix}{proc}</c>) in one
-/// <see cref="IBatch"/> pipeline.
+/// <see cref="WorkflowGraphSnapshot"/> into the root + per-step Redis keyspaces in one
+/// <see cref="IBatch"/> pipeline, and SADDs the workflow id into the shared parent-index SET.
 /// <para>
-/// <b>TTL (D-08):</b> only the per-processor keys carry an expiry of
-/// <see cref="RedisProjectionOptions.ProcessorKeyTtlDays"/> (refresh-on-write); root and
-/// per-step keys carry NO TTL. A configured value &lt;= 0 disables processor-key expiry.
+/// <b>Parent index (Phase 22 L2IDX-01):</b> on Start the writer <c>SADD</c>s the workflow id
+/// (rendered <c>D</c>-format) into <c>RedisProjectionKeys.ParentIndex()</c> — idempotent on re-Start.
+/// </para>
+/// <para>
+/// <b>Processor keys (Phase 22 PROC-NOCREATE-01):</b> the writer creates ZERO processor keys.
+/// Processor L2 entries are owned solely by external self-registration; the writer writes only the
+/// root key and the per-step keys (both with NO TTL).
 /// </para>
 /// <para>
 /// <b>Liveness (D-05):</b> the shared <see cref="LivenessProjection"/> timestamp comes from
@@ -52,9 +55,6 @@ internal sealed class RedisProjectionWriter : IRedisProjectionWriter
 
     public async Task UpsertAsync(WorkflowGraphSnapshot snapshot, string correlationId, CancellationToken ct)
     {
-        var prefix = _options.KeyPrefix;
-        var days = _options.ProcessorKeyTtlDays;
-
         // D-05 — single liveness sub-document shared by the root + every processor value.
         // Timestamp via TimeProvider (AuditInterceptor precedent); status "Pending"; interval 0.
         var now = _clock.GetUtcNow().UtcDateTime;
@@ -77,7 +77,11 @@ internal sealed class RedisProjectionWriter : IRedisProjectionWriter
         var tasks = new List<Task>();
 
         // Root key — NO expiry.
-        tasks.Add(batch.StringSetAsync(RedisProjectionKeys.Root(prefix, wf.Id), rootJson));
+        tasks.Add(batch.StringSetAsync(RedisProjectionKeys.Root(wf.Id), rootJson));
+
+        // Parent index (L2IDX-01 / D-08) — SADD this workflow id into the shared parent-index SET.
+        // Idempotent on re-Start (a SET add of an already-present member is a no-op).
+        tasks.Add(batch.SetAddAsync(RedisProjectionKeys.ParentIndex(), wf.Id.ToString("D")));
 
         // --- Per-step values — NO expiry ---
         foreach (var step in snapshot.Steps.Values)
@@ -94,23 +98,12 @@ internal sealed class RedisProjectionWriter : IRedisProjectionWriter
                 payload,
                 step.NextStepIds ?? new List<Guid>());
             var stepJson = JsonSerializer.Serialize(stepProjection);
-            tasks.Add(batch.StringSetAsync(RedisProjectionKeys.Step(prefix, wf.Id, step.Id), stepJson));
+            tasks.Add(batch.StringSetAsync(RedisProjectionKeys.Step(wf.Id, step.Id), stepJson));
         }
 
-        // --- Per-processor values — TTL ONLY here (D-08 / Pitfall 2) ---
-        TimeSpan? ttl = days <= 0 ? (TimeSpan?)null : TimeSpan.FromDays(days);
-        foreach (var proc in snapshot.Processors.Values)
-        {
-            var inputDefinition = proc.InputSchemaId is { } isid ? snapshot.Schemas[isid].Definition : null;
-            var outputDefinition = proc.OutputSchemaId is { } osid ? snapshot.Schemas[osid].Definition : null;
-            var procProjection = new ProcessorProjection(inputDefinition, outputDefinition, liveness);
-            var procJson = JsonSerializer.Serialize(procProjection);
-            // when: When.Always disambiguates from the newer Expiration/ValueCondition
-            // StringSetAsync overload (SE.Redis 2.13.1) so the classic TimeSpan? expiry
-            // overload binds — Rule 1 library-API fix vs the plan's verbatim snippet.
-            tasks.Add(batch.StringSetAsync(
-                RedisProjectionKeys.Processor(prefix, proc.Id), procJson, expiry: ttl, when: When.Always));
-        }
+        // Phase 22 PROC-NOCREATE-01 — the writer creates ZERO processor keys. Processor L2
+        // entries are owned solely by external self-registration; the prior per-processor
+        // TTL'd write loop was removed here.
 
         batch.Execute();
 
