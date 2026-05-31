@@ -136,7 +136,7 @@ Plans:
   5. (stop consumer) The stop-orchestration consumer consumes the `workflowId`s published by the WebApi, resolves each `jobId` from L1, deletes the corresponding Quartz job, and clears that workflow's L1 entries. Stop performs NO L2 mutation.
   6. (new contracts) Two net-new contracts exist in `Messaging.Contracts` (neither exists today — only the `L2ProjectionKeys.Step(...)` key builder does): a **step projection** record for the `{prefix}:{workflowId}:{stepId}` value (`entryCondition`, `processorId`, … with camelCase `[property: JsonPropertyName]` targets, mirroring `WorkflowRootProjection`/`LivenessProjection`), and an **entry-step e2e message** record carrying the criterion-3 fields (`correlationId`, `workflowId`, `stepId`, `processorId`, `executionId`, `entryId`, `payload`).
 **Plans**: 5 plans
-  - [ ] 23-01-PLAN.md — Contracts: reader StepProjection + IExecutionCorrelated + EntryStepDispatch (wave 1)
+  - [x] 23-01-PLAN.md — Contracts: reader StepProjection + IExecutionCorrelated + EntryStepDispatch (wave 1)
   - [ ] 23-02-PLAN.md — Quartz 3.18.1 CPM pin + OrchestratorL2Keys ParentIndex()/Step() forwarders (wave 1)
   - [ ] 23-03-PLAN.md — L1 store + per-wf stripe, CronInterval, WorkflowScheduler, WorkflowFireJob (wave 2)
   - [ ] 23-04-PLAN.md — Hydration BackgroundService + gated Start/Stop consumers + Program.cs wiring (wave 3)
@@ -214,7 +214,7 @@ Plans:
 | 20    | v3.4.0    | 4/4            | Complete    | 2026-05-31 |
 | 21    | v3.4.0    | 1/1 | Complete    | 2026-05-31 |
 | 22    | v3.4.0    | 5/5 | Complete    | 2026-05-31 |
-| 23    | v3.4.0    | 0/0            | Not planned | —          |
+| 23    | v3.4.0    | 1/5            | Executing   | 2026-05-31 |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 (BaseConsole + Orchestrator Messaging) roadmap created 2026-05-30 — 4 phases (17-20), 37 requirements, dependency-ordered per HIGH-confidence research (`.planning/research/SUMMARY.md`). Next: `/gsd-plan-phase 17`.*

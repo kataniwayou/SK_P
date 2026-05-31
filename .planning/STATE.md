@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: ready_to_plan
-stopped_at: Phase 23 context gathered (23-SPEC.md + 23-CONTEXT.md locked; resume at 23-CONTEXT.md)
-last_updated: "2026-05-31T14:30:00.000Z"
+status: executing
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-05-31T13:34:41.873Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 7
-  completed_phases: 7
-  total_plans: 20
-  completed_plans: 20
-  percent: 100
+  completed_phases: 6
+  total_plans: 25
+  completed_plans: 21
+  percent: 84
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 23
-Plan: Not started
-Status: Ready to plan
+Phase: 23 (orchestrator-stop-reload-lifecycle) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-05-31
 
 ### Phase 22 Plan 05 — Close Gate Evidence (Task 5, operator-authorized, exit 0)
@@ -61,7 +61,7 @@ Last activity: 2026-05-31
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [████████░░] 84%
 
 ### Milestone Phases (v3.4.0)
 
@@ -209,6 +209,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 22 P03 | 6min | 3 tasks | 9 files |
 | Phase 22 P04 | 2min | 3 tasks | 4 files |
 | Phase 22 P05 | ~13min (Tasks 1-4) + continuation (regression fix across 14 classes + 3 close-gate runs ~3.5m each) | 5 tasks (4 auto + 1 blocking close gate) | 24 files (2 created + 22 modified incl. 14 happy-path classes) |
+| Phase 23 P01 | ~12min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -489,6 +490,8 @@ Recent decisions affecting current work:
 - Plan 22-03: RedisL2Cleanup SREMs ParentIndex() HOISTED above the absent-root early-return (idempotent GC, D-10); cleanup drops its IOptions ctor param entirely (only multiplexer remains, D-12)
 - Plan 22-03: KeyPrefix removed from RedisProjectionOptions + BaseApi.Service appsettings + all writer/service read sites (L2PREFIX-01); IOptions<RedisProjectionOptions> dropped from OrchestrationService ctor + its DI factory arg in lockstep (PATTERNS caveat 3)
 - Plan 22-04: processorLiveness gate landed — async ProcessorLivenessValidator runs after the sync trio, before UpsertAsync; absent/stale -> ProcessorNotLive 422; liveness is SECONDS (timestamp+interval*2>now, D-16); SchemaEdgeValidator untouched (PROC-EDGE-01).
+- Phase 23-01: reader StepProjection types EntryCondition as int (not the writer enum) — enum serializes as underlying int, byte-identical on the wire (Pitfall 7) + satisfies T-23-01 (no enum-parse throw at the contract boundary)
+- Phase 23-01: resolved StepProjection name collision in 4 pre-existing test files via a using-alias (WriterStepProjection), keeping both records named StepProjection
 
 ### Roadmap Milestone Log
 
@@ -585,13 +588,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T09:22:33.234Z
-Stopped at: Paused at 22-05 Task 5 close-gate checkpoint (blocked on out-of-scope happy-path test regression)
-Resume file: .planning/phases/22-l2-root-parent-restructure-processor-self-registration/22-05-PLAN.md
+Last session: 2026-05-31T13:34:41.862Z
+Stopped at: Completed 23-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 22 (l2-root-parent-restructure-processor-self-registration) — 5 plans — 2026-05-31T08:41:28.667Z
+**Planned Phase:** 23 (orchestrator-stop-reload-lifecycle) — 5 plans — 2026-05-31T13:27:02.513Z
