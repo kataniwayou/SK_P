@@ -22,14 +22,19 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// <c>RedisFixture</c>). Each fact seeds a workflow graph through the public HTTP API so
 /// the junction rows exist exactly as production writes them, resolves the INTERNAL loader
 /// to build the same per-workflow <c>WorkflowGraphSnapshot</c> the Start loop will hand the
-/// writer (Plan 04), drives <c>UpsertAsync</c>, then reads the three L2 keyspaces back.
+/// writer (Plan 04), drives <c>UpsertAsync</c>, then reads the L2 keyspaces back.
 /// <para>
-/// Maps to L2-PROJECT-01 (3 keyspaces in one batch), L2-PROJECT-03/04/05 (locked camelCase
-/// shapes) and D-08 (processor-only TTL). The per-class <c>RedisFixture</c> SCAN+DEL teardown
-/// already sweeps the TTL'd processor keys — no fixture change, no FLUSHDB.
+/// Phase 22 contract (L2IDX-01 / PROC-NOCREATE-01): the writer SADDs <c>wf.Id:D</c> into the
+/// shared <c>skp:</c> parent-index SET and creates ZERO processor keys (processor entries are
+/// owned solely by external self-registration). These facts assert SMEMBERS(ParentIndex) CONTAINS
+/// the wf id and that no <c>skp:{procId}</c> key exists after Upsert. Each fact tracks the root/step
+/// keys it created and SREMs its own wf id from the parent index in cleanup so the shared keyspace
+/// returns to its BEFORE state (D-23 known-key cleanup; this class joins the non-parallel
+/// <c>ParentIndex</c> collection — Task 4).
 /// </para>
 /// </summary>
 [Trait("Phase", "15")]
+[Collection("ParentIndex")]
 public sealed class RedisProjectionWriterFacts : IClassFixture<Phase8WebAppFactory>
 {
     private readonly Phase8WebAppFactory _factory;
@@ -115,10 +120,22 @@ public sealed class RedisProjectionWriterFacts : IClassFixture<Phase8WebAppFacto
         return wf!.Id;
     }
 
-    // ----------------------------- L2-PROJECT-01/03/04/05 -----------------------------
+    /// <summary>
+    /// SREMs the wf id from the shared parent index and deletes the tracked root/step keys created by
+    /// this Upsert, so the shared <c>skp:</c> keyspace returns to its BEFORE state (D-23 / T-22-15).
+    /// </summary>
+    private async Task CleanupAsync(IDatabase db, Guid wfId, IEnumerable<Guid> stepIds, CancellationToken ct)
+    {
+        await db.SetRemoveAsync(RedisProjectionKeys.ParentIndex(), wfId.ToString("D"));
+        var keys = new List<RedisKey> { L2ProjectionKeys.Root(wfId) };
+        keys.AddRange(stepIds.Select(s => (RedisKey)L2ProjectionKeys.Step(wfId, s)));
+        await db.KeyDeleteAsync(keys.ToArray());
+    }
+
+    // ----------------------------- L2-PROJECT-01/03/04/05 + L2IDX-01 + PROC-NOCREATE-01 -----------------------------
 
     [Fact]
-    public async Task Upsert_Writes_Three_Keyspaces()
+    public async Task Upsert_Writes_Root_Step_ParentIndex_And_No_Processor_Key()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
@@ -126,7 +143,8 @@ public sealed class RedisProjectionWriterFacts : IClassFixture<Phase8WebAppFacto
         const string cron = "*/5 * * * *";
         const string payload = """{ "k": "v" }""";
 
-        // A processor with an Input + Output schema so inputDefinition/outputDefinition are non-null.
+        // A processor with an Input + Output schema (the processor key is NOT written by the writer
+        // any more — PROC-NOCREATE-01 — but the step still references the processor id).
         var inputSchemaId = await SeedSchemaAsync(client, ct);
         var outputSchemaId = await SeedSchemaAsync(client, ct);
         var procId = await SeedProcessorAsync(client, ct, inputSchemaId, outputSchemaId);
@@ -147,94 +165,57 @@ public sealed class RedisProjectionWriterFacts : IClassFixture<Phase8WebAppFacto
             await writer.UpsertAsync(snapshot, correlationId, ct);
         }
 
-        var prefix = _factory.RedisKeyPrefix;
         var db = _factory.RedisMultiplexer.GetDatabase();
+        // Track keys for known-key cleanup (defense-in-depth alongside the explicit CleanupAsync).
+        _factory.TrackRedisKey(L2ProjectionKeys.Root(wfId));
+        _factory.TrackRedisKey(L2ProjectionKeys.Step(wfId, stepId));
 
-        // --- Root keyspace ---
-        var rootValue = await db.StringGetAsync($"{prefix}{wfId}");
-        Assert.True(rootValue.HasValue, "root key should be set");
-        var root = JsonSerializer.Deserialize<WorkflowRootProjection>(rootValue.ToString());
-        Assert.NotNull(root);
-        Assert.Contains(stepId, root!.EntryStepIds);
-        Assert.Equal(cron, root.Cron);
-        Assert.NotEqual(Guid.Empty, root.JobId);
-        Assert.Equal(correlationId, root.CorrelationId);
-        Assert.Equal("Pending", root.Liveness.Status);
-        Assert.Equal(0, root.Liveness.Interval);
-
-        // --- Step keyspace ---
-        var stepValue = await db.StringGetAsync($"{prefix}{wfId}:{stepId}");
-        Assert.True(stepValue.HasValue, "step key should be set");
-        var stepJson = stepValue.ToString();
-        // entryCondition serializes as an int (no string-enum converter): Always == 4.
-        using (var doc = JsonDocument.Parse(stepJson))
+        try
         {
-            Assert.Equal(JsonValueKind.Number, doc.RootElement.GetProperty("entryCondition").ValueKind);
-            Assert.Equal((int)StepEntryCondition.Always, doc.RootElement.GetProperty("entryCondition").GetInt32());
+            // --- Root keyspace ---
+            var rootValue = await db.StringGetAsync(L2ProjectionKeys.Root(wfId));
+            Assert.True(rootValue.HasValue, "root key should be set");
+            var root = JsonSerializer.Deserialize<WorkflowRootProjection>(rootValue.ToString());
+            Assert.NotNull(root);
+            Assert.Contains(stepId, root!.EntryStepIds);
+            Assert.Equal(cron, root.Cron);
+            Assert.NotEqual(Guid.Empty, root.JobId);
+            Assert.Equal(correlationId, root.CorrelationId);
+            Assert.Equal("Pending", root.Liveness.Status);
+            Assert.Equal(0, root.Liveness.Interval);
+
+            // --- Step keyspace ---
+            var stepValue = await db.StringGetAsync(L2ProjectionKeys.Step(wfId, stepId));
+            Assert.True(stepValue.HasValue, "step key should be set");
+            var stepJson = stepValue.ToString();
+            // entryCondition serializes as an int (no string-enum converter): Always == 4.
+            using (var doc = JsonDocument.Parse(stepJson))
+            {
+                Assert.Equal(JsonValueKind.Number, doc.RootElement.GetProperty("entryCondition").ValueKind);
+                Assert.Equal((int)StepEntryCondition.Always, doc.RootElement.GetProperty("entryCondition").GetInt32());
+            }
+            var step = JsonSerializer.Deserialize<StepProjection>(stepJson);
+            Assert.NotNull(step);
+            Assert.Equal(StepEntryCondition.Always, step!.EntryCondition);
+            Assert.Equal(procId, step.ProcessorId);
+            // Payload round-trips through the Assignment-create pipeline which re-serializes the
+            // JSON (whitespace canonicalized), so compare on JSON value-equality, not the raw literal.
+            Assert.Equal(CanonicalJson(payload), CanonicalJson(step.Payload));
+            Assert.Empty(step.NextStepIds);   // terminal step → []
+
+            // --- L2IDX-01: parent index SET contains wf.Id (D-format) ---
+            var members = await db.SetMembersAsync(RedisProjectionKeys.ParentIndex());
+            Assert.Contains(wfId.ToString("D"), members.Select(m => m.ToString()));
+
+            // --- PROC-NOCREATE-01: the writer creates ZERO processor keys ---
+            Assert.False(
+                await db.KeyExistsAsync(L2ProjectionKeys.Processor(procId)),
+                "writer must not create a processor key (PROC-NOCREATE-01 — external self-registration only)");
         }
-        var step = JsonSerializer.Deserialize<StepProjection>(stepJson);
-        Assert.NotNull(step);
-        Assert.Equal(StepEntryCondition.Always, step!.EntryCondition);
-        Assert.Equal(procId, step.ProcessorId);
-        // Payload round-trips through the Assignment-create pipeline which re-serializes the
-        // JSON (whitespace canonicalized), so compare on JSON value-equality, not the raw literal.
-        Assert.Equal(CanonicalJson(payload), CanonicalJson(step.Payload));
-        Assert.Empty(step.NextStepIds);   // terminal step → []
-
-        // --- Processor keyspace ---
-        var procValue = await db.StringGetAsync($"{prefix}{procId}");
-        Assert.True(procValue.HasValue, "processor key should be set");
-        var procJson = procValue.ToString();
-        var proc = JsonSerializer.Deserialize<ProcessorProjection>(procJson);
-        Assert.NotNull(proc);
-        Assert.NotNull(proc!.InputDefinition);
-        Assert.NotNull(proc.OutputDefinition);
-        Assert.Equal("Pending", proc.Liveness.Status);
-
-        // Field-name shape: assert the locked camelCase member names exist verbatim.
-        using (var procDoc = JsonDocument.Parse(procJson))
+        finally
         {
-            Assert.True(procDoc.RootElement.TryGetProperty("inputDefinition", out _));
-            Assert.True(procDoc.RootElement.TryGetProperty("outputDefinition", out _));
+            await CleanupAsync(db, wfId, new[] { stepId }, ct);
         }
-    }
-
-    // ----------------------------- D-08 (processor-only TTL) -----------------------------
-
-    [Fact]
-    public async Task ProcessorProjection_Ttl()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var client = _factory.CreateClient();
-
-        var procId = await SeedProcessorAsync(client, ct);
-        var stepId = await SeedStepAsync(client, ct, procId);
-        var assignmentId = await SeedAssignmentAsync(client, ct, stepId, """{ "k": "v" }""");
-        var wfId = await SeedWorkflowAsync(
-            client, ct, entryStepIds: new List<Guid> { stepId },
-            assignmentIds: new List<Guid> { assignmentId });
-
-        using (var scope = _factory.Services.CreateScope())
-        {
-            var loader = scope.ServiceProvider.GetRequiredService<IWorkflowGraphLoader>();
-            var writer = scope.ServiceProvider.GetRequiredService<IRedisProjectionWriter>();
-            using var snapshot = await loader.LoadL1Async(new[] { wfId }, ct);
-            await writer.UpsertAsync(snapshot, $"corr-{Guid.NewGuid():N}", ct);
-        }
-
-        var prefix = _factory.RedisKeyPrefix;
-        var db = _factory.RedisMultiplexer.GetDatabase();
-
-        // Processor key carries a positive TTL (default ProcessorKeyTtlDays = 100).
-        var procTtl = await db.KeyTimeToLiveAsync($"{prefix}{procId}");
-        Assert.NotNull(procTtl);
-        Assert.True(procTtl!.Value > TimeSpan.Zero, "processor key must have a positive TTL");
-
-        // Root + step keys carry NO TTL (Pitfall 2).
-        var rootTtl = await db.KeyTimeToLiveAsync($"{prefix}{wfId}");
-        Assert.Null(rootTtl);
-        var stepTtl = await db.KeyTimeToLiveAsync($"{prefix}{wfId}:{stepId}");
-        Assert.Null(stepTtl);
     }
 
     // ----------------------------- Rule 1: step with no assignment -----------------------------
@@ -261,14 +242,22 @@ public sealed class RedisProjectionWriterFacts : IClassFixture<Phase8WebAppFacto
             await writer.UpsertAsync(snapshot, $"corr-{Guid.NewGuid():N}", ct);
         }
 
-        var prefix = _factory.RedisKeyPrefix;
         var db = _factory.RedisMultiplexer.GetDatabase();
+        _factory.TrackRedisKey(L2ProjectionKeys.Root(wfId));
+        _factory.TrackRedisKey(L2ProjectionKeys.Step(wfId, stepId));
 
-        var stepValue = await db.StringGetAsync($"{prefix}{wfId}:{stepId}");
-        Assert.True(stepValue.HasValue, "step key should be set even without an assignment");
-        var step = JsonSerializer.Deserialize<StepProjection>(stepValue.ToString());
-        Assert.NotNull(step);
-        Assert.Equal(string.Empty, step!.Payload);
+        try
+        {
+            var stepValue = await db.StringGetAsync(L2ProjectionKeys.Step(wfId, stepId));
+            Assert.True(stepValue.HasValue, "step key should be set even without an assignment");
+            var step = JsonSerializer.Deserialize<StepProjection>(stepValue.ToString());
+            Assert.NotNull(step);
+            Assert.Equal(string.Empty, step!.Payload);
+        }
+        finally
+        {
+            await CleanupAsync(db, wfId, new[] { stepId }, ct);
+        }
     }
 
     /// <summary>Normalizes a JSON string for whitespace-insensitive value comparison.</summary>

@@ -48,10 +48,13 @@ public sealed class AppsettingsFacts
     }
 
     [Fact]
-    public void Appsettings_Has_Redis_Section_KeyPrefix_skp()
+    public void Appsettings_Redis_Section_Has_No_KeyPrefix()
     {
+        // Phase 22 L2PREFIX-01: the prefix is now the compile-time const L2ProjectionKeys.Prefix
+        // ("skp:"), NOT a configurable Redis section setting — the appsettings "Redis" section must
+        // carry NO key-prefix entry while still owning the ProcessorKeyTtlDays / JsonOptions knobs.
         var content = AppsettingsJsonContent();
-        Assert.Matches(new Regex(@"""KeyPrefix""\s*:\s*""skp:"""), content);
+        Assert.DoesNotMatch(new Regex(@"""KeyPrefix""\s*:"), content);
     }
 
     [Fact]

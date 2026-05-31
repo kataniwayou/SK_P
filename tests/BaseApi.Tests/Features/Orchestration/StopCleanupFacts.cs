@@ -25,6 +25,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "15")]
+[Collection("ParentIndex")]
 public sealed class StopCleanupFacts : IClassFixture<Phase8WebAppFactory>
 {
     private readonly Phase8WebAppFactory _factory;
@@ -32,12 +33,13 @@ public sealed class StopCleanupFacts : IClassFixture<Phase8WebAppFactory>
     public StopCleanupFacts(Phase8WebAppFactory factory) => _factory = factory;
 
     // ---- Direct L2 seeding helpers (mirror the writer's key layout in reverse) ----
+    // Phase 22 (D-24): no-prefix L2ProjectionKeys builders on the shared skp: keyspace.
 
     private static LivenessProjection Liveness() => new(DateTime.UtcNow, 0, "Pending");
 
-    private string RootKey(Guid wf) => $"{_factory.RedisKeyPrefix}{wf}";
-    private string StepKey(Guid wf, Guid step) => $"{_factory.RedisKeyPrefix}{wf}:{step}";
-    private string ProcKey(Guid proc) => $"{_factory.RedisKeyPrefix}{proc}";
+    private static string RootKey(Guid wf) => L2ProjectionKeys.Root(wf);
+    private static string StepKey(Guid wf, Guid step) => L2ProjectionKeys.Step(wf, step);
+    private static string ProcKey(Guid proc) => L2ProjectionKeys.Processor(proc);
 
     private async Task SeedRootAsync(IDatabase db, Guid wf, List<Guid> entryStepIds, CancellationToken ct)
     {
@@ -78,6 +80,12 @@ public sealed class StopCleanupFacts : IClassFixture<Phase8WebAppFactory>
         await SeedStepAsync(db, wf, stepA, new List<Guid> { stepB }, ct);
         await SeedStepAsync(db, wf, stepB, new List<Guid>(), ct);
         await db.StringSetAsync(ProcKey(procId), """{ "inputDefinition": null }""");
+        // Seed the parent index so the cleanup's SREM (hoisted, D-10) is observable.
+        await db.SetAddAsync(L2ProjectionKeys.ParentIndex(), wf.ToString("D"));
+
+        // Track the processor key (the test retains it; cleanup deletes root/step itself) so the
+        // shared keyspace returns to BEFORE on dispose (D-23 known-key cleanup).
+        _factory.TrackRedisKey(ProcKey(procId));
 
         using (var scope = _factory.Services.CreateScope())
         {
@@ -89,6 +97,10 @@ public sealed class StopCleanupFacts : IClassFixture<Phase8WebAppFactory>
         Assert.False(await db.KeyExistsAsync(StepKey(wf, stepA)), "step A key should be deleted");
         Assert.False(await db.KeyExistsAsync(StepKey(wf, stepB)), "step B key should be deleted");
         Assert.True(await db.KeyExistsAsync(ProcKey(procId)), "processor key must be retained");
+
+        // L2IDX-01 / D-10: the cleanup SREMs the wf id from the shared parent index.
+        var members = await db.SetMembersAsync(L2ProjectionKeys.ParentIndex());
+        Assert.DoesNotContain(wf.ToString("D"), members.Select(m => m.ToString()));
     }
 
     // ----------------------------- D-06 / T-15-09: cyclic graph terminates -----------------------------

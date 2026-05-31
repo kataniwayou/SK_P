@@ -36,6 +36,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// below asserts the observable consequence of that invariant (a non-Upserted workflowId has zero keys).
 /// </summary>
 [Trait("Phase", "16")]
+[Collection("ParentIndex")]
 public sealed class GateNoWriteFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -261,6 +262,36 @@ public sealed class GateNoWriteFacts : IClassFixture<HarnessWebAppFactory>
 
         await Assert422Gate(resp, "payloadConfigSchema", ct);
         Assert.Equal(0, await ScanKeyCount(wfId));
+    }
+
+    [Fact]
+    public async Task ProcessorLivenessGate_Returns422_AndWritesNoKeys()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = _factory.CreateClient();
+
+        // Phase 22 PROC-LIVE-01: a participating processor whose self-registered L2 entry
+        // (skp:{procId}) is NEVER seeded → the liveness gate throws ProcessorNotLive("absent") →
+        // 422 errors.gate=="processorLiveness", AFTER the cycle/schemaEdge/payload sync trio passes
+        // (all schema FKs null + single acyclic terminal step). No L2 key is written (the gate throws
+        // before UpsertAsync), and no parent-index SADD occurs.
+        var procId = await SeedProcessorAsync(client, inputSchemaId: null, outputSchemaId: null, configSchemaId: null, ct);
+        var stepId = await CreateStepAsync(client, procId, nextStepIds: null, ct);
+        var wfId = await SeedWorkflowAsync(client, new List<Guid> { stepId }, assignmentIds: null, ct);
+
+        var resp = await client.PostAsJsonAsync(
+            "/api/v1/orchestration/start",
+            new List<Guid> { wfId },
+            ct);
+
+        await Assert422Gate(resp, "processorLiveness", ct);
+        Assert.Equal(0, await ScanKeyCount(wfId));
+
+        // No parent-index SADD on a gate failure — defensive SREM keeps the shared SET clean.
+        var db = _factory.RedisMultiplexer.GetDatabase();
+        await db.SetRemoveAsync(
+            BaseApi.Service.Features.Orchestration.Projection.RedisProjectionKeys.ParentIndex(),
+            wfId.ToString("D"));
     }
 
     // ---------------------------------------------------------------------
