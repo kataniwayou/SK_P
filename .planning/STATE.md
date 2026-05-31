@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: Completed 20-04-PLAN.md — triple-SHA close gate PASSED (exit 0): 3x 265-GREEN, zero-warning build, all three SHA invariants BEFORE==AFTER. Phase 20 complete; milestone v3.4.0 ready to close.
-last_updated: "2026-05-31T00:45:00.000Z"
-last_activity: 2026-05-31 -- Phase 20: 20-04 close gate exit 0. Fixed D-01 harness wiring (17 RED), 2 pre-existing flaky tests (RedisFixtureFacts/ErrorMappingFacts), 1 redis L2 leak (CorrelationPropagationE2ETests). 3x265 GREEN + triple-SHA HELD.
+stopped_at: Phase 21 context gathered
+last_updated: "2026-05-31T04:46:46.385Z"
+last_activity: "2026-05-30 — Phase 20 Stage A: rabbitmq + elasticsearch + otel-collector + orchestrator container brought up healthy"
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
   total_plans: 14
   completed_plans: 14
@@ -546,9 +546,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T16:13:33.929Z
-Stopped at: Completed 20-02-PLAN.md (hermetic in-memory / dead-host proofs)
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 21 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
