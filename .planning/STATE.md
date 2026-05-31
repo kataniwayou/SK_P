@@ -4,14 +4,14 @@ milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
 stopped_at: Phase 21 context gathered
-last_updated: "2026-05-31T04:46:46.385Z"
+last_updated: "2026-05-31T05:09:33.597Z"
 last_activity: "2026-05-30 — Phase 20 Stage A: rabbitmq + elasticsearch + otel-collector + orchestrator container brought up healthy"
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 14
+  total_plans: 15
   completed_plans: 14
-  percent: 100
+  percent: 93
 ---
 
 # Project State
@@ -555,4 +555,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 20 (correlation-propagation-proof-synthetic-harness-triple-sha-c) — 4 plans — 2026-05-30T15:22:41.868Z
+**Planned Phase:** 21 (v3.4.0-closeout-hygiene) — 1 plans — 2026-05-31T05:09:33.589Z
