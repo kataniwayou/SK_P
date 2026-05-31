@@ -15,16 +15,16 @@ using Xunit;
 namespace BaseApi.Tests.Features.Orchestration;
 
 /// <summary>
-/// Phase 15 Plan 04 integration facts for the D-04/D-06 Redis-based Stop gate + cleanup
+/// Phase 24 Plan 02 (WEBAPI-SUPPRESS-01) integration facts for the delete-if-present Stop
 /// (<c>POST /api/v1/orchestration/stop</c>) against real Postgres + real compose Redis
-/// (via <see cref="Phase8WebAppFactory"/>). A workflow is Started (which projects the 3
-/// keyspaces) and then Stopped; L2 is read back via the factory multiplexer.
+/// (via <see cref="Phase8WebAppFactory"/>). A workflow is Started (which projects the keyspaces)
+/// and then Stopped; L2 is read back via the factory multiplexer.
 /// <para>
-/// Maps to ORCH-STOP-02 (all exist → 204; root+step gone, processor retained — ORCH-STOP-04
-/// rev), ORCH-STOP-03 (any missing → 422 listing the FULL missing set, NO deletion),
-/// ORCH-STOP-06 rev (repeated Stop → 422; non-idempotent), and ORCH-STOP-07 / OBSERV-REDIS-03
-/// (Redis-down → 500 + RFC 7807 + correlationId + <c>redisOp</c> == "KeyExistsAsync", no
-/// connection string). The per-class <c>RedisFixture</c> SCAN+DEL teardown sweeps residue.
+/// Reconciled from the superseded Phase 15 422 EXISTS-gate. Coverage: present root → 204 + root/step
+/// deleted, processor retained; a repeated Stop is an idempotent 204 no-op (NOT 422); a mixed batch
+/// (present + absent) is per-id delete-if-present (present deleted, absent a no-op, overall 204);
+/// Redis-down → 500 + RFC 7807 + correlationId + <c>redisOp</c> == "KeyDeleteAsync" (no connection
+/// string). The per-class <c>RedisFixture</c> SCAN+DEL teardown sweeps residue.
 /// </para>
 /// </summary>
 [Trait("Phase", "15")]
@@ -124,43 +124,40 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         Assert.True(await db.KeyExistsAsync($"{prefix}{procId}"), "processor key must be retained");
     }
 
-    // ----------------------------- ORCH-STOP-03 (422 full missing list, NO delete) -----------------------------
+    // ----------------------------- WEBAPI-SUPPRESS-01: mixed batch is per-id delete-if-present -----------------------------
 
     [Fact]
-    public async Task Stop_Missing_422_NoDelete()
+    public async Task Stop_MixedBatch_DeletesPresent_NoOpAbsent_204()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
 
         var (startedWf, startedStep, _) = await SeedAndStartAsync(client, ct);
-        var neverStarted = Guid.NewGuid();   // no L2 root key for this id
+        var absentId = Guid.NewGuid();   // no L2 root key for this id
 
+        // Stop [present, absent] → 204; the present root is deleted (per-id delete-if-present), the
+        // absent id is a tolerant no-op. This supersedes the Phase 15 all-or-nothing 422 gate.
         var stop = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/stop", new List<Guid> { startedWf, neverStarted }, ct);
+            "/api/v1/orchestration/stop", new List<Guid> { startedWf, absentId }, ct);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, stop.StatusCode);
-        Assert.Equal("application/problem+json", stop.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(HttpStatusCode.NoContent, stop.StatusCode);
 
-        var body = await stop.Content.ReadAsStringAsync(ct);
-        using var doc = JsonDocument.Parse(body);
-        Assert.Equal(422, doc.RootElement.GetProperty("status").GetInt32());
-        // The detail lists the FULL missing set (here: the one never-Started id).
-        Assert.Contains(neverStarted.ToString(), body);
-        // The started id's keys must NOT have been deleted (gate fails BEFORE any cleanup).
         var prefix = _factory.RedisKeyPrefix;
         var db = _factory.RedisMultiplexer.GetDatabase();
-        Assert.True(await db.KeyExistsAsync($"{prefix}{startedWf}"), "started root key must survive a failed gate");
-        Assert.True(await db.KeyExistsAsync($"{prefix}{startedWf}:{startedStep}"), "started step key must survive a failed gate");
+        // The present id's keys ARE deleted (per-id, not blocked by the absent id).
+        Assert.False(await db.KeyExistsAsync($"{prefix}{startedWf}"), "present root deleted");
+        Assert.False(await db.KeyExistsAsync($"{prefix}{startedWf}:{startedStep}"), "present per-step deleted");
+        // The absent id never had a root — nothing to delete (no 422, no error).
+        Assert.False(await db.KeyExistsAsync($"{prefix}{absentId}"), "absent root stays absent");
 
-        // The 422 gate fails before cleanup, so the started wf's parent-index SADD was NOT SREMed —
-        // remove it here (root/step keys are tracked by SeedAndStartAsync) so the close-gate scan SHA holds.
+        // Stop's per-id cleanup SREMs the present wf; this is defensive/idempotent.
         await _factory.SremParentIndexAsync(startedWf);
     }
 
-    // ----------------------------- ORCH-STOP-06 (rev): repeated Stop → 422 -----------------------------
+    // ----------------------------- WEBAPI-SUPPRESS-01: repeated Stop is an idempotent 204 no-op -----------------------------
 
     [Fact]
-    public async Task Stop_Repeat_422()
+    public async Task Stop_Repeat_Is_Idempotent_204()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
@@ -170,12 +167,9 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         var first = await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
         Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
 
-        // Second Stop — the root key is gone, so the EXISTS gate fails → 422 (non-idempotent).
+        // Second Stop — the root key is gone → delete-if-present deletes nothing → 204 no-op (NOT 422).
         var second = await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, second.StatusCode);
-
-        var body = await second.Content.ReadAsStringAsync(ct);
-        Assert.Contains(wfId.ToString(), body);
+        Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
     }
 
     // ----------------------------- ORCH-STOP-07 / OBSERV-REDIS-03 -----------------------------
@@ -190,7 +184,7 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         // the service catches it and tags Data["redisOp"]="KeyExistsAsync" (OBSERV-REDIS-03).
         // This is deterministic vs. a flaky dead-TCP endpoint whose backlog may swallow the op.
         var db = Substitute.For<IDatabase>();
-        db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+        db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
             .Returns<Task<bool>>(_ => throw new RedisConnectionException(
                 ConnectionFailureType.UnableToConnect, "simulated Redis down"));
         var mux = Substitute.For<IConnectionMultiplexer>();
@@ -203,8 +197,8 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
             }));
         using var client = factory.CreateClient();
 
-        // A well-formed non-empty id list passes the rule validation; the FIRST Redis touch
-        // on the Stop path is the EXISTS batch → RedisException → 500 redisOp=KeyExistsAsync.
+        // A well-formed non-empty id list passes the rule validation; the FIRST Redis touch on the
+        // Stop path is now the per-id KeyDeleteAsync → RedisException → 500 redisOp=KeyDeleteAsync.
         var correlationId = $"sgf-down-{Guid.NewGuid():N}";
         using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orchestration/stop")
         {
@@ -219,33 +213,31 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         var body = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(body);
         Assert.Equal(500, doc.RootElement.GetProperty("status").GetInt32());
-        Assert.Equal("KeyExistsAsync", doc.RootElement.GetProperty("redisOp").GetString());
+        Assert.Equal("KeyDeleteAsync", doc.RootElement.GetProperty("redisOp").GetString());
         Assert.Equal(correlationId, doc.RootElement.GetProperty("correlationId").GetString());
         Assert.DoesNotContain("localhost", body);
         Assert.DoesNotContain("RedisConnectionException", body);
     }
 
     [Fact]
-    public async Task Stop_RedisDown_OnPostGateCleanup_500_KeyExistsAsync()
+    public async Task Stop_RedisDown_OnPostDeleteCleanup_500_KeyDeleteAsync()
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // WR-01 (15-REVIEW): a Redis fault during the POST-gate cleanup deletes (all roots
-        // exist → EXISTS gate passes → tolerant traverse-and-delete) must surface the SAME
-        // stable Stop op name as the EXISTS gate itself. Without the cleanup-loop try/catch
-        // this fault reached the 500 handler with NO redisOp, breaking OBSERV-REDIS-03 for the
-        // post-gate sub-path.
+        // OBSERV-REDIS-03: a Redis fault during the POST-delete cleanup (the root KeyDeleteAsync
+        // returned true → tolerant traverse-and-delete of the per-step keys) must surface the SAME
+        // stable Stop op name as the delete itself ("KeyDeleteAsync"). The cleanup-loop try/catch
+        // tags it; without it the fault would reach the 500 handler with no redisOp.
 
-        // Seed + Start through the REAL factory (real cleanup, real mux) so the root key
-        // genuinely exists — the EXISTS gate must read a present root to REACH the cleanup loop.
+        // Seed + Start through the REAL factory (real cleanup, real mux) so the root key genuinely
+        // exists — the per-id KeyDeleteAsync must delete a present root (returns true) to REACH cleanup.
         using var seedClient = _factory.CreateClient();
         var (wfId, _, _) = await SeedAndStartAsync(seedClient, ct);
 
-        // Stop through a variant whose IRedisL2Cleanup throws on the post-gate delete. The mux
-        // is NOT substituted, so the EXISTS gate uses the real, seeded root (gate passes) and the
-        // fault originates in the cleanup loop → service tags redisOp="KeyExistsAsync" → 500.
-        // IRedisL2Cleanup is internal (Castle/NSubstitute can't proxy it), so use a hand-rolled
-        // throwing stub — same pattern as StartLoopFacts' NoOpRedisL2Cleanup/RedisDownProjectionWriter.
+        // Stop through a variant whose IRedisL2Cleanup throws on the post-delete cleanup. The mux is
+        // NOT substituted, so the real KeyDeleteAsync deletes the seeded root (returns true) and the
+        // fault originates in the cleanup → service tags redisOp="KeyDeleteAsync" → 500.
+        // IRedisL2Cleanup is internal (Castle/NSubstitute can't proxy it), so use a hand-rolled stub.
         var factory = _factory.WithWebHostBuilder(builder =>
             builder.ConfigureTestServices(services =>
             {
@@ -267,13 +259,13 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         var body = await resp.Content.ReadAsStringAsync(ct);
         using var doc = JsonDocument.Parse(body);
         Assert.Equal(500, doc.RootElement.GetProperty("status").GetInt32());
-        Assert.Equal("KeyExistsAsync", doc.RootElement.GetProperty("redisOp").GetString());
+        Assert.Equal("KeyDeleteAsync", doc.RootElement.GetProperty("redisOp").GetString());
         Assert.Equal(correlationId, doc.RootElement.GetProperty("correlationId").GetString());
         Assert.DoesNotContain("localhost", body);
         Assert.DoesNotContain("RedisConnectionException", body);
 
-        // The cleanup threw before SREM, so the started wf's parent-index member persists — remove it
-        // (root/step keys tracked by SeedAndStartAsync) so the close-gate scan SHA returns to BEFORE.
+        // The cleanup threw, so the started wf's parent-index member persists — remove it (the root
+        // was already deleted by the real KeyDeleteAsync) so the close-gate scan SHA returns to BEFORE.
         await _factory.SremParentIndexAsync(wfId);
     }
 

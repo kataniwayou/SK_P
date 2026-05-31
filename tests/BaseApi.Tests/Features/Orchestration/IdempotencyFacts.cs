@@ -14,19 +14,15 @@ using Xunit;
 namespace BaseApi.Tests.Features.Orchestration;
 
 /// <summary>
-/// Phase 16 Plan 04 integration facts for the idempotency + concurrency contract of
-/// <c>POST /api/v1/orchestration/start</c> against real Postgres + real compose Redis
-/// (via <see cref="Phase8WebAppFactory"/>). Start has NO Redis lock — second Start replaces
-/// the L2 keys (PUT-like, D-02) and concurrent Starts are last-write-wins (D-01).
+/// Idempotency + concurrency facts, reconciled to the Phase 24 first-win semantics
+/// (WEBAPI-SUPPRESS-01), against real Postgres + real compose Redis (via <see cref="Phase8WebAppFactory"/>).
 /// <para>
-/// Maps to TEST-REDIS-08. The sequential fact proves the SECOND write is reflected by
-/// asserting the fresh <c>jobId</c> (a <c>Guid.NewGuid()</c> per Start, 15-CONTEXT D-05)
-/// CHANGED between Starts — a positive overwrite assertion (Aliasing Risk D-02), not merely
-/// <c>!= Guid.Empty</c> which a no-op second Start would still satisfy. The concurrent fact is
-/// observational only: two parallel POSTs both 204 and the final root round-trips, with NO
-/// deterministic-winner assertion (per-workflow Start does delete-then-write, so a genuine
-/// interleave can transiently wipe the other writer — D-01 tolerates this to stay non-flaky
-/// across the 3-GREEN gate). The per-class <c>RedisFixture</c> SCAN+DEL teardown sweeps residue.
+/// Under first-win a re-Start of an already-present workflow is a NO-OP: the root is NOT rewritten
+/// (its <c>jobId</c> is UNCHANGED) and the keyspace is NOT overwritten — this DELIBERATELY supersedes
+/// the Phase 16 last-write-wins TEST-REDIS-06 contract (which asserted the jobId CHANGED). The
+/// concurrent fact is observational only: two parallel POSTs both 204 (the loser's existence probe
+/// sees the winner's root and skips, or a tie does an idempotent SET) and the final root round-trips,
+/// with NO deterministic-winner assertion. The per-class <c>RedisFixture</c> SCAN+DEL teardown sweeps residue.
 /// </para>
 /// </summary>
 [Trait("Phase", "16")]
@@ -101,16 +97,16 @@ public sealed class IdempotencyFacts : IClassFixture<HarnessWebAppFactory>
         return wf!.Id;
     }
 
-    // ----------------------------- TEST-REDIS-08 (D-02): sequential second-write-reflected -----------------------------
+    // ----------------------------- WEBAPI-SUPPRESS-01 (supersedes TEST-REDIS-06): re-Start is first-win no-op -----------------------------
 
     [Fact]
-    public async Task ReStart_SameWorkflow_ReflectsSecondWrite()
+    public async Task ReStart_SameWorkflow_IsFirstWin_NoOverwrite()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
 
         // Graph A -> B (A.NextStepIds = [B]); workflow entry = [A]. First Start projects per-step
-        // keys for BOTH A and B; the shrink later proves the orphan is GC'd by delete-then-write.
+        // keys for BOTH A and B; the shrink + re-Start proves first-win does NOT re-project.
         var procId = await SeedProcessorAsync(client, ct);
         var stepB = await SeedStepAsync(client, ct, procId);
         var stepA = await SeedStepAsync(client, ct, procId, nextStepIds: new List<Guid> { stepB });
@@ -133,27 +129,30 @@ public sealed class IdempotencyFacts : IClassFixture<HarnessWebAppFactory>
             var firstJobId = firstRoot!.JobId;
             Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "step B key projected on first Start");
 
-            // Shrink the graph (remove A -> B) so B becomes an orphan on the second Start.
+            // Shrink the graph (remove A -> B). Under the SUPERSEDED last-write-wins contract a
+            // re-Start would GC B; under first-win the re-Start skips entirely, so B SURVIVES.
             await UpdateStepNextAsync(client, ct, stepA, procId, nextStepIds: null);
 
-            // Second Start (SAME workflowIds) — overwrite, not no-op.
+            // Second Start (SAME workflowIds) — first-win: the root exists → whole write path skipped.
             var second = await client.PostAsJsonAsync(
                 "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
             Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
             var secondRoot = JsonSerializer.Deserialize<WorkflowRootProjection>(
                 (await db.StringGetAsync($"{prefix}{wfId}")).ToString());
 
-            // D-02 (Aliasing Risk) — jobId = Guid.NewGuid() per Start, so a reflected second write
-            // CHANGES it. Assert the CHANGE, not merely != Guid.Empty (a no-op would pass that).
-            Assert.NotEqual(firstJobId, secondRoot!.JobId);
+            // First-win — the root was NOT rewritten, so the jobId is UNCHANGED (no fresh Guid.NewGuid()).
+            Assert.Equal(firstJobId, secondRoot!.JobId);
 
-            // Delete-then-write GC — the now-orphaned per-step key for B is gone; A survives.
-            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key still projected after re-Start");
-            Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "orphaned step B key must be removed (delete-then-write)");
+            // No overwrite/GC — BOTH the original step keys survive (B was NOT GC'd, A was NOT re-projected away).
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key still present after first-win re-Start");
+            Assert.True(
+                await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"),
+                "first-win re-Start must NOT GC the orphan (no delete-then-write overwrite)");
 
-            // Track the keys the passing Start wrote for known-key cleanup.
+            // Track the keys the first Start wrote for known-key cleanup (both A and B survive).
             _factory.TrackRedisKey($"{prefix}{wfId}");
             _factory.TrackRedisKey($"{prefix}{wfId}:{stepA}");
+            _factory.TrackRedisKey($"{prefix}{wfId}:{stepB}");
         }
         finally
         {

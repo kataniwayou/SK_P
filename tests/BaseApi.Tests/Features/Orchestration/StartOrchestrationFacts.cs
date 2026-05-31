@@ -6,6 +6,8 @@ using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
 using BaseApi.Tests.TestHelpers;
+using Messaging.Contracts.Projections;
+using StackExchange.Redis;
 using Xunit;
 
 namespace BaseApi.Tests.Features.Orchestration;
@@ -239,5 +241,51 @@ public sealed class StartOrchestrationFacts : IClassFixture<HarnessWebAppFactory
         Assert.True(
             resourceId == expectedInOrder || resourceId == expectedReversed,
             $"resourceId '{resourceId}' must equal '{expectedInOrder}' or '{expectedReversed}' (comma-space joined, unwrapped).");
+    }
+
+    /// <summary>
+    /// WEBAPI-SUPPRESS-01 (Phase 24 Plan 02) — a re-Start of an already-present workflow is first-win:
+    /// the L2 root is NOT overwritten or refreshed (its value + jobId are byte-identical across the
+    /// re-Start). This DELIBERATELY supersedes the Phase 22 ORCH-START-05 delete-then-write overwrite
+    /// contract — the WebApi is now the single first-win dedup point.
+    /// </summary>
+    [Fact]
+    public async Task ReStart_With_Present_Root_Does_Not_Overwrite()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = _factory.CreateClient();
+        var wfId = await SeedWorkflowAsync(client, ct);
+
+        var db = _factory.RedisMultiplexer.GetDatabase();
+        var rootKey = $"{_factory.RedisKeyPrefix}{wfId}";
+
+        try
+        {
+            // First Start — root genuinely written.
+            var first = await client.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+            var firstRoot = await db.StringGetAsync(rootKey);
+            Assert.True(firstRoot.HasValue, "root present after first Start");
+            var firstJobId = JsonSerializer.Deserialize<WorkflowRootProjection>(
+                firstRoot!, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.JobId;
+
+            // Second Start — first-win: the root already exists, so the WHOLE write path is skipped.
+            var second = await client.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
+            var secondRoot = await db.StringGetAsync(rootKey);
+            var secondJobId = JsonSerializer.Deserialize<WorkflowRootProjection>(
+                secondRoot!, new JsonSerializerOptions(JsonSerializerDefaults.Web))!.JobId;
+
+            // First-win: the root was NOT rewritten — value byte-identical + jobId unchanged (no fresh
+            // Guid.NewGuid() from a re-Upsert).
+            Assert.NotEqual(Guid.Empty, firstJobId);
+            Assert.Equal(firstJobId, secondJobId);
+            Assert.Equal(firstRoot!.ToString(), secondRoot!.ToString());
+        }
+        finally
+        {
+            await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 }

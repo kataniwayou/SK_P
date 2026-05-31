@@ -109,8 +109,9 @@ public sealed class StopScanFacts : IClassFixture<HarnessWebAppFactory>
             Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepId}"), "per-step present after Start");
             Assert.True(await db.KeyExistsAsync($"{prefix}{procId}"), "processor present (externally self-registered)");
 
-            // Stop runs the EXISTS gate (root present → passes) then the tolerant GET-and-follow
-            // cleanup: root + per-step deleted; processor NEVER deleted (TTL'd); SREMs the parent index.
+            // Stop is delete-if-present (WEBAPI-SUPPRESS-01): the present root is deleted, then the
+            // tolerant GET-and-follow cleanup GCs the per-step keys; the processor is NEVER deleted
+            // (TTL'd); the parent index is SREM'd.
             var stop = await client.PostAsJsonAsync(
                 "/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
             Assert.Equal(HttpStatusCode.NoContent, stop.StatusCode);

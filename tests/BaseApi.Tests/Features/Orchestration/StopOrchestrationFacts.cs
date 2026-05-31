@@ -13,13 +13,11 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// <summary>
 /// Stop endpoint contract for <c>POST /api/v1/orchestration/stop</c>.
 /// <para>
-/// <b>v3.3.0 semantics change (Phase 15 Plan 04):</b> Stop is no longer a Postgres
-/// existence check (the original Phase 9 D-12 shared-method 404 behavior). It is now a
-/// Redis (L2) EXISTS gate (D-04/D-06): all requested workflow root keys must already
-/// exist in L2 (i.e. the workflow was Started) → per-workflow cleanup → 204; ANY missing
-/// root → 422 listing the full missing set, NO deletion. These facts were updated from
-/// the obsolete 404 assertions to the new gate semantics — the full Redis-gate coverage
-/// (processor retention, repeat-422, Redis-down 500) lives in <see cref="StopGateFacts"/>.
+/// <b>v3.4.0 semantics change (Phase 24 Plan 02, WEBAPI-SUPPRESS-01):</b> Stop is now
+/// delete-if-present (first-win symmetric). Per workflow the root is <c>KeyDeleteAsync</c>-deleted:
+/// a PRESENT root is deleted (+ its per-step keys; never processor keys) → 204; an ABSENT root is a
+/// tolerant NO-OP (NOT 422 — this DELIBERATELY supersedes the Phase 15 422-on-missing-root EXISTS
+/// gate). A second Stop of an already-cleaned workflow is therefore a clean 204 no-op (idempotent).
 /// </para>
 /// </summary>
 [Trait("Phase", "15")]
@@ -72,14 +70,13 @@ public sealed class StopOrchestrationFacts : IClassFixture<HarnessWebAppFactory>
     }
 
     [Fact]
-    public async Task Stop_Returns204_AndEmptyBody_WhenAllRootsExist()
+    public async Task Stop_Returns204_AndEmptyBody_WhenRootPresent()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
         var wfId = await SeedWorkflowAsync(client, ct);
 
-        // v3.3.0 Stop gates on L2 existence — the workflow must be Started (root key written)
-        // before a Stop can succeed. Start it first, then Stop → 204.
+        // Start writes the root key; the present-root Stop deletes it → 204.
         var start = await client.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
         Assert.Equal(HttpStatusCode.NoContent, start.StatusCode);
 
@@ -93,53 +90,49 @@ public sealed class StopOrchestrationFacts : IClassFixture<HarnessWebAppFactory>
         Assert.Equal(string.Empty, body);
     }
 
+    /// <summary>
+    /// WEBAPI-SUPPRESS-01 — a Stop of a never-Started (absent-root) workflow is a tolerant NO-OP:
+    /// 204, NOT 422. This supersedes the Phase 15 422-on-missing-root EXISTS gate.
+    /// </summary>
     [Fact]
-    public async Task Stop_Returns422_WhenAnyWorkflowRootMissing()
+    public async Task Stop_Returns204_NoOp_WhenWorkflowRootAbsent()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
 
-        // A well-formed but never-Started id has no L2 root key → the EXISTS gate fails → 422.
-        var missingId = Guid.NewGuid();
+        // A well-formed but never-Started id has no L2 root key → delete-if-present no-op → 204.
+        var absentId = Guid.NewGuid();
         var resp = await client.PostAsJsonAsync(
             "/api/v1/orchestration/stop",
-            new List<Guid> { missingId },
+            new List<Guid> { absentId },
             ct);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
-        Assert.Equal("application/problem+json", resp.Content.Headers.ContentType?.MediaType);
-
+        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
         var body = await resp.Content.ReadAsStringAsync(ct);
-        using var doc = JsonDocument.Parse(body);
-        Assert.Equal(422, doc.RootElement.GetProperty("status").GetInt32());
-        // The 422 detail lists the missing id (MissingRoots gate, string.Join(", ", missing)).
-        Assert.Contains(missingId.ToString(), body);
+        Assert.Equal(string.Empty, body);
     }
 
     /// <summary>
-    /// Multi-id gate — proves a 422 lists the FULL missing set (not just the first) when
-    /// every requested workflow root is absent from L2.
+    /// WEBAPI-SUPPRESS-01 — a repeated Stop of an already-cleaned workflow is an idempotent 204
+    /// no-op (the second Stop's root is absent → deletes nothing → 204, NOT 422).
     /// </summary>
     [Fact]
-    public async Task Stop_Returns422_WithFullMissingList_WhenMultipleWorkflowRootsMissing()
+    public async Task Stop_Repeated_Is_Idempotent_204_NoOp()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
+        var wfId = await SeedWorkflowAsync(client, ct);
 
-        var missingId1 = Guid.NewGuid();
-        var missingId2 = Guid.NewGuid();
-        var resp = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/stop",
-            new List<Guid> { missingId1, missingId2 },
-            ct);
+        var start = await client.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+        Assert.Equal(HttpStatusCode.NoContent, start.StatusCode);
 
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
-        Assert.Equal("application/problem+json", resp.Content.Headers.ContentType?.MediaType);
+        var first = await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
+        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
 
-        var body = await resp.Content.ReadAsStringAsync(ct);
-        using var doc = JsonDocument.Parse(body);
-        Assert.Equal(422, doc.RootElement.GetProperty("status").GetInt32());
-        Assert.Contains(missingId1.ToString(), body);
-        Assert.Contains(missingId2.ToString(), body);
+        // Second Stop — root already deleted → first-win no-op (idempotent 204, NOT 422).
+        var second = await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
+        Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
+
+        await _factory.SremParentIndexAsync(wfId);
     }
 }
