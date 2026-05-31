@@ -1,49 +1,60 @@
-using System.Text.Json;
+using BaseConsole.Core.Health;
 using MassTransit;
 using Messaging.Contracts;
-using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
-using Orchestrator.Messaging;
-using StackExchange.Redis;
+using Orchestrator.Hydration;
+using Orchestrator.L1;
 
 namespace Orchestrator.Consumers;
 
 /// <summary>
-/// Start consumer (ORCH-CON-03/04). For each WorkflowId in the body, reads the L2 root from Redis
-/// and logs to the scheduler-job-start seam under the body-sourced correlated scope (already opened
-/// by the BaseConsole.Core inbound consume filter — do NOT re-open). NO Redis writes, NO Quartz.
+/// Start consumer (ORCH-CONSUME-01). Gated tolerant-reload: for each WorkflowId in the body it
+/// drops cleanly when the startup gate is closed or the per-workflow stripe is held (D-12/D-14),
+/// then runs the shared <see cref="WorkflowLifecycle"/> teardown+hydrate+schedule (D-15) so the
+/// live runtime re-applies the current L2 definition. Teardown reuses the Stop path; the stripe is
+/// always released in a <c>finally</c>.
 /// <para>
-/// Ack split (MSG-ACK-01/02): a WorkflowId absent from L2 is a BUSINESS failure — logged + skipped
-/// (consume completes → ack), never thrown. An INFRA fault (e.g. Redis unreachable) propagates from
-/// <c>GetDatabase</c>/<c>StringGetAsync</c> and is bounded by the definition's retry → _error.
+/// Ack split (ORCH-ACK-01): a gate-closed or stripe-held drop is a clean <c>return</c> (ack), NEVER
+/// a throw (Pitfall 6 — no early control message reaches <c>_error</c>). Business outcomes (absent
+/// root/step) are logged + skipped INSIDE <see cref="WorkflowLifecycle"/>. Only INFRA faults
+/// propagate out of <c>Consume</c> -> the definition's bounded retry -> <c>_error</c> (D-02/D-17);
+/// this consumer does NOT catch-all infra.
 /// </para>
 /// </summary>
 public sealed class StartOrchestrationConsumer(
-    IConnectionMultiplexer redis,
+    IStartupGate gate,
+    IWorkflowL1Store store,
+    WorkflowLifecycle lifecycle,
     ILogger<StartOrchestrationConsumer> logger) : IConsumer<StartOrchestration>
 {
     public async Task Consume(ConsumeContext<StartOrchestration> context)
     {
-        // The inbound filter (BaseConsole.Core) already opened the "CorrelationId" scope from the
-        // body — do NOT re-open it here.
-        var db = redis.GetDatabase();   // infra fault here THROWS → retry → _error (D-08 / MSG-ACK-02)
+        if (!gate.IsReady)
+        {
+            // D-12: gate closed (initial hydration not complete) — ACK + drop, NEVER throw (Pitfall 6).
+            logger.LogInformation("Gate closed — dropping Start (ack)");
+            return;
+        }
+
         foreach (var workflowId in context.Message.WorkflowIds)
         {
-            var raw = await db.StringGetAsync(OrchestratorL2Keys.Root(workflowId));
-            if (raw.IsNullOrEmpty)
+            if (!store.TryAcquire(workflowId))
             {
-                // BUSINESS failure → log + continue (ack), NEVER throw (D-07 / MSG-ACK-01).
-                logger.LogWarning(
-                    "Workflow {WorkflowId} absent from L2 — business failure, acking", workflowId);
+                // D-14: stripe held by an in-flight lifecycle op — drop (ack).
+                logger.LogInformation("Stripe held for {WorkflowId} — dropping (ack)", workflowId);
                 continue;
             }
 
-            // Deserialize the read-shape (camelCase frozen Phase 17 D-08).
-            _ = JsonSerializer.Deserialize<WorkflowRootProjection>(raw!);
-
-            // ORCH-CON-04 seam — NO Redis write, NO Quartz schedule.
-            logger.LogInformation("Scheduler job start (seam) for {WorkflowId}", workflowId);
+            try
+            {
+                await lifecycle.TeardownAsync(workflowId, context.CancellationToken);          // D-15 tolerant teardown (reuses Stop)
+                await lifecycle.HydrateAndScheduleAsync(workflowId, context.CancellationToken); // re-apply current L2 definition
+            }
+            finally
+            {
+                store.Release(workflowId); // always release the stripe
+            }
         }
-        // returns normally → ACK
+        // returns normally -> ACK
     }
 }

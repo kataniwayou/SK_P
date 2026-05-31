@@ -1,45 +1,56 @@
-using System.Text.Json;
+using BaseConsole.Core.Health;
 using MassTransit;
 using Messaging.Contracts;
-using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
-using Orchestrator.Messaging;
-using StackExchange.Redis;
+using Orchestrator.Hydration;
+using Orchestrator.L1;
 
 namespace Orchestrator.Consumers;
 
 /// <summary>
-/// Stop consumer (ORCH-CON-03/04) — mirrors <see cref="StartOrchestrationConsumer"/> exactly for
-/// <see cref="StopOrchestration"/>. Reads the L2 root per WorkflowId and logs to the
-/// scheduler-job-start seam; NO Redis writes, NO Quartz. Absent-from-L2 is a business failure
-/// (logged + acked); infra faults propagate to the bounded retry pipeline.
+/// Stop consumer (ORCH-STOP-01) — mirrors <see cref="StartOrchestrationConsumer"/>'s gating but is
+/// teardown-only. For each WorkflowId it drops cleanly on a closed gate or a held stripe
+/// (D-12/D-14), then runs the shared <see cref="WorkflowLifecycle.TeardownAsync"/>: resolve the
+/// jobId from L1, <c>DeleteJob(JobKey(jobId))</c>, and clear the L1 entry — ZERO L2 writes (D-16).
+/// The stripe is always released in a <c>finally</c>.
+/// <para>
+/// Ack split (ORCH-ACK-01): gate-closed / stripe-held / absent-from-L1 are clean acks (return),
+/// NEVER throws. Only INFRA faults propagate to the definition's bounded retry -> <c>_error</c>.
+/// </para>
 /// </summary>
 public sealed class StopOrchestrationConsumer(
-    IConnectionMultiplexer redis,
+    IStartupGate gate,
+    IWorkflowL1Store store,
+    WorkflowLifecycle lifecycle,
     ILogger<StopOrchestrationConsumer> logger) : IConsumer<StopOrchestration>
 {
     public async Task Consume(ConsumeContext<StopOrchestration> context)
     {
-        // The inbound filter (BaseConsole.Core) already opened the "CorrelationId" scope from the
-        // body — do NOT re-open it here.
-        var db = redis.GetDatabase();   // infra fault here THROWS → retry → _error (D-08 / MSG-ACK-02)
+        if (!gate.IsReady)
+        {
+            // D-12: gate closed — ACK + drop, NEVER throw (Pitfall 6).
+            logger.LogInformation("Gate closed — dropping Stop (ack)");
+            return;
+        }
+
         foreach (var workflowId in context.Message.WorkflowIds)
         {
-            var raw = await db.StringGetAsync(OrchestratorL2Keys.Root(workflowId));
-            if (raw.IsNullOrEmpty)
+            if (!store.TryAcquire(workflowId))
             {
-                // BUSINESS failure → log + continue (ack), NEVER throw (D-07 / MSG-ACK-01).
-                logger.LogWarning(
-                    "Workflow {WorkflowId} absent from L2 — business failure, acking", workflowId);
+                // D-14: stripe held — drop (ack).
+                logger.LogInformation("Stripe held for {WorkflowId} — dropping (ack)", workflowId);
                 continue;
             }
 
-            // Deserialize the read-shape (camelCase frozen Phase 17 D-08).
-            _ = JsonSerializer.Deserialize<WorkflowRootProjection>(raw!);
-
-            // ORCH-CON-04 seam — NO Redis write, NO Quartz schedule.
-            logger.LogInformation("Scheduler job stop (seam) for {WorkflowId}", workflowId);
+            try
+            {
+                await lifecycle.TeardownAsync(workflowId, context.CancellationToken); // D-16: jobId DeleteJob + L1 clear, zero L2 writes
+            }
+            finally
+            {
+                store.Release(workflowId); // always release the stripe
+            }
         }
-        // returns normally → ACK
+        // returns normally -> ACK
     }
 }
