@@ -110,6 +110,12 @@ public sealed class WorkflowLifecycle(
     /// <summary>
     /// Tear down one workflow: resolve its jobId from L1, <c>DeleteJob(JobKey(jobId))</c>, and clear
     /// the L1 entry — ZERO L2 writes (ORCH-STOP-01). Absent-from-L1 is a business no-op (D-16).
+    /// <para>
+    /// Used by the conditionless Start reload pre-clean ONLY (Pitfall 4): Start must unschedule the
+    /// old Quartz job before re-scheduling, and the immediate re-hydrate re-Upserts L1 so the transient
+    /// <c>store.Remove</c> is harmless. Stop must NOT use this — it would drop L1 and break drain;
+    /// Stop uses <see cref="UnscheduleOnlyAsync"/> instead (D-07).
+    /// </para>
     /// </summary>
     public async Task TeardownAsync(Guid workflowId, CancellationToken ct)
     {
@@ -121,6 +127,24 @@ public sealed class WorkflowLifecycle(
 
         await scheduler.UnscheduleAsync(wf.JobId, ct); // jobId-addressed DeleteJob (Pitfall 4c)
         store.Remove(workflowId);                      // NO L2 mutation
+    }
+
+    /// <summary>
+    /// Stop path (D-07 — ORCH-STOP-DRAIN-01): resolve the jobId from L1 and
+    /// <c>DeleteJob(JobKey(jobId))</c>, but KEEP the L1 entry so late
+    /// <c>ExecutionResult</c> messages for the stopped workflow still
+    /// resolve in L1 and drain (dispatch their next steps). Unlike <see cref="TeardownAsync"/> this
+    /// does NOT call <c>store.Remove</c>. Absent-from-L1 is a business no-op; ZERO L2 writes.
+    /// </summary>
+    public async Task UnscheduleOnlyAsync(Guid workflowId, CancellationToken ct)
+    {
+        if (!store.TryGet(workflowId, out var wf))
+        {
+            // BUSINESS no-op — nothing to unschedule.
+            return;
+        }
+
+        await scheduler.UnscheduleAsync(wf.JobId, ct); // jobId-addressed DeleteJob — NO store.Remove (keep L1)
     }
 
     /// <summary>
