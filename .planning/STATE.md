@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: executing
-stopped_at: Completed 24-03-PLAN.md
-last_updated: "2026-05-31T22:34:08.669Z"
+status: verifying
+stopped_at: Completed 24-05-PLAN.md
+last_updated: "2026-05-31T23:49:22.273Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 8
-  completed_phases: 7
+  completed_phases: 8
   total_plans: 30
-  completed_plans: 28
-  percent: 93
+  completed_plans: 30
+  percent: 100
 ---
 
 # Project State
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 24 (orchestrator-result-consume-step-advancement) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute (24-04 complete)
-Last activity: 2026-06-01
+Status: Phase complete — ready for verification
+Last activity: 2026-05-31
 
 ### Phase 24 Plan 04 — COMPLETE (result consumer + shared competing endpoint + scheduler wiring)
 
@@ -83,7 +83,7 @@ Last activity: 2026-06-01
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 97%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -241,6 +241,10 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 24 P01 | ~12min | 2 tasks | 5 files |
 | Phase 24 P02 | ~55min | 2 tasks tasks | 7 files files |
 | Phase 24 P03 | ~17min | 2 tasks | 6 files |
+| Phase 24 P05 | ~25min | 2 tasks | 7 files |
+| Phase 24 P05 | ~25min | 2 tasks | 7 files |
+| Phase 24 P05 | ~25min | 2 tasks | 7 files |
+| Phase 24 P05 | ~25min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -532,6 +536,8 @@ Recent decisions affecting current work:
 - Phase 23-05 Rule 1: per-scheduler Quartz instanceName=test-{guid:N} to avoid StdSchedulerFactory cross-class repository collision (376c9db)
 - Phase 24-01: ExecutionResult keeps real ExecutionId/EntryId (processor copies execution ids forward); configureBus seam added defensively to AddBaseConsoleMessaging regardless of 8.5.5 scheduler self-wiring (de-risks Plan 24-04).
 - WebApi is the single first-win L2-root dedup point (WEBAPI-SUPPRESS-01/D-04): Start create-if-absent via KeyExistsAsync probe-then-skip (whole write path guarded), Stop delete-if-present via KeyDeleteAsync (absent root = 204 no-op, not 422); both publishes carry only the deduped subset; Stop redisOp tag now KeyDeleteAsync. Supersedes Phase 22 ORCH-START-05 overwrite + 422-on-missing gate.
+- 24-05: conditionless Start/Stop consumers (no stripe, no existence skip — WebApi dedups); Stop keeps L1 for drain via WorkflowLifecycle.UnscheduleOnlyAsync; both throw GateClosedException on closed gate into UseScheduledRedelivery-before-retry (D-05/D-06/D-07).
+- 24-05: conditionless Start/Stop consumers (no stripe, no existence skip); Stop keeps L1 for drain (UnscheduleOnlyAsync); both throw GateClosedException into UseScheduledRedelivery-before-retry (D-05/D-06/D-07).
 
 ### Roadmap Milestone Log
 
@@ -628,8 +634,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T22:34:08.657Z
-Stopped at: Completed 24-03-PLAN.md
+Last session: 2026-05-31T23:49:17.612Z
+Stopped at: Completed 24-05-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
