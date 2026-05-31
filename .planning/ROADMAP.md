@@ -161,7 +161,7 @@ Plans:
 **Plans**: 5 plans
   - [x] 24-01-PLAN.md — Result contracts (StepOutcome/ExecutionResult/OrchestratorQueues) + BaseConsole scheduler seam [ORCH-RESULT-01]
   - [x] 24-02-PLAN.md — WebApi first-win L2-root create/delete + reconcile facts [WEBAPI-SUPPRESS-01]
-  - [ ] 24-03-PLAN.md — IStepDispatcher + StepAdvancement helpers + GateClosedException + WorkflowFireJob refactor [ORCH-ADVANCE-01, ORCH-ADVANCE-02]
+  - [x] 24-03-PLAN.md — IStepDispatcher + StepAdvancement helpers + GateClosedException + WorkflowFireJob refactor [ORCH-ADVANCE-01, ORCH-ADVANCE-02]
   - [ ] 24-04-PLAN.md — ResultConsumer + shared competing endpoint + scheduler/redelivery wiring [ORCH-RESULT-02, ORCH-ADVANCE-01/02, ORCH-RESULT-ACK-01, ORCH-GATE-01]
   - [ ] 24-05-PLAN.md — Conditionless Start/Stop (keep-L1 drain) + gate-closed-throw redelivery [ORCH-START-RELOAD-01, ORCH-STOP-DRAIN-01, ORCH-GATE-01]
 **UI hint**: no

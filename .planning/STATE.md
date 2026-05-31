@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 24 (orchestrator-result-consume-step-advancement) — EXECUTING
-Plan: 5 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-05-31
 

@@ -19,9 +19,10 @@ key_files:
     - tests/BaseApi.Tests/Orchestrator/StepAdvancementTests.cs
   modified:
     - src/Orchestrator/Scheduling/WorkflowFireJob.cs
+    - tests/BaseApi.Tests/Orchestrator/FireDispatchTests.cs
   decisions: []
 metrics:
-  duration: ~17min
+  duration: ~20min
   completed: 2026-05-31
 requirements: [ORCH-ADVANCE-01, ORCH-ADVANCE-02]
 ---
@@ -45,12 +46,13 @@ One-liner: Extracted the EntryStepDispatch build+Send into a single-owner `IStep
 ## Verification
 
 - `dotnet build src/Orchestrator/Orchestrator.csproj -c Debug` — Build succeeded, 0 Warning(s) / 0 Error(s).
+- `dotnet build tests/BaseApi.Tests/BaseApi.Tests.csproj -c Debug` — Build succeeded, 0 Warning(s) / 0 Error(s) (after the FireDispatchTests reconcile, Rule 1 below).
 - `dotnet test --filter "FullyQualifiedName~StepAdvancement"` — Passed: 17, Failed: 0 (full outcome x entry-condition matrix incl. Never-never + dangling-skip).
 - `dotnet test --filter "FullyQualifiedName~Orchestrator"` — Passed: 48, Failed: 0 (no regression after the WorkflowFireJob refactor).
 
 ## TDD Gate Compliance
 
-Plan task 2 was `tdd="true"`. Gate sequence held: RED commit `9e3f4c2` (`test(24-03): ...`) — test failed to compile because `StepAdvancement` did not exist (a genuine RED, not a false-pass); GREEN commit `a1b8f3d` (`feat(24-03): implement pure StepAdvancement...`) — 17/17 pass. No REFACTOR commit needed (implementation clean as written).
+Plan task 2 was `tdd="true"`. Gate sequence held: RED commit `83b75d7` (`test(24-03): ...`) — test failed to compile because `StepAdvancement` did not exist (a genuine RED, not a false-pass); GREEN commit `ddd73b1` (`feat(24-03): implement pure StepAdvancement...`) — 17/17 pass. No REFACTOR commit needed (implementation clean as written).
 
 ## Acceptance Criteria
 
@@ -70,14 +72,25 @@ Task 2:
 
 ## Deviations from Plan
 
-None — plan executed exactly as written. The KNOWN GOTCHA from 24-02 (BOM / off test paths) did not apply: the test file is a new ASCII file at the verified path `tests/BaseApi.Tests/Orchestrator/` with namespace `BaseApi.Tests.Orchestrator`.
+### Auto-fixed Issues
+
+**1. [Rule 1 - Bug] Reconciled `FireDispatchTests` to the new `WorkflowFireJob` ctor**
+- **Found during:** Task 2 verification (the `~Orchestrator` regression slice did not compile).
+- **Issue:** the existing `tests/BaseApi.Tests/Orchestrator/FireDispatchTests.cs` constructs `WorkflowFireJob` at 3 sites passing `harness.Bus` (an `IBus`) into the 2nd ctor slot, which was `ISendEndpointProvider`. Task 1 changed that slot to `IStepDispatcher`, so the test assembly failed to compile (`CS1503: cannot convert IBus to IStepDispatcher`) — which also masked the StepAdvancement test result (the whole assembly was broken).
+- **Fix:** the 3 sites now pass `new StepDispatcher(harness.Bus)` (the real dispatcher wrapping the harness bus — `IBus` satisfies `ISendEndpointProvider`), preserving the test's intent (harness captures the `Send`). Added `using Orchestrator.Dispatch;`.
+- **Files modified:** `tests/BaseApi.Tests/Orchestrator/FireDispatchTests.cs`
+- **Commit:** `9a8f2c1`
+- **Result:** test assembly builds 0/0; StepAdvancement 17/17; Orchestrator slice 48/48 (no regression).
+
+The KNOWN GOTCHA from 24-02 (BOM / off test paths) did not apply: the new `StepAdvancementTests.cs` is plain ASCII at the verified path `tests/BaseApi.Tests/Orchestrator/` with namespace `BaseApi.Tests.Orchestrator`.
 
 ## Commits
 
-- `1c0e6e9` feat(24-03): extract IStepDispatcher; refactor WorkflowFireJob; add GateClosedException (Task 1)
-- `9e3f4c2` test(24-03): add failing table-driven test for StepAdvancement.SelectNext (Task 2 RED)
-- `a1b8f3d` feat(24-03): implement pure StepAdvancement.SelectNext match + traversal (Task 2 GREEN)
+- `24f6668` feat(24-03): extract IStepDispatcher; refactor WorkflowFireJob; add GateClosedException (Task 1)
+- `83b75d7` test(24-03): add failing table-driven test for StepAdvancement.SelectNext (Task 2 RED)
+- `ddd73b1` feat(24-03): implement pure StepAdvancement.SelectNext match + traversal (Task 2 GREEN)
+- `9a8f2c1` fix(24-03): reconcile FireDispatchTests to IStepDispatcher ctor change (Rule 1)
 
 ## Self-Check: PASSED
 
-All 6 key files present on disk; all 3 task commits present in git log.
+All 6 key files present on disk; all 4 commits (24f6668, 83b75d7, ddd73b1, 9a8f2c1) present in git log.
