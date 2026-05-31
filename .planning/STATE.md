@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: completed
-stopped_at: Phase 24 context gathered (gating redesign)
-last_updated: "2026-05-31T18:57:36.205Z"
+status: executing
+stopped_at: Completed 24-01-PLAN.md
+last_updated: "2026-05-31T20:59:09.028Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 25
-  completed_plans: 25
-  percent: 100
+  total_plans: 30
+  completed_plans: 26
+  percent: 87
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** Phase 23 — orchestrator-stop-reload-lifecycle
+**Current focus:** Phase 24 — orchestrator-result-consume-step-advancement
 
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 23
-Plan: Not started
-Status: Milestone complete
+Phase: 24 (orchestrator-result-consume-step-advancement) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-05-31
 
 ### Phase 23 Plan 05 — COMPLETE (Task 4 checkpoint APPROVED, plan finalized)
@@ -72,7 +72,7 @@ Last activity: 2026-05-31
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [█████████░] 87%
 
 ### Milestone Phases (v3.4.0)
 
@@ -226,6 +226,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 23 P03 | ~5min | 3 tasks | 9 files |
 | Phase 23 P04 | 5min | 3 tasks | 6 files |
 | Phase 23 P05 | ~30min (Tasks 1-3) + blocking checkpoint | 4 tasks (3 auto + 1 gate) tasks | 8 files (6 created + 2 modified) files |
+| Phase 24 P01 | ~12min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -515,6 +516,7 @@ Recent decisions affecting current work:
 - Phase 23-05: synthetic MassTransit consumer harness (ReceiveEndpoint({processorId:D})) proves Send field correctness end-to-end without a real broker
 - Phase 23-05: ORCH-SCALE-01 split into automatable reflection guard (no static lock/mutex) + documented manual design-review for the process-uniqueness half
 - Phase 23-05 Rule 1: per-scheduler Quartz instanceName=test-{guid:N} to avoid StdSchedulerFactory cross-class repository collision (376c9db)
+- Phase 24-01: ExecutionResult keeps real ExecutionId/EntryId (processor copies execution ids forward); configureBus seam added defensively to AddBaseConsoleMessaging regardless of 8.5.5 scheduler self-wiring (de-risks Plan 24-04).
 
 ### Roadmap Milestone Log
 
@@ -611,13 +613,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 24 context gathered (gating redesign)
-Resume file: --resume-file
+Last session: 2026-05-31T20:59:09.017Z
+Stopped at: Completed 24-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 23 (orchestrator-stop-reload-lifecycle) — 5 plans — 2026-05-31T13:27:02.513Z
+**Planned Phase:** 24 (orchestrator-result-consume-step-advancement) — 5 plans — 2026-05-31T20:35:45.345Z
