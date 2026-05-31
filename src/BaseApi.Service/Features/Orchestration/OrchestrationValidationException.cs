@@ -93,5 +93,5 @@ public sealed record SchemaEdgeOffending(Guid parentStepId, Guid childStepId);
 /// <summary>Offending payload for the "payloadConfigSchema" gate — assignment id + flattened messages.</summary>
 public sealed record PayloadConfigSchemaOffending(Guid assignmentId, IReadOnlyList<string> errors);
 
-/// <summary>Offending payload for the "processorLiveness" gate — processor id + reason ("absent"|"stale").</summary>
+/// <summary>Offending payload for the "processorLiveness" gate — processor id + reason ("absent"|"stale"|"malformed").</summary>
 public sealed record ProcessorLivenessOffending(Guid procId, string reason);

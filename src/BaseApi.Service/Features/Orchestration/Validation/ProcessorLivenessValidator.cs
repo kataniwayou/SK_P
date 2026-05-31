@@ -34,8 +34,23 @@ internal sealed class ProcessorLivenessValidator
             if (raw.IsNullOrEmpty)
                 throw OrchestrationValidationException.ProcessorNotLive(proc.Id, "absent");
 
-            var projection = JsonSerializer.Deserialize<ProcessorProjection>(raw!)!;
-            var liveness = projection.Liveness;
+            // WR-01 — the entry is EXTERNAL self-registered data we do not own. System.Text.Json does NOT
+            // enforce the non-nullable Liveness annotation at runtime (RespectNullableAnnotations is not
+            // configured), so {}, {"liveness":null}, or invalid JSON would otherwise NRE/JsonException and
+            // escape the redisOp catch as a 500. Map both malformed shapes to the 422 gate (not-live).
+            ProcessorProjection? projection;
+            try
+            {
+                projection = JsonSerializer.Deserialize<ProcessorProjection>(raw!);
+            }
+            catch (JsonException)
+            {
+                throw OrchestrationValidationException.ProcessorNotLive(proc.Id, "malformed");
+            }
+
+            if (projection?.Liveness is not { } liveness)
+                throw OrchestrationValidationException.ProcessorNotLive(proc.Id, "malformed");
+
             // D-16 — interval in SECONDS, from the entry (not hardcoded 0): timestamp + interval*2 > now.
             var deadline = liveness.Timestamp.AddSeconds(liveness.Interval * 2);
             if (deadline <= now)

@@ -190,6 +190,58 @@ public sealed class ProcessorLivenessFacts : IClassFixture<HarnessWebAppFactory>
         }
     }
 
+    // ----------------------------- 422: malformed external registration (WR-01) -----------------------------
+
+    /// <summary>
+    /// WR-01 regression: an EXTERNAL self-registrant may write a well-formed JSON object whose
+    /// <c>liveness</c> member is null (<c>{"liveness":null}</c>), or non-JSON garbage. System.Text.Json
+    /// does NOT enforce the non-nullable <see cref="ProcessorProjection.Liveness"/> annotation at runtime,
+    /// so before the fix <c>liveness.Timestamp</c> NRE'd (and bad JSON JsonException'd) — neither a
+    /// <c>RedisException</c>, so both escaped the gate as a 500. The validator now maps both malformed
+    /// shapes to the same 422 processor-liveness gate with <c>reason=="malformed"</c>. This fact seeds the
+    /// raw bytes directly (NOT the record) so the malformed shape reaches the validator verbatim.
+    /// </summary>
+    [Theory]
+    [InlineData("{\"inputDefinition\":null,\"outputDefinition\":null,\"liveness\":null}")]
+    [InlineData("not-json-at-all")]
+    public async Task MalformedProcessorRegistration_Returns422(string rawEntry)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var client = _factory.CreateClient();
+        var db = _factory.RedisMultiplexer.GetDatabase();
+
+        var procId = await SeedProcessorAsync(client, ct);
+        var stepId = await SeedStepAsync(client, procId, nextStepIds: null, ct);
+        var wfId = await SeedWorkflowAsync(client, new List<Guid> { stepId }, ct);
+
+        // Seed the malformed entry directly (raw bytes — bypasses the record serializer) and track it.
+        await db.StringSetAsync(L2ProjectionKeys.Processor(procId), rawEntry);
+        _factory.TrackRedisKey(L2ProjectionKeys.Processor(procId));
+
+        try
+        {
+            var resp = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start",
+                new List<Guid> { wfId },
+                ct);
+
+            // MUST be 422 (processorLiveness gate), NOT 500 (fallback handler).
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            var errors = doc.RootElement.GetProperty("errors");
+            Assert.Equal("processorLiveness", errors.GetProperty("gate").GetString());
+            var offending = errors.GetProperty("offending");
+            Assert.Equal("malformed", offending.GetProperty("reason").GetString());
+            Assert.Equal(procId.ToString(), offending.GetProperty("procId").GetString());
+        }
+        finally
+        {
+            // Defensive — a 422 throws before UpsertAsync (no SADD), but SREM is idempotent.
+            await SremWorkflowAsync(db, wfId);
+        }
+    }
+
     // ----------------------------- 422: processor stale -----------------------------
 
     [Fact]
