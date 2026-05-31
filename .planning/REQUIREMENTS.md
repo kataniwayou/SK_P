@@ -119,6 +119,20 @@ Deferred. Tracked, not in this roadmap.
 - **FUT-REQRESP-01**: `IRequestClient<GetProcessorBySourceHash>` + a WebApi bus responder (processor self-id-by-SourceHash on startup).
 - **FUT-CONTRACTS-01**: Concrete `JobTrigger` / `ExecutionResult` records (carrying the full `ICorrelated` fields) + the live orchestrator→processor→orchestrator round-trip.
 
+### Phase 23 — Orchestrator Lifecycle (locked via 23-SPEC.md, 2026-05-31)
+
+Concrete requirements for Phase 23, which pulls forward the dispatch half of the scheduling work above. **Realizes** `FUT-QUARTZ-01` (ORCH-SCHED-01 + ORCH-FIRE-01), `FUT-SEND-01` (ORCH-FIRE-01), and the orchestrator→processor message half of `FUT-CONTRACTS-01` (ORCH-CONTRACT-02). The processor→orchestrator round-trip (`FUT-SEND-02`, `FUT-REQRESP-01`, round-trip half of `FUT-CONTRACTS-01`) remains deferred. See `.planning/phases/23-orchestrator-stop-reload-lifecycle/23-SPEC.md` for current/target/acceptance per requirement.
+
+- [ ] **ORCH-CONTRACT-01**: A reader-consumable step-projection record exists in `Messaging.Contracts.Projections` (`{ entryCondition:int, processorId, payload, nextStepIds[] }`, camelCase `[property: JsonPropertyName]`), hoisting the shape from the writer-internal `BaseApi.Service.StepProjection` so the orchestrator can deserialize per-step L2 values (single source of truth, per `HARDEN-03`).
+- [ ] **ORCH-CONTRACT-02**: An orchestrator→processor entry-step dispatch message record carries `correlationId` (`ICorrelated`), `workflowId`, `stepId`, `processorId`, `executionId`, `entryId`, `payload`.
+- [ ] **ORCH-STARTUP-01**: On host startup the orchestrator reads ALL workflow ids from the L2 parent index (`skp:`) and hydrates each into an in-memory L1 dictionary (workflow entry + per-step entries); L1 holds NO processor keys and NOT the parent-index key.
+- [ ] **ORCH-SCHED-01**: Each hydrated workflow gets one in-memory (RAMJobStore) Quartz job whose `JobKey` embeds its `jobId`; the cron→interval is the delta (seconds) between the next two fire times, stored in L1 liveness `interval`.
+- [ ] **ORCH-FIRE-01**: On each fire — generate a fresh `correlationId`, `Send` the ORCH-CONTRACT-02 message to `queue:{processorId}` for EVERY entry step (`executionId`/`entryId` = `Guid.Empty`), and refresh the workflow's L1 liveness `timestamp` to UTC-now (no L2 write).
+- [ ] **ORCH-CONSUME-01**: The start-orchestration consumer hydrates ONLY the consumed workflowId(s) into L1, then runs ORCH-SCHED-01 + ORCH-FIRE-01 for them.
+- [ ] **ORCH-STOP-01**: The stop-orchestration consumer consumes `workflowId`s, resolves each `jobId` from L1, `DeleteJob(JobKey(jobId))`, and clears that workflow's L1 entries — performing NO L2 mutation.
+- [ ] **ORCH-SCALE-01**: All new state (L1, Quartz RAMJobStore) is per-instance with NO single-instance/global-uniqueness assumption; a single active replica is assumed at runtime, cross-replica duplicate-dispatch coordination deferred.
+- [ ] **ORCH-ACK-01**: The new consumers + startup hydration follow the existing MSG-ACK split — business failures log + ack/skip; infra faults propagate to bounded retry → `_error`; startup skips a missing/corrupt entry without crashing the host.
+
 ### Deferred from prior milestones (unchanged)
 
 - **FUT-OUTBOX-01**: Transactional outbox — once DB-transaction-coupled publishing appears.
