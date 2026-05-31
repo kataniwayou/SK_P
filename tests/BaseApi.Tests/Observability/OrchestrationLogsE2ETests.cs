@@ -168,36 +168,53 @@ public sealed class OrchestrationLogsE2ETests : IClassFixture<OrchestrationLogsE
         var stepId = await SeedStepAsync(client, procId, ct);
         var wfId = await SeedWorkflowAsync(client, new List<Guid> { stepId }, ct);
 
-        // Drive the orchestration Start — this is the request whose lifecycle log(s), including
-        // the Redis L1→L2 projection-write, must carry corrId through to Elasticsearch.
-        var resp = await client.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        // PROC-LIVE-01 + PROC-NOCREATE-01 (Phase 22): the Start path now gates on a live self-registered
+        // skp:{procId} entry (which the writer no longer creates), so seed the processor live first.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
 
-        // Sanity-check the response echo header — Phase 4 OBSERV-11 invariant.
-        Assert.Equal(corrId, resp.Headers.GetValues("X-Correlation-Id").Single());
+        // A passing Start writes root + per-step keys + SADDs the shared skp: parent index — track for
+        // the RedisFixture known-key cleanup and SREM the wf id so the close-gate scan SHA returns to BEFORE.
+        var prefix = _factory.RedisKeyPrefix;
+        _factory.TrackRedisKey($"{prefix}{wfId}");
+        _factory.TrackRedisKey($"{prefix}{wfId}:{stepId}");
 
-        // Poll ES for a log doc whose correlation-id matches. The field path shape was verified
-        // Wave 0 (Plan 11-06) — EsIndexNames.CorrelationIdFieldPath == "attributes.CorrelationId".
-        using var esClient = new ElasticsearchTestClient();
+        try
+        {
+            // Drive the orchestration Start — this is the request whose lifecycle log(s), including
+            // the Redis L1→L2 projection-write, must carry corrId through to Elasticsearch.
+            var resp = await client.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
 
-        var queryBody = $$"""
-          {
-            "size": 10,
-            "query": { "term": { "{{EsIndexNames.CorrelationIdFieldPath}}": "{{corrId}}" } }
-          }
-          """;
+            // Sanity-check the response echo header — Phase 4 OBSERV-11 invariant.
+            Assert.Equal(corrId, resp.Headers.GetValues("X-Correlation-Id").Single());
 
-        var hit = await esClient.PollEsForLog(queryBody, timeoutMs: 30_000, ct: ct);
+            // Poll ES for a log doc whose correlation-id matches. The field path shape was verified
+            // Wave 0 (Plan 11-06) — EsIndexNames.CorrelationIdFieldPath == "attributes.CorrelationId".
+            using var esClient = new ElasticsearchTestClient();
 
-        // OBSERV-REDIS-02 — the Start's request-lifecycle log (spanning the Redis projection
-        // write) reached ES carrying the inbound X-Correlation-Id via the Phase 4 MEL scope.
-        Assert.NotNull(hit);
+            var queryBody = $$"""
+              {
+                "size": 10,
+                "query": { "term": { "{{EsIndexNames.CorrelationIdFieldPath}}": "{{corrId}}" } }
+              }
+              """;
 
-        var rawJson = hit!.Value.GetRawText();
+            var hit = await esClient.PollEsForLog(queryBody, timeoutMs: 30_000, ct: ct);
 
-        // Defensive — confirm the correlation id is the value the matched doc actually carries.
-        // CHECKER WARNING #7 — assert on the round-tripped correlationId, NOT on the version
-        // string (version is incidental; hardcoding it would break on any future version bump).
-        Assert.Contains(corrId, rawJson);
+            // OBSERV-REDIS-02 — the Start's request-lifecycle log (spanning the Redis projection
+            // write) reached ES carrying the inbound X-Correlation-Id via the Phase 4 MEL scope.
+            Assert.NotNull(hit);
+
+            var rawJson = hit!.Value.GetRawText();
+
+            // Defensive — confirm the correlation id is the value the matched doc actually carries.
+            // CHECKER WARNING #7 — assert on the round-tripped correlationId, NOT on the version
+            // string (version is incidental; hardcoding it would break on any future version bump).
+            Assert.Contains(corrId, rawJson);
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 }

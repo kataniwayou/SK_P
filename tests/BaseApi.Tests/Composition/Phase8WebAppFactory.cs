@@ -1,3 +1,5 @@
+using System.Text.Json;
+using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Tests.Middleware;
 using BaseApi.Tests.Persistence;
 using Messaging.Contracts.Projections;
@@ -125,6 +127,39 @@ public class Phase8WebAppFactory : WebAppFactory, IAsyncLifetime
     /// dispose (D-23 — no <c>skp:*</c> SCAN). No-op on the skipRedisFixture path.
     /// </summary>
     public void TrackRedisKey(RedisKey key) => _redisFixture?.Track(key);
+
+    /// <summary>
+    /// Phase 22 (PROC-LIVE-01 — centralized happy-path seed): seeds a processor's self-registered L2
+    /// entry (<c>skp:{procId}</c>) LIVE so the processor-liveness gate (Plan 04 — runs after the sync
+    /// trio and before <c>UpsertAsync</c>) accepts the Start. Since Plan 03 removed the writer's
+    /// processor-key write (PROC-NOCREATE-01), processor entries are external-only — tests simulate that
+    /// external self-registration by seeding the entry directly here. The RECORD is serialized (NOT
+    /// hand-written JSON) so camelCase member names match the validator's deserialization; the key is
+    /// tracked for known-key cleanup (D-23). interval is SECONDS (LOCKED Plan 04 / D-16):
+    /// <c>now + 300*2 &gt; now</c> ⇒ live.
+    /// </summary>
+    /// <param name="procId">The processor whose <c>skp:{procId}</c> liveness entry to seed.</param>
+    /// <param name="ct">Cancellation token (forwarded to the Redis write).</param>
+    public async Task SeedLiveProcessorAsync(Guid procId, CancellationToken ct = default)
+    {
+        var db = RedisMultiplexer.GetDatabase();
+        var projection = new ProcessorProjection(null, null, new LivenessProjection(DateTime.UtcNow, 300, "Live"));
+        await db.StringSetAsync(L2ProjectionKeys.Processor(procId), JsonSerializer.Serialize(projection));
+        TrackRedisKey(L2ProjectionKeys.Processor(procId));
+    }
+
+    /// <summary>
+    /// Phase 22 (T-22-15 — shared parent-index hygiene): SREMs a workflow id from the shared
+    /// <c>skp:</c> parent-index SET (a successful Start SADDs it). Idempotent — safe to call in a
+    /// <c>finally</c> even when Start 422'd before <c>UpsertAsync</c> (the member simply isn't there).
+    /// Classes that drive a happy <c>/start</c> on the shared keyspace MUST call this so the close-gate
+    /// <c>redis-cli --scan</c> SHA returns to its empty-keyspace BEFORE state.
+    /// </summary>
+    public async Task SremParentIndexAsync(Guid workflowId)
+    {
+        var db = RedisMultiplexer.GetDatabase();
+        await db.SetRemoveAsync(L2ProjectionKeys.ParentIndex(), workflowId.ToString("D"));
+    }
 
     /// <summary>
     /// Phase 16 access surface (RESEARCH Open Q4) — TEST-REDIS-06..09 facts need

@@ -4,7 +4,6 @@ using System.Text.Json;
 using BaseApi.Service.Features.Orchestration;
 using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Service.Features.Processor;
-using BaseApi.Service.Features.Schema;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
@@ -18,8 +17,8 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// <summary>
 /// Phase 16 Plan 02 — TEST-REDIS-06 (D-03): a dedicated full-HTTP happy-path fact that drives the
 /// real <c>POST /api/v1/orchestration/start</c> → <c>OrchestrationService</c> → Redis path and
-/// asserts ALL THREE L2 keyspaces (root / per-step / per-processor) via System.Text.Json
-/// round-trip deserialization against the locked projection records.
+/// asserts the root + per-step L2 keyspaces via System.Text.Json round-trip deserialization against
+/// the locked projection records.
 /// <para>
 /// Unlike <c>RedisProjectionWriterFacts</c> (which calls <c>UpsertAsync</c> in isolation), this fact
 /// POSTs through the public API so the per-workflow Start loop, the <c>X-Correlation-Id</c> plumbing,
@@ -28,8 +27,19 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// always-empty). Keys are read via <c>_factory.RedisKeyPrefix</c> in default "D" GUID form — never
 /// the <c>:N</c> form (T-16-02-01 mitigation; a wrong key GETs null and fails loudly).
 /// </para>
+/// <para>
+/// <b>Phase 22 (PROC-NOCREATE-01 + PROC-LIVE-01):</b> the writer no longer creates the
+/// <c>skp:{procId}</c> processor key (Plan 03) — it is now owned exclusively by external
+/// self-registration — and the Start path now runs a processor-liveness gate (Plan 04) that requires
+/// a live entry. So this fact (a) seeds the processor's liveness entry EXTERNALLY via
+/// <see cref="Phase8WebAppFactory.SeedLiveProcessorAsync"/> before Start, (b) asserts the processor key
+/// holds the EXTERNALLY-SEEDED shape (a source/sink processor → null input/output definitions), NOT a
+/// writer-created one, and (c) joins the non-parallel <c>ParentIndex</c> collection and SREMs its wf id
+/// (a passing Start SADDs the shared parent index).
+/// </para>
 /// </summary>
 [Trait("Phase", "16")]
+[Collection("ParentIndex")]
 public sealed class HappyPathE2EFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -37,19 +47,6 @@ public sealed class HappyPathE2EFacts : IClassFixture<HarnessWebAppFactory>
     public HappyPathE2EFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     // ---- HTTP seeding helpers (Schema → Processor(in/out) → Step → Workflow) ----
-
-    private static async Task<Guid> SeedSchemaAsync(HttpClient client, CancellationToken ct)
-    {
-        var dto = new SchemaCreateDto(
-            Name: $"hp-schema-{Guid.NewGuid():N}",
-            Version: "1.0.0",
-            Description: null,
-            Definition: """{ "type": "object" }""");
-        var resp = await client.PostAsJsonAsync("/api/v1/schemas", dto, ct);
-        resp.EnsureSuccessStatusCode();
-        var schema = await resp.Content.ReadFromJsonAsync<SchemaReadDto>(cancellationToken: ct);
-        return schema!.Id;
-    }
 
     private static async Task<Guid> SeedProcessorAsync(
         HttpClient client, CancellationToken ct, Guid? inputSchemaId, Guid? outputSchemaId)
@@ -104,60 +101,75 @@ public sealed class HappyPathE2EFacts : IClassFixture<HarnessWebAppFactory>
     // ----------------------------- TEST-REDIS-06 -----------------------------
 
     [Fact]
-    public async Task Start_HappyPath_WritesAllThreeKeyspaces()
+    public async Task Start_HappyPath_WritesRootAndStepKeyspaces()
     {
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
 
-        // Seed a valid graph: processor WITH input/output schema defs (→ non-null definitions on
-        // the processor key) → terminal step referencing it → workflow with that step as entryStep.
-        var inputSchemaId = await SeedSchemaAsync(client, ct);
-        var outputSchemaId = await SeedSchemaAsync(client, ct);
-        var procId = await SeedProcessorAsync(client, ct, inputSchemaId, outputSchemaId);
+        // Seed a valid graph: processor (source/sink, no schema defs) → terminal step → workflow.
+        var procId = await SeedProcessorAsync(client, ct, inputSchemaId: null, outputSchemaId: null);
         var stepId = await SeedStepAsync(client, ct, procId);
         var wfId = await SeedWorkflowAsync(client, ct, new List<Guid> { stepId });
 
-        // Full HTTP Start with an explicit X-Correlation-Id header (load-bearing — round-trips
-        // into the root projection per ORCH-START-07).
-        var correlationId = $"e2e-corr-{Guid.NewGuid():N}";
-        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orchestration/start")
-        {
-            Content = JsonContent.Create(new List<Guid> { wfId }),
-        };
-        req.Headers.Add("X-Correlation-Id", correlationId);
+        // PROC-LIVE-01: the processor-liveness gate (Plan 04) now runs before UpsertAsync and requires
+        // a live self-registered skp:{procId} entry. PROC-NOCREATE-01: the writer no longer creates it,
+        // so we seed it EXTERNALLY (centralized helper) — this is the production ownership boundary.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
 
-        var resp = await client.SendAsync(req, ct);
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
-
+        // A passing Start writes root + per-step keys + SADDs the parent index — track + SREM for cleanup.
         var prefix = _factory.RedisKeyPrefix;
-        var db = _factory.RedisMultiplexer.GetDatabase();
+        _factory.TrackRedisKey($"{prefix}{wfId}");
+        _factory.TrackRedisKey($"{prefix}{wfId}:{stepId}");
 
-        // --- Root keyspace --- key $"{prefix}{wfId}" (DEFAULT "D" form — NEVER :N)
-        var rootVal = await db.StringGetAsync($"{prefix}{wfId}");
-        Assert.True(rootVal.HasValue, "root key set after 204 Start");
-        var root = JsonSerializer.Deserialize<WorkflowRootProjection>(rootVal.ToString());
-        Assert.NotNull(root);
-        Assert.Contains(stepId, root!.EntryStepIds);
-        Assert.NotEqual(Guid.Empty, root.JobId);
-        Assert.Equal(correlationId, root.CorrelationId);
-        Assert.Equal("Pending", root.Liveness.Status);
+        try
+        {
+            // Full HTTP Start with an explicit X-Correlation-Id header (load-bearing — round-trips
+            // into the root projection per ORCH-START-07).
+            var correlationId = $"e2e-corr-{Guid.NewGuid():N}";
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orchestration/start")
+            {
+                Content = JsonContent.Create(new List<Guid> { wfId }),
+            };
+            req.Headers.Add("X-Correlation-Id", correlationId);
 
-        // --- Per-step keyspace --- key $"{prefix}{wfId}:{stepId}"
-        var stepVal = await db.StringGetAsync($"{prefix}{wfId}:{stepId}");
-        Assert.True(stepVal.HasValue, "per-step key set after 204 Start");
-        var step = JsonSerializer.Deserialize<StepProjection>(stepVal.ToString());
-        Assert.NotNull(step);
-        Assert.Equal(procId, step!.ProcessorId);
-        Assert.Empty(step.NextStepIds);                                  // terminal → [] not null
-        Assert.Equal(StepEntryCondition.Always, step.EntryCondition);    // enum compare (int-backed, Always==4); NOT a "Always" string
+            var resp = await client.SendAsync(req, ct);
+            Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
 
-        // --- Per-processor keyspace --- key $"{prefix}{procId}" (different GUID; NOT under {wfId}*)
-        var procVal = await db.StringGetAsync($"{prefix}{procId}");
-        Assert.True(procVal.HasValue, "per-processor key set after 204 Start");
-        var proc = JsonSerializer.Deserialize<ProcessorProjection>(procVal.ToString());
-        Assert.NotNull(proc);
-        Assert.NotNull(proc!.InputDefinition);
-        Assert.NotNull(proc.OutputDefinition);
-        Assert.Equal("Pending", proc.Liveness.Status);
+            var db = _factory.RedisMultiplexer.GetDatabase();
+
+            // --- Root keyspace --- key $"{prefix}{wfId}" (DEFAULT "D" form — NEVER :N)
+            var rootVal = await db.StringGetAsync($"{prefix}{wfId}");
+            Assert.True(rootVal.HasValue, "root key set after 204 Start");
+            var root = JsonSerializer.Deserialize<WorkflowRootProjection>(rootVal.ToString());
+            Assert.NotNull(root);
+            Assert.Contains(stepId, root!.EntryStepIds);
+            Assert.NotEqual(Guid.Empty, root.JobId);
+            Assert.Equal(correlationId, root.CorrelationId);
+            Assert.Equal("Pending", root.Liveness.Status);
+
+            // --- Per-step keyspace --- key $"{prefix}{wfId}:{stepId}"
+            var stepVal = await db.StringGetAsync($"{prefix}{wfId}:{stepId}");
+            Assert.True(stepVal.HasValue, "per-step key set after 204 Start");
+            var step = JsonSerializer.Deserialize<StepProjection>(stepVal.ToString());
+            Assert.NotNull(step);
+            Assert.Equal(procId, step!.ProcessorId);
+            Assert.Empty(step.NextStepIds);                                  // terminal → [] not null
+            Assert.Equal(StepEntryCondition.Always, step.EntryCondition);    // enum compare (int-backed, Always==4); NOT a "Always" string
+
+            // --- Per-processor keyspace --- PROC-NOCREATE-01: the writer creates ZERO processor keys.
+            // The skp:{procId} entry present is the EXTERNALLY-SEEDED self-registration (null defs, "Live"),
+            // NOT a writer-created one — the writer no longer touches this keyspace.
+            var procVal = await db.StringGetAsync($"{prefix}{procId}");
+            Assert.True(procVal.HasValue, "processor key is the externally self-registered entry");
+            var proc = JsonSerializer.Deserialize<ProcessorProjection>(procVal.ToString());
+            Assert.NotNull(proc);
+            Assert.Null(proc!.InputDefinition);   // externally seeded (source/sink) — NOT writer-populated from schema defs
+            Assert.Null(proc.OutputDefinition);
+            Assert.Equal("Live", proc.Liveness.Status);  // self-registration liveness, NOT the writer's "Pending"
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 }

@@ -30,6 +30,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "16")]
+[Collection("ParentIndex")]
 public sealed class IdempotencyFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -118,32 +119,46 @@ public sealed class IdempotencyFacts : IClassFixture<HarnessWebAppFactory>
         var prefix = _factory.RedisKeyPrefix;
         var db = _factory.RedisMultiplexer.GetDatabase();
 
-        // First Start — capture the root jobId.
-        var first = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
-        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
-        var firstRoot = JsonSerializer.Deserialize<WorkflowRootProjection>(
-            (await db.StringGetAsync($"{prefix}{wfId}")).ToString());
-        var firstJobId = firstRoot!.JobId;
-        Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "step B key projected on first Start");
+        // PROC-LIVE-01: seed the single participating processor live so the liveness gate accepts the Start.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
 
-        // Shrink the graph (remove A -> B) so B becomes an orphan on the second Start.
-        await UpdateStepNextAsync(client, ct, stepA, procId, nextStepIds: null);
+        try
+        {
+            // First Start — capture the root jobId.
+            var first = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+            var firstRoot = JsonSerializer.Deserialize<WorkflowRootProjection>(
+                (await db.StringGetAsync($"{prefix}{wfId}")).ToString());
+            var firstJobId = firstRoot!.JobId;
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "step B key projected on first Start");
 
-        // Second Start (SAME workflowIds) — overwrite, not no-op.
-        var second = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
-        Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
-        var secondRoot = JsonSerializer.Deserialize<WorkflowRootProjection>(
-            (await db.StringGetAsync($"{prefix}{wfId}")).ToString());
+            // Shrink the graph (remove A -> B) so B becomes an orphan on the second Start.
+            await UpdateStepNextAsync(client, ct, stepA, procId, nextStepIds: null);
 
-        // D-02 (Aliasing Risk) — jobId = Guid.NewGuid() per Start, so a reflected second write
-        // CHANGES it. Assert the CHANGE, not merely != Guid.Empty (a no-op would pass that).
-        Assert.NotEqual(firstJobId, secondRoot!.JobId);
+            // Second Start (SAME workflowIds) — overwrite, not no-op.
+            var second = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
+            var secondRoot = JsonSerializer.Deserialize<WorkflowRootProjection>(
+                (await db.StringGetAsync($"{prefix}{wfId}")).ToString());
 
-        // Delete-then-write GC — the now-orphaned per-step key for B is gone; A survives.
-        Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key still projected after re-Start");
-        Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "orphaned step B key must be removed (delete-then-write)");
+            // D-02 (Aliasing Risk) — jobId = Guid.NewGuid() per Start, so a reflected second write
+            // CHANGES it. Assert the CHANGE, not merely != Guid.Empty (a no-op would pass that).
+            Assert.NotEqual(firstJobId, secondRoot!.JobId);
+
+            // Delete-then-write GC — the now-orphaned per-step key for B is gone; A survives.
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key still projected after re-Start");
+            Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "orphaned step B key must be removed (delete-then-write)");
+
+            // Track the keys the passing Start wrote for known-key cleanup.
+            _factory.TrackRedisKey($"{prefix}{wfId}");
+            _factory.TrackRedisKey($"{prefix}{wfId}:{stepA}");
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 
     // ----------------------------- TEST-REDIS-08 (D-01): concurrent observational, no winner -----------------------------
@@ -166,17 +181,30 @@ public sealed class IdempotencyFacts : IClassFixture<HarnessWebAppFactory>
         var prefix = _factory.RedisKeyPrefix;
         var db = _factory.RedisMultiplexer.GetDatabase();
 
-        // Two parallel POST /start for the SAME wfId. Last-write-wins, no Redis lock (PROJECT.md).
-        var t1 = c1.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
-        var t2 = c2.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
-        var responses = await Task.WhenAll(t1, t2);
+        // PROC-LIVE-01: seed the participating processor live so both concurrent Starts pass the gate.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
 
-        // Both succeed, no crash.
-        Assert.All(responses, r => Assert.Equal(HttpStatusCode.NoContent, r.StatusCode));
+        try
+        {
+            // Two parallel POST /start for the SAME wfId. Last-write-wins, no Redis lock (PROJECT.md).
+            var t1 = c1.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            var t2 = c2.PostAsJsonAsync("/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            var responses = await Task.WhenAll(t1, t2);
 
-        // Final root is structurally valid (round-trips) — NO assertion about WHICH jobId won.
-        var root = JsonSerializer.Deserialize<WorkflowRootProjection>(
-            (await db.StringGetAsync($"{prefix}{wfId}")).ToString());
-        Assert.NotNull(root);
+            // Both succeed, no crash.
+            Assert.All(responses, r => Assert.Equal(HttpStatusCode.NoContent, r.StatusCode));
+
+            // Final root is structurally valid (round-trips) — NO assertion about WHICH jobId won.
+            var root = JsonSerializer.Deserialize<WorkflowRootProjection>(
+                (await db.StringGetAsync($"{prefix}{wfId}")).ToString());
+            Assert.NotNull(root);
+
+            _factory.TrackRedisKey($"{prefix}{wfId}");
+            _factory.TrackRedisKey($"{prefix}{wfId}:{stepId}");
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 }

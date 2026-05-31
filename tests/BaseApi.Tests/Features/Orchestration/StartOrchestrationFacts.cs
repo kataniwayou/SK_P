@@ -34,6 +34,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "9")]
+[Collection("ParentIndex")]
 public sealed class StartOrchestrationFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -46,7 +47,7 @@ public sealed class StartOrchestrationFacts : IClassFixture<HarnessWebAppFactory
     /// <c>WorkflowsIntegrationTests.CreateStepForWorkflowAsync</c> lines 53-79 +
     /// adds a Workflow POST at the end.
     /// </summary>
-    private static async Task<Guid> SeedWorkflowAsync(HttpClient client, CancellationToken ct)
+    private async Task<Guid> SeedWorkflowAsync(HttpClient client, CancellationToken ct)
     {
         // 1. Processor — FK target for Step.ProcessorId.
         var procDto = new ProcessorCreateDto(
@@ -60,6 +61,9 @@ public sealed class StartOrchestrationFacts : IClassFixture<HarnessWebAppFactory
         var procResp = await client.PostAsJsonAsync("/api/v1/processors", procDto, ct);
         procResp.EnsureSuccessStatusCode();
         var proc = await procResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+        // PROC-LIVE-01: seed the processor live so a happy /start passes the liveness gate. Harmless on
+        // the 400/404 facts (they short-circuit before the gate).
+        await _factory.SeedLiveProcessorAsync(proc!.Id, ct);
 
         // 2. Step — FK target for WorkflowEntrySteps.StepId.
         var stepDto = new StepCreateDto(
@@ -94,15 +98,27 @@ public sealed class StartOrchestrationFacts : IClassFixture<HarnessWebAppFactory
         using var client = _factory.CreateClient();
         var wfId = await SeedWorkflowAsync(client, ct);
 
-        var resp = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start",
-            new List<Guid> { wfId },
-            ct);
+        try
+        {
+            var resp = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start",
+                new List<Guid> { wfId },
+                ct);
 
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
-        // 204 carries no body — Content-Length is either 0 or absent.
-        var body = await resp.Content.ReadAsStringAsync(ct);
-        Assert.Equal(string.Empty, body);
+            Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+            // 204 carries no body — Content-Length is either 0 or absent.
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            Assert.Equal(string.Empty, body);
+        }
+        finally
+        {
+            // A passing Start wrote root + per-step keys + SADDed the parent index. Stop deletes root +
+            // per-step and SREMs the parent index (the cleanest known-key cleanup since stepId isn't
+            // captured here); SREM is then defensive/idempotent. The externally-seeded processor key
+            // is tracked by SeedLiveProcessorAsync and swept on fixture dispose.
+            await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 
     [Fact]

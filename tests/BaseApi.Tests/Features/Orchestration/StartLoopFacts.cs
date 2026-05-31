@@ -30,6 +30,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "15")]
+[Collection("ParentIndex")]
 public sealed class StartLoopFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -112,25 +113,38 @@ public sealed class StartLoopFacts : IClassFixture<HarnessWebAppFactory>
         var stepId = await SeedStepAsync(client, ct, procId);
         var wfId = await SeedWorkflowAsync(client, ct, new List<Guid> { stepId });
 
-        var correlationId = $"slf-corr-{Guid.NewGuid():N}";
-        using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orchestration/start")
-        {
-            Content = JsonContent.Create(new List<Guid> { wfId }),
-        };
-        req.Headers.Add("X-Correlation-Id", correlationId);
+        // PROC-LIVE-01: seed the participating processor live so the liveness gate accepts the Start.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
 
-        var resp = await client.SendAsync(req, ct);
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
-
-        // ORCH-START-07 — the projected root key carries the sent correlationId (resolved
-        // ONCE from HttpContext.Items and passed explicitly to UpsertAsync, D-01).
         var prefix = _factory.RedisKeyPrefix;
-        var db = _factory.RedisMultiplexer.GetDatabase();
-        var rootValue = await db.StringGetAsync($"{prefix}{wfId}");
-        Assert.True(rootValue.HasValue, "root key should be set after a 204 Start");
-        var root = JsonSerializer.Deserialize<TestRoot>(rootValue.ToString());
-        Assert.NotNull(root);
-        Assert.Equal(correlationId, root!.correlationId);
+        _factory.TrackRedisKey($"{prefix}{wfId}");
+        _factory.TrackRedisKey($"{prefix}{wfId}:{stepId}");
+
+        try
+        {
+            var correlationId = $"slf-corr-{Guid.NewGuid():N}";
+            using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orchestration/start")
+            {
+                Content = JsonContent.Create(new List<Guid> { wfId }),
+            };
+            req.Headers.Add("X-Correlation-Id", correlationId);
+
+            var resp = await client.SendAsync(req, ct);
+            Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+
+            // ORCH-START-07 — the projected root key carries the sent correlationId (resolved
+            // ONCE from HttpContext.Items and passed explicitly to UpsertAsync, D-01).
+            var db = _factory.RedisMultiplexer.GetDatabase();
+            var rootValue = await db.StringGetAsync($"{prefix}{wfId}");
+            Assert.True(rootValue.HasValue, "root key should be set after a 204 Start");
+            var root = JsonSerializer.Deserialize<TestRoot>(rootValue.ToString());
+            Assert.NotNull(root);
+            Assert.Equal(correlationId, root!.correlationId);
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 
     // ----------------------------- ORCH-START-05 (delete-then-write GC) -----------------------------
@@ -148,26 +162,40 @@ public sealed class StartLoopFacts : IClassFixture<HarnessWebAppFactory>
         var stepA = await SeedStepAsync(client, ct, procId, nextStepIds: new List<Guid> { stepB });
         var wfId = await SeedWorkflowAsync(client, ct, new List<Guid> { stepA });
 
-        var first = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
-        Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
+        // PROC-LIVE-01: seed the participating processor live so both Starts pass the liveness gate.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
 
         var prefix = _factory.RedisKeyPrefix;
-        var db = _factory.RedisMultiplexer.GetDatabase();
-        Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key projected on first Start");
-        Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "step B key projected on first Start");
+        _factory.TrackRedisKey($"{prefix}{wfId}");
+        _factory.TrackRedisKey($"{prefix}{wfId}:{stepA}");
+        _factory.TrackRedisKey($"{prefix}{wfId}:{stepB}");
 
-        // Shrink the graph: remove the A -> B edge so B is no longer reachable.
-        await UpdateStepNextAsync(client, ct, stepA, procId, nextStepIds: null);
+        try
+        {
+            var first = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.NoContent, first.StatusCode);
 
-        var second = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
-        Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
+            var db = _factory.RedisMultiplexer.GetDatabase();
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key projected on first Start");
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "step B key projected on first Start");
 
-        // ORCH-START-05 — the now-orphaned per-step key for B is GONE (tolerant pre-clean
-        // deleted the whole prior reachable set before the writer re-projected the shrunk graph).
-        Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key still projected after re-Start");
-        Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "orphaned step B key must be removed (delete-then-write)");
+            // Shrink the graph: remove the A -> B edge so B is no longer reachable.
+            await UpdateStepNextAsync(client, ct, stepA, procId, nextStepIds: null);
+
+            var second = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
+
+            // ORCH-START-05 — the now-orphaned per-step key for B is GONE (tolerant pre-clean
+            // deleted the whole prior reachable set before the writer re-projected the shrunk graph).
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key still projected after re-Start");
+            Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "orphaned step B key must be removed (delete-then-write)");
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 
     // ----------------------------- ORCH-START-04 / OBSERV-REDIS-03 -----------------------------
@@ -194,6 +222,10 @@ public sealed class StartLoopFacts : IClassFixture<HarnessWebAppFactory>
         var procId = await SeedProcessorAsync(client, ct);
         var stepId = await SeedStepAsync(client, ct, procId);
         var wfId = await SeedWorkflowAsync(client, ct, new List<Guid> { stepId });
+
+        // PROC-LIVE-01: the liveness gate runs BEFORE UpsertAsync, so seed the processor live (on the
+        // shared Redis) — otherwise the Start 422s "absent" and never reaches the throwing writer seam.
+        await _factory.SeedLiveProcessorAsync(procId, ct);
 
         var correlationId = $"slf-down-{Guid.NewGuid():N}";
         using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orchestration/start")

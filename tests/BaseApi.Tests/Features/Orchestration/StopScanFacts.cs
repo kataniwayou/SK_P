@@ -24,6 +24,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "16")]
+[Collection("ParentIndex")]
 public sealed class StopScanFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -93,23 +94,36 @@ public sealed class StopScanFacts : IClassFixture<HarnessWebAppFactory>
         var prefix = _factory.RedisKeyPrefix;
         var db = _factory.RedisMultiplexer.GetDatabase();
 
-        // Start projects all 3 keyspaces.
-        var start = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
-        Assert.Equal(HttpStatusCode.NoContent, start.StatusCode);
-        Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}"), "root present after Start");
-        Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepId}"), "per-step present after Start");
-        Assert.True(await db.KeyExistsAsync($"{prefix}{procId}"), "processor present after Start");
+        // PROC-NOCREATE-01 + PROC-LIVE-01: the writer no longer creates the processor key; seed it
+        // EXTERNALLY (self-registration) so the Start liveness gate passes AND the post-Stop "processor
+        // RETAINED" assertion holds (cleanup never deletes processor keys).
+        await _factory.SeedLiveProcessorAsync(procId, ct);
 
-        // Stop runs the EXISTS gate (root present → passes) then the tolerant GET-and-follow
-        // cleanup: root + per-step deleted; processor NEVER deleted (TTL'd).
-        var stop = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
-        Assert.Equal(HttpStatusCode.NoContent, stop.StatusCode);
+        try
+        {
+            // Start projects root + per-step keyspaces (the processor key is the externally-seeded one).
+            var start = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.NoContent, start.StatusCode);
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}"), "root present after Start");
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepId}"), "per-step present after Start");
+            Assert.True(await db.KeyExistsAsync($"{prefix}{procId}"), "processor present (externally self-registered)");
 
-        // Inverted contract (D-06).
-        Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}"), "root deleted post-Stop");
-        Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepId}"), "per-step deleted post-Stop");
-        Assert.True(await db.KeyExistsAsync($"{prefix}{procId}"), "processor RETAINED post-Stop (TTL)");
+            // Stop runs the EXISTS gate (root present → passes) then the tolerant GET-and-follow
+            // cleanup: root + per-step deleted; processor NEVER deleted (TTL'd); SREMs the parent index.
+            var stop = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.NoContent, stop.StatusCode);
+
+            // Inverted contract (D-06).
+            Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}"), "root deleted post-Stop");
+            Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepId}"), "per-step deleted post-Stop");
+            Assert.True(await db.KeyExistsAsync($"{prefix}{procId}"), "processor RETAINED post-Stop (TTL)");
+        }
+        finally
+        {
+            // Stop's cleanup already SREMs the wf id; this is defensive/idempotent.
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 }

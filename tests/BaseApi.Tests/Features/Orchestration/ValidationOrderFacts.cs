@@ -61,6 +61,7 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "14")]
+[Collection("ParentIndex")]
 public sealed class ValidationOrderFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
@@ -333,26 +334,40 @@ public sealed class ValidationOrderFacts : IClassFixture<HarnessWebAppFactory>
         await SetNextStepIdsAsync(client, stepB2, procB, new List<Guid> { stepB1 }, ct);
         var wfB = await SeedWorkflowAsync(client, new List<Guid> { stepB1 }, assignmentIds: null, ct);
 
-        // Request order [A, B] — existence passes for both; A is projected; B's cycle gate throws.
-        var resp = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start",
-            new List<Guid> { wfA, wfB },
-            ct);
-
-        // B failed the cycle gate → the request is 422 (per-workflow first-failure: B is the first — and
-        // only — failing workflow in iteration order).
-        Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
-        var body = await resp.Content.ReadAsStringAsync(ct);
-        using var doc = JsonDocument.Parse(body);
-        Assert.Equal("cycle", doc.RootElement.GetProperty("errors").GetProperty("gate").GetString());
-
-        // Cross-workflow partial state (D-07) — A was FULLY processed before B was loaded, so A's L2
-        // root key EXISTS despite B's later 422. (The old batch-snapshot model would have written NOTHING.)
+        // PROC-LIVE-01: workflow A must be PROJECTED (its liveness gate runs after the sync trio, before
+        // Upsert), so seed procA live. B fails the cycle gate (step 3) before reaching liveness, so procB
+        // needs no seed. A successful A projection writes A's root + step keys + SADDs the parent index.
+        await _factory.SeedLiveProcessorAsync(procA, ct);
         var prefix = _factory.RedisKeyPrefix;
-        var db = _factory.RedisMultiplexer.GetDatabase();
-        Assert.True(
-            await db.KeyExistsAsync($"{prefix}{wfA}"),
-            "workflow A's L2 root key must exist — per-workflow loop projected A before B failed");
+        _factory.TrackRedisKey($"{prefix}{wfA}");
+        _factory.TrackRedisKey($"{prefix}{wfA}:{stepA}");
+
+        try
+        {
+            // Request order [A, B] — existence passes for both; A is projected; B's cycle gate throws.
+            var resp = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start",
+                new List<Guid> { wfA, wfB },
+                ct);
+
+            // B failed the cycle gate → the request is 422 (per-workflow first-failure: B is the first — and
+            // only — failing workflow in iteration order).
+            Assert.Equal(HttpStatusCode.UnprocessableEntity, resp.StatusCode);
+            var body = await resp.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(body);
+            Assert.Equal("cycle", doc.RootElement.GetProperty("errors").GetProperty("gate").GetString());
+
+            // Cross-workflow partial state (D-07) — A was FULLY processed before B was loaded, so A's L2
+            // root key EXISTS despite B's later 422. (The old batch-snapshot model would have written NOTHING.)
+            var db = _factory.RedisMultiplexer.GetDatabase();
+            Assert.True(
+                await db.KeyExistsAsync($"{prefix}{wfA}"),
+                "workflow A's L2 root key must exist — per-workflow loop projected A before B failed");
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfA);
+        }
     }
 
     /// <summary>

@@ -1,14 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Observability.Helpers;
 using BaseApi.Tests.TestHelpers;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Configuration;
+using Messaging.Contracts.Projections;
 using StackExchange.Redis;
 using Xunit;
 
@@ -82,6 +81,12 @@ public sealed class CorrelationPropagationE2ETests
         var procId = await SeedProcessorAsync(client, ct);
         var stepId = await SeedStepAsync(client, procId, ct);
         var wfId = await SeedWorkflowAsync(client, new List<Guid> { stepId }, ct);
+
+        // PROC-LIVE-01 + PROC-NOCREATE-01 (Phase 22): the Start path now runs a processor-liveness gate
+        // before UpsertAsync, and the writer no longer creates the processor key — it is owned by external
+        // self-registration. Seed the participating processor LIVE directly into the HOST Redis (the same
+        // instance the orchestrator reads) so the real Start reaches the success seam.
+        await factory.SeedHostProcessorLiveAsync(procId, ct);
 
         // Start endpoint takes a BARE List<Guid> body (OrchestrationController.Start). 204 on success
         // means the L2 root was written, the body Guid minted + D-07 logged, and the publish succeeded.
@@ -273,7 +278,7 @@ public sealed class CorrelationPropagationE2ETests
     /// default (D-06), the broker / Redis / Postgres / otel endpoints are the host-mapped dev
     /// services. The broker host+port and the OTLP endpoint are bound at MassTransit / OpenTelemetry
     /// registration time (captured by value), so they MUST be set via env vars in the ctor BEFORE the
-    /// base <see cref="WebApplicationFactory{TEntryPoint}"/> ctor runs — <c>ConfigureAppConfiguration</c>
+    /// base <c>WebApplicationFactory&lt;TEntryPoint&gt;</c> ctor runs — <c>ConfigureAppConfiguration</c>
     /// is too late (the documented DEVIATION pattern from <c>HealthEndpointsTests</c>). Every prior
     /// value is restored in <see cref="DisposeAsync"/>; the ctor restores on throw.
     /// <para>
@@ -324,25 +329,21 @@ public sealed class CorrelationPropagationE2ETests
         }
 
         /// <summary>
-        /// Phase 20 (20-03 fix): align the in-process WebApi's L2 key prefix with the orchestrator
-        /// CONTAINER's prefix ("skp:"). <see cref="Composition.Phase8WebAppFactory"/> forces
-        /// <c>Redis:KeyPrefix = "test:&lt;namespace&gt;"</c> for parallel-class L2 isolation, but the
-        /// orchestrator reads "skp:" (its appsettings). Without this override the WebApi writes the L2
-        /// root under <c>test:…:{id}</c> while the orchestrator looks under
-        /// <c>skp:{id}</c> → it logs "absent from L2 — business failure, acking" instead of the
-        /// success seam, and the proof never appears. Added AFTER <c>base.ConfigureWebHost</c> so this
-        /// in-memory source overrides the base's test-prefix entry (last source wins).
+        /// Phase 22: seeds a processor's self-registered L2 liveness entry (<c>skp:{procId}</c>) LIVE
+        /// directly into the HOST Redis (the same instance the orchestrator container reads). The Start
+        /// path's processor-liveness gate (Plan 04, runs before UpsertAsync) requires it, and the writer
+        /// no longer creates it (Plan 03 / PROC-NOCREATE-01). interval is SECONDS (now + 300*2 &gt; now).
+        /// The key is registered for net-zero teardown so the close-gate <c>redis-cli --scan</c> SHA holds.
         /// </summary>
-        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        public async Task SeedHostProcessorLiveAsync(Guid procId, CancellationToken ct)
         {
-            base.ConfigureWebHost(builder);
-            builder.ConfigureAppConfiguration((_, cfg) =>
-            {
-                cfg.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["Redis:KeyPrefix"] = "skp:",
-                });
-            });
+            await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+            var projection = new ProcessorProjection(
+                null, null, new LivenessProjection(DateTime.UtcNow, 300, "Live"));
+            await mux.GetDatabase().StringSetAsync(
+                L2ProjectionKeys.Processor(procId),
+                JsonSerializer.Serialize(projection));
+            L2KeysToCleanup.Add(L2ProjectionKeys.Processor(procId));
         }
 
         private const string HostRedis = "localhost:6380,abortConnect=false,connectTimeout=5000";

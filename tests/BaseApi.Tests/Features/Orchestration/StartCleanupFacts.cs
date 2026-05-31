@@ -68,8 +68,12 @@ public sealed class StartCleanupFacts : IClassFixture<HarnessWebAppFactory>
             => throw new InvalidOperationException("forced throw for SC4 cleanup gate");
     }
 
-    /// <summary>Seeds a Workflow via the public HTTP API (Processor → Step → Workflow).</summary>
-    private static async Task<Guid> SeedWorkflowAsync(HttpClient client, CancellationToken ct)
+    /// <summary>
+    /// Seeds a Workflow via the public HTTP API (Processor → Step → Workflow) and seeds the
+    /// processor's self-registered L2 liveness entry LIVE (PROC-LIVE-01) so the Start path reaches the
+    /// throwing writer seam (the liveness gate runs BEFORE UpsertAsync — an absent entry would 422 first).
+    /// </summary>
+    private async Task<Guid> SeedWorkflowAsync(HttpClient client, CancellationToken ct)
     {
         var procDto = new ProcessorCreateDto(
             Name: $"clf-proc-{Guid.NewGuid():N}",
@@ -82,6 +86,7 @@ public sealed class StartCleanupFacts : IClassFixture<HarnessWebAppFactory>
         var procResp = await client.PostAsJsonAsync("/api/v1/processors", procDto, ct);
         procResp.EnsureSuccessStatusCode();
         var proc = await procResp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+        await _factory.SeedLiveProcessorAsync(proc!.Id, ct);
 
         var stepDto = new StepCreateDto(
             Name: $"clf-step-{Guid.NewGuid():N}",
