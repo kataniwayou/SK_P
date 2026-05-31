@@ -124,14 +124,17 @@ Plans:
   - [x] 22-05-PLAN.md — Test-isolation rewrite + ProcessorLivenessFacts + golden/gate updates + triple-SHA close gate
 **UI hint**: no
 
-### Phase 23: Orchestrator Stop + Reload Lifecycle Over the New L2 Structure
-**Goal**: Rework the orchestrator lifecycle flows on top of the Phase 22 root-parent structure — stop-orchestration unlinks the workflow from the root array and cascade-deletes its child keys (publishing jobIds, not the already-deleted workflowIds), and the startup + start-orchestration consume flows hydrate L1 transiently from L2, excluding both the processors and the root-parent key.
+### Phase 23: Orchestrator Lifecycle — L1 Hydration, Quartz Scheduling, Entry-Step Dispatch & Stop Teardown
+**Goal**: Build the real orchestrator lifecycle over the Phase 22 root-parent L2 structure — hydrate an in-memory **L1 dictionary** of each workflow's root + step state, drive a **Quartz** job off each workflow's cron that dispatches entry-step e2e messages and refreshes liveness, and tear the job + L1 down on stop. The orchestrator no longer mutates L2: startup/start-consume only READ L2 into L1, and stop only deletes the Quartz job + clears L1 (L2 teardown is owned by the WebApi side).
 **Depends on**: Phase 22 (consumes the new root-parent + child-key L2 structure)
-**Requirements**: TBD (defined at `/gsd-spec-phase` — candidate IDs: ORCH-STOP-*, ORCH-RELOAD-*)
+**Requirements**: TBD (defined at `/gsd-spec-phase` — candidate IDs: ORCH-STARTUP-*, ORCH-SCHED-*, ORCH-FIRE-*, ORCH-CONSUME-*, ORCH-STOP-*)
 **Success Criteria** (what must be TRUE):
-  1. (mod 4) Stop-orchestration removes the workflow id from the root-parent array AND deletes all that workflow's related child keys from L2.
-  2. (mod 5) The stop operation publishes `jobId`s (not `workflowId`s), since the workflows are already deleted by the time stop runs.
-  3. (mod 6) Startup reads ALL workflow ids from the L2 root-parent and reloads each into L1; start-orchestration consume reads the specific workflow id from its own L2 workflow key (not the root-parent) and reloads into L1. Both hydrate L1 **transiently** — L1 never contains the processors or the root-parent key.
+  1. (startup hydrate + L1 shape) On startup the orchestrator reads ALL workflow ids from the L2 root-parent and loads each into an in-memory L1 dictionary: a workflow-level entry `{prefix}:{workflowId} → {entryStepIds[], cron, jobId, liveness}` plus one entry per step `{prefix}:{workflowId}:{stepId} → {entryCondition, processorId, …}`. L1 contains NEITHER processor keys NOR the root-parent index key.
+  2. (Quartz scheduling) For each hydrated workflow the orchestrator creates a Quartz job whose job key embeds the `jobId`, sets the workflow's liveness `interval` to the job's interval in seconds, then starts the job.
+  3. (job fire → entry-step dispatch) On each fire the job, in order: (a) generates a fresh `correlationId` GUID; (b) sends an e2e message to EVERY entry step's processor (entry condition is irrelevant for entry steps); (c) refreshes the workflow's liveness `timestamp` to UTC-now. Each message carries `correlationId` (fresh per fire), `workflowId`, `stepId` (the entry step), `processorId` (from that step), `executionId` (empty GUID), `entryId` (empty GUID), and `payload`.
+  4. (start consumer) The start-orchestration consumer behaves identically to startup except it hydrates ONLY the consumed workflow id into L1, then runs the schedule + fire flow (criteria 2–3).
+  5. (stop consumer) The stop-orchestration consumer consumes the `workflowId`s published by the WebApi, resolves each `jobId` from L1, deletes the corresponding Quartz job, and clears that workflow's L1 entries. Stop performs NO L2 mutation.
+  6. (new contracts) Two net-new contracts exist in `Messaging.Contracts` (neither exists today — only the `L2ProjectionKeys.Step(...)` key builder does): a **step projection** record for the `{prefix}:{workflowId}:{stepId}` value (`entryCondition`, `processorId`, … with camelCase `[property: JsonPropertyName]` targets, mirroring `WorkflowRootProjection`/`LivenessProjection`), and an **entry-step e2e message** record carrying the criterion-3 fields (`correlationId`, `workflowId`, `stepId`, `processorId`, `executionId`, `entryId`, `payload`).
 **Plans**: 0 plans (run `/gsd-plan-phase 23`)
 **UI hint**: no
 
