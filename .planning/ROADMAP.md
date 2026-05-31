@@ -146,15 +146,19 @@ Plans:
 ### Phase 24: Orchestrator Result-Consume & Step Advancement
 **Goal**: Close the processor→orchestrator round-trip. The orchestrator consumes an `ExecutionResult` from a processor on a **load-balanced shared queue** (competing consumers across replicas; 1 today), looks up the completed step's `NextStepIds` in the in-memory L1 dictionary, reads each next step's projection from L1, and — for every next step whose `EntryCondition` the incoming outcome satisfies — `Send`s a job-trigger-shaped dispatch to `queue:{nextStep.ProcessorId}` that continues the same execution. The DAG now advances from real processor results, not just cron-fired entry steps. The orchestrator still performs NO L2 mutation (L1 reads only).
 **Depends on**: Phase 23 (consumes the hydrated L1 dictionary, the `EntryStepDispatch` shape, and the `queue:{processorId}` send convention)
-**Requirements**: ORCH-RESULT-01, ORCH-RESULT-02, ORCH-ADVANCE-01, ORCH-ADVANCE-02, ORCH-RESULT-ACK-01 (5 provisional — lock at /gsd-spec-phase 24)
+**Requirements**: ORCH-RESULT-01, ORCH-RESULT-02, ORCH-ADVANCE-01, ORCH-ADVANCE-02, ORCH-RESULT-ACK-01, ORCH-GATE-01, ORCH-START-RELOAD-01, ORCH-STOP-DRAIN-01, WEBAPI-SUPPRESS-01 (9 locked via 24-SPEC.md)
+**Supersedes**: Phase 23 behavior of ORCH-CONSUME-01 (start becomes conditionless reload, no skip) and ORCH-STOP-01 (stop deletes jobs but keeps L1 for drain); Phase 23 D-12 gate-drop becomes gate-closed never-drop/redeliver.
 **Success Criteria** (provisional — what must be TRUE; locked/refined at /gsd-spec-phase 24):
   1. (result contract) A net-new `ExecutionResult` record exists in `Messaging.Contracts` implementing `IExecutionCorrelated` (`correlationId, workflowId, stepId, processorId, executionId, entryId`) plus a `StepOutcome` outcome and optional error/cancellation message. A net-new `StepOutcome` enum carries `Processing/Completed/Failed/Cancelled` with int values matching the `StepEntryCondition.Previous*` subset (0–3) — a processor cannot emit `Always`/`Never` as an outcome.
   2. (load-balanced consume) The orchestrator consumes `ExecutionResult` on a load-balanced **shared named queue** (e.g. `queue:orchestrator-result`) using competing-consumer semantics — NOT the instance-unique fan-out endpoint used for Start/Stop control.
   3. (edge traversal, L1-only) On a result the orchestrator reads the completed step `{workflowId}:{stepId}` from L1, enumerates its `NextStepIds`, and reads each next step's projection from L1. It performs NO L2/Redis read on the result path.
   4. (entry-condition match) A next step is selected iff `nextStep.EntryCondition == (int)outcome` OR `nextStep.EntryCondition == Always`; `Never` never auto-advances.
   5. (continuation dispatch) For each selected next step the orchestrator `Send`s the job-trigger-shaped message (`EntryStepDispatch` structure) to `queue:{nextStep.ProcessorId}`, copying `correlationId`, `entryId`, `executionId`, and `workflowId` from the result, and taking `stepId`, `processorId`, `payload` from the next step's L1 projection.
-  6. (ack semantics) A result for an unknown workflow/step, a terminal step with no matching next step, or a corrupt/absent L1 projection is a clean ack (no throw); only genuine infra faults propagate to the bounded retry → `_error` (mirrors ORCH-ACK-01).
-**Plans**: TBD (run /gsd-spec-phase 24 → /gsd-plan-phase 24)
+  6. (ack semantics) With the gate open, a result for an unknown `(workflow,step)`, a step with no matching next step, or a corrupt L1 projection is a clean ack (no throw); only genuine infra faults propagate to the bounded retry → `_error` (mirrors ORCH-ACK-01).
+  7. (gate-closed never-drop) While the startup gate is closed, Start/Stop/result messages are redelivered (not acked away) and reprocessed after hydration completes — a processor result arriving during hydration is never lost (supersedes Phase 23 D-12 gate-drop).
+  8. (conditionless consumers) Start unconditionally hydrates L2→L1 + reschedules (no existence skip); Stop unconditionally deletes the Quartz job but KEEPS the L1 entry so late results drain. L1 eviction of stopped workflows is deferred (needs per-workflowId "no in-flight bus messages" detection).
+  9. (WebApi first-win) The WebApi suppresses duplicate start/stop at the L2 root: start creates if absent (else skip), stop deletes if present (else skip) — the orchestrator only sees deduped transitions.
+**Plans**: TBD (SPEC locked — run /gsd-plan-phase 24)
 **UI hint**: no
 
 ### Coverage (v3.4.0)
