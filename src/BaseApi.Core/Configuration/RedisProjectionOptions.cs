@@ -2,8 +2,10 @@ namespace BaseApi.Core.Configuration;
 
 /// <summary>
 /// Phase 12 Redis projection options bound to the <c>"Redis:*"</c> config section
-/// (INFRA-COMP-04). YAGNI-pruned per CONTEXT D-15: <see cref="KeyPrefix"/> and
-/// <see cref="Serialization"/>.<see cref="SerializationOptions.JsonOptions"/> only.
+/// (INFRA-COMP-04). YAGNI-pruned per CONTEXT D-15. Phase 22 (L2PREFIX-01) removed the
+/// configurable key-prefix property — the L2 key prefix is now a compile-time const on
+/// <c>L2ProjectionKeys</c>, so these options bind only <c>ProcessorKeyTtlDays</c> and
+/// <see cref="Serialization"/>.<see cref="SerializationOptions.JsonOptions"/>.
 /// No <c>Database</c> int, no <c>CommandFlags</c>, no <c>ConnectionString</c> property
 /// (D-16: connection-string source-of-truth is <c>IConfiguration.GetConnectionString("Redis")</c>).
 /// Database / Cluster / replica knobs can be added in v3.4 when a real scale driver appears.
@@ -11,13 +13,6 @@ namespace BaseApi.Core.Configuration;
 /// </summary>
 public sealed class RedisProjectionOptions
 {
-    /// <summary>
-    /// Prefix prepended to all L2 keys (INFRA-REDIS-05 — default <c>"skp:"</c>).
-    /// Production = <c>"skp:"</c>; tests override per-class to <c>"test:cls-{Guid:N}:"</c>
-    /// via <c>Phase8WebAppFactory.AddInMemoryCollection</c> (D-08 / D-12).
-    /// </summary>
-    public string KeyPrefix { get; set; } = "skp:";
-
     /// <summary>Processor-key TTL in days (D-08, default 100). Refresh-on-write: every Start
     /// re-SETs processor keys with this expiry. &lt;= 0 ⇒ no expiry (disable from config).</summary>
     public int ProcessorKeyTtlDays { get; set; } = 100;
