@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: Completed 22-01-PLAN.md
-last_updated: "2026-05-31T08:49:21.173Z"
+stopped_at: Completed 22-02-PLAN.md
+last_updated: "2026-05-31T08:53:50.625Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 20
-  completed_plans: 16
-  percent: 80
+  completed_plans: 17
+  percent: 85
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 22 (l2-root-parent-restructure-processor-self-registration) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-05-31
 
@@ -50,7 +50,7 @@ Last activity: 2026-05-31
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 80%
+Progress: [█████████░] 85%
 
 ### Milestone Phases (v3.4.0)
 
@@ -191,6 +191,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 19 P03 | 23min | 3 tasks | 9 files |
 | Phase 19 P04 | ~25min (incl. operator checkpoint + continuation fix) | 3 tasks (2 auto + 1 blocking human-verify) | 2 files (compose.yaml + src/Orchestrator/Dockerfile) |
 | Phase 22 P01 | 2min | 3 tasks | 4 files |
+| Phase 22 P02 | 2min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -466,6 +467,7 @@ Recent decisions affecting current work:
 - Plan 19-04 deviation (fix e4fcf67, Rule 3 blocking): aspnet:8.0-bookworm-slim ships NEITHER wget NOR curl, so the compose `["CMD","wget","--spider"]` /health/ready check could not exec (sk-orchestrator marked unhealthy though app+bus ran fine). Fixed by apt-installing wget in the Orchestrator runtime stage BEFORE USER app. Re-verified: sk-rabbitmq + sk-orchestrator both healthy
 - Plan 19-04 FINDING (out-of-scope tech debt): the root-Dockerfile baseapi-service healthcheck (compose.yaml ~line 230) carries the identical wget-missing latent defect — will mark baseapi-service unhealthy the same way whenever health-gated; install wget in the root Dockerfile runtime stage in a later phase (NOT fixed here — Phase 19 does not own the root Dockerfile)
 - Plan 22-01: L2 key prefix is now a compile-time const L2ProjectionKeys.Prefix = "skp:" (D-01) — dropped string prefix param from all builders; added ParentIndex() bare-prefix SET-key builder (D-02); both forwarders updated in lockstep (writer gains ParentIndex(), reader keeps Root(Guid) only, D-04).
+- Plan 22-02: OrchestratorRedisOptions deleted (D-07); reader-side L2 keys now built via parameterless OrchestratorL2Keys.Root(workflowId); Redis:KeyPrefix config + DI registration removed; Rule-3 fix to StartStopConsumerAckTests harness (dropped the OrchestratorRedisOptions registrations) — solution stays non-building mid-Wave-2 on 7 writer-side CS1501s that Plan 03 owns.
 
 ### Roadmap Milestone Log
 
@@ -561,8 +563,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T08:49:21.162Z
-Stopped at: Completed 22-01-PLAN.md
+Last session: 2026-05-31T08:53:50.616Z
+Stopped at: Completed 22-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
