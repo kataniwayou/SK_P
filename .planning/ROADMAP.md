@@ -104,7 +104,8 @@ Plans:
 **Gap Closure**: Closes cross-phase WARNING-1 from `.planning/milestones/v3.4.0-MILESTONE-AUDIT.md` (no blocking gaps existed; this is opt-in hardening). HARDEN-01 (WR-01) and HARDEN-02 (WR-02) were found ALREADY SATISFIED in Phase 18 (commits `d4c0af5` and `4e9e21a` respectively) — the audit carried them forward from Phase 18's VERIFICATION anti-pattern table, which flagged them as open before the same-phase follow-up fixes landed. They are NOT part of Phase 21 work.
 **Success Criteria** (what must be TRUE):
   1. (HARDEN-03 / WARNING-1) The L2 root key shape is a single source of truth: the `Root(prefix, workflowId)` computation is hoisted into `Messaging.Contracts` (or otherwise shared) and consumed by BOTH `RedisProjectionKeys` (writer) and `OrchestratorL2Keys` (reader), so a future GUID-format/suffix change cannot silently desynchronize writer and reader. The existing full suite (incl. `CorrelationPropagationE2ETests`) stays GREEN and the triple-SHA close gate still exits 0.
-**Plans**: TBD (run `/gsd-plan-phase 21`)
+**Plans**: 1 plan
+  - [ ] 21-01-PLAN.md — Hoist L2 key builders into shared L2ProjectionKeys, convert writer+reader to forwarders, fix WARNING-2 doc-nit, author triple-SHA close gate
 **UI hint**: no
 
 ### Coverage (v3.4.0)
