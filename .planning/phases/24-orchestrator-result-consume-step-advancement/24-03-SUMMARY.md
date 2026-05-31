@@ -22,7 +22,7 @@ key-files:
     - tests/BaseApi.Tests/Orchestrator/FireDispatchTests.cs
   decisions: []
 metrics:
-  duration: ~70min
+  duration: ~75min
   completed: 2026-06-01
 requirements: [ORCH-ADVANCE-01, ORCH-ADVANCE-02]
 ---
@@ -37,7 +37,7 @@ One-liner: Extracted the EntryStepDispatch build+Send into a single-owner IStepD
 - **WorkflowFireJob refactor**: ctor now injects IStepDispatcher dispatcher (replacing ISendEndpointProvider sendProvider); the inline new EntryStepDispatch(...) + GetSendEndpoint + Send block is replaced by one dispatcher.DispatchAsync(..., Guid.Empty, Guid.Empty, ct) call (initial fire). The liveness-refresh + self-reschedule block is untouched. using MassTransit; stays (NewId at line 53); using Messaging.Contracts; stays (LivenessProjection).
 - **StepAdvancement.SelectNext** (D-02 / SPEC req 3): pure match+traversal -- private const int Always = 4; predicate next.EntryCondition == (int)outcome || next.EntryCondition == Always; Never(5) falls out of the predicate (never selected); a dangling NextStepIds id is skipped via TryGetValue (no throw). No Redis/store reference -- step map passed as argument.
 - **GateClosedException** (D-06): sealed Exception subclass for the gate-closed throw, mirroring WorkflowRootNotFoundException. CRITICAL: NOT added to any r.Ignore<>() list -- it must flow to redelivery.
-- **StepAdvancementTests** (pure, no harness): table-driven Theory matrix over all four outcomes -- exact match+Always (x4), Never-never (x4), non-matching-excluded (x4), dangling-skip, no-I/O signature (13 cases).
+- **StepAdvancementTests** (pure, no harness): table-driven Theory matrix -- SelectsExactlyMatchingConditionPlusAlways (x4), NeverConditionStep_IsNeverSelected_ForAnyOutcome (x4), NonMatchingOutcomeConditionSteps_AreExcluded (x4), DanglingNextStepId_IsSkipped_NoThrow, HelperPerformsNoIo_TakesStepMapAsArgument (14 facts total). The map is keyed by IdFor(condition) (11111111-...-1111111111{cond:D2}) and assertions are by stepId.
 
 ## How It Works
 
@@ -47,14 +47,14 @@ WorkflowFireJob (cron initial fire) and the future ResultConsumer (continuation)
 
 - dotnet build src/Orchestrator/Orchestrator.csproj -c Debug -- Build succeeded, 0 Warning(s) / 0 Error(s).
 - dotnet build tests/BaseApi.Tests/BaseApi.Tests.csproj -c Debug -- Build succeeded, 0 Warning(s) / 0 Error(s) (after the FireDispatchTests reconcile, Rule 1 below).
-- StepAdvancementTests isolated (dotnet run -- --filter-class "BaseApi.Tests.Orchestrator.StepAdvancementTests") -- Passed: 13, Failed: 0, Total: 13.
-- Full Orchestrator namespace slice (dotnet run -- --filter-class "BaseApi.Tests.Orchestrator.*") -- Passed: 53, Failed: 0, Total: 53 (no regression after the WorkflowFireJob refactor).
+- StepAdvancementTests isolated (dotnet run -- --filter-class "BaseApi.Tests.Orchestrator.StepAdvancementTests") -- Passed: 14, Failed: 0, Total: 14 (stable across repeated runs).
+- Full Orchestrator namespace slice (dotnet run -- --filter-class "BaseApi.Tests.Orchestrator.*") -- Passed: 54, Failed: 0, Total: 54 (no regression after the WorkflowFireJob refactor; 14 StepAdvancement + 40 fire/lifecycle/contract tests).
 
 Note on MTP filter syntax: the test project uses Microsoft.Testing.Platform; the VSTest-style `dotnet test --filter` is IGNORED (MTP0001 warning, runs the whole suite). The correct invocation is `dotnet run --project ... -- --filter-class <FQN>` (per project memory note "MTP filter is -- --filter-class").
 
 ## TDD Gate Compliance
 
-Plan task 2 was tdd="true". Gate sequence held: RED commit 83b75d7 (test(24-03): ...) -- test failed to compile because StepAdvancement did not exist (a genuine RED, not a false-pass); GREEN commit ddd73b1 (feat(24-03): implement pure StepAdvancement...) -- production match logic landed and is correct. Two follow-up test commits hardened the test assertions (see Deviations -- the production SelectNext was correct throughout; the defects were in the test, not the helper). Final: StepAdvancement 13/13. No REFACTOR of production code needed.
+Plan task 2 was tdd="true". Gate sequence held: RED commit 83b75d7 (test(24-03): ...) -- test failed to compile because StepAdvancement did not exist (a genuine RED, not a false-pass); GREEN commit ddd73b1 (feat(24-03): implement pure StepAdvancement...) -- the production match logic landed and is correct. A follow-up test commit 60f4d3b hardened the test fixture (see Deviation 2). The production SelectNext was correct throughout. Final: StepAdvancement 14/14. No REFACTOR of production code needed.
 
 ## Acceptance Criteria
 
@@ -70,7 +70,7 @@ Task 2:
 - StepAdvancement does NOT contain StepEntryCondition / IDatabase / IConnectionMultiplexer / IWorkflowL1Store -- yes (pure).
 - Tests assert Never(5) never selected for any outcome -- yes (NeverConditionStep_IsNeverSelected_ForAnyOutcome Theory x4).
 - Tests do NOT contain AddMassTransitTestHarness -- yes (pure test).
-- StepAdvancement tests exit 0 -- yes (13/13).
+- StepAdvancement tests exit 0 -- yes (14/14).
 
 ## Deviations from Plan
 
@@ -84,19 +84,19 @@ Task 2:
 - Commit: b494318
 - Result: test assembly builds 0/0.
 
-**2. [Rule 1 - Bug] StepAdvancementTests assertion / deterministic-id defect**
-- Found during: Task 2 verification (an isolated StepAdvancementTests run reported 1 genuine failure: NeverConditionStep_IsNeverSelected_ForAnyOutcome(Processing) saw a selected step with EntryCondition 5).
-- Issue: the original test built its step map with an IdFor pattern (00000000-...-0000000000{cond:D2}) whose cond=0 key collapsed to Guid.Empty, and asserted via an EntryCondition-value projection path that intermittently mis-attributed a selected step's condition -- reporting Never(5) as selected for Processing. A throwaway by-stepId diagnostic proved the production SelectNext was ALWAYS correct (Processing selects exactly Cond0 + Always); the defect was purely in the test.
-- Fix (two commits): 8af9ab8 first rewrote the assertions to key by stepId; 5cb0832 then switched IdFor to a distinct, non-empty pattern (11111111-...-1111111111{cond:D2}) and removed the residual ambiguity. 13 cases, all GREEN.
+**2. [Rule 1 - Bug] StepAdvancementTests deterministic-id false positive**
+- Found during: Task 2 verification (an isolated StepAdvancementTests run reported NeverIsNeverSelected_ForAnyOutcome(Processing) seeing a step with EntryCondition 5).
+- Issue: the original test built its step map with an IdFor pattern whose cond=0 key collapsed toward Guid.Empty, and the by-condition projection assertions intermittently mis-attributed a selected step -- reporting Never(5) as selected for Processing. A throwaway by-stepId diagnostic confirmed the production SelectNext was ALWAYS correct (Processing selects exactly the EntryCondition-0 step + Always); the defect was purely in the test fixture's id pattern + assertion shape.
+- Fix: rewrote the fixture to key the map by IdFor(condition) = 11111111-...-1111111111{cond:D2} (distinct, non-empty) and assert selection BY stepId (no EntryCondition projection). 14 facts, all GREEN.
 - Files modified: tests/BaseApi.Tests/Orchestrator/StepAdvancementTests.cs
-- Commits: 8af9ab8, 5cb0832
-- Result: StepAdvancementTests 13/13; Orchestrator slice 53/53.
+- Commit: 60f4d3b
+- Result: StepAdvancementTests 14/14; Orchestrator slice 54/54.
+
+The KNOWN GOTCHA from 24-02 (BOM / off test paths) did not apply to the new files: StepAdvancementTests.cs is plain ASCII at the verified path tests/BaseApi.Tests/Orchestrator/ with namespace BaseApi.Tests.Orchestrator.
 
 ## Out of Scope (pre-existing, NOT fixed)
 
-A full-suite run (no namespace filter) reports 4 failures (Total 321): RabbitMQ "Connection Failed: rabbitmq://rabbitmq/" + DbUpdateConcurrencyException + FluentValidation integration flakies. These are entirely OUTSIDE the Orchestrator namespace (the Orchestrator slice is 53/53 clean) and match the documented "false-alarm 4-failures" from Plan 24-02 (commit 8102b59: "clean re-run ... 0 fail"). Per the SCOPE BOUNDARY rule they are not in this plan's change surface and were not touched.
-
-The KNOWN GOTCHA from 24-02 (BOM / off test paths) did not apply to the new files: StepAdvancementTests.cs is plain ASCII at the verified path tests/BaseApi.Tests/Orchestrator/ with namespace BaseApi.Tests.Orchestrator.
+A full-suite run (no namespace filter) reports 4 failures: RabbitMQ "Connection Failed: rabbitmq://rabbitmq/" + DbUpdateConcurrencyException + FluentValidation integration flakies. These are entirely OUTSIDE the Orchestrator namespace (the Orchestrator slice is 54/54 clean) and match the documented "false-alarm 4-failures" from Plan 24-02 (commit 8102b59: "clean re-run ... 0 fail"). Per the SCOPE BOUNDARY rule they are not in this plan's change surface and were not touched.
 
 ## Threat Model Outcome
 
@@ -114,11 +114,10 @@ The KNOWN GOTCHA from 24-02 (BOM / off test paths) did not apply to the new file
 - 83b75d7 test(24-03): add failing table-driven test for StepAdvancement.SelectNext (Task 2 RED)
 - ddd73b1 feat(24-03): implement pure StepAdvancement.SelectNext match + traversal (Task 2 GREEN)
 - b494318 fix(24-03): reconcile FireDispatchTests to IStepDispatcher ctor change (Rule 1)
-- 8af9ab8 test(24-03): rewrite StepAdvancementTests by-stepId (Rule 1 assertion fix)
-- 5cb0832 test(24-03): fix StepAdvancementTests IdFor Guid pattern (Rule 1, Never false-positive)
+- 60f4d3b test(24-03): fix StepAdvancementTests IdFor Guid pattern -- Never false-positive (Rule 1)
 
-(Plus metadata-only docs commits for STATE/ROADMAP/SUMMARY.)
+(Plus metadata-only docs commits for STATE / ROADMAP / SUMMARY.)
 
 ## Self-Check: PASSED
 
-All 6 key files present on disk; all 6 task/fix commits (24f6668, 83b75d7, ddd73b1, b494318, 8af9ab8, 5cb0832) present in git log.
+All 6 key files present on disk; all 5 task/fix commits (24f6668, 83b75d7, ddd73b1, b494318, 60f4d3b) present in git log.
