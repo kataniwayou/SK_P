@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using StackExchange.Redis;
 using Xunit;
 
@@ -5,24 +6,29 @@ namespace BaseApi.Tests.Composition;
 
 /// <summary>
 /// Per-test-class Redis fixture mirroring <see cref="BaseApi.Tests.Persistence.PostgresFixture"/>.
-/// Connects to the host-side compose Redis at <c>localhost:6380</c> (D-11) and isolates each
-/// test class via a unique <see cref="KeyPrefix"/> = <c>"test:cls-{Guid:N}:"</c>
-/// (D-12 / TEST-REDIS-01).
+/// Connects to the host-side compose Redis at <c>localhost:6380</c> (D-11).
 ///
 /// <para>
-/// <b>D-09 lifetime:</b> One <see cref="IConnectionMultiplexer"/> per fixture instance. With ~50
-/// test classes that consume <see cref="Phase8WebAppFactory"/>, peak concurrent multiplexer
-/// count is well within Redis maxclients default budget (10000). Per-class disposal guarantees
-/// TCP-connection accounting under xUnit v3 parallel class execution.
+/// <b>Phase 22 (D-20..D-23) shared-keyspace model:</b> the L2 key prefix is now the compile-time
+/// const <c>L2ProjectionKeys.Prefix == "skp:"</c> (no configurable per-class key-prefix setting),
+/// so tests run directly on the PROD keyspace (the same keyspace the close-gate <c>redis-cli --scan</c>
+/// hashes). The old per-class unique prefix + <c>SCAN MATCH</c> cleanup is GONE:
+/// a <c>skp:*</c> SCAN would now catch sibling test classes' keys (cross-test contamination, T-22-14)
+/// and could mask or delete keys another class is mid-flight on. Instead this fixture tracks the
+/// SPECIFIC keys each test created (<see cref="Track(RedisKey)"/> / <see cref="TrackedKeys"/>) and, on
+/// <see cref="DisposeAsync"/>, deletes ONLY those known keys — never a wildcard SCAN.
 /// </para>
 ///
 /// <para>
-/// <b>D-10 cleanup contract:</b> <see cref="DisposeAsync"/> SCANs MATCH <c>"{KeyPrefix}*"</c>,
-/// issues <c>KeyDeleteAsync(keys)</c>, re-SCANs with the same prefix, and asserts count == 0.
-/// Throws on violation (fail-loud — TEST-REDIS-03 verbatim). <c>FLUSHDB</c> is FORBIDDEN
-/// (would destroy keys from parallel-running test classes; hides genuine leaks).
-/// Cursor-based SCAN preserves the L2-PROJECT-07 forbidden-<see cref="IServer.Keys"/>/<c>KEYS</c>
-/// invariant from day one (production code uses SCAN-only — this fixture sets the reference pattern).
+/// <b>Parent-index discipline:</b> the shared <c>skp:</c> parent-index SET is the only contention point
+/// on the now-shared keyspace. Tests that SADD a workflow id into it MUST SREM their own id (and run in
+/// the single non-parallel <c>ParentIndex</c> collection) so the SET is empty between tests — the
+/// triple-SHA close gate (<c>redis-cli --scan</c> BEFORE==AFTER) is the fail-loud proof (T-22-15).
+/// </para>
+///
+/// <para>
+/// <b>D-09 lifetime:</b> One <see cref="IConnectionMultiplexer"/> per fixture instance. Per-class
+/// disposal guarantees TCP-connection accounting under xUnit v3 parallel class execution.
 /// </para>
 /// </summary>
 public sealed class RedisFixture : IAsyncLifetime
@@ -33,13 +39,19 @@ public sealed class RedisFixture : IAsyncLifetime
     public string ConnectionString { get; } =
         "localhost:6380,abortConnect=false,connectTimeout=5000";
 
-    // D-12 / TEST-REDIS-01 — per-instance Guid prefix. Production prefix "skp:"
-    // (INFRA-REDIS-05) and test prefix family "test:cls-*" share no overlap, so
-    // a residual test-key leak surfaces immediately in the redis-cli --scan
-    // phase-close gate (TEST-REDIS-04).
-    public string KeyPrefix { get; } = $"test:cls-{Guid.NewGuid():N}:";
+    /// <summary>
+    /// Known keys this fixture's tests created. <see cref="DisposeAsync"/> deletes exactly these
+    /// (no <c>skp:*</c> wildcard SCAN — D-23). Thread-safe for parallel-fact registration.
+    /// </summary>
+    public ConcurrentBag<RedisKey> TrackedKeys { get; } = new();
 
     public IConnectionMultiplexer Multiplexer { get; private set; } = default!;
+
+    /// <summary>
+    /// Registers a key for known-key cleanup on dispose. Call this for every L2 key a test seeds
+    /// directly (root / step / processor) so the shared keyspace returns to its BEFORE state.
+    /// </summary>
+    public void Track(RedisKey key) => TrackedKeys.Add(key);
 
     public async ValueTask InitializeAsync()
     {
@@ -53,42 +65,18 @@ public sealed class RedisFixture : IAsyncLifetime
     {
         try
         {
-            var db = Multiplexer.GetDatabase();
-            var server = Multiplexer.GetServer(Multiplexer.GetEndPoints()[0]);
-
-            // SCAN MATCH "{KeyPrefix}*" — cursor-based, non-blocking.
-            // server.KeysAsync uses SCAN under the hood (NOT KEYS — L2-PROJECT-07).
-            var toDelete = new List<RedisKey>();
-            await foreach (var key in server.KeysAsync(pattern: $"{KeyPrefix}*", pageSize: 250))
+            // D-23 known-key cleanup: delete ONLY the keys this class registered. NO skp:* SCAN —
+            // a wildcard SCAN on the now-shared prefix would catch sibling classes' keys (T-22-14).
+            var keys = TrackedKeys.Distinct().ToArray();
+            if (keys.Length > 0)
             {
-                toDelete.Add(key);
-            }
-
-            if (toDelete.Count > 0)
-            {
-                await db.KeyDeleteAsync(toDelete.ToArray());
-            }
-
-            // Re-SCAN and assert count == 0 — TEST-REDIS-03 fail-loud discipline.
-            // pageSize: 1000 here (vs 250 above) per RESEARCH Pitfall 7 defensive — larger page
-            // reduces page-boundary edge-case risk on the verification SCAN.
-            var residualCount = 0;
-            await foreach (var _ in server.KeysAsync(pattern: $"{KeyPrefix}*", pageSize: 1000))
-            {
-                residualCount++;
-            }
-
-            if (residualCount > 0)
-            {
-                throw new InvalidOperationException(
-                    $"RedisFixture cleanup violation: {residualCount} residual keys matching " +
-                    $"pattern '{KeyPrefix}*' after SCAN+DEL. This indicates a leaked-key bug " +
-                    $"in a Phase 12+ test. FLUSHDB is FORBIDDEN — investigate the offending test.");
+                var db = Multiplexer.GetDatabase();
+                await db.KeyDeleteAsync(keys);
             }
         }
         finally
         {
-            // Always dispose the multiplexer even if the SCAN/DEL assertion threw.
+            // Always dispose the multiplexer even if the delete threw.
             await Multiplexer.DisposeAsync();
         }
     }

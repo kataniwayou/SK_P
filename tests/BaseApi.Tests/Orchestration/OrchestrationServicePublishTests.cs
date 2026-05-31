@@ -97,19 +97,26 @@ public sealed class OrchestrationServicePublishTests
     /// <summary>Builds the REAL OrchestrationService with stubbed seams against the supplied publish endpoint.</summary>
     private static OrchestrationService BuildService(
         BaseDbContext db, IPublishEndpoint publishEndpoint, IConnectionMultiplexer? mux = null)
-        => new OrchestrationService(
+    {
+        // Phase 22 (Plan 04) added the async ProcessorLivenessValidator after the sync trio. The
+        // EmptySnapshotLoader yields ZERO processors, so the validator's per-processor GET loop never
+        // runs — the same mux + TimeProvider.System satisfy its ctor without affecting the publish path.
+        var liveMux = mux ?? AllKeysExist();
+        return new OrchestrationService(
             db,
             PassingValidator(),
             EmptySnapshotLoader(),
             new CycleDetector(),
             new SchemaEdgeValidator(),
             new PayloadConfigSchemaValidator(),
+            new ProcessorLivenessValidator(liveMux, TimeProvider.System),
             Substitute.For<IRedisProjectionWriter>(),   // no-op upsert
             Substitute.For<IRedisL2Cleanup>(),          // no-op cleanup
             NoHttpContext(),
-            mux ?? AllKeysExist(),
+            liveMux,
             publishEndpoint,
             NullLogger<OrchestrationService>.Instance);
+    }
 
     // ----- MSG-WEBAPI-02: Start publishes StartOrchestration with body CorrelationId -------------
 

@@ -1,5 +1,6 @@
 using BaseApi.Tests.Middleware;
 using BaseApi.Tests.Persistence;
+using Messaging.Contracts.Projections;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
@@ -113,8 +114,17 @@ public class Phase8WebAppFactory : WebAppFactory, IAsyncLifetime
         ?? _redisFixture?.ConnectionString
         ?? throw new InvalidOperationException("InitializeAsync has not run yet.");
 
-    public string RedisKeyPrefix => _redisFixture?.KeyPrefix
-        ?? "test:cls-deadredis:";   // benign placeholder for skipRedisFixture path
+    // Phase 22 (D-23): the L2 prefix is now the compile-time const L2ProjectionKeys.Prefix ("skp:") —
+    // there is no per-class prefix injection into configuration. This property remains so existing call sites
+    // (writer/cleanup/gate facts read _factory.RedisKeyPrefix) compile unchanged; it now returns the
+    // shared prod prefix for both the live-Redis and skipRedisFixture paths.
+    public string RedisKeyPrefix => L2ProjectionKeys.Prefix;
+
+    /// <summary>
+    /// Registers an L2 key for known-key cleanup on the encapsulated <see cref="RedisFixture"/>'s
+    /// dispose (D-23 — no <c>skp:*</c> SCAN). No-op on the skipRedisFixture path.
+    /// </summary>
+    public void TrackRedisKey(RedisKey key) => _redisFixture?.Track(key);
 
     /// <summary>
     /// Phase 16 access surface (RESEARCH Open Q4) — TEST-REDIS-06..09 facts need
@@ -190,7 +200,6 @@ public class Phase8WebAppFactory : WebAppFactory, IAsyncLifetime
                 // (D-17 lazy), which is AFTER ConfigureWebHost runs. No value-capture
                 // race (RESEARCH Assumption A4 HIGH confidence).
                 ["ConnectionStrings:Redis"] = RedisConnectionString,
-                ["Redis:KeyPrefix"] = RedisKeyPrefix,
             });
         });
 
