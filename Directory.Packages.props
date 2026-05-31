@@ -90,6 +90,12 @@
     <PackageVersion Include="JsonSchema.Net" Version="9.2.1" />
     <PackageVersion Include="Cronos" Version="0.13.0" />
 
+    <!-- v3.4.0 / Phase 23 — Quartz scheduler (ORCH-SCHED-01). Both pinned for auditability
+         even though Quartz.Extensions.Hosting transitively brings Quartz (repo CPM convention).
+         Exact version 3.18.1 (no floating range) verified against nuget.org (T-23-03 mitigation). -->
+    <PackageVersion Include="Quartz" Version="3.18.1" />
+    <PackageVersion Include="Quartz.Extensions.Hosting" Version="3.18.1" />
+
     <!-- Health checks -->
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <!-- Phase 5 (CONTEXT.md D-07): UIResponseWriter.WriteHealthCheckUIResponse JSON body writer -->
