@@ -16,8 +16,7 @@ namespace Orchestrator.Consumers;
 /// </summary>
 public sealed class StopOrchestrationConsumer(
     IConnectionMultiplexer redis,
-    ILogger<StopOrchestrationConsumer> logger,
-    OrchestratorRedisOptions options) : IConsumer<StopOrchestration>
+    ILogger<StopOrchestrationConsumer> logger) : IConsumer<StopOrchestration>
 {
     public async Task Consume(ConsumeContext<StopOrchestration> context)
     {
@@ -26,7 +25,7 @@ public sealed class StopOrchestrationConsumer(
         var db = redis.GetDatabase();   // infra fault here THROWS → retry → _error (D-08 / MSG-ACK-02)
         foreach (var workflowId in context.Message.WorkflowIds)
         {
-            var raw = await db.StringGetAsync(OrchestratorL2Keys.Root(options.KeyPrefix, workflowId));
+            var raw = await db.StringGetAsync(OrchestratorL2Keys.Root(workflowId));
             if (raw.IsNullOrEmpty)
             {
                 // BUSINESS failure → log + continue (ack), NEVER throw (D-07 / MSG-ACK-01).
