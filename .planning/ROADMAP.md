@@ -127,7 +127,7 @@ Plans:
 ### Phase 23: Orchestrator Lifecycle — L1 Hydration, Quartz Scheduling, Entry-Step Dispatch & Stop Teardown
 **Goal**: Build the real orchestrator lifecycle over the Phase 22 root-parent L2 structure — hydrate an in-memory **L1 dictionary** of each workflow's root + step state, drive a **Quartz** job off each workflow's cron that dispatches entry-step e2e messages and refreshes liveness, and tear the job + L1 down on stop. The orchestrator no longer mutates L2: startup/start-consume only READ L2 into L1, and stop only deletes the Quartz job + clears L1 (L2 teardown is owned by the WebApi side).
 **Depends on**: Phase 22 (consumes the new root-parent + child-key L2 structure)
-**Requirements**: TBD (defined at `/gsd-spec-phase` — candidate IDs: ORCH-STARTUP-*, ORCH-SCHED-*, ORCH-FIRE-*, ORCH-CONSUME-*, ORCH-STOP-*)
+**Requirements**: ORCH-CONTRACT-01, ORCH-CONTRACT-02, ORCH-STARTUP-01, ORCH-SCHED-01, ORCH-FIRE-01, ORCH-CONSUME-01, ORCH-STOP-01, ORCH-SCALE-01, ORCH-ACK-01 (9 locked at /gsd-spec-phase)
 **Success Criteria** (what must be TRUE):
   1. (startup hydrate + L1 shape) On startup the orchestrator reads ALL workflow ids from the L2 root-parent and loads each into an in-memory L1 dictionary: a workflow-level entry `{prefix}:{workflowId} → {entryStepIds[], cron, jobId, liveness}` plus one entry per step `{prefix}:{workflowId}:{stepId} → {entryCondition, processorId, …}`. L1 contains NEITHER processor keys NOR the root-parent index key.
   2. (Quartz scheduling) For each hydrated workflow the orchestrator creates a Quartz job whose job key embeds the `jobId`, sets the workflow's liveness `interval` to the job's interval in seconds, then starts the job.
@@ -135,7 +135,12 @@ Plans:
   4. (start consumer) The start-orchestration consumer behaves identically to startup except it hydrates ONLY the consumed workflow id into L1, then runs the schedule + fire flow (criteria 2–3).
   5. (stop consumer) The stop-orchestration consumer consumes the `workflowId`s published by the WebApi, resolves each `jobId` from L1, deletes the corresponding Quartz job, and clears that workflow's L1 entries. Stop performs NO L2 mutation.
   6. (new contracts) Two net-new contracts exist in `Messaging.Contracts` (neither exists today — only the `L2ProjectionKeys.Step(...)` key builder does): a **step projection** record for the `{prefix}:{workflowId}:{stepId}` value (`entryCondition`, `processorId`, … with camelCase `[property: JsonPropertyName]` targets, mirroring `WorkflowRootProjection`/`LivenessProjection`), and an **entry-step e2e message** record carrying the criterion-3 fields (`correlationId`, `workflowId`, `stepId`, `processorId`, `executionId`, `entryId`, `payload`).
-**Plans**: 0 plans (run `/gsd-plan-phase 23`)
+**Plans**: 5 plans
+  - [ ] 23-01-PLAN.md — Contracts: reader StepProjection + IExecutionCorrelated + EntryStepDispatch (wave 1)
+  - [ ] 23-02-PLAN.md — Quartz 3.18.1 CPM pin + OrchestratorL2Keys ParentIndex()/Step() forwarders (wave 1)
+  - [ ] 23-03-PLAN.md — L1 store + per-wf stripe, CronInterval, WorkflowScheduler, WorkflowFireJob (wave 2)
+  - [ ] 23-04-PLAN.md — Hydration BackgroundService + gated Start/Stop consumers + Program.cs wiring (wave 3)
+  - [ ] 23-05-PLAN.md — Harness/review tests: fire-dispatch, start/stop lifecycle, ack semantics, no-global-lock + full-suite gate (wave 4)
 **UI hint**: no
 
 ### Coverage (v3.4.0)
