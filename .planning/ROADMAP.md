@@ -158,7 +158,12 @@ Plans:
   7. (gate-closed never-drop) While the startup gate is closed, Start/Stop/result messages are redelivered (not acked away) and reprocessed after hydration completes — a processor result arriving during hydration is never lost (supersedes Phase 23 D-12 gate-drop).
   8. (conditionless consumers) Start unconditionally hydrates L2→L1 + reschedules (no existence skip); Stop unconditionally deletes the Quartz job but KEEPS the L1 entry so late results drain. L1 eviction of stopped workflows is deferred (needs per-workflowId "no in-flight bus messages" detection).
   9. (WebApi first-win) The WebApi suppresses duplicate start/stop at the L2 root: start creates if absent (else skip), stop deletes if present (else skip) — the orchestrator only sees deduped transitions.
-**Plans**: TBD (SPEC locked — run /gsd-plan-phase 24)
+**Plans**: 5 plans
+  - [ ] 24-01-PLAN.md — Result contracts (StepOutcome/ExecutionResult/OrchestratorQueues) + BaseConsole scheduler seam [ORCH-RESULT-01]
+  - [ ] 24-02-PLAN.md — WebApi first-win L2-root create/delete + reconcile facts [WEBAPI-SUPPRESS-01]
+  - [ ] 24-03-PLAN.md — IStepDispatcher + StepAdvancement helpers + GateClosedException + WorkflowFireJob refactor [ORCH-ADVANCE-01, ORCH-ADVANCE-02]
+  - [ ] 24-04-PLAN.md — ResultConsumer + shared competing endpoint + scheduler/redelivery wiring [ORCH-RESULT-02, ORCH-ADVANCE-01/02, ORCH-RESULT-ACK-01, ORCH-GATE-01]
+  - [ ] 24-05-PLAN.md — Conditionless Start/Stop (keep-L1 drain) + gate-closed-throw redelivery [ORCH-START-RELOAD-01, ORCH-STOP-DRAIN-01, ORCH-GATE-01]
 **UI hint**: no
 
 ### Coverage (v3.4.0)
@@ -233,7 +238,7 @@ Plans:
 | 21    | v3.4.0    | 1/1 | Complete    | 2026-05-31 |
 | 22    | v3.4.0    | 5/5 | Complete    | 2026-05-31 |
 | 23    | v3.4.0    | 5/5 | Complete    | 2026-05-31 |
-| 24    | v3.4.0    | 0/? | Planned     | —          |
+| 24    | v3.4.0    | 0/5 | Planned     | —          |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 (BaseConsole + Orchestrator Messaging) roadmap created 2026-05-30 — 4 phases (17-20), 37 requirements, dependency-ordered per HIGH-confidence research (`.planning/research/SUMMARY.md`). Next: `/gsd-plan-phase 17`.*
