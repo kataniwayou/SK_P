@@ -10,9 +10,11 @@ namespace BaseApi.Service.Features.Orchestration.Projection;
 /// </summary>
 internal static class RedisProjectionKeys
 {
-    public static string Root(string prefix, Guid workflowId) => L2ProjectionKeys.Root(prefix, workflowId);
+    public static string ParentIndex() => L2ProjectionKeys.ParentIndex();
 
-    public static string Step(string prefix, Guid workflowId, Guid stepId) => L2ProjectionKeys.Step(prefix, workflowId, stepId);
+    public static string Root(Guid workflowId) => L2ProjectionKeys.Root(workflowId);
 
-    public static string Processor(string prefix, Guid processorId) => L2ProjectionKeys.Processor(prefix, processorId);
+    public static string Step(Guid workflowId, Guid stepId) => L2ProjectionKeys.Step(workflowId, stepId);
+
+    public static string Processor(Guid processorId) => L2ProjectionKeys.Processor(processorId);
 }

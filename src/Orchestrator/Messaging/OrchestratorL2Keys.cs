@@ -11,5 +11,5 @@ namespace Orchestrator.Messaging;
 /// </summary>
 internal static class OrchestratorL2Keys
 {
-    public static string Root(string prefix, Guid workflowId) => L2ProjectionKeys.Root(prefix, workflowId);
+    public static string Root(Guid workflowId) => L2ProjectionKeys.Root(workflowId);
 }
