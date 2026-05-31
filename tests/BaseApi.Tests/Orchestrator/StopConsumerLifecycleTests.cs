@@ -160,9 +160,10 @@ public sealed class StopConsumerLifecycleTests
             var correlationId = Guid.NewGuid();
             var executionId = Guid.NewGuid();
             var entryId = Guid.NewGuid();
-            var result = new ExecutionResult(executionId, workflowId, entryStepId, entryProcessorId, StepOutcome.Completed)
+            var result = new ExecutionResult(workflowId, entryStepId, entryProcessorId, StepOutcome.Completed)
             {
                 CorrelationId = correlationId,
+                ExecutionId = executionId,
                 EntryId = entryId,
             };
 
