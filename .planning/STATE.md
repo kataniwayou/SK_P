@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: executing
-stopped_at: Completed 23-04-PLAN.md
-last_updated: "2026-05-31T13:55:02.080Z"
+status: verifying
+stopped_at: Completed 23-05-PLAN.md (Phase 23 complete — 5/5 plans, 100%)
+last_updated: "2026-05-31T15:51:04.306Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 7
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 25
-  completed_plans: 24
-  percent: 96
+  completed_plans: 25
+  percent: 100
 ---
 
 # Project State
@@ -26,12 +26,12 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 23 (orchestrator-stop-reload-lifecycle) — EXECUTING
-Plan: 5 of 5
-Status: PAUSED at Task 4 blocking checkpoint (human-verify) — Tasks 1-3 done + committed
+Phase: 23 (orchestrator-stop-reload-lifecycle) — COMPLETE (5/5 plans)
+Plan: 5 of 5 — complete
+Status: Phase complete — ready for verification
 Last activity: 2026-05-31
 
-### Phase 23 Plan 05 — Checkpoint Evidence (Task 4, awaiting operator "approved")
+### Phase 23 Plan 05 — COMPLETE (Task 4 checkpoint APPROVED, plan finalized)
 
 - Tasks 1-3 complete: FireDispatchTests (3), Start/StopConsumerLifecycleTests (2+2), AckSemanticsTests (4), NoGlobalLockTests (6) + CapturingDispatchConsumer + OrchestratorTestStubs. 11 new tests, all GREEN.
 - Commits: 478116b (Task 1), [Task 2], bca48d2 (Task 3), 376c9db (Rule 1 isolation fix).
@@ -40,7 +40,7 @@ Last activity: 2026-05-31
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s).
 - ORCH-SCALE-01 design review PASSED (Claude): no static/global lock or process-uniqueness gate on WorkflowL1Store / WorkflowScheduler / both consumers / HydrationBackgroundService. All state per-instance (L1 ConcurrentDictionary, per-process RAMJobStore, per-workflowId stripe). A 2nd replica N×-dispatches (accepted/deferred), not crashes.
 - Rule 1 deviation: StdSchedulerFactory binds schedulers in a shared process-wide repository keyed by instance name; the default name collided across the parallel scheduler-using test classes. Fixed by setting quartz.scheduler.instanceName=test-{guid:N} per scheduler (4 new + 2 pre-existing classes). Commit 376c9db.
-- AWAITING: operator types "approved" to finalize SUMMARY/STATE/ROADMAP/REQUIREMENTS.
+- FINALIZED: checkpoint APPROVED (orchestrator re-verified evidence). SUMMARY (23-05-SUMMARY.md) created; STATE/ROADMAP/REQUIREMENTS updated; ORCH-FIRE-01/CONSUME-01/STOP-01/SCALE-01/ACK-01 marked complete. Phase 23 = 5/5 plans, milestone v3.4.0 = 100% (25/25).
 
 ### Phase 22 Plan 05 — Close Gate Evidence (Task 5, operator-authorized, exit 0)
 
@@ -72,7 +72,7 @@ Last activity: 2026-05-31
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 96%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -224,6 +224,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 23 P02 | ~4min | 2 tasks | 3 files |
 | Phase 23 P03 | ~5min | 3 tasks | 9 files |
 | Phase 23 P04 | 5min | 3 tasks | 6 files |
+| Phase 23 P05 | ~30min (Tasks 1-3) + blocking checkpoint | 4 tasks (3 auto + 1 gate) tasks | 8 files (6 created + 2 modified) files |
 
 ## Accumulated Context
 
@@ -510,6 +511,9 @@ Recent decisions affecting current work:
 - 23-03: WorkflowScheduler injects concrete Quartz IScheduler (not ISchedulerFactory) — test-constructable + DI-resolved in Plan 04
 - 23-03: Fire-path liveness refresh is in-memory only (with{Timestamp} or fresh active) — zero L2 writes (ORCH-SCALE-01)
 - 23-04: orchestrator hydration + gated consumers + Program wiring; StartupCompletionService removed by type so MarkReady fires at hydration-complete; zero L2 writes in lifecycle/consumers
+- Phase 23-05: synthetic MassTransit consumer harness (ReceiveEndpoint({processorId:D})) proves Send field correctness end-to-end without a real broker
+- Phase 23-05: ORCH-SCALE-01 split into automatable reflection guard (no static lock/mutex) + documented manual design-review for the process-uniqueness half
+- Phase 23-05 Rule 1: per-scheduler Quartz instanceName=test-{guid:N} to avoid StdSchedulerFactory cross-class repository collision (376c9db)
 
 ### Roadmap Milestone Log
 
@@ -606,8 +610,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T13:55:02.070Z
-Stopped at: Completed 23-04-PLAN.md
+Last session: 2026-05-31T15:51:04.295Z
+Stopped at: Completed 23-05-PLAN.md (Phase 23 complete — 5/5 plans, 100%)
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
