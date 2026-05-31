@@ -120,7 +120,7 @@ Plans:
   - [x] 22-01-PLAN.md — Const prefix + ParentIndex() + no-prefix builders in L2ProjectionKeys + forwarders + golden tests
   - [x] 22-02-PLAN.md — Reader-side prefix de-config (delete OrchestratorRedisOptions, consumers, Program.cs, appsettings)
   - [x] 22-03-PLAN.md — Writer SADD parent index + remove processor-create + cleanup SREM + writer/service prefix removal
-  - [ ] 22-04-PLAN.md — ProcessorLivenessValidator (422) + exception factory + StartAsync wiring + DI
+  - [x] 22-04-PLAN.md — ProcessorLivenessValidator (422) + exception factory + StartAsync wiring + DI
   - [ ] 22-05-PLAN.md — Test-isolation rewrite + ProcessorLivenessFacts + golden/gate updates + triple-SHA close gate
 **UI hint**: no
 
@@ -205,7 +205,7 @@ Plans:
 | 19    | v3.4.0    | 4/4 | Complete    | 2026-05-30 |
 | 20    | v3.4.0    | 4/4            | Complete    | 2026-05-31 |
 | 21    | v3.4.0    | 1/1 | Complete    | 2026-05-31 |
-| 22    | v3.4.0    | 3/5            | In progress | 2026-05-31 |
+| 22    | v3.4.0    | 4/5            | In progress | 2026-05-31 |
 | 23    | v3.4.0    | 0/0            | Not planned | —          |
 
 ---
