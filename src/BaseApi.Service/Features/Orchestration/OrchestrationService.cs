@@ -21,26 +21,28 @@ namespace BaseApi.Service.Features.Orchestration;
 /// project (CONTEXT D-04).
 /// <para>
 /// <b>StartAsync</b> (D-07 per-workflow loop) runs the upfront Postgres existence check
-/// (404 fast-fail before any mutation), resolves the X-Correlation-Id ONCE (D-01), then
-/// for EACH requested workflow: tolerant pre-clean (<see cref="IRedisL2Cleanup"/> — GC for
-/// shrunk graphs, ORCH-START-05 delete-then-write) → <see cref="IWorkflowGraphLoader"/>
-/// (single-element list) → the three Phase 14 validators in LOCKED order
-/// (<see cref="CycleDetector"/> → <see cref="SchemaEdgeValidator"/> →
+/// (404 fast-fail before any mutation), resolves the X-Correlation-Id ONCE (D-01), then for
+/// EACH requested workflow first-win probes the L2 root (WEBAPI-SUPPRESS-01 / D-04): if the root
+/// already exists the WHOLE write path is SKIPPED for that id (no overwrite, no republish — first
+/// write wins); otherwise tolerant pre-clean (<see cref="IRedisL2Cleanup"/> — GC for orphan keys)
+/// → <see cref="IWorkflowGraphLoader"/> (single-element list) → the three Phase 14 validators in
+/// LOCKED order (<see cref="CycleDetector"/> → <see cref="SchemaEdgeValidator"/> →
 /// <see cref="PayloadConfigSchemaValidator"/>) → <see cref="IRedisProjectionWriter"/>. The
 /// per-iteration <see cref="WorkflowGraphSnapshot"/> is disposed via a <c>using</c>
-/// declaration on success AND on any throw.
+/// declaration on success AND on any throw. The StartOrchestration publish carries ONLY the
+/// newly-written (deduped) subset, and is suppressed entirely when nothing was written.
 /// </para>
 /// <para>
-/// <b>StopAsync</b> (D-04/D-06 Redis EXISTS gate + cleanup) rule-validates the ids, batch
-/// <c>KeyExistsAsync</c>-checks every workflow root key, and if ANY root is missing throws
-/// <see cref="OrchestrationValidationException.MissingRoots"/> (→ 422 with the FULL missing
-/// list, NO deletion); only when all exist does it run the per-workflow
-/// <see cref="IRedisL2Cleanup.StopCleanupAsync"/> (→ controller 204). A repeated Stop of an
-/// already-cleaned workflow re-fails the gate (422 — non-idempotent by design).
+/// <b>StopAsync</b> (WEBAPI-SUPPRESS-01 / D-04 delete-if-present) rule-validates the ids then, per
+/// workflow, <c>KeyDeleteAsync</c>-deletes the root: an ABSENT root is a tolerant no-op (NOT 422 —
+/// this supersedes the Phase 22 422-on-missing-root gate), a present root is deleted and its
+/// per-step keys GC'd via <see cref="IRedisL2Cleanup.StopCleanupAsync"/> (→ controller 204). The
+/// StopOrchestration publish carries ONLY the deduped (deleted) subset, and is suppressed entirely
+/// when nothing was deleted (a second Stop of an absent workflow is a clean no-op).
 /// </para>
 /// <para>
 /// <b>OBSERV-REDIS-03:</b> a Redis fault on either path is caught, tagged with the offending
-/// op name (<c>Data["redisOp"]</c> = <c>"UpsertAsync"</c>/<c>"KeyExistsAsync"</c>) and
+/// op name (<c>Data["redisOp"]</c> = <c>"UpsertAsync"</c>/<c>"KeyDeleteAsync"</c>) and
 /// rethrown; <c>FallbackExceptionHandler</c> surfaces that op name (only) in the 500 body
 /// alongside the Phase 4 correlationId — never a connection string or stack.
 /// </para>
@@ -114,14 +116,53 @@ public sealed class OrchestrationService
         // to the HTTP-agnostic writer for every workflow in this request.
         var correlationId = _httpContextAccessor.HttpContext?.Items["CorrelationId"] as string ?? string.Empty;
 
+        // WEBAPI-SUPPRESS-01 / D-04 — first-win duplicate-suppression lives HERE (the WebApi is the
+        // single dedup point so the orchestrator's Start/Stop consumers stay conditionless, Plan 05).
+        // Track the ids actually written so a request that is ENTIRELY duplicate emits NO
+        // StartOrchestration (and a mixed request publishes ONLY the newly-written ids). This
+        // DELIBERATELY supersedes the Phase 22 ORCH-START-05 pre-clean-then-overwrite contract:
+        // a re-Start of an already-present root no longer overwrites/refreshes it.
+        var db = _multiplexer.GetDatabase();
+        var started = new List<Guid>();
+
         foreach (var workflowId in workflowIds)
         {
+            // 1b. First-win existence probe (WEBAPI-SUPPRESS-01). If the root key already exists,
+            //     SKIP the WHOLE write path for this id — no pre-clean, no load, no validators, no
+            //     Upsert — and exclude it from the published list (no overwrite, no republish).
+            //     RATIONALE for KeyExistsAsync-then-skip (not When.NotExists on the real root): the
+            //     real root JSON is built INSIDE UpsertAsync with a freshly-minted jobId, so a
+            //     When.NotExists placeholder claim followed by UpsertAsync's unconditional overwrite
+            //     would defeat first-win. The probe-then-skip keeps the write path single-owner.
+            //     The small TOCTOU window between the probe and the write is ACCEPTED this phase
+            //     (single active WebApi replica assumed; concurrent-Start dedup deferred —
+            //     ORCH-SCALE-01 / threat T-24-04). A genuine Redis fault on the probe is tagged with
+            //     the Start op name (OBSERV-REDIS-03) so the 500 body reports a stable op.
+            bool alreadyPresent;
+            try
+            {
+                alreadyPresent = await db.KeyExistsAsync(RedisProjectionKeys.Root(workflowId));
+            }
+            catch (RedisException ex)
+            {
+                ex.Data["redisOp"] = "UpsertAsync";
+                throw;
+            }
+
+            if (alreadyPresent)
+            {
+                // First write wins — this id is already live; do not overwrite or republish it.
+                continue;
+            }
+
             // 2. Tolerant pre-clean — deletes any stale root + per-step keys so a re-Start of a
             //    SHRUNK graph leaves no orphan per-step keys (delete-then-write, ORCH-START-05).
             //    The pre-clean is the FIRST half of the Start L2-write path; a genuine Redis
             //    connection fault here (NOT a missing key — that is tolerated inside the routine)
             //    is tagged with the Start op name so the 500 body reports a single stable
             //    "UpsertAsync" op regardless of which Redis call faults first (OBSERV-REDIS-03).
+            //    (Under first-win this only runs for an ABSENT root — it now GCs any orphan per-step
+            //    keys left behind by a prior crash, not a deliberate re-Start overwrite.)
             try
             {
                 await _cleanup.StopCleanupAsync(workflowId, ct);
@@ -168,33 +209,46 @@ public sealed class OrchestrationService
                 ex.Data["redisOp"] = "UpsertAsync";
                 throw;
             }
+
+            // First-win: this id was genuinely written (its root was absent) — include it in the
+            // StartOrchestration publish so the orchestrator only ever sees a genuine deduped start.
+            started.Add(workflowId);
             // snapshot.Dispose() runs here AND on any throw above (using declaration).
         }
 
-        // MSG-WEBAPI-02 / D-02: all roots written to L2 — broadcast the StartOrchestration control
-        // message. Correlation is set on the message BODY ONLY via a freshly-minted NewId
-        // (sequential — better broker/ES locality); the MassTransit envelope CorrelationId is left
-        // unset (single source of truth, T-19-envelope-leak). The HTTP-stage correlationId resolved
-        // above is a SEPARATE stage and is deliberately NOT carried onto the bus message (per-stage
-        // handoff, D-01). A publish failure (broker unreachable) PROPAGATES out of this method —
-        // the broker is a hard dep for Start (MSG-WEBAPI-03) → FallbackExceptionHandler → 500.
+        // WEBAPI-SUPPRESS-01 — a request that is ENTIRELY duplicate writes nothing and must emit NO
+        // StartOrchestration (acceptance: "a second Start for an existing workflowId does not re-emit
+        // to the orchestrator"). Only publish when at least one id was newly written.
+        if (started.Count == 0)
+        {
+            return;
+        }
+
+        // MSG-WEBAPI-02 / D-02: roots written to L2 — broadcast the StartOrchestration control
+        // message carrying ONLY the newly-written (deduped) subset, NOT the full input list.
+        // Correlation is set on the message BODY ONLY via a freshly-minted NewId (sequential —
+        // better broker/ES locality); the MassTransit envelope CorrelationId is left unset (single
+        // source of truth, T-19-envelope-leak). The HTTP-stage correlationId resolved above is a
+        // SEPARATE stage and is deliberately NOT carried onto the bus message (per-stage handoff,
+        // D-01). A publish failure (broker unreachable) PROPAGATES out of this method — the broker
+        // is a hard dep for Start (MSG-WEBAPI-03) → FallbackExceptionHandler → 500.
         var startCorr = NewId.NextGuid();
         await _publishEndpoint.Publish(
-            new StartOrchestration(workflowIds.ToArray()) { CorrelationId = startCorr },
+            new StartOrchestration(started.ToArray()) { CorrelationId = startCorr },
             ct);
         _logger.LogInformation("Published StartOrchestration CorrelationId={CorrelationId}", startCorr);
     }
 
     /// <summary>
-    /// D-04/D-06 Stop gate + cleanup. Rule-validates the ids (null-body guard + the
-    /// <see cref="WorkflowIdsValidator"/> rules — mirrors <see cref="ExistenceCheckAsync"/>'s
-    /// pre-check), batch <c>KeyExistsAsync</c>-checks every workflow root key, and collects
-    /// ALL ids whose root is missing (NOT fail-fast). If any are missing it throws
-    /// <see cref="OrchestrationValidationException.MissingRoots"/> (→ 422 with the FULL list,
-    /// NO deletion). Only when every root exists does it run the per-workflow tolerant
-    /// <see cref="IRedisL2Cleanup.StopCleanupAsync"/> (→ controller 204). Repeated Stop of an
-    /// already-cleaned workflow re-fails the gate (422 — non-idempotent by design). A Redis
-    /// fault on the EXISTS batch is tagged <c>"KeyExistsAsync"</c> (OBSERV-REDIS-03) → 500.
+    /// WEBAPI-SUPPRESS-01 / D-04 delete-if-present Stop. Rule-validates the ids (null-body guard +
+    /// the <see cref="WorkflowIdsValidator"/> rules — mirrors <see cref="ExistenceCheckAsync"/>'s
+    /// pre-check), then per workflow <c>KeyDeleteAsync</c>-deletes the root: an ABSENT root is a
+    /// tolerant no-op (NOT 422 — this supersedes the Phase 22 422-on-missing-root gate), a present
+    /// root is deleted and its per-step keys GC'd via the tolerant
+    /// <see cref="IRedisL2Cleanup.StopCleanupAsync"/> (→ controller 204). A second Stop of an
+    /// already-cleaned workflow deletes nothing and is a clean no-op (idempotent). The publish
+    /// carries ONLY the deduped (deleted) subset and is suppressed when nothing was deleted. A Redis
+    /// fault on the delete path is tagged <c>"KeyDeleteAsync"</c> (OBSERV-REDIS-03) → 500.
     /// </summary>
     public async Task StopAsync(IReadOnlyList<Guid> workflowIds, CancellationToken ct)
     {
@@ -211,54 +265,56 @@ public sealed class OrchestrationService
 
         await _idsValidator.ValidateAndThrowAsync(workflowIds, ct);
 
-        // D-04 — batch EXISTS on each workflow root key; collect ALL missing (not fail-fast).
+        // WEBAPI-SUPPRESS-01 / D-04 — delete-if-present (first-win symmetric Stop). This
+        // DELIBERATELY supersedes the Phase 22 422-on-missing-root gate: a second Stop of an
+        // already-cleaned (absent) workflow is now a NO-OP (no 422), not an error. Track the ids
+        // whose root was genuinely present-then-deleted so the StopOrchestration publish carries
+        // ONLY the deduped subset — a Stop that deletes nothing emits no StopOrchestration.
         var db = _multiplexer.GetDatabase();
-        List<Guid> missing;
-        try
-        {
-            var checks = workflowIds
-                .Select(id => (Id: id, Task: db.KeyExistsAsync(RedisProjectionKeys.Root(id))))
-                .ToList();
-            await Task.WhenAll(checks.Select(c => c.Task));
-            missing = checks.Where(c => !c.Task.Result).Select(c => c.Id).ToList();
-        }
-        catch (RedisException ex)
-        {
-            ex.Data["redisOp"] = "KeyExistsAsync";
-            throw;
-        }
+        var stopped = new List<Guid>();
 
-        // D-04 — any missing root → 422 with the FULL missing list and NO deletion.
-        if (missing.Count > 0)
-        {
-            throw OrchestrationValidationException.MissingRoots(missing);
-        }
-
-        // D-06 — all roots exist → per-workflow tolerant traverse-and-delete (root + per-step
-        // keys; never processor keys). Controller maps the completed Task to 204.
-        // A genuine Redis connection fault during the post-gate deletes (NOT a missing key —
-        // that is tolerated inside the routine) is tagged with the Stop path's stable op name
-        // so the 500 body reports a single stable "KeyExistsAsync" op regardless of which Redis
-        // call faults first (OBSERV-REDIS-03) — mirroring the Start pre-clean convention above.
+        // Per workflow: KeyDeleteAsync on the root FIRST (the bool reflects was-present), then the
+        // tolerant traverse-and-delete cleanup to GC the per-step keys (root already removed; the
+        // cleanup tolerates already-absent keys). A genuine Redis connection fault on either call
+        // (NOT a missing key — that is tolerated) is tagged with the Stop path's stable op name so
+        // the 500 body reports a single stable "KeyDeleteAsync" op regardless of which Redis call
+        // faults first (OBSERV-REDIS-03) — mirroring the Start pre-clean convention above.
         try
         {
             foreach (var workflowId in workflowIds)
             {
+                var rootDeleted = await db.KeyDeleteAsync(RedisProjectionKeys.Root(workflowId));
+                if (!rootDeleted)
+                {
+                    // First-win symmetric: absent root → no-op for this id (NOT 422). Skip the
+                    // per-step cleanup + the publish contribution.
+                    continue;
+                }
+
+                // Root was present and is now deleted — GC the per-step keys (never processor keys).
                 await _cleanup.StopCleanupAsync(workflowId, ct);
+                stopped.Add(workflowId);
             }
         }
         catch (RedisException ex)
         {
-            ex.Data["redisOp"] = "KeyExistsAsync";
+            ex.Data["redisOp"] = "KeyDeleteAsync";
             throw;
         }
 
-        // MSG-WEBAPI-02 / D-02: Stop gate passed and cleanup completed — broadcast the
-        // StopOrchestration control message. Same body-only correlation contract as Start
-        // (NewId on the BODY, envelope CorrelationId left unset; HTTP-stage id not carried onto the
-        // bus). A publish failure PROPAGATES out of StopAsync (MSG-WEBAPI-03 hard dep) → 500.
+        // WEBAPI-SUPPRESS-01 — a Stop that deleted no roots (all absent) is a no-op and must emit NO
+        // StopOrchestration (acceptance: "a second Stop for an absent workflowId is a no-op").
+        if (stopped.Count == 0)
+        {
+            return;
+        }
+
+        // MSG-WEBAPI-02 / D-02: at least one root deleted — broadcast the StopOrchestration control
+        // message carrying ONLY the deduped (deleted) subset. Same body-only correlation contract as
+        // Start (NewId on the BODY, envelope CorrelationId left unset; HTTP-stage id not carried onto
+        // the bus). A publish failure PROPAGATES out of StopAsync (MSG-WEBAPI-03 hard dep) → 500.
         await _publishEndpoint.Publish(
-            new StopOrchestration(workflowIds.ToArray()) { CorrelationId = NewId.NextGuid() },
+            new StopOrchestration(stopped.ToArray()) { CorrelationId = NewId.NextGuid() },
             ct);
     }
 
