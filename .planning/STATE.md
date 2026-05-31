@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: Paused at 22-05 Task 5 close-gate checkpoint (blocked on out-of-scope happy-path test regression)
-last_updated: "2026-05-31T09:22:33.244Z"
+stopped_at: Completed 22-05-PLAN.md (Phase 22 close gate exit 0; 3x271 GREEN, triple-SHA BEFORE==AFTER held)
+last_updated: "2026-05-31T13:05:00.000Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 7
@@ -26,10 +26,21 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 22 (l2-root-parent-restructure-processor-self-registration) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
+Phase: 22 (l2-root-parent-restructure-processor-self-registration) — ALL 5 PLANS COMPLETE
+Plan: 5 of 5 (complete)
+Status: Phase 22 plans complete — ready for /gsd-verify-phase
 Last activity: 2026-05-31
+
+### Phase 22 Plan 05 — Close Gate Evidence (Task 5, operator-authorized, exit 0)
+
+- 3-consecutive GREEN: Run 1/2/3 each = Passed: 271, Failed: 0 (durations 3m27s / 3m25s / 3m38s). Full suite, no Category filter — both real-stack E2E (CorrelationPropagationE2ETests + OrchestrationLogsE2ETests) ran live (full v3.4.0 stack up healthy).
+- Triple-SHA (psql \l + redis-cli --scan + rabbitmqctl list_queues), BEFORE == AFTER:
+  - psql \l SHA-256:                  94ac978c670a1dd11ea3d0ad03cb57d50032dc0c3ee670d0d7e14dce6acb0240 — HELD
+  - redis-cli --scan SHA-256:         e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855 (0 keys — net-zero) — HELD
+  - rabbitmqctl list_queues SHA-256:  cca7a68b6141ae1e4c958f9b834370ebdd4870fcca22e582196cab5314c73be1 — HELD
+- Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
+- Gate script: scripts/phase-22-close.ps1 (mirrors phase-21-close.ps1), exit 0. Operator authorized both the fix strategy ("Centralize seed + rewrite asserts") and the gate run.
+- Continuation deviation (operator-authorized Rule 4): Plan 04's processor-liveness gate (PROC-LIVE-01) + Plan 03's processor-no-create boundary (PROC-NOCREATE-01) broke 14 happy-path /start classes outside the plan's 9-file scope; fixed via a centralized Phase8WebAppFactory.SeedLiveProcessorAsync/SremParentIndexAsync + HappyPathE2EFacts assertion rewrite. Commits 889b34f, 209bdd8, cc26688.
 
 ### Phase 21 Plan 01 — Close Gate Evidence (Task 4, approved)
 
@@ -50,7 +61,7 @@ Last activity: 2026-05-31
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -58,10 +69,12 @@ Progress: [██████████] 95%
 |-------|------|--------------|--------|
 | 17 | Messaging.Contracts + Shared L2 Root Extract | MSG-CONTRACTS-01..04, INFRA-RMQ-01 (5) | Complete |
 | 18 | BaseConsole.Core Library | CONSOLE-01..05, CONSOLE-HEALTH-01..04, CORR-01/02 (11) | Complete (4/4 plans) |
-| 19 | Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier | ORCH-CON-01..04, MSG-WEBAPI-01..04, MSG-ACK-01..04, INFRA-RMQ-02/03 (14) | Complete (4/4 plans, verified — 1 human-UAT item pending/deferred to P20) |
-| 20 | Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout | CORR-03/04, TEST-RMQ-01..05 (7) | Not started |
+| 19 | Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier | ORCH-CON-01..04, MSG-WEBAPI-01..04, MSG-ACK-01..04, INFRA-RMQ-02/03 (14) | Complete (4/4 plans) |
+| 20 | Correlation Propagation Proof + Synthetic Harness + Triple-SHA Closeout | CORR-03/04, TEST-RMQ-01..05 (7) | Complete |
+| 21 | v3.4.0 Closeout Hygiene (shared L2ProjectionKeys) | HARDEN-03 (1) | Complete (1/1 plan) |
+| 22 | L2 Root-Parent Restructure + Processor Self-Registration Boundary | L2IDX-01, L2PREFIX-01, PROC-NOCREATE-01, PROC-LIVE-01, PROC-EDGE-01 (5) | Complete (5/5 plans — close gate exit 0) |
 
-Build order (locked): 17 (leaf contracts) -> 18 (console base) -> 19 (Orchestrator || WebApi wiring + RabbitMQ) -> 20 (correlation proof + triple-SHA closeout). See .planning/ROADMAP.md for full success criteria + cross-phase hard constraints.
+Build order (locked): 17 (leaf contracts) -> 18 (console base) -> 19 (Orchestrator || WebApi wiring + RabbitMQ) -> 20 (correlation proof + triple-SHA closeout) -> 21 (closeout hygiene) -> 22 (L2 root-parent restructure + processor liveness boundary). See .planning/ROADMAP.md for full success criteria + cross-phase hard constraints.
 
 ## Deferred Items
 
@@ -194,6 +207,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 22 P02 | 2min | 2 tasks | 5 files |
 | Phase 22 P03 | 6min | 3 tasks | 9 files |
 | Phase 22 P04 | 2min | 3 tasks | 4 files |
+| Phase 22 P05 | ~13min (Tasks 1-4) + continuation (regression fix across 14 classes + 3 close-gate runs ~3.5m each) | 5 tasks (4 auto + 1 blocking close gate) | 24 files (2 created + 22 modified incl. 14 happy-path classes) |
 
 ## Accumulated Context
 

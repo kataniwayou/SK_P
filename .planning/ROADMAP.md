@@ -121,7 +121,7 @@ Plans:
   - [x] 22-02-PLAN.md — Reader-side prefix de-config (delete OrchestratorRedisOptions, consumers, Program.cs, appsettings)
   - [x] 22-03-PLAN.md — Writer SADD parent index + remove processor-create + cleanup SREM + writer/service prefix removal
   - [x] 22-04-PLAN.md — ProcessorLivenessValidator (422) + exception factory + StartAsync wiring + DI
-  - [ ] 22-05-PLAN.md — Test-isolation rewrite + ProcessorLivenessFacts + golden/gate updates + triple-SHA close gate
+  - [x] 22-05-PLAN.md — Test-isolation rewrite + ProcessorLivenessFacts + golden/gate updates + triple-SHA close gate
 **UI hint**: no
 
 ### Phase 23: Orchestrator Stop + Reload Lifecycle Over the New L2 Structure
