@@ -28,7 +28,7 @@ namespace BaseApi.Tests.Orchestrator;
 /// </para>
 /// <list type="number">
 ///   <item>seeds + projects the workflow's L2 root into the SAME host Redis the orchestrator reads
-///   (the Start path writes <c>skp:wf:{id}:root</c>) so the orchestrator reaches the SUCCESS seam;</item>
+///   (the Start path writes the flat L2 root <c>skp:{id}</c>) so the orchestrator reaches the SUCCESS seam;</item>
 ///   <item>mints a fresh body <c>CorrelationId</c> Guid (G1) and logs the D-07 line
 ///   <c>"Published StartOrchestration CorrelationId={G1}"</c> (OrchestrationService.cs:171);</item>
 ///   <item>publishes <c>StartOrchestration { CorrelationId = G1 }</c> to the real broker.</item>
@@ -328,8 +328,8 @@ public sealed class CorrelationPropagationE2ETests
         /// CONTAINER's prefix ("skp:"). <see cref="Composition.Phase8WebAppFactory"/> forces
         /// <c>Redis:KeyPrefix = "test:&lt;namespace&gt;"</c> for parallel-class L2 isolation, but the
         /// orchestrator reads "skp:" (its appsettings). Without this override the WebApi writes the L2
-        /// root under <c>test:…:wf:{id}:root</c> while the orchestrator looks under
-        /// <c>skp:wf:{id}:root</c> → it logs "absent from L2 — business failure, acking" instead of the
+        /// root under <c>test:…:{id}</c> while the orchestrator looks under
+        /// <c>skp:{id}</c> → it logs "absent from L2 — business failure, acking" instead of the
         /// success seam, and the proof never appears. Added AFTER <c>base.ConfigureWebHost</c> so this
         /// in-memory source overrides the base's test-prefix entry (last source wins).
         /// </summary>
