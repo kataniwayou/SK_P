@@ -36,16 +36,20 @@ builder.Services.AddBaseConsoleMessaging(builder.Configuration,
         // ORCH-RESULT-02: shared competing-consumer (NO InstanceId/Temporary) — the inverse of the
         // Start/Stop fan-out. ResultConsumerDefinition binds the stable "orchestrator-result" endpoint.
         x.AddConsumer<ResultConsumer, ResultConsumerDefinition>();
-        // ORCH-GATE-01: register the in-memory message scheduler that backs UseScheduledRedelivery
-        // (the gate-closed never-drop policy). Operates on IBusRegistrationConfigurator.
-        x.AddInMemoryMessageScheduler();
+        // ORCH-GATE-01: register the message scheduler that backs UseScheduledRedelivery (the
+        // gate-closed never-drop policy). MassTransit 8.5.5 has NO in-memory message scheduler — the
+        // plan's AddInMemoryMessageScheduler()/UseInMemoryScheduler() do not exist on this version.
+        // The two in-version, no-new-package options are the publish scheduler (needs an external
+        // Quartz/Hangfire consumer — absent) and the transport delayed scheduler. We use the delayed
+        // scheduler: AddDelayedMessageScheduler() (registration) + UseDelayedMessageScheduler() (bus
+        // factory, below). RUNTIME NOTE: on RabbitMQ the delayed scheduler relies on the
+        // rabbitmq_delayed_message_exchange plugin to actually defer delivery; the plugin is a
+        // deployment concern flagged in 24-RESEARCH (Pitfall 1) — see the SUMMARY's checkpoint.
+        x.AddDelayedMessageScheduler();
     },
-    // ORCH-GATE-01 (D-06 / Pitfall 3 / A2): the bus-factory half of the in-memory scheduler.
-    // AddInMemoryMessageScheduler() registers the scheduler service, but UseScheduledRedelivery's
-    // pipeline needs the scheduler wired into the bus factory via UseInMemoryScheduler() (the
-    // RabbitMQ transport has no native message scheduler — the delayed-exchange plugin is not
-    // installed). Routed through Plan 01's optional configureBus seam (base = infra firewall intact).
-    configureBus: c => c.UseInMemoryScheduler());
+    // ORCH-GATE-01 (D-06 / Pitfall 3 / A2): the bus-factory half of the delayed message scheduler,
+    // routed through Plan 01's optional configureBus seam (base = infra firewall intact).
+    configureBus: (ctx, c) => c.UseDelayedMessageScheduler());
 
 // --- Runtime wiring (Phase 23 Plan 04): Quartz + L1 store + scheduler + lifecycle + hydration ---
 builder.Services.AddQuartz();                                              // default MS-DI job factory + RAMJobStore
