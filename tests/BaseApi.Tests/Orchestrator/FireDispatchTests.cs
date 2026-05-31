@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
+using Orchestrator.Dispatch;
 using Orchestrator.L1;
 using Orchestrator.Scheduling;
 using Quartz;
@@ -135,7 +136,7 @@ public sealed class FireDispatchTests
                 await workflowScheduler.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
                 var job = new WorkflowFireJob(
                     store,
-                    harness.Bus, // ISendEndpointProvider
+                    new StepDispatcher(harness.Bus), // IStepDispatcher wrapping the harness bus
                     workflowScheduler,
                     fakeTime,
                     NullLogger<WorkflowFireJob>.Instance);
@@ -201,7 +202,7 @@ public sealed class FireDispatchTests
                 var workflowScheduler = new WorkflowScheduler(scheduler, fakeTime);
                 await workflowScheduler.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
                 var job = new WorkflowFireJob(
-                    store, harness.Bus, workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
+                    store, new StepDispatcher(harness.Bus), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
 
                 await job.Execute(FireContext(workflowId, ct));
                 await job.Execute(FireContext(workflowId, ct));
@@ -259,7 +260,7 @@ public sealed class FireDispatchTests
                 var workflowScheduler = new WorkflowScheduler(scheduler, fakeTime);
                 await workflowScheduler.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
                 var job = new WorkflowFireJob(
-                    store, harness.Bus, workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
+                    store, new StepDispatcher(harness.Bus), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
 
                 Assert.True(store.TryGet(workflowId, out var before));
                 Assert.Equal(staleTimestamp, before.Liveness.Timestamp);
