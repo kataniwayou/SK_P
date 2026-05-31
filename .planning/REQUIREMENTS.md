@@ -103,9 +103,9 @@ Requirements for this milestone. Each maps to exactly one roadmap phase (continu
 
 Added 2026-05-31 from the v3.4.0 milestone audit (`milestones/v3.4.0-MILESTONE-AUDIT.md`). These close non-blocking tech-debt items, not blocking gaps — the milestone's 37 functional requirements were all satisfied. Tracked here so the hardening is accounted for rather than lost.
 
-- [ ] **HARDEN-01** (WR-01): `EmbeddedHealthEndpointService.StopAsync` disposes the inner `WebApplication` (`DisposeAsync` after `StopAsync`) so the inner DI container / Kestrel / TCP socket are released deterministically on shutdown — not left to the finalizer.
-- [ ] **HARDEN-02** (WR-02): The embedded console health Kestrel listener isolates bind failure — a port collision on `ConsoleHealth:Port` surfaces as a logged, contained failure (or a clearly-reported fatal) instead of an unhandled exception escaping `Host.StartAsync`.
-- [ ] **HARDEN-03** (WARNING-1): The L2 root key shape (`Root(prefix, workflowId)`) is a single shared source of truth consumed by both the writer (`RedisProjectionKeys`) and the reader (`OrchestratorL2Keys`), so a future GUID-format/suffix change cannot silently desynchronize them.
+- [x] **HARDEN-01** (WR-01): `EmbeddedHealthEndpointService.StopAsync` disposes the inner `WebApplication` (`DisposeAsync` after `StopAsync`) so the inner DI container / Kestrel / TCP socket are released deterministically on shutdown — not left to the finalizer. **Already satisfied in Phase 18 (commit `d4c0af5`)** — the v3.4.0 audit mis-flagged this as open by carrying it forward from Phase 18's VERIFICATION anti-pattern table, which predated the same-phase fix.
+- [x] **HARDEN-02** (WR-02): The embedded console health Kestrel listener isolates bind failure — a port collision on `ConsoleHealth:Port` surfaces as a logged, contained failure instead of an unhandled exception escaping `Host.StartAsync`. **Already satisfied in Phase 18 (commit `4e9e21a`)** — same audit carry-forward error as HARDEN-01.
+- [ ] **HARDEN-03** (WARNING-1): The L2 root key shape (`Root(prefix, workflowId)`) is a single shared source of truth consumed by both the writer (`RedisProjectionKeys`) and the reader (`OrchestratorL2Keys`), so a future GUID-format/suffix change cannot silently desynchronize them. (The only genuinely-open hardening item → Phase 21.)
 
 ## Future Requirements (Processor milestone, v3.5.x+)
 
@@ -185,8 +185,8 @@ Which phases cover which requirements. Filled by the roadmapper.
 | TEST-RMQ-03 | Phase 20 | Done |
 | TEST-RMQ-04 | Phase 20 | Done |
 | TEST-RMQ-05 | Phase 20 | Pending |
-| HARDEN-01 | Phase 21 | Pending |
-| HARDEN-02 | Phase 21 | Pending |
+| HARDEN-01 | Phase 18 | Complete (commit d4c0af5; audit carry-forward error) |
+| HARDEN-02 | Phase 18 | Complete (commit 4e9e21a; audit carry-forward error) |
 | HARDEN-03 | Phase 21 | Pending |
 
 **Coverage:**

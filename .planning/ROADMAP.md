@@ -98,14 +98,12 @@ Plans:
 **UI hint**: no
 
 ### Phase 21: v3.4.0 Closeout Hygiene (gap-closure)
-**Goal**: Close the non-blocking code-hygiene items surfaced by the v3.4.0 milestone audit — the embedded console health-listener lifecycle/robustness gaps and the duplicated L2 key shape across the WebApi→Orchestrator boundary — so the messaging foundation is maintainable before the Processor milestone builds on it.
+**Goal**: Close the one genuinely-open code-hygiene item surfaced by the v3.4.0 milestone audit — the duplicated L2 key shape across the WebApi→Orchestrator boundary — so a future GUID-format change cannot silently desync writer and reader before the Processor milestone builds on it.
 **Depends on**: Phase 20 (milestone code complete; this hardens it)
-**Requirements**: HARDEN-01, HARDEN-02, HARDEN-03
-**Gap Closure**: Closes tech-debt items WR-01, WR-02, and cross-phase WARNING-1 from `.planning/milestones/v3.4.0-MILESTONE-AUDIT.md` (no blocking gaps existed; this is opt-in hardening).
+**Requirements**: HARDEN-03
+**Gap Closure**: Closes cross-phase WARNING-1 from `.planning/milestones/v3.4.0-MILESTONE-AUDIT.md` (no blocking gaps existed; this is opt-in hardening). HARDEN-01 (WR-01) and HARDEN-02 (WR-02) were found ALREADY SATISFIED in Phase 18 (commits `d4c0af5` and `4e9e21a` respectively) — the audit carried them forward from Phase 18's VERIFICATION anti-pattern table, which flagged them as open before the same-phase follow-up fixes landed. They are NOT part of Phase 21 work.
 **Success Criteria** (what must be TRUE):
-  1. (HARDEN-01 / WR-01) `EmbeddedHealthEndpointService.StopAsync` disposes the inner `WebApplication` (calls `DisposeAsync` after `StopAsync`), so the inner DI container, Kestrel server, and TCP socket are released deterministically on shutdown — no reliance on the finalizer. A test asserts clean disposal (no leaked listener / port still bound after stop).
-  2. (HARDEN-02 / WR-02) The embedded Kestrel listener isolates bind failure: a port collision on `ConsoleHealth:Port` surfaces as a logged, contained startup failure (or a clearly-reported fatal) rather than an unhandled exception escaping `Host.StartAsync`. Behavior proven by a test that binds the port first, then asserts the documented failure mode.
-  3. (HARDEN-03 / WARNING-1) The L2 root key shape is a single source of truth: the `Root(prefix, workflowId)` computation is hoisted into `Messaging.Contracts` (or otherwise shared) and consumed by BOTH `RedisProjectionKeys` (writer) and `OrchestratorL2Keys` (reader), so a future GUID-format/suffix change cannot silently desynchronize writer and reader. The existing full suite (incl. `CorrelationPropagationE2ETests`) stays GREEN and the triple-SHA close gate still exits 0.
+  1. (HARDEN-03 / WARNING-1) The L2 root key shape is a single source of truth: the `Root(prefix, workflowId)` computation is hoisted into `Messaging.Contracts` (or otherwise shared) and consumed by BOTH `RedisProjectionKeys` (writer) and `OrchestratorL2Keys` (reader), so a future GUID-format/suffix change cannot silently desynchronize writer and reader. The existing full suite (incl. `CorrelationPropagationE2ETests`) stays GREEN and the triple-SHA close gate still exits 0.
 **Plans**: TBD (run `/gsd-plan-phase 21`)
 **UI hint**: no
 
@@ -127,7 +125,7 @@ Plans:
 | INFRA-RMQ (02, 03) | 2 | 19 |
 | CORR (03, 04) | 2 | 20 |
 | TEST-RMQ (01-05) | 5 | 20 |
-| HARDEN (01-03, audit gap-closure) | 3 | 21 |
+| HARDEN (01/02 already done in P18; 03 → P21) | 3 | 18, 21 |
 | **Total** | **40** | **17-21** |
 
 ## Phases (shipped milestones)
