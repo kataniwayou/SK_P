@@ -28,8 +28,19 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
 Phase: 23 (orchestrator-stop-reload-lifecycle) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: PAUSED at Task 4 blocking checkpoint (human-verify) — Tasks 1-3 done + committed
 Last activity: 2026-05-31
+
+### Phase 23 Plan 05 — Checkpoint Evidence (Task 4, awaiting operator "approved")
+
+- Tasks 1-3 complete: FireDispatchTests (3), Start/StopConsumerLifecycleTests (2+2), AckSemanticsTests (4), NoGlobalLockTests (6) + CapturingDispatchConsumer + OrchestratorTestStubs. 11 new tests, all GREEN.
+- Commits: 478116b (Task 1), [Task 2], bca48d2 (Task 3), 376c9db (Rule 1 isolation fix).
+- Orchestrator slice: `--filter-class BaseApi.Tests.Orchestrator.*` = Passed: 31, Failed: 0.
+- Full suite: `dotnet test` = Passed: 295, Failed: 0 (3m30s; real-stack E2E ran live).
+- Zero-warning build: Release = 0 Warning(s) / 0 Error(s).
+- ORCH-SCALE-01 design review PASSED (Claude): no static/global lock or process-uniqueness gate on WorkflowL1Store / WorkflowScheduler / both consumers / HydrationBackgroundService. All state per-instance (L1 ConcurrentDictionary, per-process RAMJobStore, per-workflowId stripe). A 2nd replica N×-dispatches (accepted/deferred), not crashes.
+- Rule 1 deviation: StdSchedulerFactory binds schedulers in a shared process-wide repository keyed by instance name; the default name collided across the parallel scheduler-using test classes. Fixed by setting quartz.scheduler.instanceName=test-{guid:N} per scheduler (4 new + 2 pre-existing classes). Commit 376c9db.
+- AWAITING: operator types "approved" to finalize SUMMARY/STATE/ROADMAP/REQUIREMENTS.
 
 ### Phase 22 Plan 05 — Close Gate Evidence (Task 5, operator-authorized, exit 0)
 
