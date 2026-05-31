@@ -24,6 +24,7 @@ public sealed class SchedulingTests
     [Fact]
     public async Task OneStartedJobPerWorkflow_KeyedByJobId()
     {
+        var ct = TestContext.Current.CancellationToken;
         var scheduler = await NewRamSchedulerAsync();
         try
         {
@@ -39,10 +40,10 @@ public sealed class SchedulingTests
 
             foreach (var (workflowId, jobId) in jobs)
             {
-                await sut.ScheduleAsync(workflowId, jobId, "*/5 * * * *", CancellationToken.None);
+                await sut.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
             }
 
-            var keys = await scheduler.GetJobKeys(GroupMatcher<JobKey>.AnyGroup());
+            var keys = await scheduler.GetJobKeys(GroupMatcher<JobKey>.AnyGroup(), ct);
             Assert.Equal(jobs.Length, keys.Count);
 
             foreach (var (_, jobId) in jobs)
@@ -50,24 +51,25 @@ public sealed class SchedulingTests
                 var expected = new JobKey(jobId.ToString("D"));
                 Assert.Contains(expected, keys);
 
-                var triggers = await scheduler.GetTriggersOfJob(expected);
+                var triggers = await scheduler.GetTriggersOfJob(expected, ct);
                 Assert.NotEmpty(triggers);
                 foreach (var trigger in triggers)
                 {
-                    var state = await scheduler.GetTriggerState(trigger.Key);
+                    var state = await scheduler.GetTriggerState(trigger.Key, ct);
                     Assert.Equal(TriggerState.Normal, state); // started, not Paused
                 }
             }
         }
         finally
         {
-            await scheduler.Shutdown(waitForJobsToComplete: false);
+            await scheduler.Shutdown(waitForJobsToComplete: false, ct);
         }
     }
 
     [Fact]
     public async Task UnscheduleAsync_RemovesJobAndTriggers()
     {
+        var ct = TestContext.Current.CancellationToken;
         var scheduler = await NewRamSchedulerAsync();
         try
         {
@@ -75,16 +77,16 @@ public sealed class SchedulingTests
             var workflowId = Guid.NewGuid();
             var jobId = Guid.NewGuid();
 
-            await sut.ScheduleAsync(workflowId, jobId, "*/5 * * * *", CancellationToken.None);
-            Assert.Single(await scheduler.GetJobKeys(GroupMatcher<JobKey>.AnyGroup()));
+            await sut.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
+            Assert.Single(await scheduler.GetJobKeys(GroupMatcher<JobKey>.AnyGroup(), ct));
 
-            await sut.UnscheduleAsync(jobId, CancellationToken.None);
+            await sut.UnscheduleAsync(jobId, ct);
 
-            Assert.Empty(await scheduler.GetJobKeys(GroupMatcher<JobKey>.AnyGroup()));
+            Assert.Empty(await scheduler.GetJobKeys(GroupMatcher<JobKey>.AnyGroup(), ct));
         }
         finally
         {
-            await scheduler.Shutdown(waitForJobsToComplete: false);
+            await scheduler.Shutdown(waitForJobsToComplete: false, ct);
         }
     }
 }

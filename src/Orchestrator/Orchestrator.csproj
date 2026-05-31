@@ -37,6 +37,9 @@
     <!-- Quartz scheduler (ORCH-SCHED-01). Quartz.Extensions.Hosting transitively brings
          Quartz + Quartz.Extensions.DependencyInjection — one reference suffices. NO Version= (CPM). -->
     <PackageReference Include="Quartz.Extensions.Hosting" />
+    <!-- Cronos (D-08/D-09): CronInterval next-occurrence + delta-seconds fire-time math.
+         Version pinned in Directory.Packages.props (CPM — no Version=). -->
+    <PackageReference Include="Cronos" />
   </ItemGroup>
 
   <ItemGroup>
