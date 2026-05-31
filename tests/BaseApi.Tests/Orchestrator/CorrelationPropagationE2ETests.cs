@@ -102,6 +102,10 @@ public sealed class CorrelationPropagationE2ETests
         // skp: prefix — register the exact keys for deletion in the factory's DisposeAsync (fires via
         // `await using` even if an assertion below throws). Key shapes per HappyPathE2EFacts:
         // root skp:{wfId}, per-step skp:{wfId}:{stepId}, per-processor skp:{procId}.
+        // Phase 22 (T-22-15): the Start also SADDs wfId into the shared skp: parent-index SET. Register
+        // it for a targeted SREM on teardown (NOT a KeyDelete of skp: — that would wipe sibling members)
+        // so the close-gate redis-cli --scan SHA returns to its empty BEFORE state.
+        factory.ParentIndexMembersToSrem.Add(wfId.ToString("D"));
         factory.L2KeysToCleanup.Add($"skp:{wfId}");
         factory.L2KeysToCleanup.Add($"skp:{wfId}:{stepId}");
         factory.L2KeysToCleanup.Add($"skp:{procId}");
@@ -374,12 +378,27 @@ public sealed class CorrelationPropagationE2ETests
         /// </summary>
         public List<RedisKey> L2KeysToCleanup { get; } = new();
 
+        /// <summary>
+        /// Phase 22 (T-22-15): shared skp: parent-index members this test SADDed (via a passing Start)
+        /// that must be SREMed — NOT KeyDeleted — on teardown so sibling members survive and the
+        /// close-gate redis-cli --scan SHA returns to its empty BEFORE state.
+        /// </summary>
+        public List<RedisValue> ParentIndexMembersToSrem { get; } = new();
+
         public override async ValueTask DisposeAsync()
         {
-            if (L2KeysToCleanup.Count > 0)
+            if (L2KeysToCleanup.Count > 0 || ParentIndexMembersToSrem.Count > 0)
             {
                 await using var cleanupMux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
-                await cleanupMux.GetDatabase().KeyDeleteAsync(L2KeysToCleanup.ToArray());
+                var db = cleanupMux.GetDatabase();
+                if (L2KeysToCleanup.Count > 0)
+                {
+                    await db.KeyDeleteAsync(L2KeysToCleanup.ToArray());
+                }
+                if (ParentIndexMembersToSrem.Count > 0)
+                {
+                    await db.SetRemoveAsync(L2ProjectionKeys.ParentIndex(), ParentIndexMembersToSrem.ToArray());
+                }
             }
             Restore();
             await base.DisposeAsync();
