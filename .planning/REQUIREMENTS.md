@@ -155,7 +155,8 @@ Concrete requirements for Phase 24, which pulls the processor→orchestrator rou
 - [ ] **ORCH-GATE-01**: While the startup gate is closed, Start/Stop/`ExecutionResult` messages are NOT acked-dropped — the consumer throws/nacks to trigger delayed redelivery, and the message is reprocessed after `MarkReady`. Supersedes Phase 23 D-12. A one-time result arriving during hydration is never lost.
 - [ ] **ORCH-START-RELOAD-01**: With the gate open, a Start unconditionally hydrates L2→L1 and (re)schedules the workflow's job — no L1-existence check, no skip (WebApi suppresses duplicates). A Start for a workflow lingering in L1 (post-stop) re-hydrates + reschedules, reviving it. Supersedes Phase 23 ORCH-CONSUME-01 behavior.
 - [ ] **ORCH-STOP-DRAIN-01**: With the gate open, a Stop unconditionally deletes the workflow's Quartz job(s) but KEEPS the L1 entry, so late `ExecutionResult` messages for the stopped workflow still resolve in L1 and continue advancing the DAG (graceful drain). No L1 clear this phase. Supersedes Phase 23 ORCH-STOP-01 behavior.
-- [ ] **WEBAPI-SUPPRESS-01**: The WebApi suppresses duplicate start/stop first-win at the L2 root — Start creates the root-parent `workflowId` only if absent (else skip), Stop deletes it only if present (else skip) — so the orchestrator only ever sees genuine deduped transitions.
+- [x] **WEBAPI-SUPPRESS-01
+**: The WebApi suppresses duplicate start/stop first-win at the L2 root — Start creates the root-parent `workflowId` only if absent (else skip), Stop deletes it only if present (else skip) — so the orchestrator only ever sees genuine deduped transitions.
 
 ### Deferred from prior milestones (unchanged)
 
