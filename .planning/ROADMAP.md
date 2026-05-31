@@ -139,7 +139,7 @@ Plans:
   - [x] 23-01-PLAN.md — Contracts: reader StepProjection + IExecutionCorrelated + EntryStepDispatch (wave 1)
   - [x] 23-02-PLAN.md — Quartz 3.18.1 CPM pin + OrchestratorL2Keys ParentIndex()/Step() forwarders (wave 1)
   - [x] 23-03-PLAN.md — L1 store + per-wf stripe, CronInterval, WorkflowScheduler, WorkflowFireJob (wave 2)
-  - [ ] 23-04-PLAN.md — Hydration BackgroundService + gated Start/Stop consumers + Program.cs wiring (wave 3)
+  - [x] 23-04-PLAN.md — Hydration BackgroundService + gated Start/Stop consumers + Program.cs wiring (wave 3)
   - [ ] 23-05-PLAN.md — Harness/review tests: fire-dispatch, start/stop lifecycle, ack semantics, no-global-lock + full-suite gate (wave 4)
 **UI hint**: no
 
