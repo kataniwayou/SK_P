@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: executing
+status: milestone_complete
 stopped_at: Phase 21-01 Tasks 1-3 complete; Task 4 operator triple-SHA gate pending
 last_updated: "2026-05-31T06:12:01.587Z"
 last_activity: 2026-05-31 -- Phase 21 execution started
 progress:
   total_phases: 5
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 15
   completed_plans: 15
-  percent: 100
+  percent: 120
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 21 (v3.4.0-closeout-hygiene) — EXECUTING
-Plan: 1 of 1
-Status: Executing Phase 21
-Last activity: 2026-05-31 -- Phase 21 close gate PASSED (exit 0), HARDEN-03 complete
+Phase: 21
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-05-31
 
 ### Phase 21 Plan 01 — Close Gate Evidence (Task 4, approved)
 
@@ -77,7 +77,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 81
+- Total plans completed: 82
 - Average duration: —
 - Total execution time: —
 
@@ -104,6 +104,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 17 | 2 | - | - |
 | 18 | 4 | - | - |
 | 19 | 4 | - | - |
+| 21 | 1 | - | - |
 
 **Recent Trend:**
 

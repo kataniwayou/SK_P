@@ -105,7 +105,7 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. (HARDEN-03 / WARNING-1) The L2 root key shape is a single source of truth: the `Root(prefix, workflowId)` computation is hoisted into `Messaging.Contracts` (or otherwise shared) and consumed by BOTH `RedisProjectionKeys` (writer) and `OrchestratorL2Keys` (reader), so a future GUID-format/suffix change cannot silently desynchronize writer and reader. The existing full suite (incl. `CorrelationPropagationE2ETests`) stays GREEN and the triple-SHA close gate still exits 0.
 **Plans**: 1 plan
-  - [ ] 21-01-PLAN.md — Hoist L2 key builders into shared L2ProjectionKeys, convert writer+reader to forwarders, fix WARNING-2 doc-nit, author triple-SHA close gate
+  - [x] 21-01-PLAN.md — Hoist L2 key builders into shared L2ProjectionKeys, convert writer+reader to forwarders, fix WARNING-2 doc-nit, author triple-SHA close gate
 **UI hint**: no
 
 ### Coverage (v3.4.0)
@@ -177,7 +177,7 @@ Plans:
 | 18    | v3.4.0    | 4/4 | Complete    | 2026-05-30 |
 | 19    | v3.4.0    | 4/4 | Complete    | 2026-05-30 |
 | 20    | v3.4.0    | 4/4            | Complete    | 2026-05-31 |
-| 21    | v3.4.0    | 0/?            | Planned     | -          |
+| 21    | v3.4.0    | 1/1 | Complete    | 2026-05-31 |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 (BaseConsole + Orchestrator Messaging) roadmap created 2026-05-30 — 4 phases (17-20), 37 requirements, dependency-ordered per HIGH-confidence research (`.planning/research/SUMMARY.md`). Next: `/gsd-plan-phase 17`.*
