@@ -53,6 +53,7 @@ public sealed class OrchestrationService
     private readonly CycleDetector _cycleDetector;
     private readonly SchemaEdgeValidator _schemaEdgeValidator;
     private readonly PayloadConfigSchemaValidator _payloadConfigSchemaValidator;
+    private readonly ProcessorLivenessValidator _processorLivenessValidator;
     private readonly IRedisProjectionWriter _redisProjectionWriter;
     private readonly IRedisL2Cleanup _cleanup;
     private readonly IHttpContextAccessor _httpContextAccessor;
@@ -72,6 +73,7 @@ public sealed class OrchestrationService
         CycleDetector cycleDetector,
         SchemaEdgeValidator schemaEdgeValidator,
         PayloadConfigSchemaValidator payloadConfigSchemaValidator,
+        ProcessorLivenessValidator processorLivenessValidator,
         IRedisProjectionWriter redisProjectionWriter,
         IRedisL2Cleanup cleanup,
         IHttpContextAccessor httpContextAccessor,
@@ -85,6 +87,7 @@ public sealed class OrchestrationService
         _cycleDetector                = cycleDetector                ?? throw new ArgumentNullException(nameof(cycleDetector));
         _schemaEdgeValidator          = schemaEdgeValidator          ?? throw new ArgumentNullException(nameof(schemaEdgeValidator));
         _payloadConfigSchemaValidator = payloadConfigSchemaValidator ?? throw new ArgumentNullException(nameof(payloadConfigSchemaValidator));
+        _processorLivenessValidator   = processorLivenessValidator   ?? throw new ArgumentNullException(nameof(processorLivenessValidator));
         _redisProjectionWriter        = redisProjectionWriter        ?? throw new ArgumentNullException(nameof(redisProjectionWriter));
         _cleanup                      = cleanup                      ?? throw new ArgumentNullException(nameof(cleanup));
         _httpContextAccessor          = httpContextAccessor          ?? throw new ArgumentNullException(nameof(httpContextAccessor));
@@ -137,6 +140,22 @@ public sealed class OrchestrationService
             _cycleDetector.Validate(snapshot);
             _schemaEdgeValidator.Validate(snapshot);
             _payloadConfigSchemaValidator.Validate(snapshot);
+
+            // 6b. Processor-liveness gate (PROC-LIVE-01, D-15) — ASYNC: reads each participating
+            //     processor's self-registered skp:{procId} L2 entry, requiring existence + liveness
+            //     (timestamp + interval*2 > now). Absent/stale throws OrchestrationValidationException
+            //     (gate "processorLiveness") → 422 — NOT a RedisException, so it propagates uncaught
+            //     past the redisOp catch below to the 422 handler. A genuine Redis fault on these GETs
+            //     IS a RedisException and is tagged with the Start op name (OBSERV-REDIS-03 / T-22-13).
+            try
+            {
+                await _processorLivenessValidator.ValidateAsync(snapshot, ct);
+            }
+            catch (RedisException ex)
+            {
+                ex.Data["redisOp"] = "UpsertAsync";
+                throw;
+            }
 
             // 7. L2 projection write. A Redis fault is tagged with the offending op name
             //    (OBSERV-REDIS-03) and rethrown → FallbackExceptionHandler → 500.

@@ -60,6 +60,7 @@ internal static class OrchestrationServiceCollectionExtensions
             sp.GetRequiredService<CycleDetector>(),
             sp.GetRequiredService<SchemaEdgeValidator>(),
             sp.GetRequiredService<PayloadConfigSchemaValidator>(),
+            sp.GetRequiredService<ProcessorLivenessValidator>(),    // NEW (Plan 04) — async processor-liveness gate
             sp.GetRequiredService<IRedisProjectionWriter>(),
             sp.GetRequiredService<IRedisL2Cleanup>(),               // NEW (Plan 04) — Start pre-clean + Stop cleanup
             sp.GetRequiredService<IHttpContextAccessor>(),          // NEW (D-01) — correlationId resolution
@@ -70,6 +71,9 @@ internal static class OrchestrationServiceCollectionExtensions
         services.AddScoped<CycleDetector>();
         services.AddScoped<SchemaEdgeValidator>();
         services.AddScoped<PayloadConfigSchemaValidator>();
+        // PROC-LIVE-01 — async processor-liveness gate (skp:{procId} existence + liveness). Its
+        // IConnectionMultiplexer + TimeProvider deps are already in the container (writer consumes them).
+        services.AddScoped<ProcessorLivenessValidator>();
         services.AddScoped<IRedisProjectionWriter, RedisProjectionWriter>();
         // Shared, always-tolerant L2 cleanup routine (D-06 / D-07). Registered here in Plan 03
         // (not Plan 04) because Plan 03's StopCleanupFacts resolve IRedisL2Cleanup from DI; Plan 04
