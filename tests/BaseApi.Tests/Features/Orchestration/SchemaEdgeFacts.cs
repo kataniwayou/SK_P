@@ -1,12 +1,15 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using BaseApi.Service.Features.Orchestration.Projection;
 using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Schema;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
 using BaseApi.Tests.TestHelpers;
+using Messaging.Contracts.Projections;
+using StackExchange.Redis;
 using Xunit;
 
 namespace BaseApi.Tests.Features.Orchestration;
@@ -27,11 +30,25 @@ namespace BaseApi.Tests.Features.Orchestration;
 /// </para>
 /// </summary>
 [Trait("Phase", "14")]
+[Collection("ParentIndex")]
 public sealed class SchemaEdgeFacts : IClassFixture<HarnessWebAppFactory>
 {
     private readonly HarnessWebAppFactory _factory;
 
     public SchemaEdgeFacts(HarnessWebAppFactory factory) => _factory = factory;
+
+    /// <summary>
+    /// Phase 22 (PROC-LIVE-01): seeds each participating processor's self-registered L2 entry
+    /// (<c>skp:{procId}</c>) live so the new processor-liveness gate — which runs AFTER schema-edge and
+    /// BEFORE UpsertAsync — does not reject the previously-204 path. interval is SECONDS (now + 300*2 &gt; now).
+    /// Tracks the key for known-key cleanup (D-23).
+    /// </summary>
+    private async Task SeedLiveAsync(IDatabase db, Guid procId)
+    {
+        var projection = new ProcessorProjection(null, null, new LivenessProjection(DateTime.UtcNow, 300, "Live"));
+        await db.StringSetAsync(L2ProjectionKeys.Processor(procId), JsonSerializer.Serialize(projection));
+        _factory.TrackRedisKey(L2ProjectionKeys.Processor(procId));
+    }
 
     /// <summary>Minimal valid draft-2020-12 schema body — type:object accepts any object payload.</summary>
     private const string MinimalSchema = "{\"type\":\"object\"}";
@@ -159,11 +176,29 @@ public sealed class SchemaEdgeFacts : IClassFixture<HarnessWebAppFactory>
 
         var wfId = await SeedWorkflowAsync(client, new List<Guid> { parentStepId }, ct);
 
-        var resp = await client.PostAsJsonAsync(
-            "/api/v1/orchestration/start",
-            new List<Guid> { wfId },
-            ct);
+        // PROC-LIVE-01: seed both participating processors live so the liveness gate (post-schemaEdge,
+        // pre-Upsert) passes; otherwise the previously-204 path now returns 422 "absent".
+        var db = _factory.RedisMultiplexer.GetDatabase();
+        await SeedLiveAsync(db, parentProc);
+        await SeedLiveAsync(db, childProc);
 
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        // A successful Start writes root/step keys + SADDs the parent index — track + SREM for cleanup.
+        _factory.TrackRedisKey(L2ProjectionKeys.Root(wfId));
+        _factory.TrackRedisKey(L2ProjectionKeys.Step(wfId, parentStepId));
+        _factory.TrackRedisKey(L2ProjectionKeys.Step(wfId, childStepId));
+
+        try
+        {
+            var resp = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start",
+                new List<Guid> { wfId },
+                ct);
+
+            Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        }
+        finally
+        {
+            await db.SetRemoveAsync(RedisProjectionKeys.ParentIndex(), wfId.ToString("D"));
+        }
     }
 }
