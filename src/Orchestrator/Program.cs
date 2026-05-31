@@ -2,8 +2,13 @@ using BaseConsole.Core.DependencyInjection;
 using MassTransit;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Orchestrator.Consumers;
+using Orchestrator.Hydration;
+using Orchestrator.L1;
+using Orchestrator.Scheduling;
+using Quartz;
 
 // Thin-shell composition root (ORCH-CON-01). Generic Host — Host.CreateApplicationBuilder, NOT
 // WebApplication. The base library supplies all infra (observability, Redis soft-dep, embedded
@@ -27,6 +32,30 @@ builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
     x.AddConsumer<StopOrchestrationConsumer, StopOrchestrationConsumerDefinition>()
         .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
 });
+
+// --- Runtime wiring (Phase 23 Plan 04): Quartz + L1 store + scheduler + lifecycle + hydration ---
+builder.Services.AddQuartz();                                              // default MS-DI job factory + RAMJobStore
+builder.Services.AddQuartzHostedService(o => o.WaitForJobsToComplete = true);
+builder.Services.AddSingleton<IWorkflowL1Store, WorkflowL1Store>();
+builder.Services.AddSingleton<WorkflowScheduler>();
+builder.Services.AddSingleton<WorkflowLifecycle>();
+builder.Services.AddHostedService<HydrationBackgroundService>();           // D-13 — drives MarkReady (D-12)
+
+// WorkflowScheduler injects a concrete IScheduler — resolve the hosted scheduler from the factory.
+builder.Services.AddSingleton(sp =>
+    sp.GetRequiredService<ISchedulerFactory>().GetScheduler().GetAwaiter().GetResult());
+
+// TimeProvider for the scheduler/lifecycle cron math (idempotent — base library may not register it).
+builder.Services.TryAddSingleton(TimeProvider.System);
+
+// D-12: remove the base library's StartupCompletionService so MarkReady fires at hydration-complete,
+// NOT bare host start. IStartupGate / StartupHealthCheck / the "self"/"live" check stay untouched.
+foreach (var d in builder.Services
+             .Where(d => d.ImplementationType == typeof(BaseConsole.Core.Health.StartupCompletionService))
+             .ToList())
+{
+    builder.Services.Remove(d);
+}
 
 var host = builder.Build();
 await host.RunAsync();
