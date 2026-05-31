@@ -32,7 +32,11 @@ findings:
   warning: 1
   info: 4
   total: 5
-status: issues_found
+status: resolved
+resolved:
+  - finding: WR-01
+    commit: 3ec9b64
+    note: "Malformed external processor registration ({\"liveness\":null} / invalid JSON) now maps to ProcessorNotLive(procId, \"malformed\") -> 422 instead of NRE/JsonException -> 500. try/catch (JsonException) + projection?.Liveness null-guard applied; regression test ProcessorLivenessFacts.MalformedProcessorRegistration_Returns422 added (GREEN). IN-01..IN-04 remain open (non-blocking info)."
 ---
 
 # Phase 22: Code Review Report
@@ -72,7 +76,10 @@ PROC-NOCREATE-01 removal, plus a couple of consistency notes.
 
 ## Warnings
 
-### WR-01: `ProcessorLivenessValidator` NREs (→ 500) on a malformed external processor entry with null/absent `liveness`
+### WR-01 [RESOLVED — commit 3ec9b64]: `ProcessorLivenessValidator` NREs (→ 500) on a malformed external processor entry with null/absent `liveness`
+
+> **Resolution (operator-authorized):** The suggested patch below was applied verbatim — the deserialize is wrapped in `try/catch (JsonException)` and the deserialized shape is guarded with `if (projection?.Liveness is not { } liveness)`; both malformed paths throw `OrchestrationValidationException.ProcessorNotLive(proc.Id, "malformed")` → 422. A `RedisException` from the GET still propagates as 500. Regression test `ProcessorLivenessFacts.MalformedProcessorRegistration_Returns422` (theory: `{"liveness":null}` + non-JSON) asserts 422 with `reason=="malformed"` — GREEN. Build 0W/0E.
+
 
 **File:** `src/BaseApi.Service/Features/Orchestration/Validation/ProcessorLivenessValidator.cs:37-40`
 **Issue:** The validator deserializes the externally self-registered `skp:{procId}` entry and
