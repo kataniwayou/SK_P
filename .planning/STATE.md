@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
 status: executing
-stopped_at: Completed 22-04-PLAN.md
-last_updated: "2026-05-31T09:07:42.393Z"
+stopped_at: Paused at 22-05 Task 5 close-gate checkpoint (blocked on out-of-scope happy-path test regression)
+last_updated: "2026-05-31T09:22:33.244Z"
 last_activity: 2026-05-31
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 20
-  completed_plans: 19
-  percent: 95
+  completed_plans: 20
+  percent: 100
 ---
 
 # Project State
@@ -558,6 +558,7 @@ None yet.
 - REQUIREMENTS.md header claims 103 total v1 requirements but actual REQ-ID count is 102 (7+15+10+16+20+12+5+11+6). Header arithmetic was off by one. Coverage table in ROADMAP.md uses correct count (102). Recommend user confirm or correct the REQUIREMENTS.md header during next edit.
 - Open decisions locked in research but worth re-confirming during Phase 6: SemVer regex variant (strict triple chosen), JSON Schema draft (2020-12 chosen), Cron format (5-field Cronos chosen), Assignment.Payload max size (1 MB chosen). All four are captured in REQ-IDs but if the external scheduler uses Quartz-style 6-field cron, VALID-19 will need revision.
 - Testcontainers + Windows Docker Desktop: confirm WSL2 backend before Phase 8.
+- 22-05 Task 5 (close gate) paused: Plan 04 liveness gate + Plan 03 no-create boundary break ~10 happy-path /start tests across 8+ files OUTSIDE Plan 05 scope (StartLoopFacts, IdempotencyFacts, HappyPathE2EFacts, StartCleanupFacts, StopScanFacts, StartOrchestrationFacts, ValidationOrderFacts). Needs operator decision on fix strategy (per-test seed vs centralized harness helper) before full-suite-GREEN x3 close gate can run.
 
 ## Deferred Items
 
@@ -569,9 +570,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-31T09:07:36.062Z
-Stopped at: Completed 22-04-PLAN.md
-Resume file: None
+Last session: 2026-05-31T09:22:33.234Z
+Stopped at: Paused at 22-05 Task 5 close-gate checkpoint (blocked on out-of-scope happy-path test regression)
+Resume file: .planning/phases/22-l2-root-parent-restructure-processor-self-registration/22-05-PLAN.md
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
