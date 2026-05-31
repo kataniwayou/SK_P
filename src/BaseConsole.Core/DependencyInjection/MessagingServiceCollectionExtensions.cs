@@ -21,10 +21,18 @@ public static class MessagingServiceCollectionExtensions
     /// the key, never the value). The auto-registered bus health check keeps its default tags
     /// <c>["ready","masstransit"]</c> (CONSOLE-HEALTH-03) — the bus-check tag-override hook is
     /// deliberately NOT called (custom tags would REPLACE the defaults).
+    /// <para>
+    /// The optional <paramref name="configureBus"/> callback (Phase 24 D-06) exposes the RabbitMQ
+    /// bus-factory configurator so a concrete console can wire bus-factory-level middleware — e.g.
+    /// an in-memory message scheduler for gate-closed scheduled redelivery — without the base
+    /// library taking on any new infra dependency. It is invoked AFTER the correlation filters and
+    /// BEFORE <c>ConfigureEndpoints</c>; passing null leaves behavior identical to prior phases.
+    /// </para>
     /// </summary>
     public static IServiceCollection AddBaseConsoleMessaging(
         this IServiceCollection services, IConfiguration cfg,
-        Action<IBusRegistrationConfigurator> configureConsumers)
+        Action<IBusRegistrationConfigurator> configureConsumers,
+        Action<IRabbitMqBusFactoryConfigurator>? configureBus = null)
     {
         var rabbitHost = cfg.Require("RabbitMq:Host");
         var rabbitUser = cfg.Require("RabbitMq:Username");
@@ -41,6 +49,10 @@ public static class MessagingServiceCollectionExtensions
                 c.UseConsumeFilter(typeof(InboundCorrelationConsumeFilter<>), ctx);   // CORR-01 bus-wide (open-generic)
                 c.UseSendFilter(typeof(OutboundCorrelationSendFilter<>), ctx);        // CORR-02
                 c.UsePublishFilter(typeof(OutboundCorrelationPublishFilter<>), ctx);  // CORR-02
+                configureBus?.Invoke(c);   // OPTIONAL bus-factory seam (Phase 24 D-06) — scheduler/redelivery
+                                           // wiring (e.g. c.UseInMemoryScheduler()) goes here, BEFORE endpoints
+                                           // bind. Default null preserves all existing call sites; base = infra
+                                           // firewall intact (the callback only forwards the existing configurator).
                 c.ConfigureEndpoints(ctx);
             });
         });
