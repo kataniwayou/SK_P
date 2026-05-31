@@ -143,6 +143,20 @@ Plans:
   - [x] 23-05-PLAN.md — Harness/review tests: fire-dispatch, start/stop lifecycle, ack semantics, no-global-lock + full-suite gate (wave 4)
 **UI hint**: no
 
+### Phase 24: Orchestrator Result-Consume & Step Advancement
+**Goal**: Close the processor→orchestrator round-trip. The orchestrator consumes an `ExecutionResult` from a processor on a **load-balanced shared queue** (competing consumers across replicas; 1 today), looks up the completed step's `NextStepIds` in the in-memory L1 dictionary, reads each next step's projection from L1, and — for every next step whose `EntryCondition` the incoming outcome satisfies — `Send`s a job-trigger-shaped dispatch to `queue:{nextStep.ProcessorId}` that continues the same execution. The DAG now advances from real processor results, not just cron-fired entry steps. The orchestrator still performs NO L2 mutation (L1 reads only).
+**Depends on**: Phase 23 (consumes the hydrated L1 dictionary, the `EntryStepDispatch` shape, and the `queue:{processorId}` send convention)
+**Requirements**: ORCH-RESULT-01, ORCH-RESULT-02, ORCH-ADVANCE-01, ORCH-ADVANCE-02, ORCH-RESULT-ACK-01 (5 provisional — lock at /gsd-spec-phase 24)
+**Success Criteria** (provisional — what must be TRUE; locked/refined at /gsd-spec-phase 24):
+  1. (result contract) A net-new `ExecutionResult` record exists in `Messaging.Contracts` implementing `IExecutionCorrelated` (`correlationId, workflowId, stepId, processorId, executionId, entryId`) plus a `StepOutcome` outcome and optional error/cancellation message. A net-new `StepOutcome` enum carries `Processing/Completed/Failed/Cancelled` with int values matching the `StepEntryCondition.Previous*` subset (0–3) — a processor cannot emit `Always`/`Never` as an outcome.
+  2. (load-balanced consume) The orchestrator consumes `ExecutionResult` on a load-balanced **shared named queue** (e.g. `queue:orchestrator-result`) using competing-consumer semantics — NOT the instance-unique fan-out endpoint used for Start/Stop control.
+  3. (edge traversal, L1-only) On a result the orchestrator reads the completed step `{workflowId}:{stepId}` from L1, enumerates its `NextStepIds`, and reads each next step's projection from L1. It performs NO L2/Redis read on the result path.
+  4. (entry-condition match) A next step is selected iff `nextStep.EntryCondition == (int)outcome` OR `nextStep.EntryCondition == Always`; `Never` never auto-advances.
+  5. (continuation dispatch) For each selected next step the orchestrator `Send`s the job-trigger-shaped message (`EntryStepDispatch` structure) to `queue:{nextStep.ProcessorId}`, copying `correlationId`, `entryId`, `executionId`, and `workflowId` from the result, and taking `stepId`, `processorId`, `payload` from the next step's L1 projection.
+  6. (ack semantics) A result for an unknown workflow/step, a terminal step with no matching next step, or a corrupt/absent L1 projection is a clean ack (no throw); only genuine infra faults propagate to the bounded retry → `_error` (mirrors ORCH-ACK-01).
+**Plans**: TBD (run /gsd-spec-phase 24 → /gsd-plan-phase 24)
+**UI hint**: no
+
 ### Coverage (v3.4.0)
 
 ✓ All 40 milestone requirements mapped to exactly one phase (35 P1 + 2 P2 + 3 hardening; HARDEN-01..03 added post-audit for Phase 21)
@@ -215,6 +229,7 @@ Plans:
 | 21    | v3.4.0    | 1/1 | Complete    | 2026-05-31 |
 | 22    | v3.4.0    | 5/5 | Complete    | 2026-05-31 |
 | 23    | v3.4.0    | 5/5 | Complete    | 2026-05-31 |
+| 24    | v3.4.0    | 0/? | Planned     | —          |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 (BaseConsole + Orchestrator Messaging) roadmap created 2026-05-30 — 4 phases (17-20), 37 requirements, dependency-ordered per HIGH-confidence research (`.planning/research/SUMMARY.md`). Next: `/gsd-plan-phase 17`.*

@@ -142,6 +142,16 @@ Concrete requirements for Phase 23, which pulls forward the dispatch half of the
 - [x] **ORCH-ACK-01
 **: The new consumers + startup hydration follow the existing MSG-ACK split — business failures log + ack/skip; infra faults propagate to bounded retry → `_error`; startup skips a missing/corrupt entry without crashing the host.
 
+### Phase 24 — Orchestrator Result-Consume & Step Advancement (provisional — lock at /gsd-spec-phase 24)
+
+Concrete requirements for Phase 24, which pulls the processor→orchestrator round-trip forward into v3.4.0. **Realizes** `FUT-SEND-02` (ORCH-RESULT-02 — processor→orchestrator result on a load-balanced shared queue) and the result-record + round-trip half of `FUT-CONTRACTS-01` (ORCH-RESULT-01 + ORCH-ADVANCE-02). `FUT-REQRESP-01` (processor self-id request/response) remains deferred. Confirmed design (2026-05-31 discussion): next-step lookup is **L1-only** (no L2 read on the result path); the continuation reuses the `EntryStepDispatch` message structure; outcome is a net-new `StepOutcome` enum; the shared result queue uses a `queue:orchestrator-result`-style name.
+
+- [ ] **ORCH-RESULT-01**: A net-new `ExecutionResult` message record exists in `Messaging.Contracts` implementing `IExecutionCorrelated` (`correlationId`, `workflowId`, `stepId`, `processorId`, `executionId`, `entryId`), carrying a `StepOutcome` outcome plus an optional error message (Failed) / cancellation message (Cancelled). A net-new `StepOutcome` enum carries `Processing`/`Completed`/`Failed`/`Cancelled` with int values matching the `StepEntryCondition.Previous*` subset (0–3); `Always`/`Never` are NOT valid outcomes.
+- [ ] **ORCH-RESULT-02**: The orchestrator consumes `ExecutionResult` on a load-balanced **shared named queue** (competing-consumer semantics across replicas — 1 active today), distinct from the instance-unique fan-out endpoint used for Start/Stop control.
+- [ ] **ORCH-ADVANCE-01**: On a result the orchestrator reads the completed step's L1 projection, enumerates its `NextStepIds`, reads each next step's L1 projection, and selects a next step iff `nextStep.EntryCondition == (int)outcome` OR `nextStep.EntryCondition == Always` (`Never` never auto-advances). The result path performs NO L2/Redis read.
+- [ ] **ORCH-ADVANCE-02**: For each selected next step the orchestrator `Send`s the job-trigger-shaped dispatch (`EntryStepDispatch` structure) to `queue:{nextStep.ProcessorId}`, copying `correlationId`, `entryId`, `executionId`, and `workflowId` from the result, and taking `stepId`, `processorId`, `payload` from the next step's L1 projection.
+- [ ] **ORCH-RESULT-ACK-01**: The result consumer follows the existing MSG-ACK / ORCH-ACK split — a result for an unknown workflow/step, a terminal step with no matching next step, or a corrupt/absent L1 projection is a clean ack (no throw); only genuine infra faults propagate to the bounded retry → `_error`.
+
 ### Deferred from prior milestones (unchanged)
 
 - **FUT-OUTBOX-01**: Transactional outbox — once DB-transaction-coupled publishing appears.
