@@ -25,7 +25,14 @@ public sealed class StopConsumerLifecycleTests
 {
     private static async Task<IScheduler> NewRamSchedulerAsync(CancellationToken ct)
     {
-        var scheduler = await new StdSchedulerFactory().GetScheduler(ct);
+        // Unique instance name per scheduler — StdSchedulerFactory binds schedulers in a SHARED
+        // process-wide repository keyed by instance name; the default name collides across parallel
+        // test classes. A fresh GUID name isolates each test's RAMJobStore.
+        var props = new System.Collections.Specialized.NameValueCollection
+        {
+            ["quartz.scheduler.instanceName"] = $"test-{Guid.NewGuid():N}",
+        };
+        var scheduler = await new StdSchedulerFactory(props).GetScheduler(ct);
         await scheduler.Start(ct);
         return scheduler;
     }

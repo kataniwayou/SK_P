@@ -69,7 +69,14 @@ public sealed class HydrationTests
 
     private static async Task<IScheduler> NewRamSchedulerAsync()
     {
-        var scheduler = await new StdSchedulerFactory().GetScheduler();
+        // Unique instance name — StdSchedulerFactory binds schedulers in a SHARED process-wide
+        // repository keyed by instance name; the default name collides across parallel test classes
+        // (Plan 05 added several scheduler-using classes). A fresh GUID name isolates each scheduler.
+        var props = new System.Collections.Specialized.NameValueCollection
+        {
+            ["quartz.scheduler.instanceName"] = $"test-{Guid.NewGuid():N}",
+        };
+        var scheduler = await new StdSchedulerFactory(props).GetScheduler();
         await scheduler.Start();
         return scheduler;
     }
