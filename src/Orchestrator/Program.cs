@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Orchestrator.Consumers;
+using Orchestrator.Dispatch;
 using Orchestrator.Hydration;
 using Orchestrator.L1;
 using Orchestrator.Scheduling;
@@ -25,13 +26,26 @@ builder.Services.AddBaseConsole(builder.Configuration);       // Redis soft-dep 
 // load-balance.
 var instanceId = builder.Configuration["Orchestrator:InstanceId"] ?? Guid.NewGuid().ToString("N");
 
-builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
-{
-    x.AddConsumer<StartOrchestrationConsumer, StartOrchestrationConsumerDefinition>()
-        .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
-    x.AddConsumer<StopOrchestrationConsumer, StopOrchestrationConsumerDefinition>()
-        .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
-});
+builder.Services.AddBaseConsoleMessaging(builder.Configuration,
+    x =>
+    {
+        x.AddConsumer<StartOrchestrationConsumer, StartOrchestrationConsumerDefinition>()
+            .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
+        x.AddConsumer<StopOrchestrationConsumer, StopOrchestrationConsumerDefinition>()
+            .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
+        // ORCH-RESULT-02: shared competing-consumer (NO InstanceId/Temporary) — the inverse of the
+        // Start/Stop fan-out. ResultConsumerDefinition binds the stable "orchestrator-result" endpoint.
+        x.AddConsumer<ResultConsumer, ResultConsumerDefinition>();
+        // ORCH-GATE-01: register the in-memory message scheduler that backs UseScheduledRedelivery
+        // (the gate-closed never-drop policy). Operates on IBusRegistrationConfigurator.
+        x.AddInMemoryMessageScheduler();
+    },
+    // ORCH-GATE-01 (D-06 / Pitfall 3 / A2): the bus-factory half of the in-memory scheduler.
+    // AddInMemoryMessageScheduler() registers the scheduler service, but UseScheduledRedelivery's
+    // pipeline needs the scheduler wired into the bus factory via UseInMemoryScheduler() (the
+    // RabbitMQ transport has no native message scheduler — the delayed-exchange plugin is not
+    // installed). Routed through Plan 01's optional configureBus seam (base = infra firewall intact).
+    configureBus: c => c.UseInMemoryScheduler());
 
 // --- Runtime wiring (Phase 23 Plan 04): Quartz + L1 store + scheduler + lifecycle + hydration ---
 builder.Services.AddQuartz();                                              // default MS-DI job factory + RAMJobStore
@@ -39,6 +53,8 @@ builder.Services.AddQuartzHostedService(o => o.WaitForJobsToComplete = true);
 builder.Services.AddSingleton<IWorkflowL1Store, WorkflowL1Store>();
 builder.Services.AddSingleton<WorkflowScheduler>();
 builder.Services.AddSingleton<WorkflowLifecycle>();
+builder.Services.AddSingleton<IStepDispatcher, StepDispatcher>();          // Plan 03 dispatch single-owner (result + fire share it)
+builder.Services.AddSingleton<StepAdvancement>();                          // Plan 03 pure match helper (ResultConsumer dependency)
 builder.Services.AddHostedService<HydrationBackgroundService>();           // D-13 — drives MarkReady (D-12)
 
 // WorkflowScheduler injects a concrete IScheduler — resolve the hosted scheduler from the factory.
