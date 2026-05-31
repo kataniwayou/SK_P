@@ -117,9 +117,9 @@ Plans:
   2. (mod 2) `{prefix}` is a hardcoded compile-time constant, no longer read from configuration/options; no appsettings key controls it.
   3. (mod 3) The orchestrator no longer creates processor L2 entries (processor self-registration write path deferred to its own phase/discussion). The workflow checks processor existence in L2 and computes liveness via `timestamp + interval*2 > now` (processor refreshes its own timestamp); processor edge-schema validation is unchanged.
 **Plans**: 5 plans
-  - [ ] 22-01-PLAN.md — Const prefix + ParentIndex() + no-prefix builders in L2ProjectionKeys + forwarders + golden tests
-  - [ ] 22-02-PLAN.md — Reader-side prefix de-config (delete OrchestratorRedisOptions, consumers, Program.cs, appsettings)
-  - [ ] 22-03-PLAN.md — Writer SADD parent index + remove processor-create + cleanup SREM + writer/service prefix removal
+  - [x] 22-01-PLAN.md — Const prefix + ParentIndex() + no-prefix builders in L2ProjectionKeys + forwarders + golden tests
+  - [x] 22-02-PLAN.md — Reader-side prefix de-config (delete OrchestratorRedisOptions, consumers, Program.cs, appsettings)
+  - [x] 22-03-PLAN.md — Writer SADD parent index + remove processor-create + cleanup SREM + writer/service prefix removal
   - [ ] 22-04-PLAN.md — ProcessorLivenessValidator (422) + exception factory + StartAsync wiring + DI
   - [ ] 22-05-PLAN.md — Test-isolation rewrite + ProcessorLivenessFacts + golden/gate updates + triple-SHA close gate
 **UI hint**: no
@@ -205,7 +205,7 @@ Plans:
 | 19    | v3.4.0    | 4/4 | Complete    | 2026-05-30 |
 | 20    | v3.4.0    | 4/4            | Complete    | 2026-05-31 |
 | 21    | v3.4.0    | 1/1 | Complete    | 2026-05-31 |
-| 22    | v3.4.0    | 0/0            | Not planned | —          |
+| 22    | v3.4.0    | 3/5            | In progress | 2026-05-31 |
 | 23    | v3.4.0    | 0/0            | Not planned | —          |
 
 ---
