@@ -48,7 +48,7 @@ One-liner: Extracted the EntryStepDispatch build+Send into a single-owner `IStep
 - `dotnet build src/Orchestrator/Orchestrator.csproj -c Debug` — Build succeeded, 0 Warning(s) / 0 Error(s).
 - `dotnet build tests/BaseApi.Tests/BaseApi.Tests.csproj -c Debug` — Build succeeded, 0 Warning(s) / 0 Error(s) (after the FireDispatchTests reconcile, Rule 1 below).
 - `dotnet test --filter "FullyQualifiedName~StepAdvancement"` — Passed: 17, Failed: 0 (full outcome x entry-condition matrix incl. Never-never + dangling-skip).
-- `dotnet test --filter "FullyQualifiedName~Orchestrator"` — Passed: 48, Failed: 0 (no regression after the WorkflowFireJob refactor).
+- `dotnet test --filter "FullyQualifiedName~Orchestrator"` — Passed: 56, Failed: 0 (no regression after the WorkflowFireJob refactor; the `~Orchestrator` namespace filter spans the 17 StepAdvancement + 39 fire/lifecycle/contract tests).
 
 ## TDD Gate Compliance
 
@@ -79,8 +79,8 @@ Task 2:
 - **Issue:** the existing `tests/BaseApi.Tests/Orchestrator/FireDispatchTests.cs` constructs `WorkflowFireJob` at 3 sites passing `harness.Bus` (an `IBus`) into the 2nd ctor slot, which was `ISendEndpointProvider`. Task 1 changed that slot to `IStepDispatcher`, so the test assembly failed to compile (`CS1503: cannot convert IBus to IStepDispatcher`) — which also masked the StepAdvancement test result (the whole assembly was broken).
 - **Fix:** the 3 sites now pass `new StepDispatcher(harness.Bus)` (the real dispatcher wrapping the harness bus — `IBus` satisfies `ISendEndpointProvider`), preserving the test's intent (harness captures the `Send`). Added `using Orchestrator.Dispatch;`.
 - **Files modified:** `tests/BaseApi.Tests/Orchestrator/FireDispatchTests.cs`
-- **Commit:** `9a8f2c1`
-- **Result:** test assembly builds 0/0; StepAdvancement 17/17; Orchestrator slice 48/48 (no regression).
+- **Commit:** `8a3149c`
+- **Result:** test assembly builds 0/0; StepAdvancement 17/17; Orchestrator slice 56/56 (no regression).
 
 The KNOWN GOTCHA from 24-02 (BOM / off test paths) did not apply: the new `StepAdvancementTests.cs` is plain ASCII at the verified path `tests/BaseApi.Tests/Orchestrator/` with namespace `BaseApi.Tests.Orchestrator`.
 
@@ -89,8 +89,8 @@ The KNOWN GOTCHA from 24-02 (BOM / off test paths) did not apply: the new `StepA
 - `24f6668` feat(24-03): extract IStepDispatcher; refactor WorkflowFireJob; add GateClosedException (Task 1)
 - `83b75d7` test(24-03): add failing table-driven test for StepAdvancement.SelectNext (Task 2 RED)
 - `ddd73b1` feat(24-03): implement pure StepAdvancement.SelectNext match + traversal (Task 2 GREEN)
-- `9a8f2c1` fix(24-03): reconcile FireDispatchTests to IStepDispatcher ctor change (Rule 1)
+- `8a3149c` fix(24-03): reconcile FireDispatchTests to IStepDispatcher ctor change (Rule 1)
 
 ## Self-Check: PASSED
 
-All 6 key files present on disk; all 4 commits (24f6668, 83b75d7, ddd73b1, 9a8f2c1) present in git log.
+All 6 key files present on disk; all 4 commits (24f6668, 83b75d7, ddd73b1, 8a3149c) present in git log.
