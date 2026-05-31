@@ -46,6 +46,7 @@ public sealed class ResultConsumer(
             // D-06: gate closed (hydration incomplete) — THROW so the message is scheduled-redelivered
             // after MarkReady, NEVER ack-return (a one-time result must not be dropped). The throw flows
             // to UseScheduledRedelivery; GateClosedException is deliberately NOT Ignore<>-listed.
+            logger.LogInformation("Gate closed — redelivering ExecutionResult (no ack)");
             throw new GateClosedException();
         }
 
@@ -56,6 +57,8 @@ public sealed class ResultConsumer(
         {
             // BUSINESS ack — unknown (wf,step) / drained / corrupt-projection (it never entered wf.Steps).
             // Mirrors WorkflowLifecycle.IsBusiness: log + return, NEVER throw (SPEC req 5).
+            logger.LogInformation(
+                "No L1 entry for ({WorkflowId}, {StepId}) — acking result (business)", m.WorkflowId, m.StepId);
             return;
         }
 
