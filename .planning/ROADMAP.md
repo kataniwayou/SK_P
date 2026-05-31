@@ -159,7 +159,7 @@ Plans:
   8. (conditionless consumers) Start unconditionally hydrates L2→L1 + reschedules (no existence skip); Stop unconditionally deletes the Quartz job but KEEPS the L1 entry so late results drain. L1 eviction of stopped workflows is deferred (needs per-workflowId "no in-flight bus messages" detection).
   9. (WebApi first-win) The WebApi suppresses duplicate start/stop at the L2 root: start creates if absent (else skip), stop deletes if present (else skip) — the orchestrator only sees deduped transitions.
 **Plans**: 5 plans
-  - [ ] 24-01-PLAN.md — Result contracts (StepOutcome/ExecutionResult/OrchestratorQueues) + BaseConsole scheduler seam [ORCH-RESULT-01]
+  - [x] 24-01-PLAN.md — Result contracts (StepOutcome/ExecutionResult/OrchestratorQueues) + BaseConsole scheduler seam [ORCH-RESULT-01]
   - [ ] 24-02-PLAN.md — WebApi first-win L2-root create/delete + reconcile facts [WEBAPI-SUPPRESS-01]
   - [ ] 24-03-PLAN.md — IStepDispatcher + StepAdvancement helpers + GateClosedException + WorkflowFireJob refactor [ORCH-ADVANCE-01, ORCH-ADVANCE-02]
   - [ ] 24-04-PLAN.md — ResultConsumer + shared competing endpoint + scheduler/redelivery wiring [ORCH-RESULT-02, ORCH-ADVANCE-01/02, ORCH-RESULT-ACK-01, ORCH-GATE-01]
