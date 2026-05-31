@@ -136,7 +136,8 @@ Concrete requirements for Phase 23, which pulls forward the dispatch half of the
 - [x] **ORCH-CONSUME-01**: The start-orchestration consumer hydrates ONLY the consumed workflowId(s) into L1, then runs ORCH-SCHED-01
  + ORCH-FIRE-01 for them.
 - [ ] **ORCH-STOP-01**: The stop-orchestration consumer consumes `workflowId`s, resolves each `jobId` from L1, `DeleteJob(JobKey(jobId))`, and clears that workflow's L1 entries — performing NO L2 mutation.
-- [ ] **ORCH-SCALE-01**: All new state (L1, Quartz RAMJobStore) is per-instance with NO single-instance/global-uniqueness assumption; a single active replica is assumed at runtime, cross-replica duplicate-dispatch coordination deferred.
+- [x] **ORCH-SCALE-01
+**: All new state (L1, Quartz RAMJobStore) is per-instance with NO single-instance/global-uniqueness assumption; a single active replica is assumed at runtime, cross-replica duplicate-dispatch coordination deferred.
 - [ ] **ORCH-ACK-01**: The new consumers + startup hydration follow the existing MSG-ACK split — business failures log + ack/skip; infra faults propagate to bounded retry → `_error`; startup skips a missing/corrupt entry without crashing the host.
 
 ### Deferred from prior milestones (unchanged)
