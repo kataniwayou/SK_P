@@ -105,17 +105,54 @@ Explicitly excluded this milestone. Documented to prevent scope creep.
 
 ## Traceability
 
-Which phases cover which requirements. Populated during roadmap creation (Phase 25+).
+Which phases cover which requirements. Populated during roadmap creation (Phase 25-28).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| _(populated by roadmapper)_ | | |
+| CONTRACT-01 | Phase 25 | Pending |
+| CONTRACT-02 | Phase 25 | Pending |
+| CONTRACT-03 | Phase 25 | Pending |
+| RPC-01 | Phase 25 | Pending |
+| RPC-02 | Phase 25 | Pending |
+| RPC-03 | Phase 25 | Pending |
+| BPC-01 | Phase 26 | Pending |
+| BPC-02 | Phase 26 | Pending |
+| BPC-03 | Phase 26 | Pending |
+| IDENT-03 | Phase 26 | Pending |
+| IDENT-04 | Phase 26 | Pending |
+| RPC-04 | Phase 26 | Pending |
+| SCHEMA-01 | Phase 26 | Pending |
+| SCHEMA-02 | Phase 26 | Pending |
+| LIVE-01 | Phase 26 | Pending |
+| LIVE-02 | Phase 26 | Pending |
+| LIVE-03 | Phase 26 | Pending |
+| LIVE-04 | Phase 26 | Pending |
+| LIVE-05 | Phase 26 | Pending |
+| LIVE-06 | Phase 26 | Pending |
+| CONFIG-01 | Phase 26 | Pending |
+| EXEC-01 | Phase 27 | Pending |
+| EXEC-02 | Phase 27 | Pending |
+| EXEC-03 | Phase 27 | Pending |
+| EXEC-04 | Phase 27 | Pending |
+| EXEC-05 | Phase 27 | Pending |
+| EXEC-06 | Phase 27 | Pending |
+| EXEC-07 | Phase 27 | Pending |
+| EXEC-08 | Phase 27 | Pending |
+| EXEC-09 | Phase 27 | Pending |
+| EXEC-10 | Phase 27 | Pending |
+| CONFIG-02 | Phase 27 | Pending |
+| IDENT-01 | Phase 28 | Pending |
+| IDENT-02 | Phase 28 | Pending |
+| SAMPLE-01 | Phase 28 | Pending |
+| SAMPLE-02 | Phase 28 | Pending |
+| TEST-01 | Phase 28 | Pending |
+| TEST-02 | Phase 28 | Pending |
 
 **Coverage:**
 - v3.5.0 requirements: 38 total (BPC ×3, IDENT ×4, RPC ×4, SCHEMA ×2, LIVE ×6, CONTRACT ×3, EXEC ×10, SAMPLE ×2, CONFIG ×2, TEST ×2)
-- Mapped to phases: 0 (pending roadmap)
-- Unmapped: 38 ⚠️ (resolved by roadmap)
+- Mapped to phases: 38/38 ✓ (Phase 25 ×6, Phase 26 ×15, Phase 27 ×11, Phase 28 ×6)
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-01*
-*Last updated: 2026-06-01 after initial definition*
+*Last updated: 2026-06-01 — roadmap created (phases 25-28); traceability populated, 38/38 mapped.*

@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: defining_requirements
-stopped_at: Milestone v3.5.0 started (requirements next)
+status: roadmap_complete
+stopped_at: Roadmap created (phases 25-28); ready to plan Phase 25
 last_updated: "2026-06-01T12:00:00.000Z"
-last_activity: 2026-06-01 — Milestone v3.5.0 started; PROJECT.md updated, defining requirements
+last_activity: 2026-06-01 — Milestone v3.5.0 roadmap created (4 phases, 38/38 reqs mapped)
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -26,12 +26,23 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: Not started (defining requirements)
+Phase: 25 (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-01 — Milestone v3.5.0 started
+Status: Roadmap complete — ready to plan Phase 25
+Last activity: 2026-06-01 — Milestone v3.5.0 roadmap created (4 phases, 38/38 reqs mapped)
 
-> v3.4.0 execution history (phase/plan completion logs, performance metrics) is retained below for reference. The v3.5.0 roadmap will populate the phase list here (phases continue at 25).
+### Milestone Phases (v3.5.0)
+
+| Phase | Name | Requirements | Status |
+|-------|------|--------------|--------|
+| 25 | Shared Contracts + WebApi Responders | CONTRACT-01/02/03, RPC-01/02/03 (6) | Not started |
+| 26 | BaseProcessor.Core — Library, Identity & Liveness | BPC-01/02/03, IDENT-03/04, RPC-04, SCHEMA-01/02, LIVE-01..06, CONFIG-01 (15) | Not started |
+| 27 | Execution Round-Trip | EXEC-01..10, CONFIG-02 (11) | Not started |
+| 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Not started |
+
+Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProcessor.Core: library + identity + liveness) → 27 (execution round-trip) → 28 (SourceHash + Processor.Sample + E2E closeout). See .planning/ROADMAP.md for success criteria + cross-phase constraints.
+
+> v3.4.0 execution history (phase/plan completion logs, performance metrics) is retained below for reference.
 
 ### Phase 24.1 Plan 24.1-01 — COMPLETE (gating redesign; closes FAILED Phase 24, 2026-06-01)
 
