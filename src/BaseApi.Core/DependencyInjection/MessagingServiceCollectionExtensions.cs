@@ -34,15 +34,36 @@ namespace BaseApi.Core.DependencyInjection;
 public static class MessagingServiceCollectionExtensions
 {
     /// <summary>
-    /// Wires the publish-only RabbitMQ bus. Host/port/credentials are read via configuration:
+    /// Wires the RabbitMQ bus. Host/port/credentials are read via configuration:
     /// host/username/password use the <c>cfg.Require</c> fail-fast helper (the missing-key
     /// exception names the key, never the value); <c>RabbitMq:Port</c> is OPTIONAL and defaults
     /// to 5672 so the compose-internal <c>rabbitmq:5672</c> path used by running containers is
     /// byte-unaffected. The in-process TEST WebApi overrides <c>RabbitMq__Port=5673</c> to reach
     /// the host-mapped broker port (TEST-RMQ-02 test-enablement, not new runtime behavior).
+    /// <para>
+    /// <b>Two optional seams (Phase 25 D-05/D-06 — RPC-01/02/03):</b> both default <c>null</c>, so
+    /// a call with no hooks is BYTE-EQUIVALENT to the Phase-19 publish-only join (no consumers, no
+    /// receive endpoints — the WebApi stays a pure publisher). When supplied:
+    /// <list type="bullet">
+    ///   <item><paramref name="configureConsumers"/> is the <c>AddConsumer&lt;T&gt;()</c> seam,
+    ///   invoked on the <see cref="IBusRegistrationConfigurator"/> AFTER the Degraded health block.</item>
+    ///   <item><paramref name="configureEndpoints"/> is the explicit-<c>ReceiveEndpoint</c> seam,
+    ///   invoked inside the <c>UsingRabbitMq</c> closure (the only scope where the
+    ///   <see cref="IBusRegistrationContext"/> needed by <c>ConfigureConsumer&lt;T&gt;(context)</c>
+    ///   exists — Pitfall 1: a single consumer hook is insufficient).</item>
+    /// </list>
+    /// This deliberately does NOT call <c>busCfg.ConfigureEndpoints(context)</c> (D-06 anti-pattern):
+    /// the Service supplies explicit named endpoints on <c>ProcessorQueues.*</c>, never MassTransit
+    /// auto-naming. <b>Firewall (CONTRACT-01/D-05):</b> the hooks are typed in MassTransit interfaces
+    /// only — Core never names a concrete consumer type, so <c>BaseApi.Core</c> still references
+    /// <c>Messaging.Contracts</c> + MassTransit ONLY (no <c>BaseApi.Service</c>/<c>BaseConsole.Core</c>
+    /// reference). The <c>MinimalFailureStatus = Degraded</c> block is untouched (MSG-WEBAPI-04).
+    /// </para>
     /// </summary>
     public static IServiceCollection AddBaseApiMessaging(
-        this IServiceCollection services, IConfiguration cfg)
+        this IServiceCollection services, IConfiguration cfg,
+        Action<IBusRegistrationConfigurator>? configureConsumers = null,                              // D-05: AddConsumer<T> seam
+        Action<IBusRegistrationContext, IRabbitMqBusFactoryConfigurator>? configureEndpoints = null)  // D-06: ReceiveEndpoint seam
     {
         var host = cfg.Require("RabbitMq:Host");
         var port = cfg.GetValue<ushort>("RabbitMq:Port", 5672);
@@ -59,10 +80,15 @@ public static class MessagingServiceCollectionExtensions
                 o.MinimalFailureStatus = HealthStatus.Degraded;
             });
 
+            configureConsumers?.Invoke(bus);   // D-05 seam — null default = publish-only (no consumers).
+
             bus.UsingRabbitMq((context, busCfg) =>
             {
                 busCfg.Host(host, port, "/", h => { h.Username(user); h.Password(pass); });
-                // Publish-only — NO ConfigureEndpoints, NO consumers, NO correlation filters (D-02).
+                configureEndpoints?.Invoke(context, busCfg);   // D-06 seam — explicit ReceiveEndpoints supplied by the
+                                                               // Service; NO ConfigureEndpoints(context) auto-naming.
+                // Default (both hooks null): publish-only — NO ConfigureEndpoints, NO consumers,
+                // NO correlation filters (D-02), byte-equivalent to the Phase-19 join.
             });
         });
 
