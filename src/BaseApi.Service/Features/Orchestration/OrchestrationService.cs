@@ -331,8 +331,10 @@ public sealed class OrchestrationService
                 continue;
             }
 
-            // Root is present — StopCleanupAsync owns the atomic discover-then-delete (root + steps +
-            // SREM parent in one batch, R3). R2 (parent-index compensation): if the delete batch
+            // Root is present — StopCleanupAsync owns the atomic discover-then-delete: the root + step
+            // keys are deleted in ONE batch (R3); the parent-index SREM is a separate earlier op (NOT
+            // in the delete batch — idempotent), so SREM→delete window consistency is caller-enforced
+            // by the R2 compensation below. R2 (parent-index compensation): if the cleanup
             // throws, the cleanup may already have SREM'd the parent index → SADD this id back
             // (compensate) so the enumeration-only index stays consistent with the still-present L2,
             // then rethrow (tagged). Compensation is best-effort — a fault during the SADD degrades to
