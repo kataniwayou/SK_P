@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: verifying
+status: ready_to_plan
 stopped_at: Completed 25-02-PLAN.md
 last_updated: "2026-06-01T17:50:24.801Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 2
   completed_plans: 2
-  percent: 100
+  percent: 50
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 25 (shared-contracts-webapi-responders) — EXECUTING
-Plan: 2 of 2
-Status: Phase complete — ready for verification
+Phase: 26
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-01
 
 ### Milestone Phases (v3.5.0)
@@ -141,7 +141,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 93
+- Total plans completed: 95
 - Average duration: —
 - Total execution time: —
 
@@ -172,6 +172,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 22 | 5 | - | - |
 | 23 | 5 | - | - |
 | 24.1 | 1 | - | - |
+| 25 | 2 | - | - |
 
 **Recent Trend:**
 
