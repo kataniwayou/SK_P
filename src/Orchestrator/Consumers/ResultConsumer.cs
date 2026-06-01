@@ -1,4 +1,3 @@
-using BaseConsole.Core.Health;
 using MassTransit;
 using Microsoft.Extensions.Logging;
 using Orchestrator.Dispatch;
@@ -8,17 +7,20 @@ using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate f
 namespace Orchestrator.Consumers;
 
 /// <summary>
-/// Result consumer (ORCH-RESULT-02 / ORCH-ADVANCE-01/02 / ORCH-RESULT-ACK-01 / ORCH-GATE-01). Consumes
+/// Result consumer (ORCH-RESULT-02 / ORCH-ADVANCE-01/02 / ORCH-RESULT-ACK-01). Consumes
 /// an <see cref="ExecutionResult"/> off the shared competing-consumer queue
 /// <c>orchestrator-result</c> and advances the workflow's DAG: it reads the completed step + each next
 /// step from L1 ONLY (no Redis/L2 read), matches each next step's entry condition against the result's
 /// outcome via <see cref="StepAdvancement"/>, and dispatches one continuation per match through
 /// <see cref="IStepDispatcher"/> to <c>queue:{nextStep.ProcessorId}</c>.
 /// <para>
-/// <b>Gate-closed never-drop (D-06):</b> while <see cref="IStartupGate.IsReady"/> is false the consumer
-/// THROWS <see cref="GateClosedException"/> (it does NOT ack-return) so the message reaches the
-/// scheduled-redelivery middleware and is reprocessed after hydration completes (<c>MarkReady</c>).
-/// This inverts the Phase 23 Start/Stop ack-drop — a one-time processor result must never be lost.
+/// <b>L1-only, lifecycle-agnostic (24.1 / D-24.1-05, supersedes D-06 / ORCH-GATE-01):</b> the boot
+/// gate is REMOVED. Processors send results freely at any time; L1 is the SOLE arbiter (D-08
+/// strengthened). An L1 hit advances; an L1 MISS is the DEFINED graceful outcome — log + return (ack),
+/// uniformly for unknown / stopped-drained / not-yet-hydrated ids — never a throw, never a DLQ.
+/// Accepted tradeoff: a result arriving in the boot window before its L1 entry is (re)hydrated is
+/// gracefully acked (consumed, not advanced); the never-drop guarantee relaxes to
+/// best-effort-against-L1.
 /// </para>
 /// <para>
 /// <b>Business-ack vs infra-throw split (ORCH-RESULT-ACK-01, mirrors
@@ -33,7 +35,6 @@ namespace Orchestrator.Consumers;
 /// </para>
 /// </summary>
 public sealed class ResultConsumer(
-    IStartupGate gate,
     IWorkflowL1Store store,
     StepAdvancement advancement,
     IStepDispatcher dispatcher,
@@ -41,15 +42,6 @@ public sealed class ResultConsumer(
 {
     public async Task Consume(ConsumeContext<ExecutionResult> context)
     {
-        if (!gate.IsReady)
-        {
-            // D-06: gate closed (hydration incomplete) — THROW so the message is scheduled-redelivered
-            // after MarkReady, NEVER ack-return (a one-time result must not be dropped). The throw flows
-            // to UseScheduledRedelivery; GateClosedException is deliberately NOT Ignore<>-listed.
-            logger.LogInformation("Gate closed — redelivering ExecutionResult (no ack)");
-            throw new GateClosedException();
-        }
-
         var m = context.Message;
 
         // L1-only read (D-08): TryGet then the step map — no Upsert/Remove/stripe TryAcquire, no L2.
