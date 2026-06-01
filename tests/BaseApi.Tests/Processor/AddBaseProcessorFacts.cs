@@ -2,6 +2,7 @@ using BaseConsole.Core.Health;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.DependencyInjection;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Processing;
 using BaseProcessor.Core.Startup;
 using MassTransit;
 using Messaging.Contracts;
@@ -110,5 +111,19 @@ public sealed class AddBaseProcessorFacts
         // D-02: the base StartupCompletionService must be gone so MarkReady fires on Healthy, not host-start.
         Assert.DoesNotContain(services, d =>
             d.ImplementationType == typeof(StartupCompletionService));
+    }
+
+    [Fact]
+    public void Registers_Dispatch_Consumer()
+    {
+        var services = ComposeProcessor();
+
+        // EXEC-01 / D-01: MassTransit's AddConsumer<EntryStepDispatchConsumer>() registers the consumer
+        // TYPE as a service descriptor (so the runtime ConnectReceiveEndpoint can ConfigureConsumer<T> at
+        // bind time). Assert the descriptor is present — the .ExcludeFromConfigureEndpoints() chained on it
+        // keeps the registration while suppressing the wrong-named auto-bound static queue (Pitfall 1).
+        Assert.Contains(services, d =>
+            d.ServiceType == typeof(EntryStepDispatchConsumer) ||
+            d.ImplementationType == typeof(EntryStepDispatchConsumer));
     }
 }

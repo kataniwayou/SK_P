@@ -66,7 +66,7 @@ public sealed class IdentityResolutionFacts
             });
 
             var orchestrator = new ProcessorStartupOrchestrator(
-                identityClient, schemaClient, sourceHash, context, gate, options, fakeClock,
+                identityClient, schemaClient, sourceHash, context, gate, StubConnector(), options, fakeClock,
                 NullLogger<ProcessorStartupOrchestrator>.Instance);
 
             // Drive the orchestrator. The two leading NotFound replies trigger two backoff delays
@@ -105,6 +105,24 @@ public sealed class IdentityResolutionFacts
             clock.Advance(TimeSpan.FromSeconds(60)); // > BackoffCap so any pending delay fires
             await Task.Delay(20, ct); // let the orchestrator's continuation run on the thread pool
         }
+    }
+
+    /// <summary>
+    /// A no-op <see cref="IReceiveEndpointConnector"/> for the Loop A/B resolution facts (which do not
+    /// assert on the bind): <c>ConnectReceiveEndpoint</c> returns a handle whose <c>Ready</c> is already
+    /// completed, so the orchestrator's completion block (bind -&gt; await Ready -&gt; MarkHealthy, D-03)
+    /// flows straight through to Healthy. The bind ORDERING itself is proven by DispatchBindSequenceFacts.
+    /// </summary>
+    internal static IReceiveEndpointConnector StubConnector()
+    {
+        var handle = Substitute.For<HostReceiveEndpointHandle>();
+        handle.Ready.Returns(Task.FromResult(Substitute.For<ReceiveEndpointReady>()));
+
+        var connector = Substitute.For<IReceiveEndpointConnector>();
+        connector
+            .ConnectReceiveEndpoint(Arg.Any<string>(), Arg.Any<Action<IBusRegistrationContext, IReceiveEndpointConfigurator>>())
+            .Returns(handle);
+        return connector;
     }
 
     private static int GetIdentityCallCount(ProcessorTestHarness.ResponderSequence sequence)
