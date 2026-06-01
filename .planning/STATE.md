@@ -18,10 +18,10 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
+See: .planning/PROJECT.md (updated 2026-06-01 — v3.4.0 shipped)
 
-**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** Phase 24.1 — gating-redesign-l2-dedup-gate-removal
+**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
+**Current focus:** No active milestone — v3.4.0 shipped 2026-06-01 (tagged `v3.4.0`). Start the next with `/gsd-new-milestone`.
 
 ## Current Position
 

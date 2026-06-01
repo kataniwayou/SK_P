@@ -4,6 +4,46 @@ A historical log of shipped milestones. Each entry is a frozen snapshot; full ar
 
 ---
 
+## v3.4.0 — BaseConsole + Orchestrator Messaging
+
+**Shipped:** 2026-06-01
+**Tag:** `v3.4.0`
+**Archives:** [milestones/v3.4.0-ROADMAP.md](milestones/v3.4.0-ROADMAP.md) · [milestones/v3.4.0-REQUIREMENTS.md](milestones/v3.4.0-REQUIREMENTS.md) · [milestones/v3.4.0-MILESTONE-AUDIT.md](milestones/v3.4.0-MILESTONE-AUDIT.md)
+
+### Delivered
+
+A reusable `BaseConsole.Core` Generic-Host library (the console-side mirror of `BaseApi.Core`) and a runnable `Orchestrator` console that inherits it, connected to the WebApi over MassTransit/RabbitMQ. Body-carried CorrelationId is proven end-to-end (HTTP `X-Correlation-Id` → publish-boundary `NewId` mint → fan-out message body → orchestrator log scope, surfaced in Elasticsearch). The full orchestrator lifecycle landed: startup L1 hydration from the `skp:` parent-index, per-workflow Quartz scheduling, entry-step dispatch to `queue:{processorId}`, and stop teardown. The processor→orchestrator result round-trip closes the loop — `ExecutionResult`/`StepOutcome` consumed on a shared competing-consumer queue, L1-only edge traversal + continuation dispatch. A late gating redesign (Phase 24.1, gap-closure) replaced the boot gate + scheduled redelivery + the `rabbitmq_delayed_message_exchange` plugin with an L2-existence dedup + atomic discover-then-delete Stop + L1-only graceful result path, and added a terminal-step guard.
+
+### Stats
+
+| Metric                    | Value                                              |
+| ------------------------- | -------------------------------------------------- |
+| Phases                    | 9 (17-24 + 24.1)                                   |
+| Plans                     | 31                                                 |
+| Requirements              | 70/70 (ORCH-GATE-01 superseded by 24.1)            |
+| C# files                  | 336 (194 src / 142 tests)                          |
+| Lines of code             | ~25,396 (9,772 src / 15,624 tests)                 |
+| Code changed              | 127 files, +7,887 / −795 (vs v3.3.0 close)         |
+| Commits                   | 273                                                |
+| Timeline                  | 2026-05-30 → 2026-06-01 (~3 days)                  |
+| Final suite               | 335/335 GREEN (real-stack E2E live), Release 0 warnings |
+| Milestone audit           | PASSED                                             |
+
+### Key accomplishments
+
+1. `Messaging.Contracts` leaf assembly — frozen `ICorrelated` vocabulary + shared `L2ProjectionKeys` single-source-of-truth (writer↔reader desync structurally impossible).
+2. `BaseConsole.Core` reusable Generic-Host library — metrics-only OTel (no traces), soft-dep Redis, embedded minimal-Kestrel health probes, MassTransit bus + correlation filters.
+3. Two-process WebApi↔Orchestrator messaging over RabbitMQ with body-carried CorrelationId proven end-to-end in Elasticsearch.
+4. L2 root-parent restructure + processor self-registration boundary + liveness-gated Start (422 + RFC 7807).
+5. Full orchestrator lifecycle — L1 hydration, Quartz scheduling, entry-step dispatch, stop teardown (no L2 mutation by the orchestrator).
+6. Processor→orchestrator result round-trip + L1-only step advancement, then a gating redesign (Phase 24.1) removing the boot gate/redelivery/plugin in favor of L2-existence dedup + atomic Stop + L1-only graceful result.
+
+### Known deferred items at close
+
+Two non-blocking dead-code cleanups (recorded in the audit for a future hygiene pass): `RedisProjectionOptions.ProcessorKeyTtlDays` (dead config field post-Phase-22) and `WorkflowRootNotFoundException` (never thrown post-24.1; harmless `Ignore<>` no-ops). Nyquist VALIDATION.md missing for Phases 21 and 24.1 (discovery-only flag).
+
+---
+
 ## v3.3.0 — Orchestration L3 → L1 → L2 Build Pipeline
 
 **Shipped:** 2026-05-29

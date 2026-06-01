@@ -43,6 +43,40 @@
 
 ---
 
+## Milestone: v3.4.0 — BaseConsole + Orchestrator Messaging
+
+**Shipped:** 2026-06-01
+**Phases:** 9 (17-24 + 24.1) | **Plans:** 31 | **Commits:** 273 | **Timeline:** ~3 days
+
+### What Was Built
+A reusable `BaseConsole.Core` Generic-Host library + a runnable `Orchestrator` console over MassTransit/RabbitMQ; body-carried CorrelationId proven end-to-end into Elasticsearch; the full orchestrator lifecycle (L1 hydration, Quartz scheduling, entry-step dispatch, stop teardown); the processor→orchestrator result round-trip with L1-only step advancement; and a gating redesign (24.1) replacing the boot gate/redelivery/plugin with L2-existence dedup + atomic Stop + L1-only graceful result.
+
+### What Worked
+- **Single-source-of-truth key scheme (Phase 21 HARDEN-03).** Hoisting `L2ProjectionKeys` into `Messaging.Contracts` with thin writer/reader forwarders made cross-process key desync structurally impossible — the integration check confirmed zero wiring gaps across the WebApi↔Orchestrator boundary.
+- **Deferring a human-UAT item to an automated proof.** Phase 19's live-correlation item was explicitly deferred to Phase 20's `CorrelationPropagationE2ETests` rather than left as a manual gate — the right call; it became a permanent regression test.
+- **Triple-SHA close gates (psql + redis-cli + rabbitmqctl) at 3× GREEN.** Caught leaks/orphans deterministically across phases 20/21/22.
+- **Gap-closure as a decimal phase (24.1).** A FAILED Phase 24 verification was closed by a tightly-scoped redesign phase rather than reopening Phase 24 — clean history, locked SPEC, operator-approved checkpoint.
+
+### What Was Inefficient
+- **The boot-gate/scheduled-redelivery/plugin design (Phase 24) was over-built and had to be torn out in 24.1.** The `rabbitmq_delayed_message_exchange` plugin dependency wasn't available in the compose stack, degrading redelivery to exhaust-and-error — a design that an earlier "what infra does this actually require?" check would have avoided. The L1-only graceful result path (already present) turned out to be the sole arbiter needed.
+- **Verification-artifact drift.** Phase 20 shipped with no VERIFICATION.md (close gate substituted) and Phase 19 stayed `human_needed`; the REQUIREMENTS.md traceability table fell two milestone-extensions behind. All reconciled at audit, but it made the milestone audit return `gaps_found` on bookkeeping rather than code.
+- **`gsd-sdk milestone.complete` is broken in this SDK build** (calls `phasesArchive([])` with empty args → always throws); milestone archival had to be done manually.
+
+### Patterns Established
+- Body-carried `ICorrelated.CorrelationId` (NOT the MassTransit envelope) as the per-stage correlation handoff, with the literal `"CorrelationId"` MEL scope key shared via `Messaging.Contracts`.
+- Fan-out (instance-unique temporary/auto-delete endpoints) for control vs. competing-consumer (shared named queue) for results — proven with two in-process bus instances.
+- Orchestrator never mutates L2 (read-only into L1); WebApi owns all L2 writes + teardown.
+- L2-existence-probe dedup + parent-index compensation (SREM/SADD) as the first-win idempotency mechanism.
+
+### Key Lessons
+- **Check infra availability before designing around it.** The delayed-message-scheduler plugin dependency caused a verification failure that a one-line "is this plugin in compose?" check would have surfaced at design time.
+- **Reconcile verification artifacts at phase close, not milestone close.** Letting Phase 19/20 artifacts and the traceability table drift turned a clean milestone into a bookkeeping audit.
+- **Trust the dotnet summary line, not wrapper exit codes** (carried lesson — the 24.1 clean-build gate relied on `Failed: 0`, not the wrapper).
+
+### Cost Observations
+- Model mix: orchestration on Opus; verification/integration-check/review on Sonnet.
+- Notable: the milestone audit's parallel integration-checker (Sonnet) confirmed every REQ-ID WIRED across 9 phases in one pass — high signal for the cost.
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
