@@ -1,24 +1,28 @@
 # Phase 24 — Deferred / Tracking Items
 
-## SCOPE-BOUNDARY: post-24-02 full-suite "4 failures" — UNDER FINAL VERIFICATION
+## RESOLVED: the "4 failures" — identified, in-scope, and routed to Phase 24.1
 
-**Status:** being settled at phase close (NOT a confirmed false alarm — earlier "RESOLVED"
-note was based on a misread of a wrapper exit code and has been retracted).
+**Status:** RESOLVED (diagnosis complete). Phase 24 = **FAILED verification**; the fix is the
+gap-closure phase **24.1** (`.planning/phases/24.1-gating-redesign-l2-dedup-gate-removal/`).
 
-**Timeline of evidence:**
-- After 24-02, orchestrator's own from-scratch `dotnet test SK_P.sln -c Debug` exited **1**
-  with `Failed: 4, Passed: 307, Total: 311`. (The background-task notification said "exit code 0"
-  — that is the wrapper's code, not dotnet's; the captured log shows `EXIT:1`.)
-- 24-03 executor characterized the 4 as pre-existing RabbitMQ / DbConcurrency / FluentValidation
-  integration flakies outside the Orchestrator namespace.
-- 24-05 executor reported a from-scratch rebuild (`rm -rf */obj */bin`) at **309 passed / 0 failed**,
-  and separately found a real stale-build trap (AckSemanticsTests compiled against a removed ctor,
-  masked by incremental build) — consistent with the project's known stale-build memory.
+**Final diagnosis** (authoritative clean-build run: exit 1, `Failed: 4, Passed: 331, Total: 335`;
+TRX-confirmed names): all 4 failures are in `BaseApi.Tests.Features.Orchestration.*` — **in-scope,
+not flaky** (the earlier "pre-existing flakies" characterization was wrong; so was a transient
+"309/0" misread of a wrapper exit code, now retracted).
 
-**Resolution path:** orchestrator runs one authoritative `dotnet clean` + full-suite run with a
-TRX report at phase close; if any test fails, the exact failing names are read from the TRX and
-classified (24-caused vs pre-existing flaky) before the phase is marked verified. Result recorded
-in 24-VERIFICATION.md.
+| Test | Cause |
+|------|-------|
+| `StopGateFacts.Stop_AllExist_204` | Stop deletes root before cleanup → per-step keys leak (ordering regression) |
+| `StopGateFacts.Stop_MixedBatch_DeletesPresent_NoOpAbsent_204` | same ordering regression |
+| `StopScanFacts.Stop_AfterStart_RemovesRootAndStep_KeepsProcessor` | same ordering regression |
+| `StartLoopFacts.ReStart_Removes_Orphan_Step` | asserts superseded Phase-22 overwrite-GC; first-win makes re-Start a no-op |
+
+Two clean-build traps were also found and fixed/committed this session (commits `43c74fa`,
+`7e95f81`): `ExecutionResult` ctor arity (CS1729) and an uncommitted `using`-alias.
+
+**Resolution:** all of (a) Stop-ordering, (b) orphan test, (c) WR-01, (d) WR-02 are folded into the
+**24.1 gating redesign** — see `24.1-SPEC.md` / `24.1-CONTEXT.md` / `24.1-01-PLAN.md`. The locked
+fix (a) below is ABSORBED by 24.1 R3 (atomic discover-then-delete).
 
 ## LOCKED FIX (a) — Stop cleanup-ordering regression [failures #2, #3, #4]
 
@@ -50,4 +54,7 @@ keys deleted post-Stop) and go green once the code matches them. Affected tests:
 `StopGateFacts.Stop_AllExist_204`, `StopGateFacts.Stop_MixedBatch_DeletesPresent_NoOpAbsent_204`,
 `StopScanFacts.Stop_AfterStart_RemovesRootAndStep_KeepsProcessor`.
 
-**Status:** LOCKED, not yet applied — batch into the 24.1 gap-closure plan with (b)/(c)/(d).
+**Status:** SUPERSEDED by 24.1 R3 — the probe-not-delete change is now part of the atomic
+discover-then-delete Stop (one `CreateBatch`). See `24.1-01-PLAN.md` Task 1+2. Decisions (b)/(c)/(d)
+are all locked in `24.1-CONTEXT.md` (D-24.1-04 orphan-dissolved, D-24.1-05 gate removal, D-24.1-06
+terminal guard).

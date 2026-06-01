@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: verifying
-stopped_at: Completed 24-05-PLAN.md
-last_updated: "2026-05-31T23:49:22.273Z"
-last_activity: 2026-05-31
+status: planned
+stopped_at: Phase 24 FAILED verification → 24.1 gap-closure planned (SPEC+PLAN locked)
+last_updated: "2026-06-01T06:40:00.000Z"
+last_activity: 2026-06-01
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 8
-  total_plans: 30
+  total_plans: 31
   completed_plans: 30
-  percent: 100
+  percent: 97
 ---
 
 # Project State
@@ -26,10 +26,18 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 24 (orchestrator-result-consume-step-advancement) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-05-31
+Phase: 24.1 (gating-redesign-l2-dedup-gate-removal) — PLANNED (gap-closure for FAILED Phase 24)
+Plan: 24.1-01 not started
+Status: Phase 24 = FAILED verification (4 in-scope test failures + WR-01/WR-02). 24.1 SPEC+CONTEXT+PLAN locked; awaiting execution.
+Last activity: 2026-06-01
+
+### Phase 24 — FAILED verification → 24.1 gap-closure (2026-06-01)
+
+- Clean-build suite: exit 1, Failed 4 / Passed 331 / Total 335 (real-stack E2E live). All 4 in `Features.Orchestration.*` (in-scope, NOT flaky; TRX-confirmed).
+- Root causes: Stop deletes L2 root BEFORE cleanup reads it → per-step keys leak (3 tests); `ReStart_Removes_Orphan_Step` asserts superseded Phase-22 overwrite-GC (first-win makes re-Start a no-op).
+- Code review: WR-01 (High — gate-closed redelivery needs absent `rabbitmq_delayed_message_exchange` plugin → boot result DLQ); WR-02 (Med — `SelectNext` NRE on null NextStepIds terminal step).
+- Resolution = **Phase 24.1 gating redesign** (locked): L2-existence dedup + parent compensation (D-24.1-01/02), atomic discover-then-delete Stop (D-24.1-03, absorbs fix a), orphans dissolved by validation+first-win+immutable-L2 invariant (D-24.1-04), **remove boot gate + redelivery + plugin** with L1-only graceful result handling (D-24.1-05, supersedes D-06/ORCH-GATE-01), terminal guard (D-24.1-06), single-replica WebApi (D-24.1-07). Preserves D-07/D-08. See `.planning/phases/24.1-gating-redesign-l2-dedup-gate-removal/`.
+- Two clean-build traps fixed this session: CS1729 ctor arity (43c74fa), uncommitted using-alias (7e95f81).
 
 ### Phase 24 Plan 04 — COMPLETE (result consumer + shared competing endpoint + scheduler wiring)
 

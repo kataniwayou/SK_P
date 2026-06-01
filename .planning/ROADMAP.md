@@ -165,6 +165,16 @@ Plans:
   - [x] 24-04-PLAN.md — ResultConsumer + shared competing endpoint + scheduler/redelivery wiring [ORCH-RESULT-02, ORCH-ADVANCE-01/02, ORCH-RESULT-ACK-01, ORCH-GATE-01]
   - [x] 24-05-PLAN.md — Conditionless Start/Stop (keep-L1 drain) + gate-closed-throw redelivery [ORCH-START-RELOAD-01, ORCH-STOP-DRAIN-01, ORCH-GATE-01]
 **UI hint**: no
+**Verification**: FAILED (2026-06-01) — clean-build suite 4 failed / 331 passed (all in-scope `Features.Orchestration.*`) + WR-01/WR-02. Routed to gap-closure Phase 24.1.
+
+### Phase 24.1: Gating Redesign — L2-dedup, atomic Stop delete, boot-gate removal
+**Goal**: Close the FAILED Phase 24 verification via a targeted gating redesign — dedup Start/Stop on **L2-root existence** with parent-index compensation; make Stop **atomically** discover-then-delete the full L2 key set (root + all reachable step keys, one batch); **remove the boot gate + scheduled-redelivery + the `rabbitmq_delayed_message_exchange` plugin dependency**, handling results L1-only and gracefully regardless of boot/start/stop state; guard the terminal-step advancement. Result: a clean-build green suite with no non-default broker plugin.
+**Depends on**: Phase 24 (modifies its OrchestrationService/RedisL2Cleanup/consumers/Program/StepAdvancement and reconciles its tests)
+**Requirements**: R1 (L2-existence dedup), R2 (parent compensation), R3 (atomic Stop delete), R4 (orphan-free invariant), R5 (gate removal + L1-only graceful result), R6 (terminal guard / WR-02), R7 (clean-build green) — locked via 24.1-SPEC.md
+**Supersedes**: D-04/WEBAPI-SUPPRESS-01 dedup mechanism (root-existence + compensation); D-06/ORCH-GATE-01 (gate removed → result best-effort-against-L1). **Preserves**: D-07 (keep-L1 drain), D-08 (L1-only result path, strengthened).
+**Plans**: 1 plan
+  - [ ] 24.1-01-PLAN.md — L2-dedup + compensation + atomic Stop delete + gate removal + terminal guard + test reconciliation + clean-build gate [R1–R7]
+**UI hint**: no
 
 ### Coverage (v3.4.0)
 
