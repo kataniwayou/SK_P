@@ -3,7 +3,10 @@ using Messaging.Contracts;
 namespace BaseProcessor.Core.Identity;
 
 /// <summary>
-/// Thread-safe backing implementation of <see cref="IProcessorContext"/> (D-06).
+/// Backing implementation of <see cref="IProcessorContext"/> (D-06). Only <see cref="IsHealthy"/>/
+/// <see cref="WhenHealthy"/> carry synchronization; the identity/definition properties are plain
+/// auto-properties safe to read cross-thread only after Healthy is observed (see the memory-visibility
+/// invariant on <see cref="IProcessorContext"/>, WR-03).
 ///
 /// <para>
 /// <c>public sealed</c> so <c>services.AddSingleton&lt;IProcessorContext, ProcessorContext&gt;()</c>

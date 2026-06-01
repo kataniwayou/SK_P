@@ -17,6 +17,18 @@ namespace BaseProcessor.Core.Identity;
 /// per-beat heartbeat gate AND a <see cref="WhenHealthy"/> Task latch for Phase 27's
 /// queue-bind-after-Healthy await — costs nothing now, forward-fits EXEC-01.
 /// </para>
+///
+/// <para>
+/// <b>Memory-visibility invariant (WR-03):</b> only <see cref="IsHealthy"/>/<see cref="WhenHealthy"/>
+/// carry synchronization. The identity and definition properties (<see cref="Id"/>,
+/// <see cref="InputSchemaId"/>, <see cref="OutputSchemaId"/>, <see cref="ConfigSchemaId"/>,
+/// <see cref="InputDefinition"/>, <see cref="OutputDefinition"/>) are plain auto-properties with NO
+/// volatile/barrier semantics. They are only safe to read from another thread AFTER observing
+/// <see cref="IsHealthy"/> == <c>true</c> or after <see cref="WhenHealthy"/> has completed — the
+/// full barrier in <see cref="MarkHealthy"/>'s <c>Interlocked.Exchange</c> publishes the prior
+/// identity/definition writes. Reading these properties from another thread WITHOUT first observing
+/// Healthy may return stale nulls.
+/// </para>
 /// </summary>
 public interface IProcessorContext
 {
