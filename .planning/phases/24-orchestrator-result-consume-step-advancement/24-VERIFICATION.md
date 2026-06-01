@@ -1,16 +1,27 @@
 ---
 phase: 24
-status: passed_with_concerns
+status: failed
 requirements_total: 9
-requirements_met: 9
+requirements_met: 8
 verified: 2026-06-01
+test_evidence_corrected: 2026-06-01
 ---
+
+> **⚠️ CORRECTION (2026-06-01, orchestrator):** This report was originally generated
+> against FALSE test evidence supplied by the orchestrator ("309 passed / 0 failed").
+> The authoritative clean-build full suite is **4 FAILED / 331 passed / 335 total
+> (exit 1)**. All 4 failures are in `BaseApi.Tests.Features.Orchestration.*` — the exact
+> namespace Plan 24-02 modified — so they are in-scope regressions, NOT pre-existing
+> flakies. Status is corrected to **failed**; requirement #9 (WEBAPI-SUPPRESS-01) does
+> not pass its acceptance tests. See the "Test Failures (authoritative)" section appended
+> at the end of this file. The per-requirement *code* analysis below remains useful but
+> its PASS verdicts predate the failing-test evidence and must be read with this banner.
 
 # Phase 24: Orchestrator Result-Consume & Step Advancement — Verification Report
 
 **Verified:** 2026-06-01
 **Method:** Goal-backward — each requirement traced from SPEC acceptance criteria to actual source code
-**Test evidence:** Clean build, 309 passed / 0 failed / 0 skipped (full suite, from-scratch `dotnet clean` + `dotnet test SK_P.sln -c Debug`)
+**Test evidence (CORRECTED):** Clean build full suite = **4 failed / 331 passed / 335 total (exit 1)**. The original "309 passed / 0 failed" claim was wrong (orchestrator misread a wrapper exit code and fed it to the verifier).
 **REQUIREMENTS.md note:** Two checkboxes (`ORCH-RESULT-02`, `ORCH-RESULT-ACK-01`) remain unchecked in REQUIREMENTS.md. Both are fully implemented in code; this is an administrative update omission, not a code gap. Noted under each requirement below.
 
 ---
@@ -202,3 +213,48 @@ Neither concern invalidates the phase; both are documented for the next planning
 
 *Verified: 2026-06-01*
 *Verifier: Claude (gsd-verifier)*
+
+---
+
+## Test Failures (authoritative) — appended 2026-06-01
+
+Clean-build full suite: **4 failed / 331 passed / 335 total (exit 1)**.
+Orchestrator slice `--filter-class BaseApi.Tests.Orchestrator.*` = **67/67 GREEN** (all phase-24
+*new* code passes). All 4 failures are in the WebApi feature slice
+`--filter-class BaseApi.Tests.Features.Orchestration.*` = **4 failed / 73 passed**, the namespace
+Plan 24-02 reconciled.
+
+| # | Test | Assertion that failed | Root cause |
+|---|------|-----------------------|------------|
+| 1 | `StartLoopFacts.ReStart_Removes_Orphan_Step` | "orphaned step B key must be removed (delete-then-write)" | Test still asserts the **Phase 22 re-Start overwrite** (pre-clean shrinks orphan keys on a second Start). 24-02 first-win **skips the entire write path when the root already exists**, so the orphaned step-B key is never GC'd. Test asserts superseded behavior — but the SPEC's own "out of scope" note doesn't cover orphan-on-reshrink, so this needs a decision (see below). |
+| 2 | `StopScanFacts.Stop_AfterStart_RemovesRootAndStep_KeepsProcessor` | "per-step deleted post-Stop" | Step key survives Stop. |
+| 3 | `StopGateFacts.Stop_AllExist_204` | "step key must be deleted" | Step key survives Stop. |
+| 4 | `StopGateFacts.Stop_MixedBatch_DeletesPresent_NoOpAbsent_204` | "present per-step deleted" | Present id's step key survives Stop. |
+
+### Likely root cause for #2–#4 (Stop per-step keys not deleted) — NEEDS CONFIRMATION
+`OrchestrationService.StopAsync` (line 286) now calls `db.KeyDeleteAsync(Root(id))` **first**, THEN
+`_cleanup.StopCleanupAsync(id)`. But `RedisL2Cleanup.StopCleanupAsync` (line 49–50) **GETs the root
+and early-returns if the root is absent** — and the root was just deleted one line earlier. So the
+BFS that collects per-step keys never runs, and per-step keys leak. This is a real ordering
+regression introduced by 24-02 (delete-root-before-cleanup), not a stale test.
+- **Fix option A (code):** in `StopAsync`, call `StopCleanupAsync` BEFORE deleting the root (cleanup
+  deletes the root unconditionally at line 83 anyway, so the explicit `KeyDeleteAsync` may be
+  redundant — but its bool return is used for dedup/no-op detection, so keep the probe via
+  `KeyExistsAsync` then cleanup, OR capture presence first then cleanup).
+- This is a genuine bug: stopped workflows leak per-step L2 keys (net-positive Redis growth →
+  would also break the triple-SHA close gate's redis `--scan` BEFORE==AFTER invariant).
+
+### #1 (re-Start orphan) — needs a scope decision
+First-win Start (24-02 / D-04) deliberately skips re-projection of an already-present root, so a
+re-Start of a *shrunk* graph can no longer GC the now-orphan step key. Either (a) the test asserts
+behavior the redesign intentionally dropped (update the test), or (b) orphan-GC-on-reshrink is still
+required and first-win needs a carve-out. SPEC §9 says "Start creates the root only if absent (else
+skip — no overwrite/republish)", which on its face supersedes the old overwrite-GC. Leaning (a)
+(test update), but this changes a Phase 22 guarantee and should be confirmed by the operator.
+
+### Disposition
+Phase 24 is **NOT complete**. Recommended: route to `/gsd-code-review-fix` or a 24.1 gap-closure
+plan to (1) fix the Stop cleanup-ordering regression [#2–#4, code bug], and (2) decide #1
+(test-update vs first-win carve-out). Plus the two pre-existing code-review concerns WR-01
+(rabbitmq_delayed_message_exchange plugin missing from compose — gate-closed redelivery degrades)
+and WR-02 (NextStepIds null-guard).
