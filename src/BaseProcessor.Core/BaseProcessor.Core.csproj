@@ -34,6 +34,7 @@
   <ItemGroup>
     <PackageReference Include="MassTransit" />
     <PackageReference Include="StackExchange.Redis" />
+    <PackageReference Include="JsonSchema.Net" />
   </ItemGroup>
 
   <ItemGroup>
