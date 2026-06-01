@@ -69,7 +69,7 @@ public sealed class EntryStepDispatchConsumer(
                 logger.LogInformation(
                     "Dispatch {CorrelationId}: required input but no entryId — Failed (business)",
                     dispatch.CorrelationId);
-                await SendOne(BuildFailed(dispatch, "Input data not found: no entryId provided for a step requiring input."), ct);
+                await SendOne(BuildFailed(dispatch, "Input data not found: no entryId provided for a step requiring input."));
                 return;
             }
         }
@@ -84,7 +84,7 @@ public sealed class EntryStepDispatchConsumer(
                     logger.LogInformation(
                         "Dispatch {CorrelationId}: input absent from L2 for entryId {EntryId} — Failed (business)",
                         dispatch.CorrelationId, dispatch.EntryId);
-                    await SendOne(BuildFailed(dispatch, "Input data not found in L2 for entryId."), ct);
+                    await SendOne(BuildFailed(dispatch, "Input data not found in L2 for entryId."));
                     return;
                 }
 
@@ -103,7 +103,7 @@ public sealed class EntryStepDispatchConsumer(
             // Input failed its definition — Failed BEFORE ProcessAsync (EXEC-03).
             logger.LogInformation(
                 "Dispatch {CorrelationId}: input failed inputDefinition — Failed (business)", dispatch.CorrelationId);
-            await SendOne(BuildFailed(dispatch, string.Join("; ", inErrors)), ct);
+            await SendOne(BuildFailed(dispatch, string.Join("; ", inErrors)));
             return;
         }
 
@@ -116,13 +116,13 @@ public sealed class EntryStepDispatchConsumer(
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Token-tripped cancellation is a business Cancelled outcome (EXEC-08).
-            await SendOne(BuildCancelled(dispatch, "Processing was cancelled."), ct);
+            await SendOne(BuildCancelled(dispatch, "Processing was cancelled."));
             return;
         }
         catch (Exception ex)
         {
             // Any other transform exception is a business Failed carrying the message (EXEC-08).
-            await SendOne(BuildFailed(dispatch, ex.Message), ct);
+            await SendOne(BuildFailed(dispatch, ex.Message));
             return;
         }
 
@@ -157,15 +157,24 @@ public sealed class EntryStepDispatchConsumer(
 
         var endpoint = await sendProvider.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
         foreach (var er in built)
-            await endpoint.Send(er, ct);
+            // CancellationToken.None: the ExecutionResult is the BUSINESS SIGNAL — it must reach the
+            // orchestrator even if the inbound token tripped (otherwise a Cancelled/Failed result is
+            // silently dropped). The inbound ct governs the transform, not result delivery. An infra
+            // Send fault still PROPAGATES (D-15).
+            await endpoint.Send(er, CancellationToken.None);
         // returns normally -> ACK only after ALL sends (D-15).
     }
 
-    /// <summary>Resolves the result endpoint and sends a single <see cref="ExecutionResult"/> (early business returns).</summary>
-    private async Task SendOne(ExecutionResult result, CancellationToken ct)
+    /// <summary>
+    /// Resolves the result endpoint and sends a single business-outcome <see cref="ExecutionResult"/>
+    /// (the early Failed/Cancelled returns). Sent with <see cref="CancellationToken.None"/> so a
+    /// Cancelled/Failed signal is delivered even when the inbound dispatch token has tripped — the
+    /// business outcome must always reach the orchestrator (an infra Send fault still propagates).
+    /// </summary>
+    private async Task SendOne(ExecutionResult result)
     {
         var endpoint = await sendProvider.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
-        await endpoint.Send(result, ct);
+        await endpoint.Send(result, CancellationToken.None);
     }
 
     // ---- Builders (Pattern 3 / D-11/D-13): inherit ids, copy body CorrelationId (EXEC-10), mint ExecutionId ----
