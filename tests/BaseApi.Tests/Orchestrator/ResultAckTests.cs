@@ -9,6 +9,7 @@ using Orchestrator.Dispatch;
 using Orchestrator.L1;
 using StackExchange.Redis;
 using Xunit;
+using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
 namespace BaseApi.Tests.Orchestrator;
 
