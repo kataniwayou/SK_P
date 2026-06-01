@@ -181,10 +181,13 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
 
         // Deterministic Redis fault on the Stop EXISTS gate. Substitute IConnectionMultiplexer
         // so GetDatabase().KeyExistsAsync throws RedisConnectionException (: RedisException) —
-        // the service catches it and tags Data["redisOp"]="KeyExistsAsync" (OBSERV-REDIS-03).
+        // 24.1 R1/R3 (probe-not-delete): the FIRST Redis touch on the Stop path is now the per-id
+        // KeyExistsAsync PROBE (the lead op changed from KeyDeleteAsync to KeyExistsAsync). The service
+        // catches it and tags Data["redisOp"]="KeyDeleteAsync" — the STABLE Stop-path op name is kept
+        // identical to the prior contract (OBSERV-REDIS-03) so the 500 body is unchanged for callers.
         // This is deterministic vs. a flaky dead-TCP endpoint whose backlog may swallow the op.
         var db = Substitute.For<IDatabase>();
-        db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+        db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
             .Returns<Task<bool>>(_ => throw new RedisConnectionException(
                 ConnectionFailureType.UnableToConnect, "simulated Redis down"));
         var mux = Substitute.For<IConnectionMultiplexer>();
@@ -198,7 +201,7 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         using var client = factory.CreateClient();
 
         // A well-formed non-empty id list passes the rule validation; the FIRST Redis touch on the
-        // Stop path is now the per-id KeyDeleteAsync → RedisException → 500 redisOp=KeyDeleteAsync.
+        // Stop path is now the per-id KeyExistsAsync probe → RedisException → 500 redisOp=KeyDeleteAsync.
         var correlationId = $"sgf-down-{Guid.NewGuid():N}";
         using var req = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orchestration/stop")
         {
