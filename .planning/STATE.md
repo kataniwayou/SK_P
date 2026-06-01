@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: planned
-stopped_at: Phase 24 FAILED verification → 24.1 gap-closure planned (SPEC+PLAN locked)
-last_updated: "2026-06-01T06:40:00.000Z"
-last_activity: 2026-06-01
+status: executing
+stopped_at: Completed 24.1-01-PLAN.md
+last_updated: "2026-06-01T12:00:00.000Z"
+last_activity: 2026-06-01 — Phase 24.1 Plan 24.1-01 complete (clean-build green 335/335; closes FAILED Phase 24)
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 31
-  completed_plans: 30
-  percent: 97
+  completed_plans: 31
+  percent: 100
 ---
 
 # Project State
@@ -21,15 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 with the L3→L1→L2 orchestration build pipeline.**
-**Current focus:** Phase 24 — orchestrator-result-consume-step-advancement
+**Current focus:** Phase 24.1 — gating-redesign-l2-dedup-gate-removal
 
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 24.1 (gating-redesign-l2-dedup-gate-removal) — PLANNED (gap-closure for FAILED Phase 24)
-Plan: 24.1-01 not started
-Status: Phase 24 = FAILED verification (4 in-scope test failures + WR-01/WR-02). 24.1 SPEC+CONTEXT+PLAN locked; awaiting execution.
-Last activity: 2026-06-01
+Phase: 24.1 (gating-redesign-l2-dedup-gate-removal) — plan complete, awaiting phase-completion gate
+Plan: 1 of 1 — COMPLETE (24.1-01)
+Status: Phase 24.1 plan finalized; orchestrator owns phase-completion gate (R1–R7 + superseded Phase 24 reqs)
+Last activity: 2026-06-01 — Phase 24.1 Plan 24.1-01 complete (clean-build green 335/335; closes FAILED Phase 24)
+
+### Phase 24.1 Plan 24.1-01 — COMPLETE (gating redesign; closes FAILED Phase 24, 2026-06-01)
+
+- 6 task commits: 83e1284 (T1 WebApi L2-existence dedup + parent compensation + probe-not-delete Stop), b86b6cd (T2 atomic root+steps delete in RedisL2Cleanup + reachability invariant), d2a600b (T3 remove boot gate + redelivery + delayed-scheduler/plugin → L1-only graceful result), d6e2494 (T4 null-NextStepIds terminal guard, WR-02), 1c16370 (T5 reconcile tests to L2-dedup + gate removal + first-win + terminal guard), 18f5267 (T5 follow-up: Stop_RedisDown_500 reconciled to KeyExistsAsync probe lead op).
+- Clean-build green (R7, operator checkpoint APPROVED): from-scratch `dotnet test SK_P.sln -c Debug` = Failed 0 / Passed 335 / Total 335, real-stack E2E live. Slices: Features.Orchestration.* 78/78, Orchestrator.* 66/66, E2E 5/5. Release build 0 warnings / 0 errors. The 4 originally-failing Phase 24 tests now pass (3 via R3 as-written, 1 rewritten via R4).
+- Decisions: dedup gate = L2 ROOT existence (supersedes D-04); boot gate + redelivery + delayed-scheduler plugin removed (supersedes D-06/ORCH-GATE-01, dissolves WR-01); IStartupGate.MarkReady health/`/ready` wiring deliberately LEFT INTACT (only consumer gating removed); preserves D-07 (keep-L1 drain) + D-08 (L1-only result, strengthened); single-replica WebApi locked (D-24.1-07).
+- Deviation (Rule 1): Stop_RedisDown_500 re-pointed its injected fault to the KeyExistsAsync probe (new lead Stop op) since Task 1 replaced the lead KeyDeleteAsync — commit 18f5267.
+- SUMMARY: 24.1-01-SUMMARY.md (Self-Check PASSED). Orchestrator's phase-completion gate marks R1–R7 + superseded Phase 24 reqs and resolves Phase 24 UAT/VERIFICATION artifacts.
 
 ### Phase 24 — FAILED verification → 24.1 gap-closure (2026-06-01)
 

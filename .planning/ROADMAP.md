@@ -173,8 +173,9 @@ Plans:
 **Requirements**: R1 (L2-existence dedup), R2 (parent compensation), R3 (atomic Stop delete), R4 (orphan-free invariant), R5 (gate removal + L1-only graceful result), R6 (terminal guard / WR-02), R7 (clean-build green) — locked via 24.1-SPEC.md
 **Supersedes**: D-04/WEBAPI-SUPPRESS-01 dedup mechanism (root-existence + compensation); D-06/ORCH-GATE-01 (gate removed → result best-effort-against-L1). **Preserves**: D-07 (keep-L1 drain), D-08 (L1-only result path, strengthened).
 **Plans**: 1 plan
-  - [ ] 24.1-01-PLAN.md — L2-dedup + compensation + atomic Stop delete + gate removal + terminal guard + test reconciliation + clean-build gate [R1–R7]
+  - [x] 24.1-01-PLAN.md — L2-dedup + compensation + atomic Stop delete + gate removal + terminal guard + test reconciliation + clean-build gate [R1–R7]
 **UI hint**: no
+**Verification**: clean-build green (2026-06-01) — `dotnet test SK_P.sln -c Debug` Failed 0 / Passed 335 / Total 335 (real-stack E2E live); Release 0 warnings. Closes FAILED Phase 24 verification.
 
 ### Coverage (v3.4.0)
 
