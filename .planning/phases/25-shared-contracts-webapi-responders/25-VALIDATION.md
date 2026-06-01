@@ -1,10 +1,11 @@
 ---
 phase: 25
 slug: shared-contracts-webapi-responders
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-06-01
+validated: 2026-06-01
 ---
 
 # Phase 25 — Validation Strategy
@@ -39,14 +40,14 @@ created: 2026-06-01
 
 | Requirement | Behavior | Test Type | Automated Command | File Exists | Status |
 |-------------|----------|-----------|-------------------|-------------|--------|
-| CONTRACT-01 | `ProcessorProjection` public in `Messaging.Contracts.Projections`; STJ round-trips with `inputDefinition`/`outputDefinition`/`liveness` preserved | unit | `dotnet test --filter "FullyQualifiedName~ProcessorProjection"` | ❌ W0 | ⬜ pending |
-| CONTRACT-01 | `BaseApi.Core` has no ProjectReference to `BaseApi.Service`/`BaseConsole.Core` (firewall) | architecture | `dotnet test --filter "FullyQualifiedName~Firewall"` | ❌ W0 | ⬜ pending |
-| CONTRACT-02 | `L2ProjectionKeys.ExecutionData(guid) == "skp:data:{guid:D}"` golden + distinct from root/step/processor | unit | `dotnet test --filter "FullyQualifiedName~L2ProjectionKeysTests"` | ✅ extend | ⬜ pending |
-| CONTRACT-03 | `LivenessStatus.Healthy == "Healthy"` pin | unit | `dotnet test --filter "FullyQualifiedName~LivenessStatus"` | ❌ W0 | ⬜ pending |
-| RPC-01 | `GetProcessorBySourceHash` found AND not-found round-trip via in-memory harness | integration | `dotnet test --filter "FullyQualifiedName~ProcessorResponder"` | ❌ W0 | ⬜ pending |
-| RPC-02 | `GetSchemaDefinition` found AND not-found round-trip via in-memory harness | integration | `dotnet test --filter "FullyQualifiedName~SchemaResponder"` | ❌ W0 | ⬜ pending |
-| RPC-03 | Bus health stays capped at Degraded; `/health/ready` returns 200 broker-down | integration (regression guard) | `dotnet test --filter "FullyQualifiedName~Health_Ready_Returns_200_When_Broker_Dead"` | ✅ exists | ⬜ pending |
-| RPC-03 | CRUD surface + v3.4.0 publish path unchanged | regression | `dotnet test` (full suite green) | ✅ existing | ⬜ pending |
+| CONTRACT-01 | `ProcessorProjection` public in `Messaging.Contracts.Projections`; STJ round-trips with `inputDefinition`/`outputDefinition`/`liveness` preserved | unit | `dotnet test tests/BaseApi.Tests -- --filter-class "*ProjectionRecordRoundTripTests"` | ✅ `ProjectionRecordRoundTripTests.cs` | ✅ green |
+| CONTRACT-01 | `BaseApi.Core` has no reference to `BaseApi.Service`/`BaseConsole.Core` (firewall) | architecture | `dotnet test tests/BaseApi.Tests -- --filter-class "*BaseApiCoreFirewallTests"` | ✅ `BaseApiCoreFirewallTests.cs` | ✅ green |
+| CONTRACT-02 | `L2ProjectionKeys.ExecutionData(guid) == "skp:data:{guid:D}"` golden + distinct from root/step/processor | unit | `dotnet test tests/BaseApi.Tests -- --filter-class "*L2ProjectionKeysTests"` | ✅ `L2ProjectionKeysTests.cs:55,63` | ✅ green |
+| CONTRACT-03 | `LivenessStatus.Healthy == "Healthy"` pin | unit | `dotnet test tests/BaseApi.Tests -- --filter-class "*LivenessStatusTests"` | ✅ `LivenessStatusTests.cs:15` | ✅ green |
+| RPC-01 | `GetProcessorBySourceHash` found AND not-found round-trip via in-memory harness | integration | `dotnet test tests/BaseApi.Tests -- --filter-class "*ProcessorResponderTests"` | ✅ `ProcessorResponderTests.cs:94,117` | ✅ green |
+| RPC-02 | `GetSchemaDefinition` found AND not-found round-trip via in-memory harness | integration | `dotnet test tests/BaseApi.Tests -- --filter-class "*SchemaResponderTests"` | ✅ `SchemaResponderTests.cs:79,99` | ✅ green |
+| RPC-03 | Bus health stays capped at Degraded; `/health/ready` returns 200 broker-down | integration (regression guard) | `dotnet test tests/BaseApi.Tests -- --filter-class "*HealthEndpointsTests"` | ✅ `HealthEndpointsTests.cs:221,233` | ✅ green |
+| RPC-03 | CRUD surface + v3.4.0 publish path unchanged | regression | `dotnet test` (full suite green) | ✅ existing (345/345 per SUMMARY) | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -54,12 +55,14 @@ created: 2026-06-01
 
 ## Wave 0 Requirements
 
-- [ ] `ProcessorProjectionRoundTripTests.cs` (or extend an existing projection fact) — STJ serialize/deserialize pins `inputDefinition`/`outputDefinition`/`liveness` after the leaf move (CONTRACT-01).
-- [ ] Firewall assertion — `BaseApi.Core.csproj` has no `ProjectReference` to `BaseApi.Service`/`BaseConsole.Core` (CONTRACT-01 / D-05). New `FirewallFacts` (parse csproj or assert no type leakage) unless an existing csproj-reference architecture test can be extended.
-- [ ] `L2ProjectionKeysTests` — add `ExecutionData` golden + distinctness (CONTRACT-02). Extend the existing file.
-- [ ] `LivenessStatusTests.cs` — `Healthy == "Healthy"` pin (CONTRACT-03).
-- [ ] `ProcessorResponderTests.cs` + `SchemaResponderTests.cs` — in-memory `AddMassTransitTestHarness`/`UsingInMemory` harness, found AND not-found for each query (RPC-01/02). Mirror `ResultConsumeTests` scaffold.
-- [ ] No framework install needed — xunit.v3 + `MassTransit.Testing` already referenced.
+All Wave 0 references were created/extended during execution and verified green (34/34 targeted tests on 2026-06-01).
+
+- [x] `ProjectionRecordRoundTripTests.cs` — STJ serialize/deserialize pins `inputDefinition`/`outputDefinition`/`liveness` after the leaf move (CONTRACT-01). Pre-existing facts stayed green against the relocated public type.
+- [x] Firewall assertion — `BaseApiCoreFirewallTests.cs` (reflection, no host boot): asserts `BaseApi.Core` references neither `BaseApi.Service` nor `BaseConsole.Core` (CONTRACT-01 / D-05). 3 facts.
+- [x] `L2ProjectionKeysTests` — `ExecutionData` golden (`skp:data:{guid:D}`) + distinctness from Root/Processor (CONTRACT-02). Extended existing file.
+- [x] `LivenessStatusTests.cs` — `Healthy == "Healthy"` pin (CONTRACT-03).
+- [x] `ProcessorResponderTests.cs` + `SchemaResponderTests.cs` — in-memory `AddMassTransitTestHarness`/`UsingInMemory` harness, found AND not-found for each query (RPC-01/02) over a real service on a seeded EF-InMemory DbContext.
+- [x] No framework install needed — xunit.v3 + `MassTransit.Testing` already referenced.
 
 ---
 
@@ -71,11 +74,24 @@ created: 2026-06-01
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-06-01 (retroactive audit — all 8 requirement rows COVERED + green)
+
+---
+
+## Validation Audit 2026-06-01
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+| Requirements COVERED (green) | 8 / 8 |
+
+**Method:** State-A retroactive audit. The VALIDATION.md draft was authored pre-execution (all rows `⬜ pending`) and never reconciled after the phase landed. Cross-referenced each requirement against on-disk tests, then ran the targeted classes via the native MTP `--filter-class` flag: `LivenessStatusTests`, `L2ProjectionKeysTests`, `ProjectionRecordRoundTripTests`, `BaseApiCoreFirewallTests`, `ProcessorResponderTests`, `SchemaResponderTests` → **23/23 green**; `HealthEndpointsTests` (incl. broker-dead RPC-03 guards) → **11/11 green**. No new tests generated — every behavior was already pinned by execution. No auditor spawn required.
