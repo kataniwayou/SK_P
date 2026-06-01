@@ -486,7 +486,7 @@ protected override async Task ExecuteAsync(CancellationToken stoppingToken)
 | A4 | `response.Is(out Response<T>)` is available on the `Response` returned by the 2-type `GetResponse` in 8.5.5 | Code Examples §3 | Low — documented; the deconstruction `switch ((_, T) => ...)` form is the documented fallback if `.Is` is unavailable. `[CITED: masstransit.io/.../requests]` |
 | A5 | `exchange:` (not `queue:`) is the correct scheme for the request-client `Uri` targeting the WebApi's named `ReceiveEndpoint` | Pattern 2 / Pitfall 4 | Medium — both schemes exist; `exchange:{name}` routes to the endpoint's exchange (the normal case for a `ReceiveEndpoint`). Confirm with a harness round-trip test (Validation Architecture covers this). CONTEXT D-03 explicitly says "sender adds the `exchange:`/`queue:` scheme", endorsing `exchange:`. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **`IProcessorContext.IsHealthy` representation (flag vs `TaskCompletionSource`)?**
    - What we know: D-06 leaves this to discretion; Phase 27's consumer must *wait* until Healthy to bind `queue:{processorId:D}`.
