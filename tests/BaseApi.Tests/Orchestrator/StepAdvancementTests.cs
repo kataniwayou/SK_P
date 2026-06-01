@@ -115,6 +115,20 @@ public sealed class StepAdvancementTests
     }
 
     [Fact]
+    public void TerminalStep_NullNextStepIds_YieldsZeroNext_NoThrow()
+    {
+        // WR-02 (24.1 / D-24.1-06): a terminal step has null NextStepIds ("no successors" per the
+        // contract). SelectNext must guard it (?? Enumerable.Empty<Guid>()) and yield zero next steps
+        // WITHOUT an NRE — the normal end-of-branch case acks cleanly instead of dead-lettering.
+        var map = BuildMap();
+        var terminal = new StepProjection(EntryCondition: 7, ProcessorId: Guid.NewGuid(), Payload: "{}", NextStepIds: null!);
+
+        var selected = _sut.SelectNext(StepOutcome.Completed, terminal, map).ToList();
+
+        Assert.Empty(selected);
+    }
+
+    [Fact]
     public void HelperPerformsNoIo_TakesStepMapAsArgument()
     {
         // The signature proves no I/O: SelectNext takes the step map as an argument and returns

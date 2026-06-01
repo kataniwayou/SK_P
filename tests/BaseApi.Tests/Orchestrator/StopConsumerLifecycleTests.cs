@@ -1,4 +1,3 @@
-using BaseConsole.Core.Health;
 using Messaging.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
@@ -21,7 +20,8 @@ namespace BaseApi.Tests.Orchestrator;
 /// <see cref="StopOrchestrationConsumer"/> resolves the workflow's jobId from L1, deletes the Quartz
 /// job, but KEEPS the L1 entry (D-07 drain) and performs ZERO L2 writes. Because L1 persists, a late
 /// <see cref="ExecutionResult"/> for the stopped workflow still resolves in L1 and dispatches its next
-/// steps. The gate-closed path THROWS <see cref="GateClosedException"/> (D-06 redelivery, NOT ack-drop).
+/// steps. 24.1 / D-24.1-05: the boot gate is removed — the consumer runs only after the bus starts,
+/// so there is no gate-closed path (the prior GateClosedException test is deleted).
 /// </summary>
 public sealed class StopConsumerLifecycleTests
 {
@@ -40,14 +40,14 @@ public sealed class StopConsumerLifecycleTests
     }
 
     private static (StopOrchestrationConsumer consumer, WorkflowL1Store store, WorkflowLifecycle lifecycle) Build(
-        IConnectionMultiplexer mux, IScheduler scheduler, StartupGate gate)
+        IConnectionMultiplexer mux, IScheduler scheduler)
     {
         var store = new WorkflowL1Store();
         var workflowScheduler = new WorkflowScheduler(scheduler, TimeProvider.System);
         var lifecycle = new WorkflowLifecycle(
             mux, store, workflowScheduler, TimeProvider.System, NullLogger<WorkflowLifecycle>.Instance);
         var consumer = new StopOrchestrationConsumer(
-            gate, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
+            lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
         return (consumer, store, lifecycle);
     }
 
@@ -74,13 +74,10 @@ public sealed class StopConsumerLifecycleTests
         var values = OrchestratorTestStubs.RootWithStep(workflowId, jobId, stepId, processorId);
         var mux = OrchestratorTestStubs.PresentL2(values, out var db);
 
-        var gate = new StartupGate();
-        gate.MarkReady();
-
         var scheduler = await NewRamSchedulerAsync(ct);
         try
         {
-            var (consumer, store, lifecycle) = Build(mux, scheduler, gate);
+            var (consumer, store, lifecycle) = Build(mux, scheduler);
 
             // Seed L1 + schedule wfX exactly as a Start would (reads-only against PresentL2).
             await lifecycle.HydrateAndScheduleAsync(workflowId, ct);
@@ -133,9 +130,6 @@ public sealed class StopConsumerLifecycleTests
         };
         store.Upsert(workflowId, new WorkflowL1([entryStepId], "*/5 * * * *", jobId, steps));
 
-        var gate = new StartupGate();
-        gate.MarkReady();
-
         var scheduler = await NewRamSchedulerAsync(ct);
         try
         {
@@ -145,7 +139,7 @@ public sealed class StopConsumerLifecycleTests
             var mux = OrchestratorTestStubs.AbsentL2(out _); // result path never reads L2 anyway
             var lifecycle = new WorkflowLifecycle(
                 mux, store, workflowScheduler, TimeProvider.System, NullLogger<WorkflowLifecycle>.Instance);
-            var stop = new StopOrchestrationConsumer(gate, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
+            var stop = new StopOrchestrationConsumer(lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
 
             await stop.Consume(OrchestratorTestStubs.Context(new StopOrchestration([workflowId]), ct));
             Assert.True(store.TryGet(workflowId, out _)); // L1 kept (drain)
@@ -155,7 +149,7 @@ public sealed class StopConsumerLifecycleTests
             var dispatcher = Substitute.For<IStepDispatcher>();
             var advancement = new StepAdvancement();
             var resultConsumer = new ResultConsumer(
-                gate, store, advancement, dispatcher, NullLogger<ResultConsumer>.Instance);
+                store, advancement, dispatcher, NullLogger<ResultConsumer>.Instance);
 
             var correlationId = Guid.NewGuid();
             var executionId = Guid.NewGuid();
@@ -180,51 +174,4 @@ public sealed class StopConsumerLifecycleTests
         }
     }
 
-    // ----- ORCH-GATE-01 / D-06: gate-closed Stop THROWS (redelivery), no teardown ---------------
-
-    [Fact]
-    public async Task GateClosed_Stop_Throws_NoTeardown()
-    {
-        var ct = TestContext.Current.CancellationToken;
-
-        var workflowId = Guid.NewGuid();
-        var jobId = Guid.NewGuid();
-        var stepId = Guid.NewGuid();
-        var processorId = Guid.NewGuid();
-        var values = OrchestratorTestStubs.RootWithStep(workflowId, jobId, stepId, processorId);
-        var mux = OrchestratorTestStubs.PresentL2(values, out var db);
-
-        var scheduler = await NewRamSchedulerAsync(ct);
-        try
-        {
-            // Seed via a ready lifecycle, then run a CLOSED-gate consumer over the SAME store/scheduler.
-            var store = new WorkflowL1Store();
-            var workflowScheduler = new WorkflowScheduler(scheduler, TimeProvider.System);
-            var lifecycle = new WorkflowLifecycle(
-                mux, store, workflowScheduler, TimeProvider.System, NullLogger<WorkflowLifecycle>.Instance);
-            await lifecycle.HydrateAndScheduleAsync(workflowId, ct);
-
-            var jobKey = new JobKey(jobId.ToString("D"));
-            Assert.True(await scheduler.CheckExists(jobKey, ct));
-
-            var closedGate = new StartupGate(); // NOT ready
-            var consumer = new StopOrchestrationConsumer(
-                closedGate, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
-
-            db.ClearReceivedCalls();
-
-            // D-06: gate closed -> THROW (so the message is scheduled-redelivered, NOT ack-dropped).
-            await Assert.ThrowsAsync<GateClosedException>(
-                () => consumer.Consume(OrchestratorTestStubs.Context(new StopOrchestration([workflowId]), ct)));
-
-            // No teardown: job + L1 entry survive.
-            Assert.True(await scheduler.CheckExists(jobKey, ct));
-            Assert.Equal(1, store.Count);
-            await AssertZeroL2Writes(db);
-        }
-        finally
-        {
-            await scheduler.Shutdown(waitForJobsToComplete: false, ct);
-        }
-    }
 }

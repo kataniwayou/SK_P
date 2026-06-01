@@ -1,4 +1,3 @@
-using BaseConsole.Core.Health;
 using MassTransit;
 using MassTransit.Testing;
 using Messaging.Contracts;
@@ -74,10 +73,9 @@ public sealed class ResultConsumeTests
 
     private static ResultConsumer Build(WorkflowL1Store store, ISendEndpointProvider sendProvider)
     {
-        var gate = new StartupGate();
-        gate.MarkReady();
+        // 24.1 / D-24.1-05: the boot gate is removed — ResultConsumer no longer takes an IStartupGate.
         return new ResultConsumer(
-            gate, store, new StepAdvancement(), new StepDispatcher(sendProvider),
+            store, new StepAdvancement(), new StepDispatcher(sendProvider),
             NullLogger<ResultConsumer>.Instance);
     }
 

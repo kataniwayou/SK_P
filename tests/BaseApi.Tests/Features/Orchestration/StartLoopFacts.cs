@@ -147,11 +147,19 @@ public sealed class StartLoopFacts : IClassFixture<HarnessWebAppFactory>
         }
     }
 
-    // ----------------------------- ORCH-START-05 (delete-then-write GC) -----------------------------
+    // ----------------------------- R1/R4 (first-win re-Start no-op) -----------------------------
 
     [Fact]
-    public async Task ReStart_Removes_Orphan_Step()
+    public async Task ReStart_IsFirstWin_NoOp()
     {
+        // 24.1 R1/R4 (supersedes the Phase-22 ORCH-START-05 delete-then-write GC contract):
+        // dedup is on L2-ROOT EXISTENCE. A re-Start of an already-present workflowId is a deduped
+        // NO-OP — the existing root WINS: it is NOT overwritten, the graph is NOT re-projected, and
+        // nothing is republished. To RESHAPE a workflow graph the operator must Stop -> edit -> Start
+        // (the Stop atomic-deletes the full reachable key set; the next Start re-projects fresh).
+        // Because L2 is never mutated between Start and Stop and first-win forbids overwrite-in-place,
+        // an unreachable orphan per-step key can never form (R4 invariant) — so the old
+        // "re-Start GCs the orphan" assertion is obsolete and is replaced by this first-win proof.
         var ct = TestContext.Current.CancellationToken;
         using var client = _factory.CreateClient();
 
@@ -180,17 +188,26 @@ public sealed class StartLoopFacts : IClassFixture<HarnessWebAppFactory>
             Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key projected on first Start");
             Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "step B key projected on first Start");
 
-            // Shrink the graph: remove the A -> B edge so B is no longer reachable.
+            // Capture the root value so we can prove the re-Start did NOT overwrite/re-project it.
+            var rootBefore = await db.StringGetAsync($"{prefix}{wfId}");
+            Assert.True(rootBefore.HasValue, "root key present after first Start");
+
+            // Shrink the graph in L3 (remove the A -> B edge). Under first-win this edit is IGNORED by
+            // a re-Start (the root already exists) — it only takes effect after a Stop -> Start cycle.
             await UpdateStepNextAsync(client, ct, stepA, procId, nextStepIds: null);
 
             var second = await client.PostAsJsonAsync(
                 "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
             Assert.Equal(HttpStatusCode.NoContent, second.StatusCode);
 
-            // ORCH-START-05 — the now-orphaned per-step key for B is GONE (tolerant pre-clean
-            // deleted the whole prior reachable set before the writer re-projected the shrunk graph).
-            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key still projected after re-Start");
-            Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "orphaned step B key must be removed (delete-then-write)");
+            // R1/R4 first-win: the existing root WON — it was neither overwritten nor re-projected, so
+            // BOTH per-step keys (including B) survive unchanged. The L3 graph-shrink had no effect on
+            // the already-live L2 projection (no overwrite-in-place => no orphan GC path even exists).
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepA}"), "step A key still projected (first-win no-op)");
+            Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepB}"), "step B key still projected — re-Start was a deduped no-op (not re-projected, not GC'd)");
+
+            var rootAfter = await db.StringGetAsync($"{prefix}{wfId}");
+            Assert.Equal(rootBefore.ToString(), rootAfter.ToString());   // root byte-identical => not overwritten
         }
         finally
         {
@@ -246,6 +263,51 @@ public sealed class StartLoopFacts : IClassFixture<HarnessWebAppFactory>
         Assert.Equal(correlationId, doc.RootElement.GetProperty("correlationId").GetString());
         Assert.DoesNotContain("localhost", body);
         Assert.DoesNotContain("RedisConnectionException", body);
+    }
+
+    // ----------------------------- R2 (parent-index compensation on Start L2-write fault) -----------------------------
+
+    [Fact]
+    public async Task Start_WriteFault_CompensatesParentIndex_AndPublishesNothing()
+    {
+        // 24.1 R2 / D-24.1-02: an injected L2-write fault on Start must leave the parent index WITHOUT
+        // the id (compensating SREM) and publish nothing. We inject a throwing IRedisProjectionWriter
+        // (UpsertAsync faults) over the REAL compose Redis so the compensation SREM runs against the
+        // real parent-index SET. The writer's atomic batch would normally SADD the parent index; the
+        // service's compensation guarantees the index never retains an id whose L2 write did not land.
+        var ct = TestContext.Current.CancellationToken;
+
+        var factory = _factory.WithWebHostBuilder(builder =>
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddScoped<IRedisL2Cleanup, NoOpRedisL2Cleanup>();
+                services.AddScoped<IRedisProjectionWriter, RedisDownProjectionWriter>();
+            }));
+        using var client = factory.CreateClient();
+
+        var procId = await SeedProcessorAsync(client, ct);
+        var stepId = await SeedStepAsync(client, ct, procId);
+        var wfId = await SeedWorkflowAsync(client, ct, new List<Guid> { stepId });
+        await _factory.SeedLiveProcessorAsync(procId, ct);
+
+        try
+        {
+            var resp = await client.PostAsJsonAsync(
+                "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
+            Assert.Equal(HttpStatusCode.InternalServerError, resp.StatusCode);
+
+            // R2: the parent index does NOT retain this id (compensating SREM ran). The parent-index
+            // SET key is the BARE prefix (L2ProjectionKeys.ParentIndex() == Prefix == _factory.RedisKeyPrefix);
+            // the member is the workflow id in "D" format (mirrors the writer's SADD / cleanup's SREM).
+            var db = _factory.RedisMultiplexer.GetDatabase();
+            var parentKey = (RedisKey)_factory.RedisKeyPrefix;
+            var isMember = await db.SetContainsAsync(parentKey, wfId.ToString("D"));
+            Assert.False(isMember, "parent index must NOT retain the id after a compensated Start write fault");
+        }
+        finally
+        {
+            await _factory.SremParentIndexAsync(wfId);
+        }
     }
 
     /// <summary>No-op cleanup so the Start pre-clean step succeeds and the throwing writer is the

@@ -42,14 +42,13 @@ public sealed class AckSemanticsTests
     private static (StartOrchestrationConsumer start, StopOrchestrationConsumer stop, WorkflowL1Store store, WorkflowLifecycle lifecycle) Build(
         IConnectionMultiplexer mux, IScheduler scheduler)
     {
-        var gate = new StartupGate();
-        gate.MarkReady();
+        // 24.1 / D-24.1-05: the boot gate is removed — Start/Stop consumers no longer take an IStartupGate.
         var store = new WorkflowL1Store();
         var workflowScheduler = new WorkflowScheduler(scheduler, TimeProvider.System);
         var lifecycle = new WorkflowLifecycle(
             mux, store, workflowScheduler, TimeProvider.System, NullLogger<WorkflowLifecycle>.Instance);
-        var start = new StartOrchestrationConsumer(gate, lifecycle, NullLogger<StartOrchestrationConsumer>.Instance);
-        var stop = new StopOrchestrationConsumer(gate, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
+        var start = new StartOrchestrationConsumer(lifecycle, NullLogger<StartOrchestrationConsumer>.Instance);
+        var stop = new StopOrchestrationConsumer(lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
         return (start, stop, store, lifecycle);
     }
 

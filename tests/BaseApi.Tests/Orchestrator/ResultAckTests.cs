@@ -1,4 +1,3 @@
-using BaseConsole.Core.Health;
 using MassTransit;
 using Messaging.Contracts;
 using Messaging.Contracts.Projections;
@@ -41,10 +40,37 @@ public sealed class ResultAckTests
 
     private static ResultConsumer Build(WorkflowL1Store store, IStepDispatcher dispatcher)
     {
-        var gate = new StartupGate();
-        gate.MarkReady();
+        // 24.1 / D-24.1-05: the boot gate is removed — ResultConsumer no longer takes an IStartupGate.
         return new ResultConsumer(
-            gate, store, new StepAdvancement(), dispatcher, NullLogger<ResultConsumer>.Instance);
+            store, new StepAdvancement(), dispatcher, NullLogger<ResultConsumer>.Instance);
+    }
+
+    // ----- R5: an id ABSENT from L1 acks cleanly, lifecycle-agnostic (no throw, no _error) -------
+
+    [Fact]
+    public async Task ResultForIdAbsentFromL1_AcksGracefully_NoThrow_NoDispatch()
+    {
+        // 24.1 R5 / D-24.1-05 (supersedes D-06 / ORCH-GATE-01): with the boot gate REMOVED, L1 is the
+        // SOLE arbiter. A result for an id absent from L1 — unknown / stopped-drained / not-yet-hydrated,
+        // uniformly — is the DEFINED graceful business-ack outcome: log + return, NEVER throw and NEVER
+        // route to _error. (There is no gate; nothing distinguishes "boot window" from "unknown" — both
+        // are an L1 miss.) This proves the lifecycle-agnostic graceful-miss path.
+        var ct = TestContext.Current.CancellationToken;
+        var dispatcher = Substitute.For<IStepDispatcher>();
+        var store = new WorkflowL1Store(); // empty — the id is absent from L1 regardless of lifecycle
+
+        var consumer = Build(store, dispatcher);
+        var result = new ExecutionResult(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), StepOutcome.Completed)
+        {
+            CorrelationId = Guid.NewGuid(),
+        };
+
+        // No throw (clean business-ack) — the message is consumed, not redelivered, not DLQ'd.
+        await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
+
+        await dispatcher.DidNotReceive().DispatchAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
     // ----- unknown (workflowId, stepId) -> ack (no throw, no dispatch) ---------------------------

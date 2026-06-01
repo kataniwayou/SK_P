@@ -1,4 +1,3 @@
-using BaseConsole.Core.Health;
 using Messaging.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orchestrator.Consumers;
@@ -17,8 +16,9 @@ namespace BaseApi.Tests.Orchestrator;
 /// ORCH-START-RELOAD-01 goal-backward proof (supersedes Phase 23 ORCH-CONSUME-01): the conditionless
 /// <see cref="StartOrchestrationConsumer"/> UNCONDITIONALLY hydrates + (re)schedules the consumed
 /// workflow into a real <see cref="WorkflowL1Store"/> + a real Quartz RAMJobStore scheduler — even when
-/// the workflow is ALREADY in L1 (no existence skip), and a stop→start revives a live job. The
-/// gate-closed path THROWS <see cref="GateClosedException"/> (D-06 redelivery, NOT ack-drop).
+/// the workflow is ALREADY in L1 (no existence skip), and a stop→start revives a live job.
+/// 24.1 / D-24.1-05: the boot gate is removed — the consumer runs only after the bus starts, so there
+/// is no gate-closed path (the prior GateClosedException test is deleted).
 /// </summary>
 public sealed class StartConsumerLifecycleTests
 {
@@ -37,14 +37,14 @@ public sealed class StartConsumerLifecycleTests
     }
 
     private static (StartOrchestrationConsumer consumer, WorkflowL1Store store, WorkflowLifecycle lifecycle) Build(
-        IConnectionMultiplexer mux, IScheduler scheduler, StartupGate gate)
+        IConnectionMultiplexer mux, IScheduler scheduler)
     {
         var store = new WorkflowL1Store();
         var workflowScheduler = new WorkflowScheduler(scheduler, TimeProvider.System);
         var lifecycle = new WorkflowLifecycle(
             mux, store, workflowScheduler, TimeProvider.System, NullLogger<WorkflowLifecycle>.Instance);
         var consumer = new StartOrchestrationConsumer(
-            gate, lifecycle, NullLogger<StartOrchestrationConsumer>.Instance);
+            lifecycle, NullLogger<StartOrchestrationConsumer>.Instance);
         return (consumer, store, lifecycle);
     }
 
@@ -62,13 +62,10 @@ public sealed class StartConsumerLifecycleTests
         var values = OrchestratorTestStubs.RootWithStep(workflowId, jobId, stepId, processorId);
         var mux = OrchestratorTestStubs.PresentL2(values, out _);
 
-        var gate = new StartupGate();
-        gate.MarkReady();
-
         var scheduler = await NewRamSchedulerAsync(ct);
         try
         {
-            var (consumer, store, _) = Build(mux, scheduler, gate);
+            var (consumer, store, _) = Build(mux, scheduler);
 
             await consumer.Consume(OrchestratorTestStubs.Context(new StartOrchestration([workflowId]), ct));
 
@@ -105,13 +102,10 @@ public sealed class StartConsumerLifecycleTests
         var values = OrchestratorTestStubs.RootWithStep(workflowId, jobId, stepId, processorId);
         var mux = OrchestratorTestStubs.PresentL2(values, out _);
 
-        var gate = new StartupGate();
-        gate.MarkReady();
-
         var scheduler = await NewRamSchedulerAsync(ct);
         try
         {
-            var (consumer, store, _) = Build(mux, scheduler, gate);
+            var (consumer, store, _) = Build(mux, scheduler);
 
             // First Start hydrates + schedules.
             await consumer.Consume(OrchestratorTestStubs.Context(new StartOrchestration([workflowId]), ct));
@@ -150,14 +144,11 @@ public sealed class StartConsumerLifecycleTests
         var values = OrchestratorTestStubs.RootWithStep(workflowId, jobId, stepId, processorId);
         var mux = OrchestratorTestStubs.PresentL2(values, out _);
 
-        var gate = new StartupGate();
-        gate.MarkReady();
-
         var scheduler = await NewRamSchedulerAsync(ct);
         try
         {
-            var (start, store, lifecycle) = Build(mux, scheduler, gate);
-            var stop = new StopOrchestrationConsumer(gate, lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
+            var (start, store, lifecycle) = Build(mux, scheduler);
+            var stop = new StopOrchestrationConsumer(lifecycle, NullLogger<StopOrchestrationConsumer>.Instance);
 
             await start.Consume(OrchestratorTestStubs.Context(new StartOrchestration([workflowId]), ct));
             var jobKey = new JobKey(jobId.ToString("D"));
@@ -178,34 +169,4 @@ public sealed class StartConsumerLifecycleTests
         }
     }
 
-    // ----- ORCH-GATE-01 / D-06: gate-closed Start THROWS (redelivery), no hydrate/schedule -------
-
-    [Fact]
-    public async Task GateClosed_Start_Throws_NoSchedule()
-    {
-        var ct = TestContext.Current.CancellationToken;
-
-        var workflowId = Guid.NewGuid();
-        var values = OrchestratorTestStubs.RootWithStep(workflowId, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
-        var mux = OrchestratorTestStubs.PresentL2(values, out _);
-
-        var gate = new StartupGate(); // NOT ready
-
-        var scheduler = await NewRamSchedulerAsync(ct);
-        try
-        {
-            var (consumer, store, _) = Build(mux, scheduler, gate);
-
-            // D-06: gate closed -> THROW (so the message is scheduled-redelivered, NOT ack-dropped).
-            await Assert.ThrowsAsync<GateClosedException>(
-                () => consumer.Consume(OrchestratorTestStubs.Context(new StartOrchestration([workflowId]), ct)));
-
-            Assert.Equal(0, store.Count); // nothing hydrated
-            Assert.Empty(await scheduler.GetJobKeys(GroupMatcher<JobKey>.AnyGroup(), ct)); // nothing scheduled
-        }
-        finally
-        {
-            await scheduler.Shutdown(waitForJobsToComplete: false, ct);
-        }
-    }
 }
