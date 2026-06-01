@@ -28,9 +28,9 @@ namespace BaseProcessor.Core.DependencyInjection;
 /// </list>
 ///
 /// <para>
-/// <b>NO dispatch consumer this phase.</b> The <c>EntryStepDispatch</c> consumer + the
-/// <c>ProcessorLivenessHeartbeat</c> hosted service are Phase 27 / Plan 03 — they are NOT registered
-/// here (no consumer is registered, so no receive endpoints are auto-bound this phase).
+/// <b>NO dispatch consumer this phase.</b> The <c>EntryStepDispatch</c> consumer is Phase 27 — it is
+/// NOT registered here (no consumer is registered, so no receive endpoints are auto-bound this phase).
+/// The <see cref="ProcessorLivenessHeartbeat"/> hosted service IS registered here (step 7b).
 /// </para>
 ///
 /// <para>
@@ -48,8 +48,9 @@ public static class BaseProcessorServiceCollectionExtensions
 
         // 2. Bus skeleton + the two request clients (RPC-04). The clients go in the configureConsumers
         //    lambda; they target exchange:{ProcessorQueues.name} so the request routes to the WebApi's
-        //    named ReceiveEndpoint (confirmed Wave 0 — 26-01-SUMMARY). NO consumer is registered this
-        //    phase: the dispatch consumer is Phase 27, so no receive endpoints are auto-bound here.
+        //    named ReceiveEndpoint (confirmed Wave 0 — 26-01-SUMMARY). NO dispatch consumer is registered
+        //    this phase: the EntryStepDispatch consumer is Phase 27, so no receive endpoints are auto-bound
+        //    here. (The ProcessorLivenessHeartbeat hosted service IS registered this phase — step 7b.)
         services.AddBaseConsoleMessaging(cfg,
             x =>
             {
