@@ -1,6 +1,7 @@
 using BaseConsole.Core.Health;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Processing;
 using MassTransit;
 using Messaging.Contracts;
 using Microsoft.Extensions.Hosting;
@@ -28,10 +29,15 @@ namespace BaseProcessor.Core.Startup;
 /// the config schema id is NEVER queried (D-05).
 /// </para>
 /// <para>
-/// <b>Completion (D-02):</b> after identity + all required non-null definitions resolve, call
-/// <see cref="IProcessorContext.MarkHealthy"/> then <see cref="IStartupGate.MarkReady"/> — so
-/// <c>/startup</c> and <c>/ready</c> flip green HERE, not at bare host start, and the Phase 03
-/// heartbeat (gated on <c>IsHealthy</c>) begins writing.
+/// <b>Completion (D-02/D-03 — EXEC-01, the load-bearing order):</b> after identity + all required
+/// non-null definitions resolve, bind the dispatch receive endpoint named <c>{Id:D}</c> on the
+/// running bus via <c>IReceiveEndpointConnector.ConnectReceiveEndpoint</c>
+/// (durable defaults + <c>Immediate(3)</c> retry + <see cref="EntryStepDispatchConsumer"/> attached),
+/// <c>await handle.Ready</c>, THEN call <see cref="IProcessorContext.MarkHealthy"/> and
+/// <see cref="IStartupGate.MarkReady"/>. Because the heartbeat writes L2 only when <c>IsHealthy</c>,
+/// the <c>"Healthy"</c> key necessarily lands in L2 AFTER the bind — so the orchestrator (which admits
+/// only Healthy processors) never Sends to a non-existent queue. <c>/startup</c> and <c>/ready</c> flip
+/// green HERE, not at bare host start.
 /// </para>
 /// <para>
 /// <b>Resilience (T-26-04/05):</b> exactly one in-flight request at a time per loop; a short
@@ -46,6 +52,7 @@ public sealed class ProcessorStartupOrchestrator(
     ISourceHashProvider sourceHash,
     IProcessorContext context,
     IStartupGate gate,
+    IReceiveEndpointConnector endpointConnector,
     IOptions<ProcessorLivenessOptions> options,
     TimeProvider clock,
     ILogger<ProcessorStartupOrchestrator> logger) : BackgroundService
@@ -133,10 +140,23 @@ public sealed class ProcessorStartupOrchestrator(
                 return;
         }
 
-        // --- Completion (D-02): identity + all required non-null definitions resolved. ---
-        context.MarkHealthy(); // /startup + /ready meaning of "Healthy" (LIVE-04) — heartbeat may now write.
+        // --- Completion (D-02/D-03): identity + all required non-null definitions resolved. ---
+        // Bind the dispatch receive endpoint BEFORE MarkHealthy (EXEC-01 — the load-bearing order):
+        // because the heartbeat writes L2 only when IsHealthy, "Healthy" necessarily lands in L2 AFTER
+        // the queue is declared + the consumer attached, so the orchestrator (admits only Healthy) never
+        // Sends to a non-existent queue.
+        var queueName = $"{context.Id!.Value:D}";   // BARE name (queue: scheme is sender-only) -> competing-consumer
+        var handle = endpointConnector.ConnectReceiveEndpoint(queueName, (ctx, cfg) =>
+        {
+            cfg.UseMessageRetry(r => r.Immediate(3));                 // mirror ResultConsumerDefinition (D-02/D-15)
+            cfg.ConfigureConsumer<EntryStepDispatchConsumer>(ctx);    // DI-resolved consumer attached
+        });
+        await handle.Ready;                                          // queue declared + consumer attached BEFORE Healthy (D-03)
+
+        context.MarkHealthy(); // NOW IsHealthy opens -> heartbeat's first write lands AFTER the bind (LIVE-04/EXEC-01).
         gate.MarkReady();      // flip the startup gate HERE, not at host-start.
-        logger.LogInformation("Processor reached Healthy; startup gate marked ready.");
+        logger.LogInformation(
+            "Dispatch endpoint {Queue} bound; processor reached Healthy; startup gate ready.", queueName);
     }
 
     /// <summary>

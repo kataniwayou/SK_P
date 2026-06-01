@@ -2,6 +2,7 @@ using BaseConsole.Core.DependencyInjection;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
 using BaseProcessor.Core.Liveness;
+using BaseProcessor.Core.Processing;
 using BaseProcessor.Core.Startup;
 using MassTransit;
 using Messaging.Contracts;
@@ -28,9 +29,14 @@ namespace BaseProcessor.Core.DependencyInjection;
 /// </list>
 ///
 /// <para>
-/// <b>NO dispatch consumer this phase.</b> The <c>EntryStepDispatch</c> consumer is Phase 27 — it is
-/// NOT registered here (no consumer is registered, so no receive endpoints are auto-bound this phase).
-/// The <see cref="ProcessorLivenessHeartbeat"/> hosted service IS registered here (step 7b).
+/// <b>Dispatch consumer (Phase 27 / EXEC-01).</b> The <see cref="EntryStepDispatchConsumer"/> IS
+/// registered here for DI (so the runtime <c>ConnectReceiveEndpoint</c> can <c>ConfigureConsumer&lt;T&gt;</c>
+/// at bind time), but it is EXCLUDED from the unconditional <c>ConfigureEndpoints(ctx)</c> inside
+/// <c>AddBaseConsoleMessaging</c> via <c>.ExcludeFromConfigureEndpoints()</c> — otherwise a wrong-named
+/// kebab <c>entry-step-dispatch</c> queue would be auto-bound at bus start (Pitfall 1). The correct
+/// durable <c>{id:D}</c> endpoint is bound at runtime by <see cref="ProcessorStartupOrchestrator"/>,
+/// AFTER identity resolves and BEFORE <c>MarkHealthy</c> (D-01/D-02/D-03). The
+/// <see cref="ProcessorLivenessHeartbeat"/> hosted service IS registered here (step 7b).
 /// </para>
 ///
 /// <para>
@@ -48,14 +54,23 @@ public static class BaseProcessorServiceCollectionExtensions
 
         // 2. Bus skeleton + the two request clients (RPC-04). The clients go in the configureConsumers
         //    lambda; they target exchange:{ProcessorQueues.name} so the request routes to the WebApi's
-        //    named ReceiveEndpoint (confirmed Wave 0 — 26-01-SUMMARY). NO dispatch consumer is registered
-        //    this phase: the EntryStepDispatch consumer is Phase 27, so no receive endpoints are auto-bound
-        //    here. (The ProcessorLivenessHeartbeat hosted service IS registered this phase — step 7b.)
+        //    named ReceiveEndpoint (confirmed Wave 0 — 26-01-SUMMARY). The EntryStepDispatch consumer
+        //    is registered here for DI but EXCLUDED from auto-endpoint config (the {id:D} endpoint is
+        //    bound at runtime by ProcessorStartupOrchestrator — Phase 27 / EXEC-01). The
+        //    ProcessorLivenessHeartbeat hosted service IS registered this phase — step 7b.
         services.AddBaseConsoleMessaging(cfg,
             x =>
             {
                 x.AddRequestClient<GetProcessorBySourceHash>(new Uri("exchange:" + ProcessorQueues.IdentityQuery));
                 x.AddRequestClient<GetSchemaDefinition>(new Uri("exchange:" + ProcessorQueues.SchemaQuery));
+
+                // EXEC-01 / D-01: register the dispatch consumer for DI (so the runtime
+                // ConnectReceiveEndpoint can ConfigureConsumer<T> at bind time) but EXCLUDE it from the
+                // UNCONDITIONAL ConfigureEndpoints(ctx) inside AddBaseConsoleMessaging — otherwise a
+                // wrong-named kebab "entry-step-dispatch" queue is auto-created at bus start (Pitfall 1).
+                // The correct durable {id:D} endpoint is bound at runtime by ProcessorStartupOrchestrator,
+                // AFTER identity resolves and BEFORE MarkHealthy (D-02/D-03).
+                x.AddConsumer<EntryStepDispatchConsumer>().ExcludeFromConfigureEndpoints();
             });
 
         // 3. Liveness/heartbeat knobs (CONFIG-01) — four independent seconds-ints from the "Processor" section.
