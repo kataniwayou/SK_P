@@ -447,9 +447,13 @@ Note: `harness.GetRequestClient<T>()` is the harness convenience for request/res
 | A4 | `harness.GetRequestClient<T>()` is the MassTransit 8.5.5 harness accessor for request/response in tests | Code Examples | Low — request/response harness support is long-standing; exact accessor name to be confirmed at plan time (alternative: resolve `IRequestClient<T>` from DI after `AddRequestClient<T>`). |
 | A5 | No test file currently constructs/serializes `ProcessorProjection` (only `src/` references exist) | Runtime State Inventory | Low — grep covered `src/`; re-grep `tests/` at plan time before deleting the old type, in case a fact builds it directly. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Single combined hook vs. two hooks for D-05/D-06?**
+> Both resolved at plan time (2026-06-01) and codified in 25-01/25-02-PLAN.md.
+> 1 → two optional seams (`configureConsumers` + `configureEndpoints`), both default null, mirroring `AddBaseConsoleMessaging` but WITHOUT its `ConfigureEndpoints(ctx)` convention line (D-06) and leaving the Degraded health block byte-identical.
+> 2 → request carries `Guid SchemaId`; read by Id via inherited `BaseService.GetByIdAsync`.
+
+1. **Single combined hook vs. two hooks for D-05/D-06?** **(RESOLVED → two seams)**
    - What we know: `AddConsumer<T>` needs `IBusRegistrationConfigurator`; `ReceiveEndpoint(...).ConfigureConsumer<T>(context)` needs the `UsingRabbitMq` closure's `context` + bus-factory configurator. `BaseConsole.Core` already exposes both (`configureConsumers` + `configureBus`).
    - What's unclear: whether the planner prefers two parameters or one `Action<IBusRegistrationContext, IRabbitMqBusFactoryConfigurator>` that does both consumer-endpoint binding (consumers can be registered via `AddConsumer` inside `UsingRabbitMq`? No — `AddConsumer` is on the registration configurator). The two-seam shape is safest.
    - Recommendation: two optional hooks (mirror `AddBaseConsoleMessaging`), both default null. Confirm exact signature at plan time.
