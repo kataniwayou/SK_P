@@ -33,12 +33,14 @@ namespace BaseApi.Service.Features.Orchestration;
 /// newly-written (deduped) subset, and is suppressed entirely when nothing was written.
 /// </para>
 /// <para>
-/// <b>StopAsync</b> (WEBAPI-SUPPRESS-01 / D-04 delete-if-present) rule-validates the ids then, per
-/// workflow, <c>KeyDeleteAsync</c>-deletes the root: an ABSENT root is a tolerant no-op (NOT 422 —
-/// this supersedes the Phase 22 422-on-missing-root gate), a present root is deleted and its
-/// per-step keys GC'd via <see cref="IRedisL2Cleanup.StopCleanupAsync"/> (→ controller 204). The
-/// StopOrchestration publish carries ONLY the deduped (deleted) subset, and is suppressed entirely
-/// when nothing was deleted (a second Stop of an absent workflow is a clean no-op).
+/// <b>StopAsync</b> (R1/R3 — 24.1 probe-not-delete) rule-validates the ids then, per workflow,
+/// PROBES the L2 root via <c>KeyExistsAsync</c> (R1 dedup gate = the data key); a PRESENT root is
+/// handed to <see cref="IRedisL2Cleanup.StopCleanupAsync"/> which (R3) reads the root, BFS-collects
+/// the per-step keys, and deletes root + steps + SREMs parent in ONE atomic batch (→ controller 204).
+/// The probe (not a delete) keeps the root present so cleanup can discover the step keys. An ABSENT
+/// root is a first-win no-op (NOT 422 — supersedes the Phase 22 422-on-missing-root gate). The
+/// StopOrchestration publish carries ONLY the deduped subset, and is suppressed entirely when nothing
+/// was deleted (a second Stop of an absent workflow is a clean no-op).
 /// </para>
 /// <para>
 /// <b>OBSERV-REDIS-03:</b> a Redis fault on either path is caught, tagged with the offending
@@ -200,6 +202,14 @@ public sealed class OrchestrationService
 
             // 7. L2 projection write. A Redis fault is tagged with the offending op name
             //    (OBSERV-REDIS-03) and rethrown → FallbackExceptionHandler → 500.
+            //    R2 (parent-index compensation): UpsertAsync does root+parent(SADD)+steps in ONE
+            //    batch, so a batch failure already leaves nothing written (atomic). The SREM below is
+            //    the belt-and-suspenders compensation that makes the intent explicit and testable for
+            //    any partial/older path: on a write fault, SREM this id from the parent index so the
+            //    enumeration-only index never retains an id whose L2 write did not land. It is
+            //    best-effort — a fault during the SREM itself degrades to R1 self-healing (dedup reads
+            //    the L2 ROOT, not the parent) and must NOT mask the original UpsertAsync fault. The id
+            //    is excluded from `started` (nothing publishes for it) because the throw exits the loop.
             try
             {
                 await _redisProjectionWriter.UpsertAsync(snapshot, correlationId, ct);
@@ -207,6 +217,16 @@ public sealed class OrchestrationService
             catch (RedisException ex)
             {
                 ex.Data["redisOp"] = "UpsertAsync";
+                try
+                {
+                    await db.SetRemoveAsync(RedisProjectionKeys.ParentIndex(), workflowId.ToString("D"));
+                }
+                catch (RedisException)
+                {
+                    // Best-effort compensation: swallow a compensation fault (degrades to R1
+                    // self-healing). Never mask the original UpsertAsync fault.
+                }
+
                 throw;
             }
 
@@ -240,14 +260,17 @@ public sealed class OrchestrationService
     }
 
     /// <summary>
-    /// WEBAPI-SUPPRESS-01 / D-04 delete-if-present Stop. Rule-validates the ids (null-body guard +
+    /// R1/R3 probe-not-delete Stop (24.1). Rule-validates the ids (null-body guard +
     /// the <see cref="WorkflowIdsValidator"/> rules — mirrors <see cref="ExistenceCheckAsync"/>'s
-    /// pre-check), then per workflow <c>KeyDeleteAsync</c>-deletes the root: an ABSENT root is a
-    /// tolerant no-op (NOT 422 — this supersedes the Phase 22 422-on-missing-root gate), a present
-    /// root is deleted and its per-step keys GC'd via the tolerant
-    /// <see cref="IRedisL2Cleanup.StopCleanupAsync"/> (→ controller 204). A second Stop of an
-    /// already-cleaned workflow deletes nothing and is a clean no-op (idempotent). The publish
-    /// carries ONLY the deduped (deleted) subset and is suppressed when nothing was deleted. A Redis
+    /// pre-check), then per workflow PROBES the L2 root via <c>KeyExistsAsync</c>: an ABSENT root is a
+    /// tolerant first-win no-op (NOT 422 — this supersedes the Phase 22 422-on-missing-root gate). A
+    /// PRESENT root is handed to <see cref="IRedisL2Cleanup.StopCleanupAsync"/> which (R3) reads the
+    /// root, BFS-collects the per-step keys, and deletes root + steps + SREMs parent in ONE atomic
+    /// batch (→ controller 204) — the probe (not a delete) keeps the root present so cleanup can
+    /// discover the step keys. R2: a delete-batch fault SADDs the id back into the parent index
+    /// (best-effort compensation) before rethrow, and the id is excluded from the publish. A second
+    /// Stop of an already-cleaned workflow deletes nothing and is a clean no-op (idempotent). The
+    /// publish carries ONLY the deduped subset and is suppressed when nothing was deleted. A Redis
     /// fault on the delete path is tagged <c>"KeyDeleteAsync"</c> (OBSERV-REDIS-03) → 500.
     /// </summary>
     public async Task StopAsync(IReadOnlyList<Guid> workflowIds, CancellationToken ct)
@@ -273,33 +296,62 @@ public sealed class OrchestrationService
         var db = _multiplexer.GetDatabase();
         var stopped = new List<Guid>();
 
-        // Per workflow: KeyDeleteAsync on the root FIRST (the bool reflects was-present), then the
-        // tolerant traverse-and-delete cleanup to GC the per-step keys (root already removed; the
-        // cleanup tolerates already-absent keys). A genuine Redis connection fault on either call
-        // (NOT a missing key — that is tolerated) is tagged with the Stop path's stable op name so
-        // the 500 body reports a single stable "KeyDeleteAsync" op regardless of which Redis call
-        // faults first (OBSERV-REDIS-03) — mirroring the Start pre-clean convention above.
-        try
+        // Per workflow: KeyExistsAsync probe; cleanup owns the atomic delete (R1/R3). The lead op is
+        // a non-mutating root-existence PROBE (R1 dedup gate = the data key), NOT a delete: an absent
+        // root is a first-win no-op (NOT 422). For a PRESENT root, StopCleanupAsync (R3) reads the
+        // root, BFS-collects the per-step keys, and deletes root + steps + SREMs parent in ONE atomic
+        // batch — so the root MUST still exist when cleanup runs (the old delete-root-first ordering
+        // destroyed cleanup's discovery input and leaked per-step keys). A genuine Redis connection
+        // fault on either call (NOT a missing key — that is tolerated) is tagged with the Stop path's
+        // stable op name so the 500 body reports a single stable "KeyDeleteAsync" op (OBSERV-REDIS-03).
+        foreach (var workflowId in workflowIds)
         {
-            foreach (var workflowId in workflowIds)
+            bool rootPresent;
+            try
             {
-                var rootDeleted = await db.KeyDeleteAsync(RedisProjectionKeys.Root(workflowId));
-                if (!rootDeleted)
+                rootPresent = await db.KeyExistsAsync(RedisProjectionKeys.Root(workflowId));
+            }
+            catch (RedisException ex)
+            {
+                ex.Data["redisOp"] = "KeyDeleteAsync";
+                throw;
+            }
+
+            if (!rootPresent)
+            {
+                // First-win symmetric: absent root → no-op for this id (NOT 422). Skip the
+                // cleanup + the publish contribution.
+                continue;
+            }
+
+            // Root is present — StopCleanupAsync owns the atomic discover-then-delete (root + steps +
+            // SREM parent in one batch, R3). R2 (parent-index compensation): if the delete batch
+            // throws, the cleanup may already have SREM'd the parent index → SADD this id back
+            // (compensate) so the enumeration-only index stays consistent with the still-present L2,
+            // then rethrow (tagged). Compensation is best-effort — a fault during the SADD degrades to
+            // R1 self-healing (dedup reads the L2 ROOT). The id is excluded from `stopped` (nothing
+            // publishes) because the throw exits the loop before the Add.
+            try
+            {
+                await _cleanup.StopCleanupAsync(workflowId, ct);
+            }
+            catch (RedisException ex)
+            {
+                ex.Data["redisOp"] = "KeyDeleteAsync";
+                try
                 {
-                    // First-win symmetric: absent root → no-op for this id (NOT 422). Skip the
-                    // per-step cleanup + the publish contribution.
-                    continue;
+                    await db.SetAddAsync(RedisProjectionKeys.ParentIndex(), workflowId.ToString("D"));
+                }
+                catch (RedisException)
+                {
+                    // Best-effort compensation: swallow a compensation fault (degrades to R1
+                    // self-healing). Never mask the original delete fault.
                 }
 
-                // Root was present and is now deleted — GC the per-step keys (never processor keys).
-                await _cleanup.StopCleanupAsync(workflowId, ct);
-                stopped.Add(workflowId);
+                throw;
             }
-        }
-        catch (RedisException ex)
-        {
-            ex.Data["redisOp"] = "KeyDeleteAsync";
-            throw;
+
+            stopped.Add(workflowId);
         }
 
         // WEBAPI-SUPPRESS-01 — a Stop that deleted no roots (all absent) is a no-op and must emit NO
