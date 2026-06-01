@@ -203,13 +203,20 @@ public sealed class OrchestrationService
             // 7. L2 projection write. A Redis fault is tagged with the offending op name
             //    (OBSERV-REDIS-03) and rethrown → FallbackExceptionHandler → 500.
             //    R2 (parent-index compensation): UpsertAsync does root+parent(SADD)+steps in ONE
-            //    batch, so a batch failure already leaves nothing written (atomic). The SREM below is
-            //    the belt-and-suspenders compensation that makes the intent explicit and testable for
-            //    any partial/older path: on a write fault, SREM this id from the parent index so the
-            //    enumeration-only index never retains an id whose L2 write did not land. It is
-            //    best-effort — a fault during the SREM itself degrades to R1 self-healing (dedup reads
-            //    the L2 ROOT, not the parent) and must NOT mask the original UpsertAsync fault. The id
-            //    is excluded from `started` (nothing publishes for it) because the throw exits the loop.
+            //    batch, so a batch failure already leaves nothing written (atomic). The ACTUAL
+            //    parent-index consistency guarantee on the normal first-win flow is the pre-clean
+            //    StopCleanupAsync (step 2 above), which unconditionally SREMs this id from the parent
+            //    index (RedisL2Cleanup.SetRemoveAsync, hoisted above its absent-root early return)
+            //    BEFORE any write runs — so on the Upsert fault path the id is already absent from the
+            //    index and the catch-block SREM below is a NO-OP in this flow. The catch-block SREM is
+            //    therefore a defensive belt-and-suspenders for any future/alternate path that writes
+            //    WITHOUT a preceding pre-clean: on such a write fault it SREMs this id from the parent
+            //    index so the enumeration-only index never retains an id whose L2 write did not land.
+            //    Do NOT remove the pre-clean SREM on the assumption that this catch covers it — the
+            //    pre-clean is the enforcing op for the normal path. It is best-effort — a fault during
+            //    the SREM itself degrades to R1 self-healing (dedup reads the L2 ROOT, not the parent)
+            //    and must NOT mask the original UpsertAsync fault. The id is excluded from `started`
+            //    (nothing publishes for it) because the throw exits the loop.
             try
             {
                 await _redisProjectionWriter.UpsertAsync(snapshot, correlationId, ct);
