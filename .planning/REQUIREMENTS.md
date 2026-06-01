@@ -118,9 +118,9 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | CONTRACT-01 | Phase 25 | Pending |
 | CONTRACT-02 | Phase 25 | Pending |
 | CONTRACT-03 | Phase 25 | Pending |
-| RPC-01 | Phase 25 | Pending |
-| RPC-02 | Phase 25 | Pending |
-| RPC-03 | Phase 25 | Pending |
+| RPC-01 | Phase 25 | Complete |
+| RPC-02 | Phase 25 | Complete |
+| RPC-03 | Phase 25 | Complete |
 | BPC-01 | Phase 26 | Pending |
 | BPC-02 | Phase 26 | Pending |
 | BPC-03 | Phase 26 | Pending |
