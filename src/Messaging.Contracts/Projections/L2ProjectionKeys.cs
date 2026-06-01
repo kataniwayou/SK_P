@@ -21,6 +21,7 @@ namespace Messaging.Contracts.Projections;
 ///   <item><description>Root: <c>{Prefix}{workflowId}</c></description></item>
 ///   <item><description>Step: <c>{Prefix}{workflowId}:{stepId}</c></description></item>
 ///   <item><description>Processor: <c>{Prefix}{processorId}</c></description></item>
+///   <item><description>ExecutionData: {Prefix}data:{entryId} — FIRST key with a data: discriminator segment, distinct from the flat Root/Processor keys (D-02 / CONTRACT-02)</description></item>
 /// </list>
 /// </summary>
 public static class L2ProjectionKeys
@@ -34,4 +35,6 @@ public static class L2ProjectionKeys
     public static string Step(Guid workflowId, Guid stepId) => $"{Prefix}{workflowId}:{stepId}";
 
     public static string Processor(Guid processorId) => $"{Prefix}{processorId}";
+
+    public static string ExecutionData(Guid entryId) => $"{Prefix}data:{entryId:D}";
 }
