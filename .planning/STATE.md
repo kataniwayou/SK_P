@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: executing
-stopped_at: Completed 26-02-PLAN.md
-last_updated: "2026-06-01T19:30:39.376Z"
+status: verifying
+stopped_at: Completed 26-03-PLAN.md
+last_updated: "2026-06-01T19:39:58.183Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 4
-  percent: 80
+  completed_plans: 5
+  percent: 100
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
 Phase: 26 (baseprocessor-core-library-identity-liveness) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-01
 
 ### Milestone Phases (v3.5.0)
@@ -112,7 +112,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -280,6 +280,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 25 P25-02 | ~32min | 3 tasks | 8 files |
 | Phase 26 P01 | 7min | 3 tasks | 15 files |
 | Phase 26 P02 | 8min | 2 tasks | 5 files |
+| Phase 26 P03 | 11min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -580,6 +581,7 @@ Recent decisions affecting current work:
 - Plan 26-01 Wave 0 CONFIRMED for Plan 02: MassTransit 8.5.5 dual GetResponse<TFound,TNotFound> returns Response<T1,T2> (NOT base Response — .Is(out Response<T>) is on the dual type); IRequestClient<T> is SCOPED (resolve from a DI scope, not root); exchange:{ProcessorQueues.name} routing + RequestTimeout.After confirmed against in-memory responder
 - BackoffAsync returns next-delay TimeSpan? (not ref) — async methods cannot take ref/out (CS1988)
 - AddBaseProcessor tests use await using BuildServiceProvider(true) — MassTransit UsageTracker is IAsyncDisposable
+- Heartbeat reuses frozen ProcessorProjection/LivenessProjection records + L2ProjectionKeys.Processor + LivenessStatus.Healthy (D-09) so writer cannot desync from the unchanged reader
 
 ### Roadmap Milestone Log
 
@@ -676,8 +678,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-01T19:30:39.365Z
-Stopped at: Completed 26-02-PLAN.md
+Last session: 2026-06-01T19:39:58.169Z
+Stopped at: Completed 26-03-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)

@@ -46,12 +46,18 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 ### Liveness Self-Registration (Redis L2)
 
-- [ ] **LIVE-01**: A background heartbeat worker writes/refreshes `skp:{processorId:D}` every `Interval` seconds with `{ inputDefinition, outputDefinition, liveness{ timestamp, interval, status: "Healthy" } }` — written **only while the replica is Healthy**.
-- [ ] **LIVE-02**: Each heartbeat refreshes the liveness `timestamp` and re-applies the configured `Ttl` key expiry (sliding expiration); with N replicas the key is kept fresh by whichever are healthy.
-- [ ] **LIVE-03**: The written liveness `interval` equals the configured heartbeat delay (seconds), so the orchestrator's `timestamp + interval×2` staleness check holds.
-- [ ] **LIVE-04**: The processor writes the liveness key **only once Healthy** (identity + all required non-null definitions resolved); `status` is always `"Healthy"` when written. A starting / restarting / unhealthy replica does **not** write — to the orchestrator it is `absent`, and the shared key goes `stale` only when *no* replica is healthy. (Optional schema Ids being null is by design, not unhealthy.)
-- [ ] **LIVE-05**: The written L2 value shape exactly matches what `ProcessorLivenessValidator` reads; the v3.4.0 validator is reused **unchanged** (absent/stale/malformed → 422). Presence + freshness of `skp:{processorId:D}` therefore means "≥1 replica is currently healthy" — exactly the orchestration-Start admission signal.
-- [ ] **LIVE-06**: Multi-replica L2 writes are **lock-free and safe**: execution-data keys are unique per result (no contention); the shared liveness key is a blind whole-value `SET` written only-when-Healthy, so concurrent writes from N replicas are equivalent (same definitions, `status: "Healthy"`, fresh timestamp) and last-write-wins requires no synchronization.
+- [x] **LIVE-01
+**: A background heartbeat worker writes/refreshes `skp:{processorId:D}` every `Interval` seconds with `{ inputDefinition, outputDefinition, liveness{ timestamp, interval, status: "Healthy" } }` — written **only while the replica is Healthy**.
+- [x] **LIVE-02
+**: Each heartbeat refreshes the liveness `timestamp` and re-applies the configured `Ttl` key expiry (sliding expiration); with N replicas the key is kept fresh by whichever are healthy.
+- [x] **LIVE-03
+**: The written liveness `interval` equals the configured heartbeat delay (seconds), so the orchestrator's `timestamp + interval×2` staleness check holds.
+- [x] **LIVE-04
+**: The processor writes the liveness key **only once Healthy** (identity + all required non-null definitions resolved); `status` is always `"Healthy"` when written. A starting / restarting / unhealthy replica does **not** write — to the orchestrator it is `absent`, and the shared key goes `stale` only when *no* replica is healthy. (Optional schema Ids being null is by design, not unhealthy.)
+- [x] **LIVE-05
+**: The written L2 value shape exactly matches what `ProcessorLivenessValidator` reads; the v3.4.0 validator is reused **unchanged** (absent/stale/malformed → 422). Presence + freshness of `skp:{processorId:D}` therefore means "≥1 replica is currently healthy" — exactly the orchestration-Start admission signal.
+- [x] **LIVE-06
+**: Multi-replica L2 writes are **lock-free and safe**: execution-data keys are unique per result (no contention); the shared liveness key is a blind whole-value `SET` written only-when-Healthy, so concurrent writes from N replicas are equivalent (same definitions, `status: "Healthy"`, fresh timestamp) and last-write-wins requires no synchronization.
 
 ### Shared-Contract Extracts (`Messaging.Contracts`)
 
