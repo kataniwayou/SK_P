@@ -125,6 +125,11 @@
          StartStopConsumerAckTests registers the real consumers + definitions on an in-memory
          bus to prove the business-ack / infra-throw split + no-Redis-writes + seam log. -->
     <ProjectReference Include="..\..\src\Orchestrator\Orchestrator.csproj" />
+    <!-- Phase 26 addition (Plan 26-01): the BaseProcessor.Core library under standalone
+         validation. The Processor/* test slice asserts the SourceHash seam, the IProcessorContext
+         holder, the abstract ProcessAsync seam, the liveness options binding, and the Wave 0
+         exchange: request-client scheme + GetResponse<TFound,TNotFound> harness round-trip. -->
+    <ProjectReference Include="..\..\src\BaseProcessor.Core\BaseProcessor.Core.csproj" />
   </ItemGroup>
 
 </Project>

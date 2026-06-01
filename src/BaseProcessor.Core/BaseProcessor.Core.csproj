@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    BaseProcessor.Core — reusable Generic-Host processor infrastructure class library (Phase 26).
+    The processor-side mirror of BaseConsole.Core / the Orchestrator console: it self-identifies via
+    an assembly-embedded SourceHash, self-registers liveness into Redis L2, and (Phase 27) runs the
+    orchestrator -> processor -> orchestrator execution round-trip with the transform isolated to one
+    abstract ProcessAsync seam.
+
+    Sdk="Microsoft.NET.Sdk" — a worker/Generic-Host library, not a Web app. The processor builds on
+    BaseConsole.Core (which supplies Kestrel + health checks via FrameworkReference), so this project
+    does NOT declare its own FrameworkReference.
+
+    Firewall: NO ProjectReference to BaseApi.Service — the processor talks to the WebApi only over the
+    bus (via the Messaging.Contracts request/response vocabulary). The only ProjectReferences are
+    BaseConsole.Core (host base) and Messaging.Contracts (leaf contracts).
+
+    Common props (TargetFramework=net8.0, Nullable, ImplicitUsings, LangVersion, AnalysisMode,
+    EnforceCodeStyleInBuild, TreatWarningsAsErrors) inherit from Directory.Build.props at the repo
+    root — DO NOT redeclare them (CRITICAL: net8.0, never net9.0).
+
+    CPM: NuGet versions are pinned in Directory.Packages.props. NO Version= attribute on any
+    PackageReference here (RESEARCH Pitfall 6: stay on the CPM-pinned MassTransit 8.5.5, never bump
+    to the commercial 9.x line).
+  -->
+
+  <PropertyGroup>
+    <RootNamespace>BaseProcessor.Core</RootNamespace>
+    <AssemblyName>BaseProcessor.Core</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="StackExchange.Redis" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BaseConsole.Core\BaseConsole.Core.csproj" />
+    <ProjectReference Include="..\Messaging.Contracts\Messaging.Contracts.csproj" />
+    <!-- NOT BaseApi.Service — firewall: the processor talks to the WebApi only over the bus. -->
+  </ItemGroup>
+
+</Project>
