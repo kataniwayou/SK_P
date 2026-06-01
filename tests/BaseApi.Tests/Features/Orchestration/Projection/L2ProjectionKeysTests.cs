@@ -50,4 +50,20 @@ public sealed class L2ProjectionKeysTests
         var sharedGuid = Guid.Parse("44444444-4444-4444-4444-444444444444");
         Assert.Equal(L2ProjectionKeys.Root(sharedGuid), L2ProjectionKeys.Processor(sharedGuid));
     }
+
+    [Fact]
+    public void ExecutionData_Produces_Prefix_Data_Discriminator_Plus_HyphenatedGuid()
+    {
+        Assert.Equal(
+            "skp:data:55555555-5555-5555-5555-555555555555",
+            L2ProjectionKeys.ExecutionData(Guid.Parse("55555555-5555-5555-5555-555555555555")));
+    }
+
+    [Fact]
+    public void ExecutionData_Is_Distinct_From_Root_And_Processor()
+    {
+        var g = Guid.Parse("66666666-6666-6666-6666-666666666666");
+        Assert.NotEqual(L2ProjectionKeys.Root(g), L2ProjectionKeys.ExecutionData(g));
+        Assert.NotEqual(L2ProjectionKeys.Processor(g), L2ProjectionKeys.ExecutionData(g));
+    }
 }
