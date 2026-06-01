@@ -148,12 +148,12 @@ Concrete requirements for Phase 24, which pulls the processor→orchestrator rou
 
 - [x] **ORCH-RESULT-01
 **: A net-new `ExecutionResult` record exists in `Messaging.Contracts` implementing `IExecutionCorrelated` (`correlationId`, `executionId`, `workflowId`, `stepId`, `processorId`, `entryId`), carrying a `StepOutcome` outcome plus a nullable error message (Failed) / cancellation message (Cancelled), NO output payload. A net-new `StepOutcome` enum carries `Processing`/`Completed`/`Failed`/`Cancelled` with int values matching the `StepEntryCondition.Previous*` subset (0–3); `Always`/`Never` are NOT valid outcomes.
-- [ ] **ORCH-RESULT-02**: The orchestrator consumes `ExecutionResult` on a load-balanced **shared named queue** (competing-consumer semantics across replicas — 1 active today), distinct from the instance-unique fan-out endpoint used for Start/Stop control.
+- [x] **ORCH-RESULT-02**: The orchestrator consumes `ExecutionResult` on a load-balanced **shared named queue** (competing-consumer semantics across replicas — 1 active today), distinct from the instance-unique fan-out endpoint used for Start/Stop control.
 - [x] **ORCH-ADVANCE-01
 **: On a result the orchestrator reads the completed step's L1 projection, enumerates its `NextStepIds`, reads each next step's L1 projection, and selects a next step iff `nextStep.EntryCondition == (int)outcome` OR `nextStep.EntryCondition == Always` (`Never` never advances). The result path performs NO L2/Redis read.
 - [x] **ORCH-ADVANCE-02
 **: For each selected next step the orchestrator `Send`s the job-trigger-shaped dispatch (`EntryStepDispatch` structure) to `queue:{nextStep.ProcessorId}`, copying `correlationId`, `entryId`, `executionId`, and `workflowId` from the result, and taking `stepId`, `processorId`, `payload` from the next step's L1 projection.
-- [ ] **ORCH-RESULT-ACK-01**: With the gate open, a result for an unknown `(workflow,step)`, a step with no matching next step, or a corrupt L1 projection is a clean ack (no throw); only genuine infra faults propagate to bounded retry → `_error`. Duplicate/redelivered results may re-dispatch (dedup deferred).
+- [x] **ORCH-RESULT-ACK-01**: With the gate open, a result for an unknown `(workflow,step)`, a step with no matching next step, or a corrupt L1 projection is a clean ack (no throw); only genuine infra faults propagate to bounded retry → `_error`. Duplicate/redelivered results may re-dispatch (dedup deferred). *(24.1: gate removed — graceful-miss path is now lifecycle-agnostic; WR-02 null-`NextStepIds` NRE fixed via terminal guard.)*
 - [x] **ORCH-GATE-01
 **: While the startup gate is closed, Start/Stop/`ExecutionResult` messages are NOT acked-dropped — the consumer throws/nacks to trigger delayed redelivery, and the message is reprocessed after `MarkReady`. Supersedes Phase 23 D-12. A one-time result arriving during hydration is never lost.
 - [x] **ORCH-START-RELOAD-01
@@ -162,6 +162,11 @@ Concrete requirements for Phase 24, which pulls the processor→orchestrator rou
 **: With the gate open, a Stop unconditionally deletes the workflow's Quartz job(s) but KEEPS the L1 entry, so late `ExecutionResult` messages for the stopped workflow still resolve in L1 and continue advancing the DAG (graceful drain). No L1 clear this phase. Supersedes Phase 23 ORCH-STOP-01 behavior.
 - [x] **WEBAPI-SUPPRESS-01
 **: The WebApi suppresses duplicate start/stop first-win at the L2 root — Start creates the root-parent `workflowId` only if absent (else skip), Stop deletes it only if present (else skip) — so the orchestrator only ever sees genuine deduped transitions.
+
+**Phase 24.1 gap-closure (gating redesign, locked via 24.1-SPEC.md, 2026-06-01):** Closed the FAILED Phase 24 verification. **Supersedes** D-04 (dedup mechanism) and D-06 / `ORCH-GATE-01` (the boot gate). Net changes, all in code + green suite (335/335 from clean build, real stack live):
+- `ORCH-GATE-01` behavior REMOVED entirely — the startup gate, scheduled redelivery, and the `rabbitmq_delayed_message_exchange` plugin dependency are gone. The L1-only graceful result path (D-08, strengthened to sole arbiter) replaces gate-closed never-drop. This resolves the FAILED **WR-01** (plugin absent from compose → live redelivery degraded to exhaust-and-error): there is no longer any redelivery to degrade. `IStartupGate.MarkReady` is retained only for the base-console `/ready` health probe (hydration-complete), not for consumer gating.
+- `WEBAPI-SUPPRESS-01` mechanism refined: first-win dedup now probes **L2-root existence** (`KeyExistsAsync(Root(id))`) on both Start and Stop (probe-not-delete), with **parent-index compensation** (`SREM` on Start write-fault, `SADD` on Stop delete-fault). Stop performs an **atomic discover-then-delete** (root + steps + parent-`SREM` reachable-graph delete). The orphan-free reachability invariant is recorded in `RedisL2Cleanup`.
+- **WR-02** (null `NextStepIds` NRE) fixed: `SelectNext` guards `?? Enumerable.Empty<Guid>()` — a terminal step yields zero successors gracefully.
 
 ### Deferred from prior milestones (unchanged)
 

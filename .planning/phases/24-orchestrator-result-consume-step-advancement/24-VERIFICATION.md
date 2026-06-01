@@ -1,11 +1,22 @@
 ---
 phase: 24
-status: failed
+status: resolved
+resolved_by: "24.1"
+resolved: 2026-06-01
 requirements_total: 9
-requirements_met: 8
+requirements_met: 9
 verified: 2026-06-01
 test_evidence_corrected: 2026-06-01
 ---
+
+> **✅ RESOLVED (2026-06-01) by gap-closure Phase 24.1 (gating-redesign-l2-dedup-gate-removal).**
+> The 4 in-scope test failures and both concerns (WR-01 plugin-absent redelivery degradation,
+> WR-02 null-`NextStepIds` NRE) are closed by the locked 24.1 redesign: boot gate + scheduled
+> redelivery + delayed-message-scheduler plugin REMOVED (L1-only graceful result is sole arbiter);
+> L2-existence dedup with parent-index compensation + atomic discover-then-delete Stop; terminal
+> `SelectNext` guard. Authoritative evidence: from-scratch `dotnet clean` + `dotnet test SK_P.sln -c
+> Debug` with the real stack live = **Failed 0 / Passed 335 / Total 335**; Release build 0 warnings.
+> See `.planning/phases/24.1-gating-redesign-l2-dedup-gate-removal/24.1-VERIFICATION.md` (passed, 7/7).
 
 > **⚠️ CORRECTION (2026-06-01, orchestrator):** This report was originally generated
 > against FALSE test evidence supplied by the orchestrator ("309 passed / 0 failed").

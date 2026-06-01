@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.4.0
 milestone_name: BaseConsole + Orchestrator Messaging
-status: executing
+status: milestone_complete
 stopped_at: Completed 24.1-01-PLAN.md
 last_updated: "2026-06-01T12:00:00.000Z"
 last_activity: 2026-06-01 — Phase 24.1 Plan 24.1-01 complete (clean-build green 335/335; closes FAILED Phase 24)
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 31
   completed_plans: 31
   percent: 100
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-05-30 — v3.4.0 milestone started)
 ## Current Position
 
 Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 24.1 (gating-redesign-l2-dedup-gate-removal) — plan complete, awaiting phase-completion gate
-Plan: 1 of 1 — COMPLETE (24.1-01)
-Status: Phase 24.1 plan finalized; orchestrator owns phase-completion gate (R1–R7 + superseded Phase 24 reqs)
-Last activity: 2026-06-01 — Phase 24.1 Plan 24.1-01 complete (clean-build green 335/335; closes FAILED Phase 24)
+Phase: 24.1
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-06-01
 
 ### Phase 24.1 Plan 24.1-01 — COMPLETE (gating redesign; closes FAILED Phase 24, 2026-06-01)
 
@@ -128,7 +128,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 92
+- Total plans completed: 93
 - Average duration: —
 - Total execution time: —
 
@@ -158,6 +158,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 21 | 1 | - | - |
 | 22 | 5 | - | - |
 | 23 | 5 | - | - |
+| 24.1 | 1 | - | - |
 
 **Recent Trend:**
 
