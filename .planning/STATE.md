@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: planning
-stopped_at: Phase 25 context gathered
-last_updated: "2026-06-01T16:54:55.751Z"
-last_activity: 2026-06-01 — Milestone v3.5.0 roadmap created (4 phases, 38/38 reqs mapped)
+status: executing
+stopped_at: Completed 25-01-PLAN.md
+last_updated: "2026-06-01T17:13:11.878Z"
+last_activity: 2026-06-01
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 2
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 50
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** v3.5.0 — Processor Console (self-registration, liveness, execution round-trip). Defining requirements.
+**Current focus:** Phase 25 — shared-contracts-webapi-responders
 
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 25 (not started)
-Plan: —
-Status: Roadmap complete — ready to plan Phase 25
-Last activity: 2026-06-01 — Milestone v3.5.0 roadmap created (4 phases, 38/38 reqs mapped)
+Phase: 25 (shared-contracts-webapi-responders) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-06-01
 
 ### Milestone Phases (v3.5.0)
 
@@ -112,7 +112,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ### Milestone Phases (v3.4.0)
 
@@ -275,6 +275,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 24 P05 | ~25min | 2 tasks | 7 files |
 | Phase 24 P05 | ~25min | 2 tasks | 7 files |
 | Phase 24 P05 | ~25min | 2 tasks | 7 files |
+| Phase 25 P01 | ~25min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -568,6 +569,9 @@ Recent decisions affecting current work:
 - WebApi is the single first-win L2-root dedup point (WEBAPI-SUPPRESS-01/D-04): Start create-if-absent via KeyExistsAsync probe-then-skip (whole write path guarded), Stop delete-if-present via KeyDeleteAsync (absent root = 204 no-op, not 422); both publishes carry only the deduped subset; Stop redisOp tag now KeyDeleteAsync. Supersedes Phase 22 ORCH-START-05 overwrite + 422-on-missing gate.
 - 24-05: conditionless Start/Stop consumers (no stripe, no existence skip — WebApi dedups); Stop keeps L1 for drain via WorkflowLifecycle.UnscheduleOnlyAsync; both throw GateClosedException on closed gate into UseScheduledRedelivery-before-retry (D-05/D-06/D-07).
 - 24-05: conditionless Start/Stop consumers (no stripe, no existence skip); Stop keeps L1 for drain (UnscheduleOnlyAsync); both throw GateClosedException into UseScheduledRedelivery-before-retry (D-05/D-06/D-07).
+- Phase 25-01: ProcessorProjection relocated to Messaging.Contracts.Projections as public (CONTRACT-01); verbatim lift preserves [property:] JsonPropertyName targets; old internal BaseApi.Service type deleted.
+- Phase 25-01: ProcessorLivenessValidator + all 13 test reference sites compiled unchanged — every site already imported Messaging.Contracts.Projections (for LivenessProjection), so ProcessorProjection re-resolved automatically; zero test-file edits.
+- Phase 25-01: Leaf stays MassTransit-free — six request/response records (RPC-01/02) + ProcessorQueues constants (RPC-03) are plain POCOs, no PackageReference added.
 
 ### Roadmap Milestone Log
 
@@ -664,9 +668,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 25 context gathered
-Resume file: --resume-file
+Last session: 2026-06-01T17:13:11.868Z
+Stopped at: Completed 25-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
 **Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).

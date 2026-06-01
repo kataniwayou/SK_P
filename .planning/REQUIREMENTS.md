@@ -23,9 +23,12 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 ### Bus Request/Response (WebApi responders)
 
-- [ ] **RPC-01**: WebApi answers a `GetProcessorBySourceHash` bus request, returning the processor identity (`Id` + the three nullable schema Ids) or a not-found response.
-- [ ] **RPC-02**: WebApi answers a `GetSchemaDefinition` bus request, returning the schema `Definition` for a given schema Id or a not-found response.
-- [ ] **RPC-03**: The two request/response contracts live in `Messaging.Contracts`; WebApi's bus join is extended from publish-only to host these two responders, leaving the CRUD surface unaffected.
+- [x] **RPC-01
+**: WebApi answers a `GetProcessorBySourceHash` bus request, returning the processor identity (`Id` + the three nullable schema Ids) or a not-found response.
+- [x] **RPC-02
+**: WebApi answers a `GetSchemaDefinition` bus request, returning the schema `Definition` for a given schema Id or a not-found response.
+- [x] **RPC-03
+**: The two request/response contracts live in `Messaging.Contracts`; WebApi's bus join is extended from publish-only to host these two responders, leaving the CRUD surface unaffected.
 - [ ] **RPC-04**: The processor issues both queries via MassTransit `IRequestClient`s (first request/response usage on the console side).
 
 ### Schema Resolution
@@ -44,9 +47,12 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 ### Shared-Contract Extracts (`Messaging.Contracts`)
 
-- [ ] **CONTRACT-01**: `ProcessorProjection` is made public and relocated to `Messaging.Contracts.Projections` so WebApi and the processor share one source of truth (mirrors the Phase 17/21 extracts).
-- [ ] **CONTRACT-02**: `L2ProjectionKeys` gains an `ExecutionData(Guid entryId)` builder producing `skp:data:{entryId:D}`, discriminated from `root`/`step`/`processor` keys.
-- [ ] **CONTRACT-03**: The liveness `status` value `"Healthy"` (the only value ever written under Path 1) is defined as a shared constant in `Messaging.Contracts`, so the processor (writer) and any reader cannot desync — same single-source-of-truth discipline as the L2 keys.
+- [x] **CONTRACT-01
+**: `ProcessorProjection` is made public and relocated to `Messaging.Contracts.Projections` so WebApi and the processor share one source of truth (mirrors the Phase 17/21 extracts).
+- [x] **CONTRACT-02
+**: `L2ProjectionKeys` gains an `ExecutionData(Guid entryId)` builder producing `skp:data:{entryId:D}`, discriminated from `root`/`step`/`processor` keys.
+- [x] **CONTRACT-03
+**: The liveness `status` value `"Healthy"` (the only value ever written under Path 1) is defined as a shared constant in `Messaging.Contracts`, so the processor (writer) and any reader cannot desync — same single-source-of-truth discipline as the L2 keys.
 
 ### Execution Round-Trip
 
