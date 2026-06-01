@@ -20,7 +20,7 @@ public sealed class BaseProcessorSeamFacts
     /// </summary>
     private sealed class TestProcessor : BaseProcessorBase
     {
-        public static readonly ProcessResult Result = new();
+        public static readonly ProcessResult Result = new("output");
 
         protected override Task<IReadOnlyList<ProcessResult>> ProcessAsync(
             string inputData, string config, CancellationToken ct)

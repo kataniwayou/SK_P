@@ -21,4 +21,13 @@ public abstract class BaseProcessor
     /// </summary>
     protected abstract Task<IReadOnlyList<ProcessResult>> ProcessAsync(
         string inputData, string config, CancellationToken ct);
+
+    /// <summary>
+    /// Framework-internal invoker (EXEC-04). The Phase 27 EntryStepDispatchConsumer lives in this
+    /// SAME assembly and so cannot call the <c>protected</c> ProcessAsync of a non-derived instance;
+    /// this <c>internal</c> forwarder is the seam it calls. The concrete (a different assembly) never
+    /// sees this method and still overrides ONLY ProcessAsync (BPC-02).
+    /// </summary>
+    internal Task<IReadOnlyList<ProcessResult>> ExecuteAsync(string inputData, string config, CancellationToken ct)
+        => ProcessAsync(inputData, config, ct);
 }
