@@ -5,7 +5,7 @@ using BaseApi.Service.Composition;
 var builder = WebApplication.CreateBuilder(args);
 builder.AddBaseApiObservability(builder.Configuration);
 builder.Services.AddBaseApi<AppDbContext>(builder.Configuration);
-builder.Services.AddBaseApiMessaging(builder.Configuration);   // Phase 19 MSG-WEBAPI-01: publish-only bus join.
+builder.Services.AddBaseApiResponderMessaging(builder.Configuration);   // Phase 25 RPC-01/02/03: bus responder host (extends the Phase-19 publish-only join).
 builder.Services.AddAppFeatures();
 builder.Services.AddBaseApiFallbackHandler();   // Phase 14 D-04: catch-all LAST, after all domain handlers.
 
