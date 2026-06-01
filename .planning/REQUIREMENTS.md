@@ -10,15 +10,18 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 ### Processor Base Library (`BaseProcessor.Core`)
 
-- [ ] **BPC-01**: `BaseProcessor.Core` is a reusable Generic-Host library built on `BaseConsole.Core` (inheriting soft-dep Redis, embedded health probes, metrics-only OTel, MassTransit/RabbitMQ, and the inbound/outbound correlation filters).
-- [ ] **BPC-02**: A new processor is created by subclassing the base and implementing exactly one `abstract` method — no infrastructure, id, L2, or bus code in the concrete.
+- [x] **BPC-01
+**: `BaseProcessor.Core` is a reusable Generic-Host library built on `BaseConsole.Core` (inheriting soft-dep Redis, embedded health probes, metrics-only OTel, MassTransit/RabbitMQ, and the inbound/outbound correlation filters).
+- [x] **BPC-02
+**: A new processor is created by subclassing the base and implementing exactly one `abstract` method — no infrastructure, id, L2, or bus code in the concrete.
 - [ ] **BPC-03**: An `AddBaseProcessor` composition root wires the startup orchestration (identity loop, liveness worker, dispatch consumer) so a concrete `Program.cs` stays minimal (mirrors `AddBaseConsole`/`Orchestrator`).
 
 ### Processor Identity (assembly-embedded SourceHash)
 
 - [ ] **IDENT-01**: An MSBuild target (`BeforeTargets=CoreCompile`) computes the implementation SourceHash — SHA-256, lowercase 64-hex, LF-normalized, per-file hashes folded deterministically (ordinal path sort) over `BaseProcessor.Core` + the concrete's `.cs` (excluding generated files, `BaseConsole.Core`, `Messaging.Contracts`).
 - [ ] **IDENT-02**: The hash is embedded as `[assembly: AssemblyMetadata("SourceHash", …)]` and the target re-runs when implementation source changes (no stale hash on incremental builds).
-- [ ] **IDENT-03**: At runtime the processor reads its SourceHash from assembly metadata via reflection.
+- [x] **IDENT-03
+**: At runtime the processor reads its SourceHash from assembly metadata via reflection.
 - [ ] **IDENT-04**: The processor resolves its identity (`Id`, `InputSchemaId?`, `OutputSchemaId?`, `ConfigSchemaId?`) by querying the WebApi over the bus by SourceHash, retrying on failure (timeout / not-found) until it succeeds — booting before the DB row is registered is tolerated.
 
 ### Bus Request/Response (WebApi responders)
@@ -74,7 +77,8 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 ### Configuration
 
-- [ ] **CONFIG-01**: Liveness `Interval` (seconds) and `Ttl` (seconds) are two independent appsettings values.
+- [x] **CONFIG-01
+**: Liveness `Interval` (seconds) and `Ttl` (seconds) are two independent appsettings values.
 - [ ] **CONFIG-02**: Execution-data L2 keys have their own configurable TTL (seconds).
 
 ### Testing & Closeout
