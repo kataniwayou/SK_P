@@ -84,6 +84,18 @@ internal sealed class RedisL2Cleanup : IRedisL2Cleanup
         // can exist — and this single atomic batch deletes all-or-nothing (a crash mid-delete leaves
         // either the whole graph or none of it, never a half-deleted residue).
         //
+        // ATOMICITY SCOPE (24.1): ONLY this final root+steps delete batch is atomic. The parent-index
+        // SREM at line 45 is a SEPARATE, EARLIER, NON-batched op (it is deliberately hoisted above the
+        // absent-root early return for idempotent GC — see the comment there). So this routine is NOT
+        // atomic across its full SREM → discover-GETs → delete-batch sequence: a Redis fault during the
+        // discovery GETs — after the SREM succeeded but before the delete batch — leaves the parent
+        // index WITHOUT this id while the root + step keys are still fully present in L2. Consistency
+        // across that SREM→delete window is CALLER-ENFORCED, not self-contained: the StopAsync caller
+        // catches the RedisException and SADDs the id back (OrchestrationService.cs R2 compensation),
+        // restoring index/L2 consistency. (The Start-path pre-clean caller catches and rethrows WITHOUT
+        // re-adding — acceptable only because that path fails the whole request anyway.) Given the
+        // locked single-replica assumption + the StopAsync SADD compensation, runtime risk is low.
+        //
         // Collect-then-delete: one batch deleting the root unconditionally + the per-step keys
         // (UNLINK-style array delete) only when there is at least one (Pitfall 7). The root MUST have
         // been read above (it is the discovery entry point) — the caller PROBES (KeyExistsAsync), it
