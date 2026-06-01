@@ -144,7 +144,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28
 | 24    | v3.4.0    | 5/5            | Complete | 2026-06-01 |
 | 24.1  | v3.4.0    | 1/1            | Complete | 2026-06-01 |
 | 25. Shared Contracts + WebApi Responders | v3.5.0 | 2/2 | Complete    | 2026-06-01 |
-| 26. BaseProcessor.Core — Library, Identity & Liveness | v3.5.0 | 0/TBD | Not started | - |
+| 26. BaseProcessor.Core — Library, Identity & Liveness | v3.5.0 | 2/3 | In progress | - |
 | 27. Execution Round-Trip | v3.5.0 | 0/TBD | Not started | - |
 | 28. SourceHash Identity + Processor.Sample + E2E Closeout | v3.5.0 | 0/TBD | Not started | - |
 

@@ -14,7 +14,8 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 **: `BaseProcessor.Core` is a reusable Generic-Host library built on `BaseConsole.Core` (inheriting soft-dep Redis, embedded health probes, metrics-only OTel, MassTransit/RabbitMQ, and the inbound/outbound correlation filters).
 - [x] **BPC-02
 **: A new processor is created by subclassing the base and implementing exactly one `abstract` method — no infrastructure, id, L2, or bus code in the concrete.
-- [ ] **BPC-03**: An `AddBaseProcessor` composition root wires the startup orchestration (identity loop, liveness worker, dispatch consumer) so a concrete `Program.cs` stays minimal (mirrors `AddBaseConsole`/`Orchestrator`).
+- [x] **BPC-03
+**: An `AddBaseProcessor` composition root wires the startup orchestration (identity loop, liveness worker, dispatch consumer) so a concrete `Program.cs` stays minimal (mirrors `AddBaseConsole`/`Orchestrator`).
 
 ### Processor Identity (assembly-embedded SourceHash)
 
@@ -22,7 +23,8 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 - [ ] **IDENT-02**: The hash is embedded as `[assembly: AssemblyMetadata("SourceHash", …)]` and the target re-runs when implementation source changes (no stale hash on incremental builds).
 - [x] **IDENT-03
 **: At runtime the processor reads its SourceHash from assembly metadata via reflection.
-- [ ] **IDENT-04**: The processor resolves its identity (`Id`, `InputSchemaId?`, `OutputSchemaId?`, `ConfigSchemaId?`) by querying the WebApi over the bus by SourceHash, retrying on failure (timeout / not-found) until it succeeds — booting before the DB row is registered is tolerated.
+- [x] **IDENT-04
+**: The processor resolves its identity (`Id`, `InputSchemaId?`, `OutputSchemaId?`, `ConfigSchemaId?`) by querying the WebApi over the bus by SourceHash, retrying on failure (timeout / not-found) until it succeeds — booting before the DB row is registered is tolerated.
 
 ### Bus Request/Response (WebApi responders)
 
@@ -32,12 +34,15 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 **: WebApi answers a `GetSchemaDefinition` bus request, returning the schema `Definition` for a given schema Id or a not-found response.
 - [x] **RPC-03
 **: The two request/response contracts live in `Messaging.Contracts`; WebApi's bus join is extended from publish-only to host these two responders, leaving the CRUD surface unaffected.
-- [ ] **RPC-04**: The processor issues both queries via MassTransit `IRequestClient`s (first request/response usage on the console side).
+- [x] **RPC-04
+**: The processor issues both queries via MassTransit `IRequestClient`s (first request/response usage on the console side).
 
 ### Schema Resolution
 
-- [ ] **SCHEMA-01**: For each non-null schema Id (input, output) the processor queries the WebApi over the bus for the definition, retrying on failure until resolved.
-- [ ] **SCHEMA-02**: Null (optional) schema Ids are skipped — an absent definition is by design, never a failure. (Config schema is not resolved by the processor.)
+- [x] **SCHEMA-01
+**: For each non-null schema Id (input, output) the processor queries the WebApi over the bus for the definition, retrying on failure until resolved.
+- [x] **SCHEMA-02
+**: Null (optional) schema Ids are skipped — an absent definition is by design, never a failure. (Config schema is not resolved by the processor.)
 
 ### Liveness Self-Registration (Redis L2)
 
