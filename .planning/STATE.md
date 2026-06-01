@@ -1,35 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.4.0
-milestone_name: BaseConsole + Orchestrator Messaging
-status: milestone_complete
-stopped_at: Completed 24.1-01-PLAN.md
+milestone: v3.5.0
+milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
+status: defining_requirements
+stopped_at: Milestone v3.5.0 started (requirements next)
 last_updated: "2026-06-01T12:00:00.000Z"
-last_activity: 2026-06-01 — Phase 24.1 Plan 24.1-01 complete (clean-build green 335/335; closes FAILED Phase 24)
+last_activity: 2026-06-01 — Milestone v3.5.0 started; PROJECT.md updated, defining requirements
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 31
-  completed_plans: 31
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-01 — v3.4.0 shipped)
+See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** No active milestone — v3.4.0 shipped 2026-06-01 (tagged `v3.4.0`). Start the next with `/gsd-new-milestone`.
+**Current focus:** v3.5.0 — Processor Console (self-registration, liveness, execution round-trip). Defining requirements.
 
 ## Current Position
 
-Milestone: v3.4.0 (BaseConsole + Orchestrator Messaging) — started 2026-05-30
-Phase: 24.1
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-01
+Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-01 — Milestone v3.5.0 started
+
+> v3.4.0 execution history (phase/plan completion logs, performance metrics) is retained below for reference. The v3.5.0 roadmap will populate the phase list here (phases continue at 25).
 
 ### Phase 24.1 Plan 24.1-01 — COMPLETE (gating redesign; closes FAILED Phase 24, 2026-06-01)
 
