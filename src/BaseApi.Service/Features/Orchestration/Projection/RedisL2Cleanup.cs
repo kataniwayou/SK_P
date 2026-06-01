@@ -77,8 +77,17 @@ internal sealed class RedisL2Cleanup : IRedisL2Cleanup
             currentWave = nextWave.Distinct().ToList();
         }
 
+        // R4 reachability invariant (24.1 / D-24.1-04): L2 holds only the validated reachable graph
+        // and is NEVER mutated between Start and Stop (the result path is L1-only, D-08; first-win
+        // forbids overwrite-in-place, so a re-Start of an existing root is a no-op). The reachable
+        // BFS walk above therefore visits the COMPLETE key set — no unreachable orphan per-step key
+        // can exist — and this single atomic batch deletes all-or-nothing (a crash mid-delete leaves
+        // either the whole graph or none of it, never a half-deleted residue).
+        //
         // Collect-then-delete: one batch deleting the root unconditionally + the per-step keys
-        // (UNLINK-style array delete) only when there is at least one (Pitfall 7).
+        // (UNLINK-style array delete) only when there is at least one (Pitfall 7). The root MUST have
+        // been read above (it is the discovery entry point) — the caller PROBES (KeyExistsAsync), it
+        // never pre-deletes the root, so the root survives to be read here then deleted in this batch.
         var batch = db.CreateBatch();
         var delTasks = new List<Task> { batch.KeyDeleteAsync(RedisProjectionKeys.Root(workflowId)) };
         if (stepKeysToDelete.Count > 0) delTasks.Add(batch.KeyDeleteAsync(stepKeysToDelete.ToArray()));
