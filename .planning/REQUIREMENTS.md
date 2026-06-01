@@ -71,15 +71,24 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 ### Execution Round-Trip
 
 - [ ] **EXEC-01**: The processor consumes `EntryStepDispatch` on a **durable** `queue:{processorId:D}` competing-consumer endpoint. The consumer is bound only once the processor is **Healthy** (definitions resolved), and `Healthy` is written to L2 only after the bind completes — so the orchestrator (which admits only Healthy processors) never sends to a non-existent queue, and the processor never consumes a dispatch it cannot yet validate. The durable queue holds dispatches across processor restarts; a restarting/unhealthy processor leaves them queued (not lost, not processed) until it recovers.
-- [ ] **EXEC-02**: Input data is read from `L2[data(entryId)]` (existence-checked first); the dispatch `Payload` is treated as config, never as input data.
-- [ ] **EXEC-03**: Input is validated against `inputDefinition` when present; an empty definition skips validation; a non-empty definition with a missing/empty `entryId` (no L2 data) yields a `Failed` result with an error message.
-- [ ] **EXEC-04**: The transform is the sole `abstract Task<IReadOnlyList<ProcessResult>> ProcessAsync(string inputData, string config, CancellationToken ct)` seam, where `config` = the dispatch `Payload`.
-- [ ] **EXEC-05**: For each result the framework validates output against `outputDefinition` when present (empty = valid); on success it mints a new `entryId` and writes the output to `L2[data(newEntryId)]` with the configured TTL; on output-validation failure the result becomes `Failed` and nothing is written.
-- [ ] **EXEC-06**: The framework mints a per-result `executionId`, stamps the shared Ids, and builds one `ExecutionResult` per result; concretes write no id/L2/bus code.
-- [ ] **EXEC-07**: Results are sent to `queue:orchestrator-result` one-by-one (individual messages in a loop, never a batched list).
-- [ ] **EXEC-08**: An empty result list with no exception/cancellation produces no result message (ack only); `Failed` (including a caught exception, with an error message) and `Cancelled` are always sent.
-- [ ] **EXEC-09**: The dispatch is acked only after all result sends complete; infra faults (e.g. send failure) throw and retry (`Immediate(3)`), mirroring the orchestrator's business-ack / infra-throw discipline.
-- [ ] **EXEC-10**: Correlation is inherited from `BaseConsole.Core` — the body `CorrelationId` flows from the dispatch into the log scope and onto every published `ExecutionResult`.
+- [x] **EXEC-02
+**: Input data is read from `L2[data(entryId)]` (existence-checked first); the dispatch `Payload` is treated as config, never as input data.
+- [x] **EXEC-03
+**: Input is validated against `inputDefinition` when present; an empty definition skips validation; a non-empty definition with a missing/empty `entryId` (no L2 data) yields a `Failed` result with an error message.
+- [x] **EXEC-04
+**: The transform is the sole `abstract Task<IReadOnlyList<ProcessResult>> ProcessAsync(string inputData, string config, CancellationToken ct)` seam, where `config` = the dispatch `Payload`.
+- [x] **EXEC-05
+**: For each result the framework validates output against `outputDefinition` when present (empty = valid); on success it mints a new `entryId` and writes the output to `L2[data(newEntryId)]` with the configured TTL; on output-validation failure the result becomes `Failed` and nothing is written.
+- [x] **EXEC-06
+**: The framework mints a per-result `executionId`, stamps the shared Ids, and builds one `ExecutionResult` per result; concretes write no id/L2/bus code.
+- [x] **EXEC-07
+**: Results are sent to `queue:orchestrator-result` one-by-one (individual messages in a loop, never a batched list).
+- [x] **EXEC-08
+**: An empty result list with no exception/cancellation produces no result message (ack only); `Failed` (including a caught exception, with an error message) and `Cancelled` are always sent.
+- [x] **EXEC-09
+**: The dispatch is acked only after all result sends complete; infra faults (e.g. send failure) throw and retry (`Immediate(3)`), mirroring the orchestrator's business-ack / infra-throw discipline.
+- [x] **EXEC-10
+**: Correlation is inherited from `BaseConsole.Core` — the body `CorrelationId` flows from the dispatch into the log scope and onto every published `ExecutionResult`.
 
 ### Sample Concrete
 
@@ -90,7 +99,8 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 - [x] **CONFIG-01
 **: Liveness `Interval` (seconds) and `Ttl` (seconds) are two independent appsettings values.
-- [ ] **CONFIG-02**: Execution-data L2 keys have their own configurable TTL (seconds).
+- [x] **CONFIG-02
+**: Execution-data L2 keys have their own configurable TTL (seconds).
 
 ### Testing & Closeout
 
@@ -152,16 +162,16 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | LIVE-06 | Phase 26 | Complete |
 | CONFIG-01 | Phase 26 | Complete |
 | EXEC-01 | Phase 27 | Pending |
-| EXEC-02 | Phase 27 | Pending |
-| EXEC-03 | Phase 27 | Pending |
-| EXEC-04 | Phase 27 | Pending |
-| EXEC-05 | Phase 27 | Pending |
-| EXEC-06 | Phase 27 | Pending |
-| EXEC-07 | Phase 27 | Pending |
-| EXEC-08 | Phase 27 | Pending |
-| EXEC-09 | Phase 27 | Pending |
-| EXEC-10 | Phase 27 | Pending |
-| CONFIG-02 | Phase 27 | Pending |
+| EXEC-02 | Phase 27 | Complete |
+| EXEC-03 | Phase 27 | Complete |
+| EXEC-04 | Phase 27 | Complete |
+| EXEC-05 | Phase 27 | Complete |
+| EXEC-06 | Phase 27 | Complete |
+| EXEC-07 | Phase 27 | Complete |
+| EXEC-08 | Phase 27 | Complete |
+| EXEC-09 | Phase 27 | Complete |
+| EXEC-10 | Phase 27 | Complete |
+| CONFIG-02 | Phase 27 | Complete |
 | IDENT-01 | Phase 28 | Pending |
 | IDENT-02 | Phase 28 | Pending |
 | SAMPLE-01 | Phase 28 | Pending |

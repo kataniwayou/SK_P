@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Completed 27-01-PLAN.md
-last_updated: "2026-06-01T20:56:20.629Z"
+stopped_at: Completed 27-02-PLAN.md
+last_updated: "2026-06-01T21:13:38.556Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 8
-  completed_plans: 6
-  percent: 75
+  completed_plans: 7
+  percent: 88
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
 Phase: 27 (execution-round-trip) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-01
 
@@ -112,7 +112,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 75%
+Progress: [█████████░] 88%
 
 ### Milestone Phases (v3.4.0)
 
@@ -283,6 +283,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 26 P02 | 8min | 2 tasks | 5 files |
 | Phase 26 P03 | 11min | 2 tasks | 6 files |
 | Phase 27 P01 | 9min | 2 tasks tasks | 8 files files |
+| Phase 27 P02 | 13min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -586,6 +587,8 @@ Recent decisions affecting current work:
 - Heartbeat reuses frozen ProcessorProjection/LivenessProjection records + L2ProjectionKeys.Processor + LivenessStatus.Healthy (D-09) so writer cannot desync from the unchanged reader
 - 27-01: unresolvable external $ref under the SSRF no-op fetcher throws RefResolutionException from Evaluate (not silent-closed) — validator guards Evaluate to return business false, never a host crash (D-06/T-27-01).
 - 27-01: ProcessResult is (string OutputData); consumer reaches the protected ProcessAsync via internal BaseProcessor.ExecuteAsync forwarder (BPC-02). ExecutionDataTtlSeconds (default 300) on ProcessorLivenessOptions (CONFIG-02/D-17).
+- 27-02: EntryStepDispatchConsumer sends business-outcome ExecutionResults with CancellationToken.None so a Cancelled/Failed signal reaches the orchestrator even when the inbound dispatch token tripped; the inbound ct governs only ProcessAsync. L2 output-write + Send faults still propagate (infra, D-15).
+- 27-02: the L2 output-write StringSetAsync(key,value,expiry:TimeSpan) binds under SE.Redis 2.13.1 to the Expiration/ValueCondition overload (TimeSpan implicitly converts to Expiration); the infra-throw test stub must target that overload to exercise D-15 propagation.
 
 ### Roadmap Milestone Log
 
@@ -682,8 +685,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-01T20:56:07.807Z
-Stopped at: Completed 27-01-PLAN.md
+Last session: 2026-06-01T21:13:29.796Z
+Stopped at: Completed 27-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
