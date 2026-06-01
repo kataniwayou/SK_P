@@ -1,0 +1,118 @@
+using BaseConsole.Core.Health;
+using BaseProcessor.Core.Configuration;
+using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Startup;
+using MassTransit;
+using MassTransit.Testing;
+using Messaging.Contracts;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
+using NSubstitute;
+using Xunit;
+
+namespace BaseApi.Tests.Processor;
+
+/// <summary>
+/// Loop A facts (IDENT-04 / RPC-04 / T-26-05): the startup orchestrator resolves identity by
+/// SourceHash via <c>IRequestClient&lt;GetProcessorBySourceHash&gt;</c> against the Wave 0 harness,
+/// retrying past leading NotFound responses (boot-before-register tolerated) until a Found arrives,
+/// then populating the <see cref="IProcessorContext"/>. A <see cref="FakeTimeProvider"/> advances the
+/// bounded-backoff delays so the test never sleeps in real time; a CancellationTokenSource timeout
+/// fails a hang fast.
+/// </summary>
+public sealed class IdentityResolutionFacts
+{
+    [Fact]
+    public async Task LoopA_Retries_Past_NotFound_Then_Resolves_Identity()
+    {
+        var foundId = Guid.NewGuid();
+        var sequence = new ProcessorTestHarness.ResponderSequence
+        {
+            // NotFound -> NotFound -> Found: prove retry happens before resolution (RPC-04 / T-26-05).
+            IdentityNotFoundCount = 2,
+            SchemaNotFoundCount = 0,
+            FoundProcessorId = foundId,
+        };
+
+        await using var provider = ProcessorTestHarness.BuildProvider(sequence);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            // IRequestClient<T> is SCOPED — resolve from a scope (Wave 0 correction).
+            using var scope = provider.CreateScope();
+            var identityClient = scope.ServiceProvider.GetRequiredService<IRequestClient<GetProcessorBySourceHash>>();
+            var schemaClient = scope.ServiceProvider.GetRequiredService<IRequestClient<GetSchemaDefinition>>();
+
+            // Stub the SourceHash to a known 64-hex hash (D-13) — no real assembly attribute needed.
+            var sourceHash = Substitute.For<ISourceHashProvider>();
+            sourceHash.Get().Returns(new string('a', 64));
+
+            var context = new ProcessorContext();
+            var gate = new StartupGate();
+            var fakeClock = new FakeTimeProvider();
+            var options = Options.Create(new ProcessorLivenessOptions
+            {
+                IntervalSeconds = 10,
+                TtlSeconds = 30,
+                RequestTimeoutSeconds = 8,
+                BackoffCapSeconds = 30,
+            });
+
+            var orchestrator = new ProcessorStartupOrchestrator(
+                identityClient, schemaClient, sourceHash, context, gate, options, fakeClock,
+                NullLogger<ProcessorStartupOrchestrator>.Instance);
+
+            // Drive the orchestrator. The two leading NotFound replies trigger two backoff delays
+            // (1s then 2s) on the FakeTimeProvider; advance the clock so Task.Delay completes without
+            // real sleeping. Identity carries null schema Ids so Loop B is a no-op (immediate Healthy).
+            await orchestrator.StartAsync(cts.Token); // returns once ExecuteAsync first yields at the request await
+            await AdvanceUntilAsync(fakeClock, () => context.IsHealthy, cts.Token);
+            await orchestrator.StopAsync(cts.Token);
+
+            // (a) identity populated to the Found value.
+            Assert.Equal(foundId, context.Id);
+            Assert.True(context.IsHealthy);
+            // (b) the responder was called >= 3 times (2 NotFound + 1 Found) — retry happened.
+            Assert.True(GetIdentityCallCount(sequence) >= 3,
+                $"expected >= 3 identity calls, got {GetIdentityCallCount(sequence)}");
+            // Completion drives the startup gate (D-02).
+            Assert.True(gate.IsReady);
+        }
+        finally
+        {
+            await harness.Stop(TestContext.Current.CancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Pumps the <see cref="FakeTimeProvider"/> forward in coarse steps until <paramref name="done"/>
+    /// is satisfied (the orchestrator has resolved + marked Healthy) or the linked token cancels.
+    /// Each advance releases any pending <c>Task.Delay</c> so the unbounded-backoff loop progresses
+    /// without real-time sleeping.
+    /// </summary>
+    internal static async Task AdvanceUntilAsync(FakeTimeProvider clock, Func<bool> done, CancellationToken ct)
+    {
+        while (!done())
+        {
+            ct.ThrowIfCancellationRequested();
+            clock.Advance(TimeSpan.FromSeconds(60)); // > BackoffCap so any pending delay fires
+            await Task.Delay(20, ct); // let the orchestrator's continuation run on the thread pool
+        }
+    }
+
+    private static int GetIdentityCallCount(ProcessorTestHarness.ResponderSequence sequence)
+    {
+        // The sequence increments its internal counter on each reply; read it back via reflection
+        // (the field is private) so the assertion proves retry without changing the Wave 0 harness.
+        var field = typeof(ProcessorTestHarness.ResponderSequence)
+            .GetField("_identityNotFoundCalls", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        return (int)field!.GetValue(sequence)!;
+    }
+}
