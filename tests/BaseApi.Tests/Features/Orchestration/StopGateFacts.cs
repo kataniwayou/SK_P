@@ -227,10 +227,11 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // OBSERV-REDIS-03: a Redis fault during the POST-delete cleanup (the root KeyDeleteAsync
-        // returned true → tolerant traverse-and-delete of the per-step keys) must surface the SAME
-        // stable Stop op name as the delete itself ("KeyDeleteAsync"). The cleanup-loop try/catch
-        // tags it; without it the fault would reach the 500 handler with no redisOp.
+        // OBSERV-REDIS-03: a Redis fault during the POST-delete cleanup (the per-id KeyExistsAsync
+        // probe returned true → StopCleanupAsync reads the root, BFS-collects step keys, and deletes
+        // root+steps in one batch) must surface the SAME stable Stop op name as the delete itself
+        // ("KeyDeleteAsync"). The cleanup try/catch tags it; without it the fault would reach the
+        // 500 handler with no redisOp.
 
         // Seed + Start through the REAL factory (real cleanup, real mux) so the root key genuinely
         // exists — the per-id KeyDeleteAsync must delete a present root (returns true) to REACH cleanup.
