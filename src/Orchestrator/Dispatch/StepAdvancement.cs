@@ -1,4 +1,3 @@
-using System.Linq;
 using Messaging.Contracts;
 using Messaging.Contracts.Projections;
 
