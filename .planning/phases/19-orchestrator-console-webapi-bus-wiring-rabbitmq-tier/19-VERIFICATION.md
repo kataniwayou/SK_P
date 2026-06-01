@@ -1,13 +1,17 @@
 ---
 phase: 19-orchestrator-console-webapi-bus-wiring-rabbitmq-tier
 verified: 2026-05-30T00:00:00Z
-status: human_needed
+status: passed
 score: 5/5 must-haves verified
 overrides_applied: 0
+human_item_resolved: 2026-06-01
+human_item_resolved_by: "20 (CorrelationPropagationE2ETests)"
+resolution_note: "All 5 must-haves were VERIFIED by static analysis at the time; the single deferred item (live cross-process body-carried correlation chain) was automated and proven by Phase 20's real-stack CorrelationPropagationE2ETests (CORR-04 / TEST-RMQ-02) — exactly the deferral the 19-HUMAN-UAT.md anticipated. Reconciled to `passed` on 2026-06-01 during the v3.4.0 milestone audit. No code changed."
 human_verification:
   - test: "Bring up the full compose stack (docker compose up -d) and issue POST /api/v1/orchestration/start with a valid workflow ID payload via curl. Observe: (1) the HTTP response is 2xx; (2) docker logs sk-orchestrator shows a 'Scheduler job start (seam)' line with the WorkflowId; (3) the log line's CorrelationId scope value matches the CorrelationId on the published message body, not the HTTP X-Correlation-Id. Tear down with docker compose down."
     expected: "HTTP 2xx, orchestrator log shows seam line, correlation value is the NewId minted at publish (not the HTTP-stage id)."
     why_human: "End-to-end body-carried correlation chain (HTTP stage -> publish boundary mint -> fan-out message body -> orchestrator log scope) cannot be verified by static code analysis alone. Requires a live RabbitMQ broker, Redis with a seeded workflow L2 root, and log capture across two processes."
+    resolved_by: "Phase 20 CorrelationPropagationE2ETests — automated the live HTTP->broker->orchestrator->Elasticsearch correlation proof (CORR-04 / TEST-RMQ-02), asserting the body NewId surfaces under attributes.CorrelationId distinct from the HTTP-stage id."
 ---
 
 # Phase 19: Orchestrator Console + WebApi Bus Wiring + RabbitMQ Tier Verification Report

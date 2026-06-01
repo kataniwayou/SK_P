@@ -213,38 +213,69 @@ Which phases cover which requirements. Filled by the roadmapper.
 | CONSOLE-HEALTH-04 | Phase 18 | Complete |
 | CORR-01 | Phase 18 | Complete |
 | CORR-02 | Phase 18 | Complete |
-| ORCH-CON-01 | Phase 19 | Pending |
-| ORCH-CON-02 | Phase 19 | Pending |
-| ORCH-CON-03 | Phase 19 | Pending |
-| ORCH-CON-04 | Phase 19 | Pending |
-| MSG-WEBAPI-01 | Phase 19 | Pending |
-| MSG-WEBAPI-02 | Phase 19 | Pending |
-| MSG-WEBAPI-03 | Phase 19 | Pending |
-| MSG-WEBAPI-04 | Phase 19 | Pending |
-| MSG-ACK-01 | Phase 19 | Pending |
-| MSG-ACK-02 | Phase 19 | Pending |
-| MSG-ACK-03 (P2) | Phase 19 | Pending |
-| MSG-ACK-04 (P2) | Phase 19 | Pending |
+| ORCH-CON-01 | Phase 19 | Complete |
+| ORCH-CON-02 | Phase 19 | Complete |
+| ORCH-CON-03 | Phase 19 | Complete |
+| ORCH-CON-04 | Phase 19 | Complete |
+| MSG-WEBAPI-01 | Phase 19 | Complete |
+| MSG-WEBAPI-02 | Phase 19 | Complete |
+| MSG-WEBAPI-03 | Phase 19 | Complete |
+| MSG-WEBAPI-04 | Phase 19 | Complete |
+| MSG-ACK-01 | Phase 19 | Complete |
+| MSG-ACK-02 | Phase 19 | Complete |
+| MSG-ACK-03 (P2) | Phase 19 | Complete |
+| MSG-ACK-04 (P2) | Phase 19 | Complete |
 | INFRA-RMQ-02 | Phase 19 | Complete |
 | INFRA-RMQ-03 | Phase 19 | Complete |
-| CORR-03 | Phase 20 | Done |
-| CORR-04 | Phase 20 | Done |
-| TEST-RMQ-01 | Phase 20 | Done |
-| TEST-RMQ-02 | Phase 20 | Done |
-| TEST-RMQ-03 | Phase 20 | Done |
-| TEST-RMQ-04 | Phase 20 | Done |
-| TEST-RMQ-05 | Phase 20 | Pending |
+| CORR-03 | Phase 20 | Complete |
+| CORR-04 | Phase 20 | Complete |
+| TEST-RMQ-01 | Phase 20 | Complete |
+| TEST-RMQ-02 | Phase 20 | Complete |
+| TEST-RMQ-03 | Phase 20 | Complete |
+| TEST-RMQ-04 | Phase 20 | Complete |
+| TEST-RMQ-05 | Phase 20 | Complete |
 | HARDEN-01 | Phase 18 | Complete (commit d4c0af5; audit carry-forward error) |
 | HARDEN-02 | Phase 18 | Complete (commit 4e9e21a; audit carry-forward error) |
 | HARDEN-03 | Phase 21 | Complete (all 3 L2 builders hoisted to shared L2ProjectionKeys; writer+reader forwarders; 270×3 GREEN + triple-SHA gate exit 0) |
+| L2IDX-01 | Phase 22 | Complete (workflow parent-index SET; SADD on Start, SREM on cleanup) |
+| L2PREFIX-01 | Phase 22 | Complete (compile-time `const Prefix="skp:"` on shared L2ProjectionKeys) |
+| PROC-NOCREATE-01 | Phase 22 | Complete (writer no longer writes per-processor keys; processors self-register) |
+| PROC-LIVE-01 | Phase 22 | Complete (ProcessorLivenessValidator gates Start; 422+RFC7807 on absent/stale) |
+| PROC-EDGE-01 | Phase 22 | Complete |
+| ORCH-CONTRACT-01 | Phase 23 | Complete (StepProjection hoisted to Messaging.Contracts.Projections) |
+| ORCH-CONTRACT-02 | Phase 23 | Complete (EntryStepDispatch ICorrelated message) |
+| ORCH-STARTUP-01 | Phase 23 | Complete (HydrationBackgroundService L2 parent-index → L1) |
+| ORCH-SCHED-01 | Phase 23 | Complete (per-workflow Quartz one-shot, RAMJobStore) |
+| ORCH-FIRE-01 | Phase 23 | Complete (per-fire correlationId, Send EntryStepDispatch per entry step) |
+| ORCH-CONSUME-01 | Phase 23 | Complete (superseded by ORCH-START-RELOAD-01 in Phase 24 — conditionless reload) |
+| ORCH-STOP-01 | Phase 23 | Complete (DeleteJob + clear L1, no L2 mutation) |
+| ORCH-SCALE-01 | Phase 23 | Complete (per-instance L1 + RAMJobStore; single active replica assumed) |
+| ORCH-ACK-01 | Phase 23 | Complete (business-ack / infra-throw split) |
+| ORCH-RESULT-01 | Phase 24 | Complete (ExecutionResult + StepOutcome contracts) |
+| ORCH-RESULT-02 | Phase 24 | Complete (shared competing-consumer `orchestrator-result` queue) |
+| ORCH-ADVANCE-01 | Phase 24 | Complete (L1-only edge traversal + entry-condition match) |
+| ORCH-ADVANCE-02 | Phase 24 | Complete (continuation dispatch via EntryStepDispatch) |
+| ORCH-RESULT-ACK-01 | Phase 24 | Complete (L1-only graceful-miss ack; refined by Phase 24.1 — gate removed) |
+| ORCH-GATE-01 | Phase 24 → 24.1 | Superseded (boot gate + redelivery + delayed-scheduler plugin REMOVED in Phase 24.1 R5; L1-only graceful result is sole arbiter) |
+| ORCH-START-RELOAD-01 | Phase 24 | Complete (conditionless Start: teardown+hydrate+reschedule) |
+| ORCH-STOP-DRAIN-01 | Phase 24 | Complete (conditionless Stop: delete job, keep L1 for drain) |
+| WEBAPI-SUPPRESS-01 | Phase 24 → 24.1 | Complete (first-win dedup; mechanism refined in Phase 24.1 to L2-root existence probe + parent-index compensation) |
+| R1 (L2-existence dedup) | Phase 24.1 | Complete (KeyExistsAsync(Root) probe on Start+Stop) |
+| R2 (parent compensation) | Phase 24.1 | Complete (SREM on Start write-fault, SADD on Stop delete-fault) |
+| R3 (atomic Stop delete) | Phase 24.1 | Complete (RedisL2Cleanup atomic root+steps delete batch) |
+| R4 (orphan-free invariant) | Phase 24.1 | Complete (reachability invariant recorded) |
+| R5 (gate removal + L1-only graceful result) | Phase 24.1 | Complete (gate/redelivery/plugin removed) |
+| R6 (terminal guard / WR-02) | Phase 24.1 | Complete (SelectNext null NextStepIds guard) |
+| R7 (clean-build green) | Phase 24.1 | Complete (335/335 from clean build, real stack; Release 0 warnings) |
 
-**Coverage:**
-- Milestone requirements: 40 total — 35 P1 + 2 P2 (`MSG-ACK-03`, `MSG-ACK-04`) + 3 hardening (`HARDEN-01..03`, Phase 21 gap-closure)
-- Mapped to phases: 40 (100% — Phase 17: 5 · Phase 18: 11 · Phase 19: 14 · Phase 20: 7 · Phase 21: 3)
-- Unmapped: 0 ✓ (every requirement maps to exactly one phase; no orphans, no duplicates)
+**Coverage (final v3.4.0 scope — phases 17–24 + 24.1):**
+- Milestone requirements: 70 total — the original 40 (phases 17–21) + 5 (Phase 22) + 9 (Phase 23) + 9 (Phase 24) + 7 (Phase 24.1 R1–R7).
+- Mapped to phases: 70 (100% — Phase 17: 5 · 18: 11 · 19: 14 · 20: 7 · 21: 3 · 22: 5 · 23: 9 · 24: 9 · 24.1: 7).
+- Status: all Complete, except `ORCH-GATE-01` which is **Superseded** by Phase 24.1 R5 (boot gate removed) — closed, not pending.
+- Unmapped: 0 ✓ (every requirement maps to a phase; no orphans).
 
-> By category: MSG-CONTRACTS 4 · CONSOLE 5 · CONSOLE-HEALTH 4 · MSG-WEBAPI 4 · ORCH-CON 4 · CORR 4 · MSG-ACK 4 · INFRA-RMQ 3 · TEST-RMQ 5 · HARDEN 3 = 40. Future and Out-of-Scope items are not counted.
+> Original (17–21) by category: MSG-CONTRACTS 4 · CONSOLE 5 · CONSOLE-HEALTH 4 · MSG-WEBAPI 4 · ORCH-CON 4 · CORR 4 · MSG-ACK 4 · INFRA-RMQ 3 · TEST-RMQ 5 · HARDEN 3 = 40. Extension (22–24.1): PROC/L2 5 · ORCH-lifecycle 9 · ORCH-result/gate 9 · gating-redesign R1–R7 7 = 30. Future and Out-of-Scope items are not counted.
 
 ---
 *Requirements defined: 2026-05-30*
-*Last updated: 2026-05-30 — Traceability filled by roadmapper: 37/37 requirements mapped to Phases 17-20.*
+*Last updated: 2026-06-01 — Traceability reconciled during the v3.4.0 milestone audit: flipped Phase 19 rows + TEST-RMQ-05 to Complete, added phases 22/23/24/24.1 requirement rows (ORCH-GATE-01 marked Superseded by 24.1), refreshed coverage to the final 17–24+24.1 scope (70 reqs). Prior footer (2026-05-30): roadmapper mapped 37/37 to Phases 17-20.*
