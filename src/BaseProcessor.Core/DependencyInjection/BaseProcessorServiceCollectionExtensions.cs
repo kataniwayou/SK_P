@@ -1,6 +1,7 @@
 using BaseConsole.Core.DependencyInjection;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Liveness;
 using BaseProcessor.Core.Startup;
 using MassTransit;
 using Messaging.Contracts;
@@ -72,6 +73,10 @@ public static class BaseProcessorServiceCollectionExtensions
 
         // 7. The two-loop startup orchestrator (identity-by-SourceHash + per-non-null-schema definition).
         services.AddHostedService<ProcessorStartupOrchestrator>();
+
+        // 7b. The only-when-Healthy liveness heartbeat (LIVE-01..06) — consumes the populated
+        //     IProcessorContext, writes the frozen ProcessorProjection to skp:{id} with a sliding TTL.
+        services.AddHostedService<ProcessorLivenessHeartbeat>();
 
         // 8. D-02: remove the base library's StartupCompletionService so MarkReady fires when the
         //    processor reaches Healthy (orchestrator completion), NOT at bare host start. The removal
