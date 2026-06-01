@@ -1,3 +1,4 @@
+using System.Linq;
 using Messaging.Contracts;
 using Messaging.Contracts.Projections;
 
@@ -25,11 +26,18 @@ public sealed class StepAdvancement
     /// <summary>
     /// Yields each <c>(stepId, step)</c> from <paramref name="completed"/>'s <c>NextStepIds</c> whose
     /// <c>EntryCondition</c> matches <paramref name="outcome"/> or is <see cref="Always"/>.
+    /// <para>
+    /// WR-02 (24.1 / D-24.1-06): a <c>null</c> (or empty) <c>NextStepIds</c> is the contract-defined
+    /// TERMINAL step — it yields no successors (graceful), consistent with every sibling traversal
+    /// site (the loader / cleanup BFS coalesce <c>NextStepIds</c> to an empty list). The lone
+    /// unguarded site here previously NRE'd on the normal end-of-branch case and would dead-letter
+    /// instead of acking; the <c>?? Enumerable.Empty&lt;Guid&gt;()</c> guard closes that.
+    /// </para>
     /// </summary>
     public IEnumerable<(Guid stepId, StepProjection step)> SelectNext(
         StepOutcome outcome, StepProjection completed, IReadOnlyDictionary<Guid, StepProjection> steps)
     {
-        foreach (var nextId in completed.NextStepIds)
+        foreach (var nextId in completed.NextStepIds ?? Enumerable.Empty<Guid>())
             if (steps.TryGetValue(nextId, out var next) &&
                 (next.EntryCondition == (int)outcome || next.EntryCondition == Always))
                 yield return (nextId, next);
