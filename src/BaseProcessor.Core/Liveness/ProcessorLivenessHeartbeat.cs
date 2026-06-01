@@ -87,6 +87,13 @@ public sealed class ProcessorLivenessHeartbeat : BackgroundService
 
                     // Sliding SET..EX (LIVE-02): blind whole-value SET, no lock/RMW (LIVE-06). The key
                     // is built via L2ProjectionKeys.Processor — never a literal.
+                    //
+                    // BY DESIGN: stoppingToken is deliberately NOT threaded into the write (StringSetAsync
+                    // has no CancellationToken overload). Shutdown does not cancel an in-flight write — a
+                    // hung-but-not-dead Redis bounds shutdown latency by StackExchange.Redis' own command
+                    // timeout, NOT by stoppingToken. The token is observed only at the Task.Delay below.
+                    // This keeps the D-11 log-and-continue contract simple (no OperationCanceledException
+                    // disambiguation in the catch); the command timeout is the intended upper bound.
                     await db.StringSetAsync(
                         L2ProjectionKeys.Processor(id),
                         json,
