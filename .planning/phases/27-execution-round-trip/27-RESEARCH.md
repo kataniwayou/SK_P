@@ -431,7 +431,9 @@ services.AddBaseConsoleMessaging(cfg, x =>
 | A3 | The `(ctx, cfg)` registration context from `ConnectReceiveEndpoint` is sufficient for `ConfigureConsumer<T>(ctx)` without separately resolving `IRegistrationContext` | Pattern 1 | If a separate `IBusRegistrationContext` is needed, inject it into the orchestrator. Mitigated: ctx7 example passes the lambda's `context` directly to `ConfigureConsumer`. |
 | A4 | `ISendEndpointProvider` (or `ConsumeContext`) resolves `queue:orchestrator-result` identically to `StepDispatcher` | Pattern 4 | Low — `StepDispatcher` is the proven precedent on the same broker. |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Both resolved during planning and locked in the plan decision blocks: Q1 → 27-03 ("rely on durable/AutoDelete defaults; do NOT add the RabbitMq configurator cast"); Q2 → 27-02 ("inputDefinition null/whitespace AND entryId Guid.Empty → do not read L2, pass inputData=\"\", skip validation").
 
 1. **Exact RabbitMQ configurator type for the runtime endpoint cast.**
    - What we know: `Durable`/`AutoDelete` are the property names; defaults are durable/non-auto-delete.
