@@ -160,6 +160,17 @@ public sealed class EntryStepDispatchConsumer(
                     expiry: TimeSpan.FromSeconds(opts.ExecutionDataTtlSeconds));
 
                 built.Add(BuildCompleted(dispatch, executionId, newEntryId));
+
+                // LOG-04/LOG-01: the Completed-path LogRecord. It is emitted INSIDE this nested scope so it
+                // carries the MINTED ExecutionId + output EntryId (this scope), AND — via the bus-wide
+                // InboundExecutionScopeConsumeFilter that wraps this runtime-connected consume (its outer
+                // scope is open here) — the inbound WorkflowId/StepId/ProcessorId. The five execution ids
+                // are reported ONLY as scope VALUES under the fixed ExecutionLogScope keys; the message text
+                // references CorrelationId via template like the sibling business-Failed lines and NEVER
+                // interpolates an execution id (T-18-04).
+                logger.LogInformation(
+                    "Dispatch {CorrelationId}: step Completed — output written, result built (scoped execution ids)",
+                    dispatch.CorrelationId);
             }
         }
 
