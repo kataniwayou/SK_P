@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Phase 28 Plan 03 complete
-last_updated: "2026-06-02T07:19:06.000Z"
-last_activity: 2026-06-02 -- Phase 28 Plan 03 (real-stack SampleRoundTripE2ETests — genuine embedded hash, truthful liveness-gated Start, live round-trip) complete
+stopped_at: Phase 28 Plan 04 complete (close gate PASSED — Phase 28 4/4)
+last_updated: "2026-06-02T10:30:00.000Z"
+last_activity: 2026-06-02 -- Phase 28 Plan 04 (phase-28-close.ps1 close gate — 3x395 GREEN + triple-SHA BEFORE==AFTER held) complete; TEST-02 satisfied, Phase 28 = 4/4
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 12
-  completed_plans: 11
-  percent: 92
+  completed_plans: 12
+  percent: 100
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 28 (sourcehash-identity-processor-sample-e2e-closeout) — EXECUTING
-Plan: 4 of 4
-Status: Executing Phase 28 (3/4 plans complete)
-Last activity: 2026-06-02 -- Phase 28 Plan 03 (real-stack SampleRoundTripE2ETests — genuine embedded hash, truthful liveness-gated Start, live round-trip) complete
+Phase: 28 (sourcehash-identity-processor-sample-e2e-closeout) — COMPLETE (4/4 plans, close gate PASSED)
+Plan: 4 of 4 (complete)
+Status: Phase 28 complete (4/4 plans) — milestone v3.5.0 = 12/12 plans, ready for closeout
+Last activity: 2026-06-02 -- Phase 28 Plan 04 (phase-28-close.ps1 close gate — 3x395 GREEN + triple-SHA BEFORE==AFTER held) complete; TEST-02 satisfied
 
 ### Milestone Phases (v3.5.0)
 
@@ -38,11 +38,30 @@ Last activity: 2026-06-02 -- Phase 28 Plan 03 (real-stack SampleRoundTripE2ETest
 | 25 | Shared Contracts + WebApi Responders | CONTRACT-01/02/03, RPC-01/02/03 (6) | Not started |
 | 26 | BaseProcessor.Core — Library, Identity & Liveness | BPC-01/02/03, IDENT-03/04, RPC-04, SCHEMA-01/02, LIVE-01..06, CONFIG-01 (15) | Not started |
 | 27 | Execution Round-Trip | EXEC-01..10, CONFIG-02 (11) | Not started |
-| 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Executing (3/4 plans) |
+| 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Complete (4/4 plans — close gate exit 0) |
 
 Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProcessor.Core: library + identity + liveness) → 27 (execution round-trip) → 28 (SourceHash + Processor.Sample + E2E closeout). See .planning/ROADMAP.md for success criteria + cross-phase constraints.
 
 > v3.4.0 execution history (phase/plan completion logs, performance metrics) is retained below for reference.
+
+### Phase 28 Plan 04 — COMPLETE (phase-28-close.ps1 — 3-GREEN + triple-SHA close gate; TEST-02; 2026-06-02)
+
+- 1 task commit: `3f8d975` (feat: author phase-28-close.ps1 — copy phase-22-close.ps1, add processor-sample to $services, resolve Open Q1/Q2 with a steady-state stable-Processor-row pre-flight). Task 2 is the operator-authorized human-verify gate run (no code commit). Gate authored, then run by the operator; exit 0.
+- The gate mirrors the proven phase-22 triple-SHA / 3-consecutive-GREEN discipline (unchanged since Phase 3 D-15/D-18), extended for the new steady-state processor-sample container: adds `processor-sample` to the `$services` pre-flight health list (REQUIRED healthy, NOT a health exception — a health exception would let the gate pass with a dead processor) and resolves the chicken-and-egg via a stable Processor row (GET-or-create on the unique source-hash) so the live container's `skp:{procId:D}` liveness key + `{procId:D}` dispatch queue are STEADY-STATE in both snapshots. All three SHA captures intact; no FLUSHDB; zero-warning Release+Debug gate intact; BOM-free; parses clean.
+- Gate findings (2 prior-phase test fixes the gate surfaced — it was the first full live suite run since feat(24.1); both ALREADY committed by the orchestrator): `13400f7` (fix: stale `CorrelationPropagationE2ETests` seam assertion — feat(24.1) renamed the orchestrator Start seam log "Scheduler job start (seam)" → "Start reload for WorkflowId=" AND the conditionless reload now emits a 2nd correlated orchestrator log; updated the SeamMessage constant + pinned the ES query via a term on attributes.{OriginalFormat}; live 1/1) and `327b1bb` (fix: de-flake `ConcurrencyTokenTests.Test_RacingWrites_Produce_409` — the two concurrent POSTs could serialize by chance; added an opt-in load→save barrier `POST /test/concurrency?delayMs=N` so both callers load the same xmin before either commits; 12/12 GREEN).
+- Open Q1/Q2 RESOLVED in-script: stable Processor row (GET-or-create on the unique source-hash → same procId/liveness key/queue reused across all 3 runs); processor-sample REQUIRED healthy at pre-flight (NOT a health exception).
+- SUMMARY: 28-04-SUMMARY.md (Self-Check PASSED). TEST-02 complete. Phase 28 = 4/4 plans; all 6 Phase 28 requirements (IDENT-01/02, SAMPLE-01/02, TEST-01/02) complete. Milestone v3.5.0 = 12/12 plans across phases 25-28 — ready for closeout.
+
+### Phase 28 Plan 04 — Close Gate Evidence (Task 2, operator-authorized, exit 0)
+
+- 3-consecutive GREEN: **395 facts GREEN x3** (all 3 full-suite live runs, Exit=0 each). Full suite, no Category filter — both real-stack E2Es (incl. SampleRoundTripE2ETests) ran live in each run (full v3.5.0 stack up healthy incl. the live processor-sample container).
+- Triple-SHA (psql \l + redis-cli --scan + rabbitmqctl list_queues), BEFORE == AFTER:
+  - psql \l SHA-256:                  b48ce78302d9dd8ca93e6a7e694c153dc46705ec9ab4458b31c6933ea2e33fef — HELD
+  - redis-cli --scan SHA-256:         56e9e516d398a3d1e1e8e55eb5b39e76ddd4d3f4d99abe8f48471b51cdb607a6 — HELD
+  - rabbitmqctl list_queues SHA-256:  67a92f451875a1196ccb20f287fa141b54a6d2357da7969b1825d95ea7058688 — HELD
+- Steady-state procId (reused, idempotent across all 3 runs): `4315324c-8c3f-4a24-984d-f78d63ce499e` — its skp:{procId} liveness key + {procId} dispatch queue are in BOTH snapshots, which is why the redis/rabbitmq SHAs held.
+- Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
+- Gate script: scripts/phase-28-close.ps1 (mirrors phase-22-close.ps1 + processor-sample), exit 0. Operator ran the gate.
 
 ### Phase 28 Plan 03 — COMPLETE (real-stack SampleRoundTripE2ETests — live round-trip + truthful liveness-gated Start; TEST-01; 2026-06-02)
 

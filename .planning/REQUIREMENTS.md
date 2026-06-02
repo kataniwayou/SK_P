@@ -105,7 +105,7 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 ### Testing & Closeout
 
 - [x] **TEST-01**: A real-stack E2E proves the live orchestrator→`Processor.Sample`→orchestrator round-trip (dispatch consumed, output written to L2, `ExecutionResult` advanced by the orchestrator) and the liveness-gated Start path (a live processor's heartbeat lets orchestration Start pass).
-- [ ] **TEST-02**: The phase-close gate retains the 3-consecutive-GREEN cadence + triple-SHA (`psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues`) BEFORE=AFTER discipline, with scan-clean teardown covering the new processor-liveness and execution-data keys.
+- [x] **TEST-02**: The phase-close gate retains the 3-consecutive-GREEN cadence + triple-SHA (`psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues`) BEFORE=AFTER discipline, with scan-clean teardown covering the new processor-liveness and execution-data keys.
 
 ## Future Requirements
 
@@ -177,7 +177,7 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | SAMPLE-01 | Phase 28 | Complete |
 | SAMPLE-02 | Phase 28 | Complete |
 | TEST-01 | Phase 28 | Complete |
-| TEST-02 | Phase 28 | Pending |
+| TEST-02 | Phase 28 | Complete |
 
 **Coverage:**
 - v3.5.0 requirements: 38 total (BPC ×3, IDENT ×4, RPC ×4, SCHEMA ×2, LIVE ×6, CONTRACT ×3, EXEC ×10, SAMPLE ×2, CONFIG ×2, TEST ×2)
@@ -186,4 +186,4 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 
 ---
 *Requirements defined: 2026-06-01*
-*Last updated: 2026-06-02 — Phase 28 Plan 02 complete; SAMPLE-02 satisfied (Processor.Sample Dockerfile + compose tier + cross-OS SourceHash reproducibility proven).*
+*Last updated: 2026-06-02 — Phase 28 Plan 04 complete; TEST-02 satisfied (phase-28-close.ps1 close gate exit 0: 395 facts GREEN x3 + triple-SHA BEFORE==AFTER held). Phase 28 = 4/4 plans; all 38/38 v3.5.0 requirements complete.*
