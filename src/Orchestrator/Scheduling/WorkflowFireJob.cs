@@ -53,36 +53,50 @@ public sealed class WorkflowFireJob(
         // D-05: fresh correlationId per fire, shared by every entry-step dispatch in this fire.
         var correlationId = NewId.NextGuid();
 
-        foreach (var entryStepId in wf.EntryStepIds)
+        // D-06 / LOG-05: WorkflowFireJob runs OUTSIDE the consume pipeline (a Quartz job), so neither the
+        // correlation filter nor the execution-scope filter ever sees it. Open the scope explicitly here —
+        // AFTER the mint, the point where BOTH ids are known — so the fire logs correlate with the
+        // round-trip they trigger (CorrelationId via CorrelationKeys.LogScope, the ONE place the job owns
+        // it; WorkflowId via ExecutionLogScope.WorkflowId). The early returns above fire BEFORE the mint
+        // and are deliberately NOT wrapped (Pattern 6). Ids go ONLY into the scope dictionary, never into a
+        // message template (T-18-04 / T-29-08).
+        using (logger.BeginScope(new Dictionary<string, object>
         {
-            if (!wf.Steps.TryGetValue(entryStepId, out var step))
+            [CorrelationKeys.LogScope]     = correlationId.ToString(),
+            [ExecutionLogScope.WorkflowId] = workflowId.ToString(),
+        }))
+        {
+            foreach (var entryStepId in wf.EntryStepIds)
             {
-                // BUSINESS skip — entry step not in the L1 step map.
-                logger.LogWarning(
-                    "Entry step {StepId} of workflow {WorkflowId} missing from L1 steps — skipping (business)",
-                    entryStepId, workflowId);
-                continue;
+                if (!wf.Steps.TryGetValue(entryStepId, out var step))
+                {
+                    // BUSINESS skip — entry step not in the L1 step map.
+                    logger.LogWarning(
+                        "Entry step {StepId} of workflow {WorkflowId} missing from L1 steps — skipping (business)",
+                        entryStepId, workflowId);
+                    continue;
+                }
+
+                // D-01: the build-and-Send shape now lives in IStepDispatcher (the single owner). The
+                // initial fire passes executionId = entryId = Guid.Empty; an infra fault on Send propagates.
+                await dispatcher.DispatchAsync(
+                    workflowId, entryStepId, step.ProcessorId, step.Payload,
+                    correlationId, Guid.Empty, Guid.Empty, context.CancellationToken);
             }
 
-            // D-01: the build-and-Send shape now lives in IStepDispatcher (the single owner). The
-            // initial fire passes executionId = entryId = Guid.Empty; an infra fault on Send propagates.
-            await dispatcher.DispatchAsync(
-                workflowId, entryStepId, step.ProcessorId, step.Payload,
-                correlationId, Guid.Empty, Guid.Empty, context.CancellationToken);
-        }
+            // L1 liveness refresh — in-memory only (NO L2 write). Replace the immutable LivenessProjection
+            // record preserving interval/status with an updated timestamp.
+            var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+            var current = wf.Liveness;
+            wf.Liveness = current is null
+                ? new LivenessProjection(nowUtc, 0, "active")
+                : current with { Timestamp = nowUtc };
 
-        // L1 liveness refresh — in-memory only (NO L2 write). Replace the immutable LivenessProjection
-        // record preserving interval/status with an updated timestamp.
-        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
-        var current = wf.Liveness;
-        wf.Liveness = current is null
-            ? new LivenessProjection(nowUtc, 0, "active")
-            : current with { Timestamp = nowUtc };
-
-        // Self-reschedule off the next Cronos occurrence (Pitfall 4b — new trigger for the existing job).
-        if (CronInterval.NextOccurrence(wf.Cron, nowUtc) is not null)
-        {
-            await scheduler.RescheduleAsync(wf.JobId, wf.Cron, context.CancellationToken);
+            // Self-reschedule off the next Cronos occurrence (Pitfall 4b — new trigger for the existing job).
+            if (CronInterval.NextOccurrence(wf.Cron, nowUtc) is not null)
+            {
+                await scheduler.RescheduleAsync(wf.JobId, wf.Cron, context.CancellationToken);
+            }
         }
     }
 }
