@@ -146,6 +146,13 @@ public sealed class MetricsRoundTripE2ETests
 
         // METRIC-01/02 — a RUNTIME metric carries a non-empty service_instance_id. Query a broad runtime
         // selector (process_runtime_dotnet_*) and inspect result[0].metric for the instance label.
+        //
+        // SCOPE NOTE: this proves PRESENCE + NON-EMPTINESS of service_instance_id on a runtime series, not
+        // per-replica UNIQUENESS. service.instance.id resolves per-process via POD_NAME → HOSTNAME →
+        // MachineName → GUID; under the MachineName fallback two containers on the same Docker host could
+        // share a value. Per-replica uniqueness (the resource attribute's purpose) holds in practice because
+        // Docker sets the container id as HOSTNAME by default, so the MachineName fallback is not reached —
+        // but that uniqueness is NOT asserted here. This assertion deliberately checks non-emptiness only.
         var runtime = await prom.PollPromForQuery(
             "{__name__=~\"process_runtime_dotnet_.*\"}",
             PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
@@ -153,7 +160,8 @@ public sealed class MetricsRoundTripE2ETests
         var runtimeMetric = FirstMetricObject(runtime!.Value);
         Assert.True(
             TryGetNonEmpty(runtimeMetric, "service_instance_id", out _),
-            "A process_runtime_dotnet_* series must carry a non-empty service_instance_id label (METRIC-01/02).");
+            "A process_runtime_dotnet_* series must carry a non-empty service_instance_id label (METRIC-01/02) "
+            + "— presence/non-emptiness only; per-replica uniqueness is not asserted here.");
     }
 
     // ── Label-shape helper (METRIC-04/05): ProcessorId + service_instance_id present & non-empty, ──
