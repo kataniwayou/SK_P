@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
 
 namespace BaseProcessor.Core.DependencyInjection;
 
@@ -101,6 +102,17 @@ public static class BaseProcessorServiceCollectionExtensions
         services.AddSingleton<ProcessorIdLogEnricher>();
         services.ConfigureOpenTelemetryLoggerProvider((sp, lp) =>
             lp.AddProcessor(sp.GetRequiredService<ProcessorIdLogEnricher>()));
+
+        // 6c. METRIC-05 (Landmine 1 — the compile-firewall fix): the code-owned "BaseProcessor" meter +
+        //     its DI-singleton holder. Registered HERE inside AddBaseProcessor — NOT in
+        //     BaseConsoleObservabilityExtensions — because BaseConsole.Core has NO project reference to
+        //     BaseProcessor.Core (the dependency runs the other way; its only contract ref is
+        //     Messaging.Contracts), so it cannot see ProcessorMetrics.MeterName. ConfigureOpenTelemetryMeterProvider
+        //     is the exact meter-provider analog of the ConfigureOpenTelemetryLoggerProvider seam above (both
+        //     from OpenTelemetry.Extensions.Hosting), attaching the meter additively to the MeterProvider that
+        //     the shared AddBaseConsoleObservability built. Every Processor.* inherits this via AddBaseProcessor.
+        services.AddSingleton<ProcessorMetrics>();
+        services.ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(ProcessorMetrics.MeterName));
 
         // 7. The two-loop startup orchestrator (identity-by-SourceHash + per-non-null-schema definition).
         services.AddHostedService<ProcessorStartupOrchestrator>();
