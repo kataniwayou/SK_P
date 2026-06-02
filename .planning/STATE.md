@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Completed 27-02-PLAN.md
-last_updated: "2026-06-01T21:13:38.556Z"
-last_activity: 2026-06-01
+stopped_at: Completed 27-03-PLAN.md
+last_updated: "2026-06-02T00:00:00.000Z"
+last_activity: 2026-06-02
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 7
-  percent: 88
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 27 (execution-round-trip) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
-Last activity: 2026-06-01
+Phase: 27 (execution-round-trip) — COMPLETE (3/3 plans); Phase 28 next
+Plan: 3 of 3 — COMPLETE
+Status: Phase 27 complete — execution round-trip wired end-to-end (EXEC-01..10 + CONFIG-02)
+Last activity: 2026-06-02
 
 ### Milestone Phases (v3.5.0)
 
@@ -43,6 +43,13 @@ Last activity: 2026-06-01
 Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProcessor.Core: library + identity + liveness) → 27 (execution round-trip) → 28 (SourceHash + Processor.Sample + E2E closeout). See .planning/ROADMAP.md for success criteria + cross-phase constraints.
 
 > v3.4.0 execution history (phase/plan completion logs, performance metrics) is retained below for reference.
+
+### Phase 27 Plan 03 — COMPLETE (dispatch endpoint wiring: bind-then-MarkHealthy, EXEC-01; 2026-06-02)
+
+- Executed as a RESUME: both task commits pre-existed on the branch — `826bdea` (feat: register EntryStepDispatchConsumer with ExcludeFromConfigureEndpoints + insert runtime ConnectReceiveEndpoint bind of the durable bare {Id:D} queue + Immediate(3) retry + ConfigureConsumer, then await handle.Ready, THEN MarkHealthy/MarkReady) and `ba34b4d` (test: DispatchBindSequenceFacts ordered-event-log ["connect","ready","markhealthy"] + bare Id.ToString("D") queue-name + AddBaseProcessorFacts.Registers_Dispatch_Consumer). Every acceptance criterion was confirmed already satisfied against the actual files; no source rewritten, no deviations.
+- Verification (all green): `dotnet build src/BaseProcessor.Core -c Debug` = 0 Warning / 0 Error (exit 0); `dotnet test BaseApi.Tests --filter "FullyQualifiedName~Processor"` = Passed 387 / Failed 0 (exit 0 — the MTP runner ignores the VSTest filter so this is the full suite, confirming the processor slice + zero regression); `dotnet test BaseApi.Tests` (full) = Passed 387 / Failed 0 (exit 0). Targeted MTP filter-class runs confirm the new facts ran: DispatchBindSequenceFacts 2/2, AddBaseProcessorFacts 4/4.
+- Decisions: bind lambda omits the RabbitMqReceiveEndpointConfigurator cast (locked Open Q1 — rely on durable/AutoDelete defaults); bare {Id:D} name (queue: scheme is sender-only); MarkHealthy STRICTLY after await handle.Ready (D-03), proven by the ordered-event-log test; live RabbitMQ bind proof deferred to Phase 28 E2E (TEST-01).
+- SUMMARY: 27-03-SUMMARY.md (Self-Check PASSED). EXEC-01 marked complete -> Phase 27 = 3/3 plans, all 11 reqs (EXEC-01..10 + CONFIG-02) complete. Milestone v3.5.0 = 8/8 plans across phases 25-27; Phase 28 (SourceHash + Processor.Sample + E2E) next.
 
 ### Phase 24.1 Plan 24.1-01 — COMPLETE (gating redesign; closes FAILED Phase 24, 2026-06-01)
 
@@ -284,6 +291,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 26 P03 | 11min | 2 tasks | 6 files |
 | Phase 27 P01 | 9min | 2 tasks tasks | 8 files files |
 | Phase 27 P02 | 13min | 2 tasks | 8 files |
+| Phase 27 P03 | ~12min (resume: verification + finalization; impl pre-committed) | 2 tasks | 4 files (2 src + 2 test) |
 
 ## Accumulated Context
 

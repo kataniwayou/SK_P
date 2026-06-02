@@ -70,7 +70,7 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 ### Execution Round-Trip
 
-- [ ] **EXEC-01**: The processor consumes `EntryStepDispatch` on a **durable** `queue:{processorId:D}` competing-consumer endpoint. The consumer is bound only once the processor is **Healthy** (definitions resolved), and `Healthy` is written to L2 only after the bind completes — so the orchestrator (which admits only Healthy processors) never sends to a non-existent queue, and the processor never consumes a dispatch it cannot yet validate. The durable queue holds dispatches across processor restarts; a restarting/unhealthy processor leaves them queued (not lost, not processed) until it recovers.
+- [x] **EXEC-01**: The processor consumes `EntryStepDispatch` on a **durable** `queue:{processorId:D}` competing-consumer endpoint. The consumer is bound only once the processor is **Healthy** (definitions resolved), and `Healthy` is written to L2 only after the bind completes — so the orchestrator (which admits only Healthy processors) never sends to a non-existent queue, and the processor never consumes a dispatch it cannot yet validate. The durable queue holds dispatches across processor restarts; a restarting/unhealthy processor leaves them queued (not lost, not processed) until it recovers.
 - [x] **EXEC-02
 **: Input data is read from `L2[data(entryId)]` (existence-checked first); the dispatch `Payload` is treated as config, never as input data.
 - [x] **EXEC-03
@@ -161,7 +161,7 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | LIVE-05 | Phase 26 | Complete |
 | LIVE-06 | Phase 26 | Complete |
 | CONFIG-01 | Phase 26 | Complete |
-| EXEC-01 | Phase 27 | Pending |
+| EXEC-01 | Phase 27 | Complete |
 | EXEC-02 | Phase 27 | Complete |
 | EXEC-03 | Phase 27 | Complete |
 | EXEC-04 | Phase 27 | Complete |
