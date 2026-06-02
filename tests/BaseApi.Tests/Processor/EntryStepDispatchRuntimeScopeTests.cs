@@ -119,6 +119,8 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             .AddSingleton<IProcessorContext>(processorContext)
             .AddSingleton<BaseProcessorBase>(processor)
             .AddSingleton<IOptions<ProcessorLivenessOptions>>(DispatchTestKit.Options(300))
+            // METRIC-05: the consumer now depends on ProcessorMetrics (real IMeterFactory; no-op in-test).
+            .AddSingleton(DispatchTestKit.Metrics())
             // The bus-wide InboundCorrelationConsumeFilter needs the accessor (as AddBaseConsoleMessaging registers it).
             .AddSingleton<ICorrelationAccessor, AsyncLocalCorrelationAccessor>()
             .AddSingleton(new RecordingResultConsumer(received))

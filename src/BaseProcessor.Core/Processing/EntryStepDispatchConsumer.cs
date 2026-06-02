@@ -1,5 +1,6 @@
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Validation;
 using MassTransit;
 using Messaging.Contracts;
@@ -43,11 +44,23 @@ public sealed class EntryStepDispatchConsumer(
     BaseProcessor processor,
     IOptions<ProcessorLivenessOptions> options,
     ISendEndpointProvider sendProvider,
+    ProcessorMetrics metrics,
     ILogger<EntryStepDispatchConsumer> logger) : IConsumer<EntryStepDispatch>
 {
     public async Task Consume(ConsumeContext<EntryStepDispatch> ctx)
     {
         var dispatch = ctx.Message;
+
+        // METRIC-05 / D-07: count EVERY dispatch consumed at the entry point, tagged ProcessorId.
+        // An Immediate(3) retry re-runs Consume → re-increments — accepted rate noise (D-07).
+        // context.Id is Guid? but Consume runs ONLY post-MarkHealthy (the runtime binds queue:{id:D}
+        // AFTER Healthy via ProcessorStartupOrchestrator), so identity IS resolved here — the bang is
+        // justified (Landmine 2; not a NRE). Tag key is literal PascalCase "ProcessorId" (the collector
+        // preserves tag-key case so `sum by (ProcessorId)` works); value .ToString("D") matches queue:{id:D}.
+        // NO workflowId (T-30-04 cardinality). service_instance_id is ambient from Plan 01.
+        metrics.DispatchConsumed.Add(1,
+            new KeyValuePair<string, object?>("ProcessorId", context.Id!.Value.ToString("D")));
+
         var ct = ctx.CancellationToken;
         var opts = options.Value;
 
@@ -69,7 +82,7 @@ public sealed class EntryStepDispatchConsumer(
                 logger.LogInformation(
                     "Dispatch {CorrelationId}: required input but no entryId — Failed (business)",
                     dispatch.CorrelationId);
-                await SendOne(BuildFailed(dispatch, "Input data not found: no entryId provided for a step requiring input."));
+                await SendResult(BuildFailed(dispatch, "Input data not found: no entryId provided for a step requiring input."));
                 return;
             }
         }
@@ -84,7 +97,7 @@ public sealed class EntryStepDispatchConsumer(
                     logger.LogInformation(
                         "Dispatch {CorrelationId}: input absent from L2 for entryId {EntryId} — Failed (business)",
                         dispatch.CorrelationId, dispatch.EntryId);
-                    await SendOne(BuildFailed(dispatch, "Input data not found in L2 for entryId."));
+                    await SendResult(BuildFailed(dispatch, "Input data not found in L2 for entryId."));
                     return;
                 }
 
@@ -103,7 +116,7 @@ public sealed class EntryStepDispatchConsumer(
             // Input failed its definition — Failed BEFORE ProcessAsync (EXEC-03).
             logger.LogInformation(
                 "Dispatch {CorrelationId}: input failed inputDefinition — Failed (business)", dispatch.CorrelationId);
-            await SendOne(BuildFailed(dispatch, string.Join("; ", inErrors)));
+            await SendResult(BuildFailed(dispatch, string.Join("; ", inErrors)));
             return;
         }
 
@@ -116,13 +129,13 @@ public sealed class EntryStepDispatchConsumer(
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             // Token-tripped cancellation is a business Cancelled outcome (EXEC-08).
-            await SendOne(BuildCancelled(dispatch, "Processing was cancelled."));
+            await SendResult(BuildCancelled(dispatch, "Processing was cancelled."));
             return;
         }
         catch (Exception ex)
         {
             // Any other transform exception is a business Failed carrying the message (EXEC-08).
-            await SendOne(BuildFailed(dispatch, ex.Message));
+            await SendResult(BuildFailed(dispatch, ex.Message));
             return;
         }
 
@@ -144,7 +157,7 @@ public sealed class EntryStepDispatchConsumer(
             // inner-overrides-outer, so the write/send LogRecord on this Completed path reports these
             // minted ids rather than the inbound Guid.Empty the outer execution-scope filter skipped
             // (D-05). MINIMAL: wraps ONLY the L2 write + this result's build — the early Failed/Cancelled
-            // SendOne paths stay outside (Pitfall 2). Values are .ToString() under the fixed
+            // SendResult paths stay outside (Pitfall 2). Values are .ToString() under the fixed
             // ExecutionLogScope keys — never interpolated into a template (T-18-04).
             using (logger.BeginScope(new Dictionary<string, object>
             {
@@ -180,26 +193,36 @@ public sealed class EntryStepDispatchConsumer(
         if (built.Count == 0)
             return;
 
-        var endpoint = await sendProvider.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
         foreach (var er in built)
-            // CancellationToken.None: the ExecutionResult is the BUSINESS SIGNAL — it must reach the
-            // orchestrator even if the inbound token tripped (otherwise a Cancelled/Failed result is
-            // silently dropped). The inbound ct governs the transform, not result delivery. An infra
-            // Send fault still PROPAGATES (D-15).
-            await endpoint.Send(er, CancellationToken.None);
+            // Every result flows through the single SendResult owner (D-08) so processor_result_sent is
+            // incremented after each confirmed Send. SendResult resolves the endpoint per result; this is
+            // acceptable. An infra Send fault still PROPAGATES (D-15).
+            await SendResult(er);
         // returns normally -> ACK only after ALL sends (D-15).
     }
 
     /// <summary>
-    /// Resolves the result endpoint and sends a single business-outcome <see cref="ExecutionResult"/>
-    /// (the early Failed/Cancelled returns). Sent with <see cref="CancellationToken.None"/> so a
-    /// Cancelled/Failed signal is delivered even when the inbound dispatch token has tripped — the
-    /// business outcome must always reach the orchestrator (an infra Send fault still propagates).
+    /// D-08 — the SINGLE Send owner. EVERY result (the early Failed/Cancelled returns AND the per-result
+    /// Completed loop) flows through here so no send path is uncounted. Resolves the result endpoint,
+    /// sends one business-outcome <see cref="ExecutionResult"/>, then (METRIC-05 / D-04) increments
+    /// <c>processor_result_sent</c> AFTER the confirmed Send, tagged <c>ProcessorId</c> + <c>outcome</c>.
+    /// Sent with <see cref="CancellationToken.None"/> so a Cancelled/Failed signal is delivered even when
+    /// the inbound dispatch token has tripped — the business outcome must always reach the orchestrator
+    /// (an infra Send fault still propagates, D-15, BEFORE the counter increments — only confirmed sends count).
+    /// <para>
+    /// The build paths (BuildCompleted/BuildFailed/BuildCancelled) NEVER emit <c>StepOutcome.Processing</c>
+    /// (Pitfall 3), so <c>outcome</c> ∈ {completed, failed, cancelled} — 3 bounded values, no filter needed
+    /// (T-30-05). The bang on <c>context.Id</c> is justified: SendResult only runs inside Consume, which
+    /// runs post-MarkHealthy (Landmine 2). NO workflowId (T-30-04 cardinality).
+    /// </para>
     /// </summary>
-    private async Task SendOne(ExecutionResult result)
+    private async Task SendResult(ExecutionResult result)
     {
         var endpoint = await sendProvider.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
         await endpoint.Send(result, CancellationToken.None);
+        metrics.ResultSent.Add(1,
+            new KeyValuePair<string, object?>("ProcessorId", context.Id!.Value.ToString("D")),
+            new KeyValuePair<string, object?>("outcome", result.Outcome.ToString().ToLowerInvariant()));
     }
 
     // ---- Builders (Pattern 3 / D-11/D-13): inherit ids, copy body CorrelationId (EXEC-10), mint ExecutionId ----

@@ -71,7 +71,8 @@ public sealed class EntryStepDispatchScopeTests
         var logger = new CapturingLogger();
 
         var consumer = new EntryStepDispatchConsumer(
-            WritableRedis(), context, processor, DispatchTestKit.Options(300), send, logger);
+            WritableRedis(), context, processor, DispatchTestKit.Options(300), send,
+            DispatchTestKit.Metrics(), logger);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
             DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), ct));
@@ -111,7 +112,8 @@ public sealed class EntryStepDispatchScopeTests
         var logger = new CapturingLogger();
 
         var consumer = new EntryStepDispatchConsumer(
-            WritableRedis(), context, processor, DispatchTestKit.Options(300), send, logger);
+            WritableRedis(), context, processor, DispatchTestKit.Options(300), send,
+            DispatchTestKit.Metrics(), logger);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
             DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), ct));

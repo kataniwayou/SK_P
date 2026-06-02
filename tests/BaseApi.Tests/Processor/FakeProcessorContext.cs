@@ -11,7 +11,11 @@ namespace BaseApi.Tests.Processor;
 /// </summary>
 internal sealed class FakeProcessorContext : IProcessorContext
 {
-    public Guid? Id { get; set; }
+    // Defaults to a resolved identity: the EntryStepDispatchConsumer increments processor metrics tagged
+    // context.Id!.Value at the top of Consume (METRIC-05) and runs ONLY post-MarkHealthy at runtime, so a
+    // consumer fact needs a non-null Id to reflect that invariant. Liveness facts that exercise the
+    // not-yet-Healthy "no Id → no write" path override this explicitly with `Id = null`.
+    public Guid? Id { get; set; } = Guid.NewGuid();
     public Guid? InputSchemaId { get; set; }
     public Guid? OutputSchemaId { get; set; }
     public Guid? ConfigSchemaId { get; set; }

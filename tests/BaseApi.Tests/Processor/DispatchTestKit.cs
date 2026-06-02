@@ -1,5 +1,7 @@
+using System.Diagnostics.Metrics;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Processing;
 using MassTransit;
 using Messaging.Contracts;
@@ -115,6 +117,19 @@ internal static class DispatchTestKit
             ExecutionDataTtlSeconds = executionDataTtlSeconds,
         });
 
+    /// <summary>
+    /// A real <see cref="ProcessorMetrics"/> for the hermetic facts — built from a live
+    /// <see cref="IMeterFactory"/> (Plan 30-03 added the metrics ctor param to EntryStepDispatchConsumer).
+    /// No collector is wired, so the increments are no-ops in-test; this just satisfies the non-null
+    /// ctor dependency (mirrors <c>OrchestratorTestStubs.Metrics()</c>).
+    /// </summary>
+    public static ProcessorMetrics Metrics()
+    {
+        var meterFactory = new ServiceCollection().AddMetrics().BuildServiceProvider()
+            .GetRequiredService<IMeterFactory>();
+        return new ProcessorMetrics(meterFactory);
+    }
+
     /// <summary>Builds the consumer over the supplied collaborators (NullLogger + given send provider).</summary>
     public static EntryStepDispatchConsumer Build(
         IConnectionMultiplexer redis,
@@ -123,7 +138,7 @@ internal static class DispatchTestKit
         ISendEndpointProvider sendProvider,
         int executionDataTtlSeconds = 300) =>
         new(redis, context, processor, Options(executionDataTtlSeconds), sendProvider,
-            NullLogger<EntryStepDispatchConsumer>.Instance);
+            Metrics(), NullLogger<EntryStepDispatchConsumer>.Instance);
 
     /// <summary>An <see cref="EntryStepDispatch"/> with the given correlation + entry id.</summary>
     public static EntryStepDispatch Dispatch(Guid entryId, Guid correlationId, string payload = "{\"cfg\":1}") =>
