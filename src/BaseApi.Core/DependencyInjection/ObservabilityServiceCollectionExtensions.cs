@@ -42,6 +42,14 @@ public static class ObservabilityServiceCollectionExtensions
         var serviceName    = cfg.Require("Service:Name");
         var serviceVersion = cfg.Require("Service:Version");
 
+        // Phase 30 (METRIC-01/D-10): resolve the per-replica instance id ONCE per process, then
+        // apply it as a service.instance.id resource attribute to BOTH the logs and metrics
+        // resources below. Resolving ONCE (a single local) is a correctness requirement — calling
+        // the resolver twice risks the Guid fallback differing between the two resources, so the
+        // logs and metrics signals would carry different service_instance_id labels.
+        var instanceId    = ResolveInstanceId();
+        var instanceAttrs = new[] { new KeyValuePair<string, object>("service.instance.id", instanceId) };
+
         // OTel LOGS — MEL bridge (Phase 5 D-09 / OBSERV-02). MUST be builder.Logging.AddOpenTelemetry
         // — NOT services.AddOpenTelemetry().WithLogging() (creates a parallel provider that
         // bypasses MEL filtering per Phase 5 Pitfall 9).
@@ -51,16 +59,17 @@ public static class ObservabilityServiceCollectionExtensions
             o.IncludeScopes           = true;
             o.ParseStateValues        = true;
             o.SetResourceBuilder(ResourceBuilder.CreateDefault()
-                .AddService(serviceName: serviceName, serviceVersion: serviceVersion));
+                .AddService(serviceName: serviceName, serviceVersion: serviceVersion)
+                .AddAttributes(instanceAttrs));   // Phase 30 METRIC-01 — every log carries service.instance.id
             o.AddOtlpExporter();
         });
 
         // OTel METRICS. ConfigureResource MUST come before WithMetrics so the resource
         // propagates to the metrics provider. Traces pipeline REMOVED in Phase 11 (D-03).
         builder.Services.AddOpenTelemetry()
-            .ConfigureResource(r => r.AddService(
-                serviceName: serviceName,
-                serviceVersion: serviceVersion))
+            .ConfigureResource(r => r
+                .AddService(serviceName: serviceName, serviceVersion: serviceVersion)
+                .AddAttributes(instanceAttrs))    // Phase 30 METRIC-01/02/03 — every metric carries service.instance.id
             .WithMetrics(m => m
                 // OpenTelemetry.Instrumentation.AspNetCore 1.15.0's metrics-side
                 // AddAspNetCoreInstrumentation is parameterless (no opts.Filter overload on
@@ -74,4 +83,17 @@ public static class ObservabilityServiceCollectionExtensions
 
         return builder;
     }
+
+    /// <summary>
+    /// Phase 30 (METRIC-01/D-09/D-10) — resolves the per-replica <c>service.instance.id</c> from
+    /// the env precedence <c>POD_NAME → HOSTNAME → MachineName → GUID</c>. DUPLICATED independently
+    /// in <c>BaseConsole.Core</c>'s <c>BaseConsoleObservabilityExtensions</c> (D-09 —
+    /// <c>BaseConsole.Core</c> is hard-forbidden from referencing <c>BaseApi.Core</c>, and a ~6-line
+    /// helper is not worth a shared lib; <c>Messaging.Contracts</c> is the wrong home).
+    /// </summary>
+    private static string ResolveInstanceId() =>
+        Environment.GetEnvironmentVariable("POD_NAME")
+        ?? Environment.GetEnvironmentVariable("HOSTNAME")
+        ?? Environment.MachineName
+        ?? Guid.NewGuid().ToString("N");   // MachineName is effectively non-null; GUID is the documented final fallback (D-10)
 }
