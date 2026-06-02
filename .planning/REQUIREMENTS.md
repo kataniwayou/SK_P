@@ -117,7 +117,8 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 **: A single `ExecutionLogScope` constants class in `Messaging.Contracts` (pure POCO leaf, no MassTransit ref) is the source of truth for scope keys, with key strings equal to the structured-param names so scope-derived and param-derived attributes coincide on the same ES field; `Guid.Empty` values are skipped (no zero-guid noise attributes).
 - [x] **LOG-04
 **: The per-result minted `ExecutionId` + output `EntryId` are captured via a nested `BeginScope` in `EntryStepDispatchConsumer` (overriding inbound values for the write/send log lines), and `ProcessorId` enriches ALL processor logs via an OTel `LogRecord` enricher reading `IProcessorContext.Id` (null-safe — emits nothing before identity resolves).
-- [ ] **LOG-05**: `WorkflowFireJob` (a Quartz job, outside the consume pipeline) opens an explicit `BeginScope(CorrelationId + WorkflowId)` in `Execute` so its fire logs correlate with the round-trip it triggers.
+- [x] **LOG-05
+**: `WorkflowFireJob` (a Quartz job, outside the consume pipeline) opens an explicit `BeginScope(CorrelationId + WorkflowId)` in `Execute` so its fire logs correlate with the round-trip it triggers.
 - [ ] **LOG-06**: No log-shape regression (existing templates untouched, additive scopes only); the full hermetic + real-stack suite stays GREEN and the close-gate triple-SHA still holds; proof bar = hermetic scope-capture tests PLUS one extension of the existing real-stack E2E asserting ≥1 **scope-sourced, processor-side** execution id round-trips to ES.
 
 ## Future Requirements
