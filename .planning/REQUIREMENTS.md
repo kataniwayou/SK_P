@@ -130,7 +130,7 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 **: All three process types (WebApi, Orchestrator, every `Processor.*`) emit .NET runtime metrics via the base libs' existing `AddRuntimeInstrumentation`, now carrying the `service_instance_id` label.
 - [x] **METRIC-03
 **: The WebApi's ASP.NET Core HTTP server metrics (existing `AddAspNetCoreInstrumentation`; health routes still collector-filtered) carry the `service_instance_id` label.
-- [ ] **METRIC-04**: The Orchestrator defines a code-owned `Meter` with two monotonic counters — `orchestrator_dispatch_sent_total` (incremented at the `EntryStepDispatch` send site) and `orchestrator_result_consumed_total` (incremented in `ResultConsumer`) — each labelled by `ProcessorId` (+ ambient `service_instance_id`), registered via `AddMeter`. No `workflowId` label (high-cardinality).
+- [x] **METRIC-04**: The Orchestrator defines a code-owned `Meter` with two monotonic counters — `orchestrator_dispatch_sent_total` (incremented at the `EntryStepDispatch` send site) and `orchestrator_result_consumed_total` (incremented in `ResultConsumer`) — each labelled by `ProcessorId` (+ ambient `service_instance_id`), registered via `AddMeter`. No `workflowId` label (high-cardinality).
 - [ ] **METRIC-05**: `BaseProcessor.Core` defines a code-owned `Meter` with `processor_dispatch_consumed_total` (incremented on consuming an `EntryStepDispatch`) and `processor_result_sent_total` (incremented per `ExecutionResult` sent, labelled by `outcome` ∈ {completed, failed, cancelled}) — both labelled by `ProcessorId` (+ ambient `service_instance_id`), registered via `AddMeter` so every `Processor.*` inherits them. No `workflowId` label; the in-flight "processing" outcome is deferred.
 - [ ] **METRIC-06**: The send/consume counters align by `ProcessorId` so PromQL `sum by (ProcessorId)(rate(orchestrator_dispatch_sent_total[…])) − sum by (ProcessorId)(rate(processor_dispatch_consumed_total[…]))` quantifies per-processor dispatch backlog/bottleneck across replicas, and `rate(processor_result_sent_total{outcome=…})` gives per-processor outcome rates — proven by a real-stack assertion that the new series appear in Prometheus with the expected `ProcessorId` / `outcome` / `service_instance_id` labels after a live round-trip.
 - [x] **METRIC-07
@@ -216,7 +216,7 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | METRIC-01 | Phase 30 | Planned |
 | METRIC-02 | Phase 30 | Planned |
 | METRIC-03 | Phase 30 | Planned |
-| METRIC-04 | Phase 30 | Planned |
+| METRIC-04 | Phase 30 | Complete |
 | METRIC-05 | Phase 30 | Planned |
 | METRIC-06 | Phase 30 | Planned |
 | METRIC-07 | Phase 30 | Planned |

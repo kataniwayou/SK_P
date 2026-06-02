@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Completed 30-01-PLAN.md
-last_updated: "2026-06-02T20:03:46.813Z"
+stopped_at: Completed 30-02-PLAN.md
+last_updated: "2026-06-02T20:14:57.000Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 21
-  completed_plans: 18
-  percent: 86
+  completed_plans: 19
+  percent: 90
 ---
 
 # Project State
@@ -27,9 +27,18 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
 Phase: 30 (runtime-business-metrics) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-06-02
+
+### Phase 30 Plan 02 — COMPLETE (Orchestrator dispatch/consume counters; METRIC-04; 2026-06-02)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched).** `e79f3e8` (feat: OrchestratorMetrics holder + register the "Orchestrator" meter via ConfigureOpenTelemetryMeterProvider + hermetic OrchestratorMetricsFacts) and `a1488f0` (feat: increment dispatch_sent after Send + result_consumed at consume entry, + thread the test metrics helper through 5 ctor sites).
+- **Holder (D-01/D-02/D-03):** `src/Orchestrator/Observability/OrchestratorMetrics.cs` — `sealed` DI-singleton built from `IMeterFactory.Create("Orchestrator")` (NEVER a static Meter — cross-test leak), `const string MeterName = "Orchestrator"` referenced by BOTH `Create` and `AddMeter`, two `Counter<long>` named `orchestrator_dispatch_sent` + `orchestrator_result_consumed` (snake_case, NO `_total` — the collector's `add_metric_suffixes` appends it). Registered in `Program.cs` via `AddSingleton<OrchestratorMetrics>()` + `ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(OrchestratorMetrics.MeterName))` (the meter-provider analog of the Phase-29 logger seam; method flows transitively via BaseConsole.Core's OpenTelemetry.Extensions.Hosting), attaching additively to the MeterProvider AddBaseConsoleObservability built.
+- **Increment sites:** `StepDispatcher` increments `DispatchSent.Add(1, ProcessorId)` AFTER `endpoint.Send` (D-04 — an infra Send-throw skips it; this single owner covers both the WorkflowFireJob fire and the ResultConsumer continuation, D-05). `ResultConsumer` increments `ResultConsumed.Add(1, ProcessorId)` at the TOP of `Consume`, BEFORE the L1 `store.TryGet`, so the graceful L1-miss ack is ALSO counted (D-06). Both tag the literal PascalCase `"ProcessorId"` (collector preserves tag-key case) with `.ToString("D")`; NO `workflowId` (T-30-03 cardinality, grep-verified). `service_instance_id` is ambient from Plan 01.
+- **Verification (all green):** `dotnet build src/Orchestrator -c Debug` 0/0; hermetic suite `--filter "Category!=RealStack"` = Passed 410 / Failed 0 (was 408 → +2 OrchestratorMetricsFacts, zero regression); `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error. Targeted `--filter-class "*OrchestratorMetricsFacts"` 2/2.
+- **Deviations (2, both mechanical):** Rule 3 — the new required `OrchestratorMetrics` ctor param broke 5 hermetic tests that `new` StepDispatcher/ResultConsumer directly; added `OrchestratorTestStubs.Metrics()` (real-IMeterFactory builder) and threaded it through (ResultAckTests, ResultConsumeTests, StopConsumerLifecycleTests, FireDispatchTests ×3, WorkflowFireJobScopeTests). Rule 1 — reworded OrchestratorMetrics doc-comments off the literal `_total` token so the "grep finds no `_total`" acceptance criterion holds (counter names were always correct; comments only).
+- SUMMARY: 30-02-SUMMARY.md (Self-Check PASSED). METRIC-04 complete. Phase 30 = 2/4 plans; Plan 30-03 (BaseProcessor.Core processor-side counters, METRIC-05) next — independent (different lib), unblocked.
 
 ### Phase 29 Plan 05 — COMPLETE (real-stack scope-proof + phase-29-close.ps1 close gate; LOG-06/LOG-01; 2026-06-02)
 
@@ -186,7 +195,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 90%
 
 ### Milestone Phases (v3.4.0)
 
