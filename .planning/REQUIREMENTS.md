@@ -109,8 +109,10 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 ### Structured Execution-Scope Logging (Phase 29 — v3.5.0 follow-up)
 
-- [ ] **LOG-01**: All six execution ids surface in Elasticsearch as `attributes.CorrelationId` / `WorkflowId` / `StepId` / `ProcessorId` / `ExecutionId` / `EntryId`, sourced from log **scopes** (fixed-key values, never interpolated into message text — T-18-04), via the existing `IncludeScopes`+`ParseStateValues` OTel bridge reused unchanged.
-- [ ] **LOG-02**: A new open-generic `InboundExecutionScopeConsumeFilter<T>` scopes the execution id-set for `IExecutionCorrelated` messages and passes through all others; registered once bus-wide in `AddBaseConsoleMessaging` so both the orchestrator (`ResultConsumer`) and processor (`EntryStepDispatchConsumer`) are covered with no per-console wiring. `InboundCorrelationConsumeFilter` is left byte-unchanged.
+- [x] **LOG-01
+**: All six execution ids surface in Elasticsearch as `attributes.CorrelationId` / `WorkflowId` / `StepId` / `ProcessorId` / `ExecutionId` / `EntryId`, sourced from log **scopes** (fixed-key values, never interpolated into message text — T-18-04), via the existing `IncludeScopes`+`ParseStateValues` OTel bridge reused unchanged.
+- [x] **LOG-02
+**: A new open-generic `InboundExecutionScopeConsumeFilter<T>` scopes the execution id-set for `IExecutionCorrelated` messages and passes through all others; registered once bus-wide in `AddBaseConsoleMessaging` so both the orchestrator (`ResultConsumer`) and processor (`EntryStepDispatchConsumer`) are covered with no per-console wiring. `InboundCorrelationConsumeFilter` is left byte-unchanged.
 - [x] **LOG-03
 **: A single `ExecutionLogScope` constants class in `Messaging.Contracts` (pure POCO leaf, no MassTransit ref) is the source of truth for scope keys, with key strings equal to the structured-param names so scope-derived and param-derived attributes coincide on the same ES field; `Guid.Empty` values are skipped (no zero-guid noise attributes).
 - [ ] **LOG-04**: The per-result minted `ExecutionId` + output `EntryId` are captured via a nested `BeginScope` in `EntryStepDispatchConsumer` (overriding inbound values for the write/send log lines), and `ProcessorId` enriches ALL processor logs via an OTel `LogRecord` enricher reading `IProcessorContext.Id` (null-safe — emits nothing before identity resolves).

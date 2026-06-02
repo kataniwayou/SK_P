@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Completed 29-01-PLAN.md
-last_updated: "2026-06-02T16:14:53.309Z"
+stopped_at: Completed 29-02-PLAN.md
+last_updated: "2026-06-02T16:21:08.095Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 17
-  completed_plans: 13
-  percent: 76
+  completed_plans: 14
+  percent: 82
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
 Phase: 29 (structured-execution-scope-logging) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-06-02
 
@@ -163,7 +163,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 76%
+Progress: [████████░░] 82%
 
 ### Milestone Phases (v3.4.0)
 
@@ -338,6 +338,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 27 P02 | 13min | 2 tasks | 8 files |
 | Phase 27 P03 | ~12min (resume: verification + finalization; impl pre-committed) | 2 tasks | 4 files (2 src + 2 test) |
 | Phase 29 P01 | 2min | 1 tasks | 2 files |
+| Phase 29 P02 | 4min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -644,6 +645,7 @@ Recent decisions affecting current work:
 - 27-02: EntryStepDispatchConsumer sends business-outcome ExecutionResults with CancellationToken.None so a Cancelled/Failed signal reaches the orchestrator even when the inbound dispatch token tripped; the inbound ct governs only ProcessAsync. L2 output-write + Send faults still propagate (infra, D-15).
 - 27-02: the L2 output-write StringSetAsync(key,value,expiry:TimeSpan) binds under SE.Redis 2.13.1 to the Expiration/ValueCondition overload (TimeSpan implicitly converts to Expiration); the infra-throw test stub must target that overload to exercise D-15 propagation.
 - ExecutionLogScope: CorrelationId deliberately excluded — stays owned by CorrelationKeys.LogScope (D-01)
+- Phase 29-02: InboundExecutionScopeConsumeFilter scopes the 5 execution ids only (D-01: not CorrelationId), registered INNER after the correlation filter (D-02), skips Guid.Empty (D-03); InboundCorrelationConsumeFilter byte-unchanged
 
 ### Roadmap Milestone Log
 
@@ -741,8 +743,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-02T16:14:53.296Z
-Stopped at: Completed 29-01-PLAN.md
+Last session: 2026-06-02T16:21:08.082Z
+Stopped at: Completed 29-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
