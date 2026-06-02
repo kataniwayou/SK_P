@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: Phase 30 added (METRIC-01..07) — awaiting /gsd-spec-phase 30
-stopped_at: Phase 30 context gathered
-last_updated: "2026-06-02T19:51:01.705Z"
+status: executing
+stopped_at: Completed 30-01-PLAN.md
+last_updated: "2026-06-02T20:03:46.813Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 21
-  completed_plans: 17
-  percent: 81
+  completed_plans: 18
+  percent: 86
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 30 — runtime-business-metrics (planned — awaiting spec)
+**Current focus:** Phase 30 — runtime-business-metrics
 
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 30 (runtime-business-metrics) — PLANNED
-Plan: Not started
-Status: Phase 30 added (METRIC-01..07) — awaiting /gsd-spec-phase 30
+Phase: 30 (runtime-business-metrics) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-06-02
 
 ### Phase 29 Plan 05 — COMPLETE (real-stack scope-proof + phase-29-close.ps1 close gate; LOG-06/LOG-01; 2026-06-02)
@@ -186,7 +186,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████████░] 94%
+Progress: [█████████░] 86%
 
 ### Milestone Phases (v3.4.0)
 
@@ -366,6 +366,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 29 P03 | 8min | 2 tasks | 6 files |
 | Phase 29 P04 | 2min | 1 tasks | 2 files |
 | Phase 29 P05 | operator-gated (3x ~4m live gate + gap fix) | 3 tasks (+1 gap fix) | 4 files (2 created, 2 modified) |
+| Phase 30 P01 | 8min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -676,6 +677,7 @@ Recent decisions affecting current work:
 - 29-03: ProcessorIdLogEnricher lives in BaseProcessor.Core (depends on IProcessorContext, L3), registered DI-resolved on the processor logger provider only via ConfigureOpenTelemetryLoggerProvider — never the shared BaseConsole.Core observability block
 - 29-03: EntryStepDispatchConsumer mints executionId once and passes it to BuildCompleted so the nested-scope value equals the sent ExecutionResult.ExecutionId; minimal nested BeginScope wraps only the Completed-path write/build (early Failed/Cancelled untouched, D-05/Pitfall 2)
 - WorkflowFireJob owns CorrelationId via CorrelationKeys.LogScope (D-06) — it runs outside the consume pipeline; the explicit post-mint BeginScope also carries WorkflowId via ExecutionLogScope.WorkflowId (LOG-05)
+- service.instance.id resolved once per process (POD_NAME->HOSTNAME->MachineName->GUID) and applied to BOTH logs + metrics OTel resources in each base lib (D-09/D-10); collector metrics pipeline untouched (METRIC-07)
 
 ### Roadmap Milestone Log
 
@@ -773,9 +775,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 30 context gathered
-Resume file: --resume-file
+Last session: 2026-06-02T20:03:46.801Z
+Stopped at: Completed 30-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
