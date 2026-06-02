@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Completed 29-04-PLAN.md
+stopped_at: 29-05 Tasks 1-2 done; CHECKPOINT at Task 3 (operator-authorized close-gate run)
 last_updated: "2026-06-02T16:40:02.832Z"
 last_activity: 2026-06-02
 progress:
@@ -27,9 +27,17 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
 Phase: 29 (structured-execution-scope-logging) — EXECUTING
-Plan: 5 of 5
-Status: Ready to execute
+Plan: 5 of 5 — IN PROGRESS (Tasks 1-2 committed; CHECKPOINT at Task 3)
+Status: Awaiting operator-authorized phase-29 close-gate run (Task 3)
 Last activity: 2026-06-02
+
+### Phase 29 Plan 05 — CHECKPOINT (Tasks 1-2 committed; Task 3 = operator-authorized close gate; 2026-06-02)
+
+- **NOT YET COMPLETE** — 2 of 3 tasks done; the final 29-05-SUMMARY.md is deliberately deferred until the operator runs Task 3 and the gate exits 0. Do NOT count 29-05 as a completed plan yet (progress remains 16/17).
+- **Task 1 (committed `84959b9`)** — extended `tests/BaseApi.Tests/Orchestrator/SampleRoundTripE2ETests.cs` with a SECOND `PollEsForLog` (the scope-proof): `term` on `attributes.WorkflowId == {{wfId}}` AND `term` on `resource.attributes.service.name == "processor-sample"`, asserted `Assert.NotNull(scopeProof)`. Closes the L1 trap — the processor consumes `EntryStepDispatch` (`IExecutionCorrelated`), so its logs carry `attributes.WorkflowId` ONLY via the new `InboundExecutionScopeConsumeFilter` (29-02); this assertion FAILS if the scope work is reverted (the orchestrator/template hit above would still pass). Additive only: the existing `advanceQuery` block + net-zero teardown (`L2KeysToCleanup`/`ParentIndexMembersToSrem`) unchanged; no new seeded Redis/RMQ/PG state (triple-SHA invariant holds; ES logs are append-only telemetry). Verified hermetic only: `dotnet build tests/BaseApi.Tests/BaseApi.Tests.csproj -c Debug` = 0 Warning / 0 Error. The live `--filter-class *SampleRoundTripE2ETests` run was deliberately NOT run here (the running processor-sample container is ~10h old and predates this phase's scope filter — a live run would falsely fail; the live run is covered by Task 3 after a container rebuild).
+- **Task 2 (committed `d79cefe`)** — authored `scripts/phase-29-close.ps1` by copying `scripts/phase-28-close.ps1` byte-faithful and updating ONLY phase-identifying label strings 28→29 (header, usage line, the `Write-Host` gate-status lines, the seeded-row description). `diff phase-28 vs phase-29` = ONLY label/comment lines (lines 9/17 are tense-only "adds"→"added" on historical-provenance prose that correctly keeps "Phase 28" — those key families were introduced in Phase 28; line 4's phase-22 lineage reference also intentionally retained). Gate logic, `$services` (full v3.5.0 stack incl. `processor-sample` REQUIRED healthy), the triple-SHA commands (`psql \l` + `redis-cli --scan` + `rabbitmqctl list_queues`), the 3-GREEN loop, and the Release+Debug zero-warning build are unchanged. Verified: ParseFile = PARSE OK (exit 0); BOM-free; 27 em-dashes intact (no mojibake); processor-sample present; NO FLUSHDB.
+- **Task 3 — NOT EXECUTED (operator-authorized `checkpoint:human-verify`, blocking).** The orchestrator owns the live gate run. To resume: (1) confirm `docker compose ps` shows postgres, redis, rabbitmq, otel-collector, elasticsearch, orchestrator, processor-sample, baseapi-service healthy; if any container predates this phase's code, rebuild `docker compose up -d --build processor-sample orchestrator baseapi-service`; (2) run `pwsh -NoProfile -File ./scripts/phase-29-close.ps1`; (3) expect exit 0 — 3 consecutive full-suite GREEN (identical Passed counts, both real-stack E2Es incl. the extended SampleRoundTripE2ETests ran live each run), triple-SHA BEFORE==AFTER all HELD, Release+Debug 0/0. Then resume-signal: type "approved" with the gate evidence (3× Passed counts, the three SHAs BEFORE==AFTER, exit code) — that resume creates 29-05-SUMMARY.md, marks LOG-06/LOG-01, advances the plan counter, and closes the phase.
+- Scoped-commit discipline held: only `SampleRoundTripE2ETests.cs` (T1) and `scripts/phase-29-close.ps1` (T2) committed; the operator's in-progress ~242 `.planning/` archive deletions + modified STATE.md were left untouched (NOT staged, NOT reverted).
 
 ### Milestone Phases (v3.5.0)
 
