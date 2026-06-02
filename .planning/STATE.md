@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: milestone_complete
-stopped_at: 29-05 COMPLETE — close gate GATE_EXIT=0 (405 Passed x3, triple-SHA HELD); awaiting orchestrator phase verification + phase.complete
+status: in_progress
+stopped_at: Phase 30 (Runtime & Business Metrics) added as a v3.5.0 follow-up — planned, awaiting /gsd-spec-phase 30
 last_updated: "2026-06-02T16:40:02.832Z"
 last_activity: 2026-06-02
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
   total_plans: 17
   completed_plans: 17
-  percent: 100
+  percent: 83
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 29 — structured-execution-scope-logging
+**Current focus:** Phase 30 — runtime-business-metrics (planned — awaiting spec)
 
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 29
+Phase: 30 (runtime-business-metrics) — PLANNED
 Plan: Not started
-Status: Milestone complete
+Status: Phase 30 added (METRIC-01..07) — awaiting /gsd-spec-phase 30
 Last activity: 2026-06-02
 
 ### Phase 29 Plan 05 — COMPLETE (real-stack scope-proof + phase-29-close.ps1 close gate; LOG-06/LOG-01; 2026-06-02)
@@ -61,7 +61,8 @@ Last activity: 2026-06-02
 | 26 | BaseProcessor.Core — Library, Identity & Liveness | BPC-01/02/03, IDENT-03/04, RPC-04, SCHEMA-01/02, LIVE-01..06, CONFIG-01 (15) | Not started |
 | 27 | Execution Round-Trip | EXEC-01..10, CONFIG-02 (11) | Not started |
 | 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Complete (4/4 plans — close gate exit 0) |
-| 29 | Structured Execution-Scope Logging | LOG-01..06 (proposed) | Not planned yet (added 2026-06-02) |
+| 29 | Structured Execution-Scope Logging | LOG-01..06 (6) | Complete (5/5 plans — close gate exit 0) |
+| 30 | Runtime & Business Metrics | METRIC-01..07 (7) | Planned (added 2026-06-02) |
 
 Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProcessor.Core: library + identity + liveness) → 27 (execution round-trip) → 28 (SourceHash + Processor.Sample + E2E closeout). See .planning/ROADMAP.md for success criteria + cross-phase constraints.
 

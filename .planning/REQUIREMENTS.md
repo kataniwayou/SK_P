@@ -122,6 +122,16 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 - [x] **LOG-06
 **: No log-shape regression (existing templates untouched, additive scopes only); the full hermetic + real-stack suite stays GREEN and the close-gate triple-SHA still holds; proof bar = hermetic scope-capture tests PLUS one extension of the existing real-stack E2E asserting ≥1 **scope-sourced, processor-side** execution id round-trips to ES.
 
+### Runtime & Business Metrics (Phase 30 — v3.5.0 follow-up)
+
+- [ ] **METRIC-01**: A `service.instance.id` resource attribute is set **in application code** in BOTH base libs (`BaseApi.Core.ObservabilityServiceCollectionExtensions` + `BaseConsole.Core.BaseConsoleObservabilityExtensions`), resolved from the pod identity (`POD_NAME`/`HOSTNAME` env, GUID fallback off-cluster), so every emitted metric (runtime, HTTP, business) carries a uniform `service_instance_id` Prometheus label per replica — with NO `otel-collector` metrics-config change (the existing generic `resource_to_telemetry_conversion` forwards it). In k8s the value is the pod **name**.
+- [ ] **METRIC-02**: All three process types (WebApi, Orchestrator, every `Processor.*`) emit .NET runtime metrics via the base libs' existing `AddRuntimeInstrumentation`, now carrying the `service_instance_id` label.
+- [ ] **METRIC-03**: The WebApi's ASP.NET Core HTTP server metrics (existing `AddAspNetCoreInstrumentation`; health routes still collector-filtered) carry the `service_instance_id` label.
+- [ ] **METRIC-04**: The Orchestrator defines a code-owned `Meter` with two monotonic counters — `orchestrator_dispatch_sent_total` (incremented at the `EntryStepDispatch` send site) and `orchestrator_result_consumed_total` (incremented in `ResultConsumer`) — each labelled by `ProcessorId` (+ ambient `service_instance_id`), registered via `AddMeter`. No `workflowId` label (high-cardinality).
+- [ ] **METRIC-05**: `BaseProcessor.Core` defines a code-owned `Meter` with `processor_dispatch_consumed_total` (incremented on consuming an `EntryStepDispatch`) and `processor_result_sent_total` (incremented per `ExecutionResult` sent, labelled by `outcome` ∈ {completed, failed, cancelled}) — both labelled by `ProcessorId` (+ ambient `service_instance_id`), registered via `AddMeter` so every `Processor.*` inherits them. No `workflowId` label; the in-flight "processing" outcome is deferred.
+- [ ] **METRIC-06**: The send/consume counters align by `ProcessorId` so PromQL `sum by (ProcessorId)(rate(orchestrator_dispatch_sent_total[…])) − sum by (ProcessorId)(rate(processor_dispatch_consumed_total[…]))` quantifies per-processor dispatch backlog/bottleneck across replicas, and `rate(processor_result_sent_total{outcome=…})` gives per-processor outcome rates — proven by a real-stack assertion that the new series appear in Prometheus with the expected `ProcessorId` / `outcome` / `service_instance_id` labels after a live round-trip.
+- [ ] **METRIC-07**: Metric definitions, names, and labels are owned entirely in application code (`System.Diagnostics.Metrics` + code-set resource attributes); the `otel-collector` metrics pipeline is NOT modified to inject labels or define instruments (it stays a generic OTLP→Prometheus bridge).
+
 ## Future Requirements
 
 Deferred to later milestones. Tracked, not in this roadmap.
@@ -199,13 +209,21 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | LOG-04 | Phase 29 | Complete |
 | LOG-05 | Phase 29 | Complete |
 | LOG-06 | Phase 29 | Complete |
+| METRIC-01 | Phase 30 | Planned |
+| METRIC-02 | Phase 30 | Planned |
+| METRIC-03 | Phase 30 | Planned |
+| METRIC-04 | Phase 30 | Planned |
+| METRIC-05 | Phase 30 | Planned |
+| METRIC-06 | Phase 30 | Planned |
+| METRIC-07 | Phase 30 | Planned |
 
 **Coverage:**
 - v3.5.0 core requirements: 38 total (BPC ×3, IDENT ×4, RPC ×4, SCHEMA ×2, LIVE ×6, CONTRACT ×3, EXEC ×10, SAMPLE ×2, CONFIG ×2, TEST ×2)
 - v3.5.0 follow-up (Phase 29): 6 (LOG ×6) — structured execution-scope logging
-- Mapped to phases: 44/44 ✓ (Phase 25 ×6, Phase 26 ×15, Phase 27 ×11, Phase 28 ×6, Phase 29 ×6)
+- v3.5.0 follow-up (Phase 30): 7 (METRIC ×7) — runtime + business metrics (planned)
+- Mapped to phases: 51/51 ✓ (Phase 25 ×6, Phase 26 ×15, Phase 27 ×11, Phase 28 ×6, Phase 29 ×6, Phase 30 ×7)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-01*
-*Last updated: 2026-06-02 — Phase 29 COMPLETE (5/5 plans; close gate 3×405 GREEN + triple-SHA HELD); LOG-01..06 (structured execution-scope logging) all Complete. Milestone v3.5.0 = 44/44 requirements complete across Phases 25-29.*
+*Last updated: 2026-06-02 — Phase 30 (Runtime & Business Metrics) ADDED as a v3.5.0 follow-up: METRIC-01..07 (Planned), 51 requirements mapped across Phases 25-30. Prior: Phase 29 COMPLETE (5/5 plans; close gate 3×405 GREEN + triple-SHA HELD); LOG-01..06 all Complete.*
