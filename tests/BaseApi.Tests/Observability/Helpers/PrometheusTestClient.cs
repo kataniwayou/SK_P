@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Xunit;
 
@@ -43,6 +44,117 @@ public sealed class PrometheusTestClient : IDisposable
     }
 
     public void Dispose() => _prom.Dispose();
+
+    // ── Phase 30 (D-11/D-12) — predicate-driven poll for the metrics round-trip E2E ──────────
+    //
+    // Backoff constants mirror ElasticsearchTestClient (200ms → 3.2s cap). This is the
+    // generic predicate variant the Wave 2 MetricsRoundTripE2ETests consumes: it returns the
+    // matching `data` JsonElement (detached via Clone) the instant `predicate(data)` is true,
+    // rather than the Phase-11 sum-threshold loop above (which the Phase-11 metrics tests use
+    // and which is preserved verbatim for them).
+
+    private const int BackoffInitialDelayMs = 200;
+    private const int BackoffMaxDelayMs     = 3_200;
+
+    /// <summary>
+    /// Phase 30 (D-12) — polls <c>GET /api/v1/query?query={promQL}</c> with exponential
+    /// backoff (200ms → 3.2s cap) until <c>status == "success"</c> AND
+    /// <paramref name="predicate"/> returns true over the response <c>data</c> element, OR
+    /// <paramref name="timeoutMs"/> elapses. Returns the matching <c>data</c>
+    /// <see cref="JsonElement"/> (cloned — safe to retain) or <c>null</c> on timeout.
+    ///
+    /// <para>
+    /// The PromQL parameter is the only interpolated value and is escaped via
+    /// <see cref="Uri.EscapeDataString"/> (T-30-01 Tampering mitigation); callers build the
+    /// query from static C# templates with only a validated GUID procId interpolated.
+    /// </para>
+    /// </summary>
+    public async Task<JsonElement?> PollPromForQuery(
+        string promQL, Func<JsonElement, bool> predicate, int timeoutMs, CancellationToken ct = default)
+    {
+        var sw    = Stopwatch.StartNew();
+        var delay = BackoffInitialDelayMs;
+        while (sw.ElapsedMilliseconds < timeoutMs)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                // T-30-01 — escape the interpolated PromQL (contains { } " = which break URLs).
+                var url = $"api/v1/query?query={Uri.EscapeDataString(promQL)}";
+                using var resp = await _prom.GetAsync(url, ct);
+                if (resp.IsSuccessStatusCode)
+                {
+                    using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("status", out var s) && s.GetString() == "success"
+                        && root.TryGetProperty("data", out var data)
+                        && predicate(data))
+                    {
+                        // Clone() detaches from the using-var doc parsing scope — see
+                        // ElasticsearchTestClient for the rationale.
+                        using var detached = JsonDocument.Parse(data.GetRawText());
+                        return detached.RootElement.Clone();
+                    }
+                }
+                // Else: not-yet-scraped sample, malformed envelope, or predicate-not-met — keep polling.
+            }
+            catch (HttpRequestException)
+            {
+                // Prometheus briefly unreachable (compose-network blip; container restart) — retry.
+            }
+
+            var remaining = (int)(timeoutMs - sw.ElapsedMilliseconds);
+            if (remaining <= 0) break;
+            await Task.Delay(Math.Min(delay, remaining), ct);
+            delay = Math.Min(delay * 2, BackoffMaxDelayMs);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Phase 30 predicate — true when the query <c>data</c> is a non-empty instant vector
+    /// (<c>resultType == "vector"</c> with at least one result sample). Used for
+    /// series-existence assertions (METRIC-04/05).
+    /// </summary>
+    public static bool VectorNonEmpty(JsonElement data) =>
+        data.TryGetProperty("resultType", out var rt) && rt.GetString() == "vector"
+        && data.TryGetProperty("result", out var r) && r.ValueKind == JsonValueKind.Array
+        && r.GetArrayLength() > 0;
+
+    /// <summary>
+    /// Phase 30 predicate — true when the query <c>data</c> carries at least one parseable
+    /// numeric sample value. Prometheus sample values are QUOTED JSON strings (<c>"1"</c>),
+    /// so parse via <see cref="JsonElement.GetString"/> + <see cref="double.TryParse(string?, out double)"/>.
+    /// Handles both scalar (<c>result == [ts, "value"]</c>) and vector
+    /// (<c>result[i].value == [ts, "value"]</c>) result types. Used for the bottleneck
+    /// expression (METRIC-06).
+    /// </summary>
+    public static bool HasNumericValue(JsonElement data)
+    {
+        if (!data.TryGetProperty("resultType", out var rt)) return false;
+        var resultType = rt.GetString();
+
+        if (resultType == "scalar")
+        {
+            return data.TryGetProperty("result", out var scalar)
+                && scalar.ValueKind == JsonValueKind.Array
+                && scalar.GetArrayLength() >= 2
+                && double.TryParse(scalar[1].GetString(), out _);
+        }
+
+        if (resultType == "vector")
+        {
+            return data.TryGetProperty("result", out var vec)
+                && vec.ValueKind == JsonValueKind.Array
+                && vec.EnumerateArray().Any(e =>
+                    e.TryGetProperty("value", out var v)
+                    && v.ValueKind == JsonValueKind.Array
+                    && v.GetArrayLength() >= 2
+                    && double.TryParse(v[1].GetString(), out _));
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Polls Prometheus with the supplied PromQL query until the SUM of result-vector
