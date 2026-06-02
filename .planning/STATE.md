@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Completed 30-01-PLAN.md
-last_updated: "2026-06-02T20:43:23.886Z"
+stopped_at: Completed 30-04-PLAN.md
+last_updated: "2026-06-02T20:55:00.000Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 21
-  completed_plans: 20
-  percent: 95
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -26,10 +26,20 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 30 (runtime-business-metrics) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
+Phase: 30 (runtime-business-metrics) — ALL 4 PLANS COMPLETE (phase verification/close gate owned by orchestrator)
+Plan: 4 of 4 — COMPLETE
+Status: Phase 30 implementation complete (METRIC-01..07); awaiting phase close gate
 Last activity: 2026-06-02
+
+### Phase 30 Plan 04 — COMPLETE (RealStack MetricsRoundTripE2ETests; METRIC-01..07 capstone; 2026-06-02)
+
+- **1 task commit (scoped path only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `c875da1` (test: MetricsRoundTripE2ETests — live round-trip then Prometheus assertions). Wave 2 capstone; depends on 30-01/02/03 (all committed).
+- **What it proves:** the new `tests/BaseApi.Tests/Orchestrator/MetricsRoundTripE2ETests.cs` CLONES the `SampleRoundTripE2ETests` seed→liveness→Start→round-trip (genuine embedded `SourceHash` off `Processor.Sample.dll` → GET-or-create Processor → Step → Workflow `* * * * *` cron → `PollForHealthyLivenessAsync` → snapshot → POST `/start` 204 → register net-zero teardown → `PollForNewExecutionDataKeyAsync`) so the live round-trip drives all four counter increments, THEN queries the Prometheus SERVER (`:9090`) via the Wave-1 `PrometheusTestClient.PollPromForQuery` (+ `VectorNonEmpty`/`HasNumericValue`, NOT re-implemented) for: `orchestrator_dispatch_sent_total` + `orchestrator_result_consumed_total` (METRIC-04), `processor_dispatch_consumed_total` + `processor_result_sent_total` (METRIC-05) keyed by the exercised `ProcessorId`; the by-`ProcessorId` bottleneck PromQL `sum by (ProcessorId)(rate(orchestrator_dispatch_sent_total[5m])) − sum by (ProcessorId)(rate(processor_dispatch_consumed_total[5m]))` evaluates numerically (METRIC-06); a `process_runtime_dotnet_*` metric carries a non-empty `service_instance_id` (METRIC-01/02); the business counters carry `ProcessorId` + `service_instance_id` and NO `workflowId`, and `processor_result_sent_total` carries `outcome` ∈ {completed,failed,cancelled}.
+- **Decisions:** minimally DUPLICATED `RealStackWebAppFactory` inside the new class (D-14 discretion — self-contained, avoids editing the close-gate-relevant sibling); `PromPollTimeoutMs = 120_000` (≥ ES E2E; covers OTLP export + 15s scrape, Pitfall 4); broad `process_runtime_dotnet_*` selector + `VectorNonEmpty` for the instance-label proof (robust to the exact runtime metric name).
+- **Verification (what was observed here):** `dotnet build tests/BaseApi.Tests -c Debug` 0 Warning / 0 Error; acceptance greps all hold (finds `[Trait("Category","RealStack")]`, `PollPromForQuery`, all four `*_total`, the `sum by (ProcessorId)` bottleneck, `service_instance_id`, `outcome`, a NO-`workflowId` assertion; does NOT find `8889`); `git diff --quiet compose/otel-collector-config.yaml` exit 0 (METRIC-07); hermetic suite `-- --filter-not-trait "Category=RealStack"` = Passed 409 / Failed 0 (the new test is `Category=RealStack`, correctly excluded — zero regression); `git diff --diff-filter=D HEAD~1 HEAD` empty (no archive deletions folded in).
+- **Live-stack run NOT observed here (documented as human-verify, NOT claimed as passed):** the RealStack run `dotnet test tests/BaseApi.Tests -- --filter-class "*MetricsRoundTripE2ETests"` requires the FULL compose stack up healthy (incl. prometheus scraping + a CURRENT-code processor-sample; Pitfall 6) which is not available/observable in this environment. The test is authored + build/grep/METRIC-07-gate verified; the actual scrape→query proof is operator-runnable per the SUMMARY's Human-Verify Item.
+- **Deviation (1, acceptance-criterion compliance):** Rule 1 — reworded the `:8889` collector-exporter references out of two doc-comments so the literal grep finds NO `8889` (the client connects to `:9090` via `PrometheusTestClient.BaseAddress` regardless; comments only, no behavior change — same shape as 30-02's `_total`-in-comments fix).
+- SUMMARY: 30-04-SUMMARY.md (Self-Check PASSED). METRIC-01..07 all marked complete. Phase 30 = 4/4 plans — implementation complete; the phase close gate (full hermetic + RealStack GREEN; triple-SHA unaffected — metrics are append-only telemetry) is owned by the orchestrator, NOT this plan.
 
 ### Phase 30 Plan 03 — COMPLETE (BaseProcessor.Core processor counters; METRIC-05; 2026-06-02)
 
