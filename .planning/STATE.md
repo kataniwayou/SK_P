@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Phase 28 Plan 01 complete
-last_updated: "2026-06-02T06:31:32.000Z"
-last_activity: 2026-06-02 -- Phase 28 Plan 01 (SourceHash + Processor.Sample) complete
+stopped_at: Phase 28 Plan 02 complete
+last_updated: "2026-06-02T09:43:44.000Z"
+last_activity: 2026-06-02 -- Phase 28 Plan 02 (Dockerfile + compose tier + cross-OS SourceHash reproducibility PROVEN) complete
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 12
-  completed_plans: 9
-  percent: 75
+  completed_plans: 10
+  percent: 83
 ---
 
 # Project State
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
 Phase: 28 (sourcehash-identity-processor-sample-e2e-closeout) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 28 (1/4 plans complete)
-Last activity: 2026-06-02 -- Phase 28 Plan 01 (SourceHash + Processor.Sample) complete
+Plan: 3 of 4
+Status: Executing Phase 28 (2/4 plans complete)
+Last activity: 2026-06-02 -- Phase 28 Plan 02 (Dockerfile + compose tier + cross-OS SourceHash reproducibility PROVEN) complete
 
 ### Milestone Phases (v3.5.0)
 
@@ -38,11 +38,19 @@ Last activity: 2026-06-02 -- Phase 28 Plan 01 (SourceHash + Processor.Sample) co
 | 25 | Shared Contracts + WebApi Responders | CONTRACT-01/02/03, RPC-01/02/03 (6) | Not started |
 | 26 | BaseProcessor.Core — Library, Identity & Liveness | BPC-01/02/03, IDENT-03/04, RPC-04, SCHEMA-01/02, LIVE-01..06, CONFIG-01 (15) | Not started |
 | 27 | Execution Round-Trip | EXEC-01..10, CONFIG-02 (11) | Not started |
-| 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Executing (1/4 plans) |
+| 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Executing (2/4 plans) |
 
 Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProcessor.Core: library + identity + liveness) → 27 (execution round-trip) → 28 (SourceHash + Processor.Sample + E2E closeout). See .planning/ROADMAP.md for success criteria + cross-phase constraints.
 
 > v3.4.0 execution history (phase/plan completion logs, performance metrics) is retained below for reference.
+
+### Phase 28 Plan 02 — COMPLETE (Dockerfile + compose tier + cross-OS SourceHash reproducibility PROVEN; SAMPLE-02; 2026-06-02)
+
+- 2 commits: `bbd04ea` (feat: Processor.Sample multistage Dockerfile — sdk:8.0-bookworm-slim build → aspnet:8.0 runtime, port 8082, wget healthcheck + compose processor-sample tier + ComposeYamlFacts ×3), `34b4dd8` (feat: scripts/verify-sourcehash-reproducible.ps1 — dual-build cross-OS hash-equality verifier). Executed as a RESUME of the blocking human-verify checkpoint (operator: "approved").
+- HIGHEST-RISK GATE PROVEN (RESEARCH §A4 / Pitfall 1, threat T-28-05): the host SDK build and the Linux Docker build embed the BYTE-IDENTICAL SourceHash — both `ab923430c6bf6301fec974ef6feb1f51f847a1e35e097d3a95694892353219a8`. Script ran end-to-end, exit 0, "MATCH — host == docker." NO SourceHash.targets changes needed — Plan 01's Pitfall-1 normalizations (LF content + forward-slash ordinal path sort) held cross-OS on the first dual-build. This gates Plan 03's E2E (it reflects the host hash, registers the DB row; the container runs the Docker hash — a divergence would silently hang Start).
+- Dockerfile: aspnet (NOT runtime) base — BaseConsole.Core's FrameworkReference Microsoft.AspNetCore.App needs the ASP.NET Core shared framework for the embedded Kestrel health listener; wget installed before `USER app` (slim aspnet ships no wget/curl) for the `wget --spider /health/ready` healthcheck. compose processor-sample diverges from the orchestrator analog by TWO: `baseapi-service` service_healthy depends_on (identity over the bus) + short `Processor__ExecutionDataTtl: 5` (Pitfall 4 close-gate hygiene).
+- Verification: `docker compose config --quiet` exit 0; ComposeYaml filter Passed 394 / Failed 0 (the +3 facts guard the service block, the baseapi-service healthy dependency, and the short ExecutionDataTtl). No deviations — both tasks as-written; the dual-build gate passed first run.
+- SUMMARY: 28-02-SUMMARY.md (Self-Check PASSED). SAMPLE-02 complete (IDENT-02 already complete from 28-01; this plan additionally PROVES it cross-OS). Phase 28 = 2/4 plans; Plan 03 (real-stack SampleRoundTripE2ETests, TEST-01) next — now unblocked.
 
 ### Phase 28 Plan 01 — COMPLETE (SourceHash.targets + Processor.Sample foundation; IDENT-01/02 + SAMPLE-01; 2026-06-02)
 

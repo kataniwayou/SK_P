@@ -93,7 +93,7 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 ### Sample Concrete
 
 - [x] **SAMPLE-01**: `Processor.Sample` is the first concrete console (family convention `Processor.<Purpose>`), implementing `ProcessAsync` with a minimal POC dummy result list.
-- [ ] **SAMPLE-02**: `Processor.Sample` ships a multistage Dockerfile and joins the compose stack (mirroring the Orchestrator tier).
+- [x] **SAMPLE-02**: `Processor.Sample` ships a multistage Dockerfile and joins the compose stack (mirroring the Orchestrator tier).
 
 ### Configuration
 
@@ -175,7 +175,7 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | IDENT-01 | Phase 28 | Complete |
 | IDENT-02 | Phase 28 | Complete |
 | SAMPLE-01 | Phase 28 | Complete |
-| SAMPLE-02 | Phase 28 | Pending |
+| SAMPLE-02 | Phase 28 | Complete |
 | TEST-01 | Phase 28 | Pending |
 | TEST-02 | Phase 28 | Pending |
 
@@ -186,4 +186,4 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 
 ---
 *Requirements defined: 2026-06-01*
-*Last updated: 2026-06-01 — roadmap created (phases 25-28); traceability populated, 38/38 mapped.*
+*Last updated: 2026-06-02 — Phase 28 Plan 02 complete; SAMPLE-02 satisfied (Processor.Sample Dockerfile + compose tier + cross-OS SourceHash reproducibility proven).*
