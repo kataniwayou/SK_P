@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Completed 30-02-PLAN.md
-last_updated: "2026-06-02T20:14:57.000Z"
+stopped_at: Completed 30-01-PLAN.md
+last_updated: "2026-06-02T20:43:23.886Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 21
-  completed_plans: 19
-  percent: 90
+  completed_plans: 20
+  percent: 95
 ---
 
 # Project State
@@ -27,9 +27,20 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
 Phase: 30 (runtime-business-metrics) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-06-02
+
+### Phase 30 Plan 03 — COMPLETE (BaseProcessor.Core processor counters; METRIC-05; 2026-06-02)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `bb77699` (feat: ProcessorMetrics holder + register the "BaseProcessor" meter via the firewall-correct ConfigureOpenTelemetryMeterProvider seam + hermetic ProcessorMetricsFacts) and `7a4d0d4` (feat: increment processor_dispatch_consumed at consume top + route both send paths through a single SendResult{outcome} owner + thread the test metrics helper / fixture Id default).
+- **Holder (D-01/D-02/D-03):** `src/BaseProcessor.Core/Observability/ProcessorMetrics.cs` — `sealed` DI-singleton built from `IMeterFactory.Create("BaseProcessor")` (NEVER a static Meter — cross-test leak), `const string MeterName = "BaseProcessor"` referenced by BOTH `Create` and `AddMeter`, two `Counter<long>` named `processor_dispatch_consumed` + `processor_result_sent` (snake_case, NO `_total` — the collector's `add_metric_suffixes` appends it). Inherited by every `Processor.*`.
+- **Firewall-correct registration (Landmine 1):** inside `AddBaseProcessor` (step 6c) via `AddSingleton<ProcessorMetrics>()` + `ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(ProcessorMetrics.MeterName))` — the meter-provider analog of the Phase-29 `ConfigureOpenTelemetryLoggerProvider` log-enricher seam, attaching additively to the MeterProvider `AddBaseConsoleObservability` built. NOT in `BaseConsoleObservabilityExtensions` (no project ref to BaseProcessor.Core → cannot see the const; grep confirms zero `BaseProcessor` token there).
+- **Increment sites:** `EntryStepDispatchConsumer.Consume` increments `DispatchConsumed.Add(1, ProcessorId)` at the TOP (D-07; `context.Id!.Value.ToString("D")` — the bang justified post-MarkHealthy, Landmine 2). A single private `SendResult(ExecutionResult)` owner increments `ResultSent.Add(1, ProcessorId, outcome)` AFTER each confirmed Send (D-04/D-08); renamed `SendOne`→`SendResult` and routed BOTH send paths through it (all four early Failed/Cancelled + the per-result loop — no raw `endpoint.Send(er)` bypass). `outcome` = `StepOutcome.ToString().ToLowerInvariant()` ∈ {completed,failed,cancelled} (build paths never emit Processing). NO `workflowId`, no `"processing"` literal (T-30-04/T-30-05, grep-verified). `service_instance_id` ambient from Plan 01.
+- **Verification (all green):** `dotnet build src/BaseProcessor.Core -c Debug` 0/0; `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error (no nullable-ref warning on the documented bang); hermetic suite `-- --filter-not-trait "Category=RealStack"` = Passed 409 / Failed 0 (the MTP-native exclusion; +2 ProcessorMetricsFacts, zero regression). Targeted `--filter-class "*ProcessorMetricsFacts"` 2/2; the 20 dispatch-consumer facts (incl. the runtime-connected scope test) 20/20.
+- **Note (filter form):** this MTP project IGNORES the VSTest-style `--filter "Category!=RealStack"` (emits MTP0001), so that invocation runs the FULL suite incl. the 3 `Category=RealStack` E2Es — `SampleRoundTripE2ETests` then fails ONLY because the live compose stack isn't up (a pre-existing env dependency, out of scope, NOT this plan). The MTP-native `-- --filter-not-trait "Category=RealStack"` (close-gate form) correctly excludes them → 409/409 GREEN.
+- **Deviations (2, both Rule-3 blocking test-fixture adjustments; no production-behavior change beyond the plan):** added `DispatchTestKit.Metrics()` (real-IMeterFactory `ProcessorMetrics`, mirrors `OrchestratorTestStubs.Metrics()`) and threaded it through `Build` + the two `EntryStepDispatchScopeTests` ctors + the `EntryStepDispatchRuntimeScopeTests` DI harness; defaulted `FakeProcessorContext.Id` to a fresh Guid so the consumer-top increment reflects the post-Healthy invariant (the not-yet-Healthy liveness facts still override `Id = null`).
+- SUMMARY: 30-03-SUMMARY.md (Self-Check PASSED). METRIC-05 complete. Phase 30 = 3/4 plans; Plan 30-04 (RealStack MetricsRoundTripE2ETests; live proof of 01..05 + METRIC-06; METRIC-07 gate) next.
 
 ### Phase 30 Plan 02 — COMPLETE (Orchestrator dispatch/consume counters; METRIC-04; 2026-06-02)
 
@@ -376,6 +387,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 29 P04 | 2min | 1 tasks | 2 files |
 | Phase 29 P05 | operator-gated (3x ~4m live gate + gap fix) | 3 tasks (+1 gap fix) | 4 files (2 created, 2 modified) |
 | Phase 30 P01 | 8min | 2 tasks | 4 files |
+| Phase 30 P03 | 21min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
