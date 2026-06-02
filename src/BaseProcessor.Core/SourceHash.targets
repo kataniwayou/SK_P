@@ -89,7 +89,14 @@ public class ComputeSourceHash : Microsoft.Build.Utilities.Task
     compute was skipped and adds the AssemblyAttribute UNCONDITIONALLY, so an incremental no-change
     build still carries the attribute (never dropped → the reader fail-fast can never trip from a skip).
   -->
-  <Target Name="ComputeSourceHash" BeforeTargets="CoreCompile"
+  <!--
+    Hook BEFORE the SDK's CoreGenerateAssemblyInfo (which materializes @(AssemblyAttribute) via its
+    GetAssemblyAttributes dependency) — NOT merely BeforeTargets="CoreCompile". GenerateAssemblyInfo
+    itself runs BeforeTargets="CoreCompile" and depends on CoreGenerateAssemblyInfo, so a plain
+    CoreCompile hook is NOT guaranteed to add the item before the SDK collects it (the attribute would
+    silently never embed). BeforeTargets="CoreGenerateAssemblyInfo" guarantees the item is present.
+  -->
+  <Target Name="ComputeSourceHash" BeforeTargets="CoreGenerateAssemblyInfo;CoreCompile"
           Inputs="@(ImplFiles)" Outputs="$(IntermediateOutputPath)sourcehash.stamp">
     <ComputeSourceHash Files="@(ImplFiles)">
       <Output PropertyName="SourceHash" TaskParameter="Hash" />
@@ -97,7 +104,7 @@ public class ComputeSourceHash : Microsoft.Build.Utilities.Task
     <WriteLinesToFile File="$(IntermediateOutputPath)sourcehash.stamp" Lines="$(SourceHash)" Overwrite="true" />
   </Target>
 
-  <Target Name="EmitSourceHashAttribute" BeforeTargets="CoreCompile" DependsOnTargets="ComputeSourceHash">
+  <Target Name="EmitSourceHashAttribute" BeforeTargets="CoreGenerateAssemblyInfo;CoreCompile" DependsOnTargets="ComputeSourceHash">
     <!-- If ComputeSourceHash was skipped (no source change), recover the hash from the stamp. -->
     <ReadLinesFromFile File="$(IntermediateOutputPath)sourcehash.stamp" Condition="'$(SourceHash)' == ''">
       <Output TaskParameter="Lines" PropertyName="SourceHash" />
