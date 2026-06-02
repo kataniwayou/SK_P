@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Orchestrator", "src\Orchest
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BaseProcessor.Core", "src\BaseProcessor.Core\BaseProcessor.Core.csproj", "{F6CFA716-1C6E-4583-B1E5-3A338A0D61ED}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Processor.Sample", "src\Processor.Sample\Processor.Sample.csproj", "{B7482AA3-CF0B-4155-AAEB-3B35DAC26706}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -52,6 +54,10 @@ Global
 		{F6CFA716-1C6E-4583-B1E5-3A338A0D61ED}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F6CFA716-1C6E-4583-B1E5-3A338A0D61ED}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F6CFA716-1C6E-4583-B1E5-3A338A0D61ED}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B7482AA3-CF0B-4155-AAEB-3B35DAC26706}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B7482AA3-CF0B-4155-AAEB-3B35DAC26706}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B7482AA3-CF0B-4155-AAEB-3B35DAC26706}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B7482AA3-CF0B-4155-AAEB-3B35DAC26706}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -61,5 +67,6 @@ Global
 		{39915BDB-F7FA-4A05-93BC-A0C2E63A6D9A} = {EAC83310-2BA8-4E7E-9A90-5C6BD471C231}
 		{FB8035AA-443E-4731-9BB9-997B52E5ED12} = {EAC83310-2BA8-4E7E-9A90-5C6BD471C231}
 		{F6CFA716-1C6E-4583-B1E5-3A338A0D61ED} = {EAC83310-2BA8-4E7E-9A90-5C6BD471C231}
+		{B7482AA3-CF0B-4155-AAEB-3B35DAC26706} = {EAC83310-2BA8-4E7E-9A90-5C6BD471C231}
 	EndGlobalSection
 EndGlobal

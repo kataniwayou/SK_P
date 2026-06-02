@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Processor.Sample — the first concrete Processor.<Purpose> (SAMPLE-01, Phase 28).
+    A thin Generic-Host console mirroring Orchestrator.csproj in shape: it carries NO infra/id/L2/bus
+    code (all wired by AddBaseProcessor); it supplies only the one BaseProcessor override (SampleProcessor.cs)
+    + the AddBaseConsoleObservability + AddSingleton<BaseProcessor, SampleProcessor> registration in Program.cs.
+
+    Common props (TargetFramework=net8.0, Nullable, ImplicitUsings, LangVersion, TreatWarningsAsErrors, …)
+    inherit from Directory.Build.props — do NOT redeclare them. NuGet versions are CPM-pinned in
+    Directory.Packages.props — NO Version= attribute on any PackageReference.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Processor.Sample</RootNamespace>
+    <AssemblyName>Processor.Sample</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit" />
+    <!-- Pitfall 5: BaseProcessor.Core declares MassTransit but NOT the RabbitMQ transport; the
+         concrete must add it (the Orchestrator pattern declares it the same way). -->
+    <PackageReference Include="MassTransit.RabbitMQ" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pitfall 6: the worker SDK does not copy appsettings.json — copy it next to the assembly. -->
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BaseProcessor.Core\BaseProcessor.Core.csproj" />
+    <ProjectReference Include="..\Messaging.Contracts\Messaging.Contracts.csproj" />
+  </ItemGroup>
+
+  <!-- D-01: explicit import — a ProjectReference does NOT auto-flow build/*.targets. -->
+  <Import Project="..\BaseProcessor.Core\SourceHash.targets" />
+
+</Project>
