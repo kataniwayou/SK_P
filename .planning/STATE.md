@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: Phase 28 Plan 02 complete
-last_updated: "2026-06-02T09:43:44.000Z"
-last_activity: 2026-06-02 -- Phase 28 Plan 02 (Dockerfile + compose tier + cross-OS SourceHash reproducibility PROVEN) complete
+stopped_at: Phase 28 Plan 03 complete
+last_updated: "2026-06-02T07:19:06.000Z"
+last_activity: 2026-06-02 -- Phase 28 Plan 03 (real-stack SampleRoundTripE2ETests — genuine embedded hash, truthful liveness-gated Start, live round-trip) complete
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 12
-  completed_plans: 10
-  percent: 83
+  completed_plans: 11
+  percent: 92
 ---
 
 # Project State
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
 Phase: 28 (sourcehash-identity-processor-sample-e2e-closeout) — EXECUTING
-Plan: 3 of 4
-Status: Executing Phase 28 (2/4 plans complete)
-Last activity: 2026-06-02 -- Phase 28 Plan 02 (Dockerfile + compose tier + cross-OS SourceHash reproducibility PROVEN) complete
+Plan: 4 of 4
+Status: Executing Phase 28 (3/4 plans complete)
+Last activity: 2026-06-02 -- Phase 28 Plan 03 (real-stack SampleRoundTripE2ETests — genuine embedded hash, truthful liveness-gated Start, live round-trip) complete
 
 ### Milestone Phases (v3.5.0)
 
@@ -38,11 +38,19 @@ Last activity: 2026-06-02 -- Phase 28 Plan 02 (Dockerfile + compose tier + cross
 | 25 | Shared Contracts + WebApi Responders | CONTRACT-01/02/03, RPC-01/02/03 (6) | Not started |
 | 26 | BaseProcessor.Core — Library, Identity & Liveness | BPC-01/02/03, IDENT-03/04, RPC-04, SCHEMA-01/02, LIVE-01..06, CONFIG-01 (15) | Not started |
 | 27 | Execution Round-Trip | EXEC-01..10, CONFIG-02 (11) | Not started |
-| 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Executing (2/4 plans) |
+| 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Executing (3/4 plans) |
 
 Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProcessor.Core: library + identity + liveness) → 27 (execution round-trip) → 28 (SourceHash + Processor.Sample + E2E closeout). See .planning/ROADMAP.md for success criteria + cross-phase constraints.
 
 > v3.4.0 execution history (phase/plan completion logs, performance metrics) is retained below for reference.
+
+### Phase 28 Plan 03 — COMPLETE (real-stack SampleRoundTripE2ETests — live round-trip + truthful liveness-gated Start; TEST-01; 2026-06-02)
+
+- 1 commit: `9320128` (test: SampleRoundTripE2ETests). Task 2 is a gate-only per-wave merge check (no code).
+- The MILESTONE'S only real-stack proof: registers the Processor DB row with the GENUINE reflected embedded SourceHash (D-08 — GetCustomAttributes<AssemblyMetadataAttribute>, null schemas D-05; no RandomSha256Hex, no recompute — grep-enforced); OMITS the synthetic liveness seed (Pitfall 3 / D-07) and instead POLLS the REAL processor-sample container's skp:{procId:D} Healthy heartbeat before Start; drives POST /orchestration/start to 204 (liveness gate passes TRUTHFULLY); asserts the two SC#4 clauses — a fresh skp:data:* output key lands in L2 AND the orchestrator-advance log "Start reload for WorkflowId=" surfaces in Elasticsearch via the otel→ES PollEsForLog precedent; net-zero teardown (drains skp:data:*, leaves the steady-state liveness key).
+- Verification (all green): `dotnet build BaseApi.Tests -c Debug` 0/0; live E2E `--filter-class SampleRoundTripE2ETests` = Passed 1 / Failed 0 (44.9s) against the full compose stack incl. a live processor-sample; post-run `redis-cli --scan skp:*` = ONLY the steady-state liveness key (net-zero held). Per-wave merge gate: full hermetic suite `--filter-not-trait Category=RealStack` (Release) = Passed 392 / Failed 0 (no regression); `dotnet build SK_P.sln -c Release` = 0 Warning / 0 Error.
+- Deviations (3, all blocking-essential): Rule 1 — GET-or-create on /processors/by-source-hash (the FIXED genuine hash collides on uq_processor_source_hash across runs; resolve+reuse the existing row, the one the live container heartbeats against). Rule 3 — seed the workflow WITH a `* * * * *` cron (a null-cron workflow is a business-skip in HydrateAndScheduleAsync → the dispatch never fires → no round-trip output). Rule 3 — rebuild the stale compose containers (the running orchestrator/baseapi predated the Phase 23/24 Start-reload refactor — still logged the OLD "Scheduler job start (seam)" and never fired the cron dispatch; `docker compose up -d --build processor-sample orchestrator baseapi-service` so the live stack runs current code — environment prerequisite, no repo change).
+- SUMMARY: 28-03-SUMMARY.md (Self-Check PASSED). TEST-01 complete. Phase 28 = 3/4 plans; Plan 04 (phase-28-close.ps1: 3-GREEN + triple-SHA, scan-clean teardown covering the new liveness + execution-data keys, TEST-02) next — now unblocked. The live stack is up + current; the steady-state skp:{procId:D} liveness key + {procId:D} dispatch queue are stable for the gate's BEFORE==AFTER snapshots.
 
 ### Phase 28 Plan 02 — COMPLETE (Dockerfile + compose tier + cross-OS SourceHash reproducibility PROVEN; SAMPLE-02; 2026-06-02)
 
