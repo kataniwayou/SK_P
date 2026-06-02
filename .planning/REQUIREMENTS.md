@@ -119,7 +119,8 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 **: The per-result minted `ExecutionId` + output `EntryId` are captured via a nested `BeginScope` in `EntryStepDispatchConsumer` (overriding inbound values for the write/send log lines), and `ProcessorId` enriches ALL processor logs via an OTel `LogRecord` enricher reading `IProcessorContext.Id` (null-safe — emits nothing before identity resolves).
 - [x] **LOG-05
 **: `WorkflowFireJob` (a Quartz job, outside the consume pipeline) opens an explicit `BeginScope(CorrelationId + WorkflowId)` in `Execute` so its fire logs correlate with the round-trip it triggers.
-- [ ] **LOG-06**: No log-shape regression (existing templates untouched, additive scopes only); the full hermetic + real-stack suite stays GREEN and the close-gate triple-SHA still holds; proof bar = hermetic scope-capture tests PLUS one extension of the existing real-stack E2E asserting ≥1 **scope-sourced, processor-side** execution id round-trips to ES.
+- [x] **LOG-06
+**: No log-shape regression (existing templates untouched, additive scopes only); the full hermetic + real-stack suite stays GREEN and the close-gate triple-SHA still holds; proof bar = hermetic scope-capture tests PLUS one extension of the existing real-stack E2E asserting ≥1 **scope-sourced, processor-side** execution id round-trips to ES.
 
 ## Future Requirements
 
@@ -192,12 +193,12 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | SAMPLE-02 | Phase 28 | Complete |
 | TEST-01 | Phase 28 | Complete |
 | TEST-02 | Phase 28 | Complete |
-| LOG-01 | Phase 29 | Planned |
+| LOG-01 | Phase 29 | Complete |
 | LOG-02 | Phase 29 | Planned |
 | LOG-03 | Phase 29 | Complete |
 | LOG-04 | Phase 29 | Planned |
 | LOG-05 | Phase 29 | Planned |
-| LOG-06 | Phase 29 | Planned |
+| LOG-06 | Phase 29 | Complete |
 
 **Coverage:**
 - v3.5.0 core requirements: 38 total (BPC ×3, IDENT ×4, RPC ×4, SCHEMA ×2, LIVE ×6, CONTRACT ×3, EXEC ×10, SAMPLE ×2, CONFIG ×2, TEST ×2)

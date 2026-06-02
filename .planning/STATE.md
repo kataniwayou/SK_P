@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: executing
-stopped_at: 29-05 Tasks 1-2 done; CHECKPOINT at Task 3 (operator-authorized close-gate run)
+stopped_at: 29-05 COMPLETE — close gate GATE_EXIT=0 (405 Passed x3, triple-SHA HELD); awaiting orchestrator phase verification + phase.complete
 last_updated: "2026-06-02T16:40:02.832Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 17
-  completed_plans: 16
-  percent: 94
+  completed_plans: 17
+  percent: 100
 ---
 
 # Project State
@@ -27,17 +27,31 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
 Phase: 29 (structured-execution-scope-logging) — EXECUTING
-Plan: 5 of 5 — IN PROGRESS (Tasks 1-2 committed; CHECKPOINT at Task 3)
-Status: Awaiting operator-authorized phase-29 close-gate run (Task 3)
+Plan: 5 of 5 — COMPLETE (all 3 tasks; close gate GATE_EXIT=0)
+Status: Phase 29 plans done (5/5); awaiting orchestrator phase verification + phase.complete
 Last activity: 2026-06-02
 
-### Phase 29 Plan 05 — CHECKPOINT (Tasks 1-2 committed; Task 3 = operator-authorized close gate; 2026-06-02)
+### Phase 29 Plan 05 — COMPLETE (real-stack scope-proof + phase-29-close.ps1 close gate; LOG-06/LOG-01; 2026-06-02)
 
-- **NOT YET COMPLETE** — 2 of 3 tasks done; the final 29-05-SUMMARY.md is deliberately deferred until the operator runs Task 3 and the gate exits 0. Do NOT count 29-05 as a completed plan yet (progress remains 16/17).
-- **Task 1 (committed `84959b9`)** — extended `tests/BaseApi.Tests/Orchestrator/SampleRoundTripE2ETests.cs` with a SECOND `PollEsForLog` (the scope-proof): `term` on `attributes.WorkflowId == {{wfId}}` AND `term` on `resource.attributes.service.name == "processor-sample"`, asserted `Assert.NotNull(scopeProof)`. Closes the L1 trap — the processor consumes `EntryStepDispatch` (`IExecutionCorrelated`), so its logs carry `attributes.WorkflowId` ONLY via the new `InboundExecutionScopeConsumeFilter` (29-02); this assertion FAILS if the scope work is reverted (the orchestrator/template hit above would still pass). Additive only: the existing `advanceQuery` block + net-zero teardown (`L2KeysToCleanup`/`ParentIndexMembersToSrem`) unchanged; no new seeded Redis/RMQ/PG state (triple-SHA invariant holds; ES logs are append-only telemetry). Verified hermetic only: `dotnet build tests/BaseApi.Tests/BaseApi.Tests.csproj -c Debug` = 0 Warning / 0 Error. The live `--filter-class *SampleRoundTripE2ETests` run was deliberately NOT run here (the running processor-sample container is ~10h old and predates this phase's scope filter — a live run would falsely fail; the live run is covered by Task 3 after a container rebuild).
-- **Task 2 (committed `d79cefe`)** — authored `scripts/phase-29-close.ps1` by copying `scripts/phase-28-close.ps1` byte-faithful and updating ONLY phase-identifying label strings 28→29 (header, usage line, the `Write-Host` gate-status lines, the seeded-row description). `diff phase-28 vs phase-29` = ONLY label/comment lines (lines 9/17 are tense-only "adds"→"added" on historical-provenance prose that correctly keeps "Phase 28" — those key families were introduced in Phase 28; line 4's phase-22 lineage reference also intentionally retained). Gate logic, `$services` (full v3.5.0 stack incl. `processor-sample` REQUIRED healthy), the triple-SHA commands (`psql \l` + `redis-cli --scan` + `rabbitmqctl list_queues`), the 3-GREEN loop, and the Release+Debug zero-warning build are unchanged. Verified: ParseFile = PARSE OK (exit 0); BOM-free; 27 em-dashes intact (no mojibake); processor-sample present; NO FLUSHDB.
-- **Task 3 — NOT EXECUTED (operator-authorized `checkpoint:human-verify`, blocking).** The orchestrator owns the live gate run. To resume: (1) confirm `docker compose ps` shows postgres, redis, rabbitmq, otel-collector, elasticsearch, orchestrator, processor-sample, baseapi-service healthy; if any container predates this phase's code, rebuild `docker compose up -d --build processor-sample orchestrator baseapi-service`; (2) run `pwsh -NoProfile -File ./scripts/phase-29-close.ps1`; (3) expect exit 0 — 3 consecutive full-suite GREEN (identical Passed counts, both real-stack E2Es incl. the extended SampleRoundTripE2ETests ran live each run), triple-SHA BEFORE==AFTER all HELD, Release+Debug 0/0. Then resume-signal: type "approved" with the gate evidence (3× Passed counts, the three SHAs BEFORE==AFTER, exit code) — that resume creates 29-05-SUMMARY.md, marks LOG-06/LOG-01, advances the plan counter, and closes the phase.
-- Scoped-commit discipline held: only `SampleRoundTripE2ETests.cs` (T1) and `scripts/phase-29-close.ps1` (T2) committed; the operator's in-progress ~242 `.planning/` archive deletions + modified STATE.md were left untouched (NOT staged, NOT reverted).
+- **All 3 tasks done; close gate GATE_EXIT=0.** Phase 29 = 5/5 plans; all six LOG requirements (LOG-01..06) complete. Milestone v3.5.0 = 17/17 plans across phases 25-29. (Phase verification + `phase.complete` are owned by the orchestrator, NOT done here.)
+- **Task 1 (committed `84959b9`)** — extended `tests/BaseApi.Tests/Orchestrator/SampleRoundTripE2ETests.cs` with a SECOND `PollEsForLog` (the scope-proof): `term` on `attributes.WorkflowId == {{wfId}}` AND `term` on `resource.attributes.service.name == "processor-sample"`, asserted `Assert.NotNull(scopeProof)`. Closes the L1 trap — the processor consumes `EntryStepDispatch` (`IExecutionCorrelated`), so its logs carry `attributes.WorkflowId` ONLY via the new `InboundExecutionScopeConsumeFilter` (29-02); this assertion FAILS if the scope work is reverted (the orchestrator/template hit above would still pass). Additive only: the existing `advanceQuery` block + net-zero teardown (`L2KeysToCleanup`/`ParentIndexMembersToSrem`) unchanged; no new seeded Redis/RMQ/PG state (triple-SHA invariant holds; ES logs are append-only telemetry).
+- **Task 2 (committed `d79cefe`)** — authored `scripts/phase-29-close.ps1` by copying `scripts/phase-28-close.ps1` byte-faithful and updating ONLY phase-identifying label strings 28→29. Gate logic, `$services` (full v3.5.0 stack incl. `processor-sample` REQUIRED healthy), the triple-SHA commands (`psql \l` + `redis-cli --scan` + `rabbitmqctl list_queues`), the 3-GREEN loop, and the Release+Debug zero-warning build are unchanged. Verified: ParseFile = PARSE OK (exit 0); BOM-free; processor-sample present; NO FLUSHDB.
+- **Task 3 (operator-authorized `checkpoint:human-verify`, GATE_EXIT=0)** — the operator ran `pwsh -NoProfile -File ./scripts/phase-29-close.ps1` against the live (rebuilt) stack; the gate PASSED (3x full-suite GREEN, triple-SHA BEFORE==AFTER all HELD, Release/Debug 0/0). The live `scopeProof` now PASSES — an ES `processor-sample` Completed log carries `attributes.WorkflowId` (+ StepId/ProcessorId/ExecutionId/EntryId). Evidence below.
+- **Gap fix the gate surfaced (committed `9993261`)** — the close gate's first live run exposed that the original Completed path in `src/BaseProcessor.Core/Processing/EntryStepDispatchConsumer.cs` emitted NO log, so the `scopeProof` had nothing to find. Added a Completed-path `LogInformation` INSIDE the existing nested `BeginScope` so the processor consume log actually emits and exports the five execution-id scopes to ES (WorkflowId/StepId/ProcessorId via the bus-wide `InboundExecutionScopeConsumeFilter`; ExecutionId/EntryId via the nested scope), plus a new TDD test `tests/BaseApi.Tests/Processor/EntryStepDispatchRuntimeScopeTests.cs` mirroring the runtime `ConnectReceiveEndpoint` and proving the five keys land on the Completed line. Root cause: a scope is only observable if a log ACTUALLY emits inside it. The bus-wide filter was CONFIRMED to reach the runtime-connected endpoint — no endpoint-level wiring needed.
+- SUMMARY: 29-05-SUMMARY.md (Self-Check PASSED, gate evidence + the gap fix documented). LOG-06 + LOG-01 marked complete; LOG-02/03/04/05 already complete from earlier plans.
+- Scoped-commit discipline held: only `SampleRoundTripE2ETests.cs` (T1), `scripts/phase-29-close.ps1` (T2), and the gap-fix pair `EntryStepDispatchConsumer.cs` + `EntryStepDispatchRuntimeScopeTests.cs` (`9993261`) were committed for the implementation; the in-progress ~242 `.planning/` archive deletions were left untouched (NOT staged, NOT reverted). This finalization stages ONLY 29-05-SUMMARY.md, STATE.md, REQUIREMENTS.md.
+
+### Phase 29 Plan 05 — Close Gate Evidence (Task 3, operator-authorized, GATE_EXIT=0)
+
+- 3-consecutive GREEN: **405 Passed x3** (Run 1/2/3 each Exit=0; durations 4m07s / 3m46s / 4m07s). Full suite, no Category filter — both real-stack E2Es (incl. the extended `SampleRoundTripE2ETests` with the new processor-side scope-proof) ran live each run.
+- Triple-SHA (psql \l + redis-cli --scan + rabbitmqctl list_queues), BEFORE == AFTER, all HELD:
+  - psql \l SHA-256:                  b48ce78302d9dd8ca93e6a7e694c153dc46705ec9ab4458b31c6933ea2e33fef — HELD
+  - redis-cli --scan SHA-256:         36e8337392e62c5b07da807ae535f971674d8af1d6cf8755c3ddae360a9fe92f — HELD
+  - rabbitmqctl list_queues SHA-256:  3cbd9c0324f25cffe7b2ed1522162564483c926abc342c98f7f0a729b58c9e60 — HELD
+- Steady-state procId (reused, idempotent across all 3 runs): `fe9a48ae-4cdb-4ae0-9676-51ec61f0ec59` — genuine embedded SourceHash `9709ffbe33664420be7e1e6494b0bbe8947d463489cf31a790dc428a3d3db0f6`; its skp:{procId} liveness key + {procId} dispatch queue are in BOTH snapshots, which is why the redis/rabbitmq SHAs held.
+- Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
+- Live scopeProof PASSES: an ES `processor-sample` Completed log carries `attributes.WorkflowId` (+ StepId/ProcessorId/ExecutionId/EntryId) — the L1 trap is closed against the live stack.
+- Gate script: scripts/phase-29-close.ps1 (mirrors phase-28-close.ps1 + label-only 28→29), GATE_EXIT=0. Operator ran the gate.
 
 ### Milestone Phases (v3.5.0)
 
@@ -349,6 +363,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 29 P02 | 4min | 2 tasks | 3 files |
 | Phase 29 P03 | 8min | 2 tasks | 6 files |
 | Phase 29 P04 | 2min | 1 tasks | 2 files |
+| Phase 29 P05 | operator-gated (3x ~4m live gate + gap fix) | 3 tasks (+1 gap fix) | 4 files (2 created, 2 modified) |
 
 ## Accumulated Context
 
@@ -757,11 +772,11 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-02T16:40:02.820Z
-Stopped at: Completed 29-04-PLAN.md
+Stopped at: Completed 29-05-PLAN.md (Phase 29 = 5/5 plans; close gate GATE_EXIT=0)
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
-**Next:** Phase 29 (Structured Execution-Scope Logging) — SPEC locked (6 reqs, ambiguity 0.17) + CONTEXT captured — `/gsd-plan-phase 29`. v3.5.0 progress: 4 of 5 phases complete (80%).
+**Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
