@@ -128,6 +128,36 @@ public sealed class ComposeYamlFacts
             content);
     }
 
+    // ---- Phase 28 (SAMPLE-02) — processor-sample service block guards ----
+
+    [Fact]
+    public void ComposeYaml_Has_ProcessorSample_Service_Block()
+    {
+        var content = ComposeYamlContent();
+        Assert.Contains("container_name: sk-processor-sample", content);
+        Assert.Matches(new Regex(@"dockerfile:\s*src/Processor\.Sample/Dockerfile"), content);
+    }
+
+    [Fact]
+    public void ComposeYaml_ProcessorSample_DependsOn_BaseApi_Healthy()
+    {
+        var content = ComposeYamlContent();
+        // The processor resolves identity over the bus FROM the WebApi responder — it must wait for
+        // baseapi-service to be healthy. The on-disk compose uses the multi-line condition: form.
+        Assert.Matches(
+            new Regex(@"(?ms)processor-sample:[\s\S]*?baseapi-service:\s*\n\s*condition:\s*service_healthy"),
+            content);
+    }
+
+    [Fact]
+    public void ComposeYaml_ProcessorSample_Sets_Short_ExecutionDataTtl()
+    {
+        var content = ComposeYamlContent();
+        // Pitfall 4 — short TTL so the round-trip's skp:data:* keys self-expire before the
+        // close-gate AFTER snapshot.
+        Assert.Matches(new Regex(@"(?ms)processor-sample:[\s\S]*?Processor__ExecutionDataTtl:\s*""5"""), content);
+    }
+
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
