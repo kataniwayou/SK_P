@@ -194,10 +194,10 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | TEST-01 | Phase 28 | Complete |
 | TEST-02 | Phase 28 | Complete |
 | LOG-01 | Phase 29 | Complete |
-| LOG-02 | Phase 29 | Planned |
+| LOG-02 | Phase 29 | Complete |
 | LOG-03 | Phase 29 | Complete |
-| LOG-04 | Phase 29 | Planned |
-| LOG-05 | Phase 29 | Planned |
+| LOG-04 | Phase 29 | Complete |
+| LOG-05 | Phase 29 | Complete |
 | LOG-06 | Phase 29 | Complete |
 
 **Coverage:**
@@ -208,4 +208,4 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 
 ---
 *Requirements defined: 2026-06-01*
-*Last updated: 2026-06-02 — Phase 29 planned (5 plans, 3 waves); added LOG-01..06 (structured execution-scope logging) as a v3.5.0 follow-up, mapped to Phase 29 (Planned). Prior: Phase 28 = 4/4 plans, 38/38 core v3.5.0 requirements complete.*
+*Last updated: 2026-06-02 — Phase 29 COMPLETE (5/5 plans; close gate 3×405 GREEN + triple-SHA HELD); LOG-01..06 (structured execution-scope logging) all Complete. Milestone v3.5.0 = 44/44 requirements complete across Phases 25-29.*

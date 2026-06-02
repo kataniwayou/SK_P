@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: executing
+status: milestone_complete
 stopped_at: 29-05 COMPLETE — close gate GATE_EXIT=0 (405 Passed x3, triple-SHA HELD); awaiting orchestrator phase verification + phase.complete
 last_updated: "2026-06-02T16:40:02.832Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 17
   completed_plans: 17
   percent: 100
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 29 (structured-execution-scope-logging) — EXECUTING
-Plan: 5 of 5 — COMPLETE (all 3 tasks; close gate GATE_EXIT=0)
-Status: Phase 29 plans done (5/5); awaiting orchestrator phase verification + phase.complete
+Phase: 29
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-06-02
 
 ### Phase 29 Plan 05 — COMPLETE (real-stack scope-proof + phase-29-close.ps1 close gate; LOG-06/LOG-01; 2026-06-02)
@@ -214,7 +214,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 102
+- Total plans completed: 107
 - Average duration: —
 - Total execution time: —
 
@@ -248,6 +248,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 25 | 2 | - | - |
 | 26 | 3 | - | - |
 | 28 | 4 | - | - |
+| 29 | 5 | - | - |
 
 **Recent Trend:**
 
