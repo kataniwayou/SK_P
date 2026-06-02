@@ -4,14 +4,14 @@ milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: completed
 stopped_at: Phase 28 context gathered
-last_updated: "2026-06-02T05:45:05.227Z"
+last_updated: "2026-06-02T06:13:03.961Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 8
+  total_plans: 12
   completed_plans: 8
-  percent: 100
+  percent: 67
 ---
 
 # Project State
@@ -702,4 +702,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 27 (execution-round-trip) — 3 plans — 2026-06-01T20:41:46.222Z
+**Planned Phase:** 28 (sourcehash-identity-processor-sample-e2e-closeout) — 4 plans — 2026-06-02T06:13:03.950Z
