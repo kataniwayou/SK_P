@@ -165,6 +165,29 @@ public sealed class SampleRoundTripE2ETests
         var advance = await es.PollEsForLog(advanceQuery, timeoutMs: EsPollTimeoutMs, ct: ct);
         Assert.NotNull(advance);
         Assert.Contains(StartReloadMessage, advance!.Value.GetRawText());
+
+        // ---- Round-trip clause (c): WorkflowId reached ES FROM A SCOPE on a PROCESSOR-side log (LOG-06 / L1) ----
+        // LOG-06 / L1: prove WorkflowId reached ES FROM A SCOPE, not from a template. The processor-sample
+        // service consumes EntryStepDispatch (IExecutionCorrelated), so its logs get attributes.WorkflowId
+        // ONLY via the new InboundExecutionScopeConsumeFilter — this assertion fails if the scope work is
+        // reverted. (The orchestrator hit above is template-sourced — StartOrchestration is NOT
+        // IExecutionCorrelated — and would pass even without scopes.)
+        var scopeProofQuery = $$"""
+          {
+            "size": 5,
+            "sort": [ { "@timestamp": { "order": "desc" } } ],
+            "query": {
+              "bool": {
+                "must": [
+                  { "term": { "attributes.WorkflowId": "{{wfId}}" } },
+                  { "term": { "resource.attributes.service.name": "processor-sample" } }
+                ]
+              }
+            }
+          }
+          """;
+        var scopeProof = await es.PollEsForLog(scopeProofQuery, timeoutMs: EsPollTimeoutMs, ct: ct);
+        Assert.NotNull(scopeProof);   // WorkflowId round-tripped to ES from the new scope on a processor log
     }
 
     // ---- Liveness poll (Pitfall 3): wait for the REAL container's skp:{procId:D} Healthy heartbeat ----
