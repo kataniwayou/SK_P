@@ -137,16 +137,30 @@ public sealed class EntryStepDispatchConsumer(
                 continue;
             }
 
-            var newEntryId = NewId.NextGuid();
+            var newEntryId  = NewId.NextGuid();
+            var executionId = NewId.NextGuid();   // mint once — scoped value == sent ExecutionResult.ExecutionId
 
-            // D-15: the OUTPUT WRITE is INFRA — NO catch. A transient Redis fault here throws so the
-            // whole dispatch retries rather than emitting a Completed with no L2 data behind it.
-            await db.StringSetAsync(
-                L2ProjectionKeys.ExecutionData(newEntryId),
-                r.OutputData,
-                expiry: TimeSpan.FromSeconds(opts.ExecutionDataTtlSeconds));
+            // LOG-04/LOG-01: a nested BeginScope carrying the MINTED ExecutionId + output EntryId. MEL
+            // inner-overrides-outer, so the write/send LogRecord on this Completed path reports these
+            // minted ids rather than the inbound Guid.Empty the outer execution-scope filter skipped
+            // (D-05). MINIMAL: wraps ONLY the L2 write + this result's build — the early Failed/Cancelled
+            // SendOne paths stay outside (Pitfall 2). Values are .ToString() under the fixed
+            // ExecutionLogScope keys — never interpolated into a template (T-18-04).
+            using (logger.BeginScope(new Dictionary<string, object>
+            {
+                [ExecutionLogScope.ExecutionId] = executionId.ToString(),
+                [ExecutionLogScope.EntryId]     = newEntryId.ToString(),
+            }))
+            {
+                // D-15: the OUTPUT WRITE is INFRA — NO catch. A transient Redis fault here throws so the
+                // whole dispatch retries rather than emitting a Completed with no L2 data behind it.
+                await db.StringSetAsync(
+                    L2ProjectionKeys.ExecutionData(newEntryId),
+                    r.OutputData,
+                    expiry: TimeSpan.FromSeconds(opts.ExecutionDataTtlSeconds));
 
-            built.Add(BuildCompleted(dispatch, newEntryId));
+                built.Add(BuildCompleted(dispatch, executionId, newEntryId));
+            }
         }
 
         // ---- 4. One-by-one Send, then ack (EXEC-07/08/09, D-14/D-15) ----
@@ -179,11 +193,14 @@ public sealed class EntryStepDispatchConsumer(
 
     // ---- Builders (Pattern 3 / D-11/D-13): inherit ids, copy body CorrelationId (EXEC-10), mint ExecutionId ----
 
-    private static ExecutionResult BuildCompleted(EntryStepDispatch d, Guid newEntryId) =>
+    // executionId is minted ONCE in the Completed-path loop and passed in (NOT minted here) so the
+    // nested BeginScope value and this result's ExecutionId are the SAME value (LOG-04 — the scoped id
+    // equals the sent ExecutionResult.ExecutionId the line reports).
+    private static ExecutionResult BuildCompleted(EntryStepDispatch d, Guid executionId, Guid newEntryId) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId, StepOutcome.Completed)
         {
             CorrelationId = d.CorrelationId,
-            ExecutionId = NewId.NextGuid(),
+            ExecutionId = executionId,
             EntryId = newEntryId,
         };
 
