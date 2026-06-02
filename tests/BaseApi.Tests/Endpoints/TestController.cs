@@ -109,13 +109,19 @@ public sealed class TestController : ControllerBase
     public async Task<IActionResult> Concurrency(
         [FromServices] TestErrorDbContext db,
         [FromQuery] Guid id,
+        [FromQuery] int delayMs,
         CancellationToken ct)
     {
         var entity = await db.Parents.FirstOrDefaultAsync(p => p.Id == id, ct);
         if (entity is null) return NotFound();
-        // Mutate after the test caller has ALREADY updated this row from a separate
-        // DbContext — when this SaveChangesAsync runs, xmin has advanced and EF
-        // raises DbUpdateConcurrencyException.
+        // Optional load→save barrier (delayMs > 0): hold AFTER the read so two concurrent callers
+        // both load the SAME xmin before either commits, making the DbUpdateConcurrencyException
+        // deterministic. Without it the two POSTs can serialize by chance (request 1 commits before
+        // request 2 reads → request 2 sees the advanced xmin → no conflict → flaky 409). 0 = no delay
+        // (default), preserving the original behavior for any other caller.
+        if (delayMs > 0) await Task.Delay(delayMs, ct);
+        // Mutate; when this SaveChangesAsync runs against a row whose xmin has advanced under it
+        // (the racing committer won), EF raises DbUpdateConcurrencyException → 409.
         entity.Name = $"updated-{Guid.NewGuid():N}";
         await db.SaveChangesAsync(ct);
         return Ok();

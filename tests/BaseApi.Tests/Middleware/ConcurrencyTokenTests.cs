@@ -72,8 +72,13 @@ public sealed class ConcurrencyTokenTests : IClassFixture<PostgresFixture>
         // Now verify the HTTP-level mapping: two concurrent POSTs to the endpoint that
         // does load+mutate+save in one method. Whichever wins commits; the loser hits
         // the DbUpdateExceptionHandler concurrency branch → 409 with D-09 detail.
-        var task1 = Task.Run(async () => await client.PostAsync($"/test/concurrency?id={parentId}", null, ct), ct);
-        var task2 = Task.Run(async () => await client.PostAsync($"/test/concurrency?id={parentId}", null, ct), ct);
+        // delayMs holds each request AFTER its read so both reliably load the same xmin
+        // before either commits — forcing the conflict deterministically (kills the prior
+        // serialize-by-chance flake where neither response was a 409). The read is a single
+        // indexed SELECT (~ms); a 400ms barrier is a >50× margin over realistic load jitter.
+        const int raceBarrierMs = 400;
+        var task1 = Task.Run(async () => await client.PostAsync($"/test/concurrency?id={parentId}&delayMs={raceBarrierMs}", null, ct), ct);
+        var task2 = Task.Run(async () => await client.PostAsync($"/test/concurrency?id={parentId}&delayMs={raceBarrierMs}", null, ct), ct);
         var responses = await Task.WhenAll(task1, task2);
 
         var conflict = responses.FirstOrDefault(r => r.StatusCode == HttpStatusCode.Conflict);
