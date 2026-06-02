@@ -107,6 +107,15 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 - [x] **TEST-01**: A real-stack E2E proves the live orchestrator→`Processor.Sample`→orchestrator round-trip (dispatch consumed, output written to L2, `ExecutionResult` advanced by the orchestrator) and the liveness-gated Start path (a live processor's heartbeat lets orchestration Start pass).
 - [x] **TEST-02**: The phase-close gate retains the 3-consecutive-GREEN cadence + triple-SHA (`psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues`) BEFORE=AFTER discipline, with scan-clean teardown covering the new processor-liveness and execution-data keys.
 
+### Structured Execution-Scope Logging (Phase 29 — v3.5.0 follow-up)
+
+- [ ] **LOG-01**: All six execution ids surface in Elasticsearch as `attributes.CorrelationId` / `WorkflowId` / `StepId` / `ProcessorId` / `ExecutionId` / `EntryId`, sourced from log **scopes** (fixed-key values, never interpolated into message text — T-18-04), via the existing `IncludeScopes`+`ParseStateValues` OTel bridge reused unchanged.
+- [ ] **LOG-02**: A new open-generic `InboundExecutionScopeConsumeFilter<T>` scopes the execution id-set for `IExecutionCorrelated` messages and passes through all others; registered once bus-wide in `AddBaseConsoleMessaging` so both the orchestrator (`ResultConsumer`) and processor (`EntryStepDispatchConsumer`) are covered with no per-console wiring. `InboundCorrelationConsumeFilter` is left byte-unchanged.
+- [ ] **LOG-03**: A single `ExecutionLogScope` constants class in `Messaging.Contracts` (pure POCO leaf, no MassTransit ref) is the source of truth for scope keys, with key strings equal to the structured-param names so scope-derived and param-derived attributes coincide on the same ES field; `Guid.Empty` values are skipped (no zero-guid noise attributes).
+- [ ] **LOG-04**: The per-result minted `ExecutionId` + output `EntryId` are captured via a nested `BeginScope` in `EntryStepDispatchConsumer` (overriding inbound values for the write/send log lines), and `ProcessorId` enriches ALL processor logs via an OTel `LogRecord` enricher reading `IProcessorContext.Id` (null-safe — emits nothing before identity resolves).
+- [ ] **LOG-05**: `WorkflowFireJob` (a Quartz job, outside the consume pipeline) opens an explicit `BeginScope(CorrelationId + WorkflowId)` in `Execute` so its fire logs correlate with the round-trip it triggers.
+- [ ] **LOG-06**: No log-shape regression (existing templates untouched, additive scopes only); the full hermetic + real-stack suite stays GREEN and the close-gate triple-SHA still holds; proof bar = hermetic scope-capture tests PLUS one extension of the existing real-stack E2E asserting ≥1 **scope-sourced, processor-side** execution id round-trips to ES.
+
 ## Future Requirements
 
 Deferred to later milestones. Tracked, not in this roadmap.
@@ -178,12 +187,19 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | SAMPLE-02 | Phase 28 | Complete |
 | TEST-01 | Phase 28 | Complete |
 | TEST-02 | Phase 28 | Complete |
+| LOG-01 | Phase 29 | Planned |
+| LOG-02 | Phase 29 | Planned |
+| LOG-03 | Phase 29 | Planned |
+| LOG-04 | Phase 29 | Planned |
+| LOG-05 | Phase 29 | Planned |
+| LOG-06 | Phase 29 | Planned |
 
 **Coverage:**
-- v3.5.0 requirements: 38 total (BPC ×3, IDENT ×4, RPC ×4, SCHEMA ×2, LIVE ×6, CONTRACT ×3, EXEC ×10, SAMPLE ×2, CONFIG ×2, TEST ×2)
-- Mapped to phases: 38/38 ✓ (Phase 25 ×6, Phase 26 ×15, Phase 27 ×11, Phase 28 ×6)
+- v3.5.0 core requirements: 38 total (BPC ×3, IDENT ×4, RPC ×4, SCHEMA ×2, LIVE ×6, CONTRACT ×3, EXEC ×10, SAMPLE ×2, CONFIG ×2, TEST ×2)
+- v3.5.0 follow-up (Phase 29): 6 (LOG ×6) — structured execution-scope logging
+- Mapped to phases: 44/44 ✓ (Phase 25 ×6, Phase 26 ×15, Phase 27 ×11, Phase 28 ×6, Phase 29 ×6)
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-06-01*
-*Last updated: 2026-06-02 — Phase 28 Plan 04 complete; TEST-02 satisfied (phase-28-close.ps1 close gate exit 0: 395 facts GREEN x3 + triple-SHA BEFORE==AFTER held). Phase 28 = 4/4 plans; all 38/38 v3.5.0 requirements complete.*
+*Last updated: 2026-06-02 — Phase 29 planned (5 plans, 3 waves); added LOG-01..06 (structured execution-scope logging) as a v3.5.0 follow-up, mapped to Phase 29 (Planned). Prior: Phase 28 = 4/4 plans, 38/38 core v3.5.0 requirements complete.*
