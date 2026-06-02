@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: completed
+status: in_progress
 stopped_at: Phase 29 context gathered
 last_updated: "2026-06-02T14:09:13.330Z"
 last_activity: 2026-06-02
@@ -11,7 +11,7 @@ progress:
   completed_phases: 4
   total_plans: 12
   completed_plans: 12
-  percent: 100
+  percent: 80
 ---
 
 # Project State
@@ -743,8 +743,8 @@ Last session: 2026-06-02T14:09:13.315Z
 Stopped at: Phase 29 context gathered
 Resume file: .planning/phases/29-structured-execution-scope-logging/29-CONTEXT.md
 
-**Completed Phase:** 12 (redis-infra-composition-healthcheck-di-registration) — 8/8 plans — verified 2026-05-29 (operator phase-close gate exit 0 — "Phase 12 close gate PASSED."; 3 consecutive GREEN dotnet test runs at 177/177 facts each (~2:54 each); byte-identical psql `\l` SHA-256 BEFORE/AFTER `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` (new v3.3.0 baseline); byte-identical redis-cli `--scan` SHA-256 BEFORE/AFTER `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty keyspace, zero residual `test:cls-*`); no EF migration generated; HEALTH-01..05 byte-immutable; all 15 phase REQ-IDs closed — INFRA-REDIS-01..06, INFRA-COMP-01..04, TEST-REDIS-01..05; all 5 ROADMAP Success Criteria GREEN)
-**Next:** Phase 13 (OrchestrationService split + L3 fetch + L1 build) — `/gsd-discuss-phase 13`. v3.3.0 progress: 1 of 5 phases complete (20%).
+**Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
+**Next:** Phase 29 (Structured Execution-Scope Logging) — SPEC locked (6 reqs, ambiguity 0.17) + CONTEXT captured — `/gsd-plan-phase 29`. v3.5.0 progress: 4 of 5 phases complete (80%).
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
