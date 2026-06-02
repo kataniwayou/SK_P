@@ -35,8 +35,9 @@ namespace BaseApi.Tests.Orchestrator;
 /// <para>
 /// The Orchestrator CONTAINER (consuming from the same broker, reading the same Redis) opens a
 /// <c>"CorrelationId"=G1</c> log scope from the inbound message body (BaseConsole.Core inbound
-/// filter) and logs the seam <c>"Scheduler job start (seam) for {WorkflowId}"</c>
-/// (StartOrchestrationConsumer.cs:46). Both logs flow via otel-collector to Elasticsearch
+/// filter) and logs the seam <c>"Start reload for WorkflowId={WorkflowId}"</c>
+/// (StartOrchestrationConsumer.cs:35 — renamed from the pre-24.1 "Scheduler job start (seam)" by
+/// feat(24.1) ORCH-START-RELOAD-01). Both logs flow via otel-collector to Elasticsearch
 /// (<c>logs-generic.otel-default</c>) under <c>attributes.CorrelationId</c>.
 /// </para>
 /// <para>
@@ -57,7 +58,7 @@ namespace BaseApi.Tests.Orchestrator;
 [Collection("Observability")]
 public sealed class CorrelationPropagationE2ETests
 {
-    private const string SeamMessage = "Scheduler job start (seam)";
+    private const string SeamMessage = "Start reload for WorkflowId=";
     private const string PublishedMessage = "Published StartOrchestration";
 
     // otel/log export is async; tolerate flush + ingest latency with a generous poll budget.
@@ -115,8 +116,13 @@ public sealed class CorrelationPropagationE2ETests
         // 1. Find the Orchestrator SEAM doc and read back its body-minted Guid (G1).
         //    Discover by the WorkflowId the test itself seeded (a clean term-queryable attribute) on
         //    the ORCHESTRATOR service, requiring the doc to carry attributes.CorrelationId (the
-        //    inbound filter's body scope). The success path emits exactly one orchestrator log for
-        //    this fresh wfId — the seam — so this is unambiguous. Sort newest-first defensively.
+        //    inbound filter's body scope). Since feat(24.1)'s conditionless reload, the success path
+        //    emits MORE than one correlated orchestrator log for the wfId (the seam, then the
+        //    HydrateAndScheduleAsync business log — e.g. the null-cron "skipping hydration" line this
+        //    test's single-step workflow triggers), so a bare WorkflowId+CorrelationId match is NOT
+        //    unambiguous and newest-first would return the business log, not the seam. Pin the seam
+        //    deterministically via a term on its structured template attributes.{OriginalFormat} =
+        //    "Start reload for WorkflowId={WorkflowId}" (verified the unique discriminator in ES).
         //    NOTE: we do NOT query the "body" field — otel maps the message under the nested
         //    "body.text" object, which is not phrase-searchable; the proven precedent
         //    (OrchestrationLogsE2ETests) queries attributes via `term`. The distinct seam STRING is
@@ -131,7 +137,8 @@ public sealed class CorrelationPropagationE2ETests
                 "must": [
                   { "term": { "attributes.WorkflowId": "{{wfId}}" } },
                   { "term": { "resource.attributes.service.name": "orchestrator" } },
-                  { "exists": { "field": "{{EsIndexNames.CorrelationIdFieldPath}}" } }
+                  { "exists": { "field": "{{EsIndexNames.CorrelationIdFieldPath}}" } },
+                  { "term": { "attributes.{OriginalFormat}": "Start reload for WorkflowId={WorkflowId}" } }
                 ]
               }
             }
