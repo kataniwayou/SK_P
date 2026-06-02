@@ -8,7 +8,9 @@ using Orchestrator.Consumers;
 using Orchestrator.Dispatch;
 using Orchestrator.Hydration;
 using Orchestrator.L1;
+using Orchestrator.Observability;
 using Orchestrator.Scheduling;
+using OpenTelemetry.Metrics;   // ConfigureOpenTelemetryMeterProvider (via OpenTelemetry.Extensions.Hosting)
 using Quartz;
 
 // Thin-shell composition root (ORCH-CON-01). Generic Host — Host.CreateApplicationBuilder, NOT
@@ -49,6 +51,13 @@ builder.Services.AddSingleton<WorkflowScheduler>();
 builder.Services.AddSingleton<WorkflowLifecycle>();
 builder.Services.AddSingleton<IStepDispatcher, StepDispatcher>();          // Plan 03 dispatch single-owner (result + fire share it)
 builder.Services.AddSingleton<StepAdvancement>();                          // Plan 03 pure match helper (ResultConsumer dependency)
+
+// METRIC-04: the code-owned "Orchestrator" meter + its two business counters. The holder is a
+// DI-singleton (IMeterFactory pattern); ConfigureOpenTelemetryMeterProvider additively attaches the
+// meter to the shared MeterProvider that AddBaseConsoleObservability (line 20) already built — mirrors
+// the Phase-29 ConfigureOpenTelemetryLoggerProvider seam, preserving the D-02 MeterName const symmetry.
+builder.Services.AddSingleton<OrchestratorMetrics>();
+builder.Services.ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(OrchestratorMetrics.MeterName));
 builder.Services.AddHostedService<HydrationBackgroundService>();           // D-13 — drives MarkReady (D-12)
 
 // WorkflowScheduler injects a concrete IScheduler — resolve the hosted scheduler from the factory.
