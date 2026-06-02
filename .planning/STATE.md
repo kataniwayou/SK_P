@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: executing
+status: milestone_complete
 stopped_at: Phase 28 Plan 04 complete (close gate PASSED — Phase 28 4/4)
 last_updated: "2026-06-02T10:30:00.000Z"
 last_activity: 2026-06-02 -- Phase 28 Plan 04 (phase-28-close.ps1 close gate — 3x395 GREEN + triple-SHA BEFORE==AFTER held) complete; TEST-02 satisfied, Phase 28 = 4/4
 progress:
   total_phases: 4
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 12
   completed_plans: 12
-  percent: 100
+  percent: 125
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 28 (sourcehash-identity-processor-sample-e2e-closeout) — COMPLETE (4/4 plans, close gate PASSED)
-Plan: 4 of 4 (complete)
-Status: Phase 28 complete (4/4 plans) — milestone v3.5.0 = 12/12 plans, ready for closeout
-Last activity: 2026-06-02 -- Phase 28 Plan 04 (phase-28-close.ps1 close gate — 3x395 GREEN + triple-SHA BEFORE==AFTER held) complete; TEST-02 satisfied
+Phase: 28
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-06-02
 
 ### Milestone Phases (v3.5.0)
 
@@ -191,7 +191,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 98
+- Total plans completed: 102
 - Average duration: —
 - Total execution time: —
 
@@ -224,6 +224,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 24.1 | 1 | - | - |
 | 25 | 2 | - | - |
 | 26 | 3 | - | - |
+| 28 | 4 | - | - |
 
 **Recent Trend:**
 
