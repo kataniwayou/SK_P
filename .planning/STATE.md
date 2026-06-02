@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: in_progress
-stopped_at: Phase 29 context gathered
-last_updated: "2026-06-02T14:09:13.330Z"
+status: executing
+stopped_at: Completed 29-01-PLAN.md
+last_updated: "2026-06-02T16:14:53.309Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 12
-  completed_plans: 12
-  percent: 80
+  total_plans: 17
+  completed_plans: 13
+  percent: 76
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 28 — sourcehash-identity-processor-sample-e2e-closeout
+**Current focus:** Phase 29 — structured-execution-scope-logging
 
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 28
-Plan: Not started
-Status: Milestone complete
+Phase: 29 (structured-execution-scope-logging) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
 Last activity: 2026-06-02
 
 ### Milestone Phases (v3.5.0)
@@ -163,7 +163,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████████░] 88%
+Progress: [████████░░] 76%
 
 ### Milestone Phases (v3.4.0)
 
@@ -337,6 +337,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 27 P01 | 9min | 2 tasks tasks | 8 files files |
 | Phase 27 P02 | 13min | 2 tasks | 8 files |
 | Phase 27 P03 | ~12min (resume: verification + finalization; impl pre-committed) | 2 tasks | 4 files (2 src + 2 test) |
+| Phase 29 P01 | 2min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -642,6 +643,7 @@ Recent decisions affecting current work:
 - 27-01: ProcessResult is (string OutputData); consumer reaches the protected ProcessAsync via internal BaseProcessor.ExecuteAsync forwarder (BPC-02). ExecutionDataTtlSeconds (default 300) on ProcessorLivenessOptions (CONFIG-02/D-17).
 - 27-02: EntryStepDispatchConsumer sends business-outcome ExecutionResults with CancellationToken.None so a Cancelled/Failed signal reaches the orchestrator even when the inbound dispatch token tripped; the inbound ct governs only ProcessAsync. L2 output-write + Send faults still propagate (infra, D-15).
 - 27-02: the L2 output-write StringSetAsync(key,value,expiry:TimeSpan) binds under SE.Redis 2.13.1 to the Expiration/ValueCondition overload (TimeSpan implicitly converts to Expiration); the infra-throw test stub must target that overload to exercise D-15 propagation.
+- ExecutionLogScope: CorrelationId deliberately excluded — stays owned by CorrelationKeys.LogScope (D-01)
 
 ### Roadmap Milestone Log
 
@@ -739,13 +741,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-02T14:09:13.315Z
-Stopped at: Phase 29 context gathered
-Resume file: .planning/phases/29-structured-execution-scope-logging/29-CONTEXT.md
+Last session: 2026-06-02T16:14:53.296Z
+Stopped at: Completed 29-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Next:** Phase 29 (Structured Execution-Scope Logging) — SPEC locked (6 reqs, ambiguity 0.17) + CONTEXT captured — `/gsd-plan-phase 29`. v3.5.0 progress: 4 of 5 phases complete (80%).
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 28 (sourcehash-identity-processor-sample-e2e-closeout) — 4 plans — 2026-06-02T06:13:03.950Z
+**Planned Phase:** 29 (structured-execution-scope-logging) — 5 plans — 2026-06-02T14:41:07.498Z

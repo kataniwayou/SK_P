@@ -111,7 +111,8 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 - [ ] **LOG-01**: All six execution ids surface in Elasticsearch as `attributes.CorrelationId` / `WorkflowId` / `StepId` / `ProcessorId` / `ExecutionId` / `EntryId`, sourced from log **scopes** (fixed-key values, never interpolated into message text — T-18-04), via the existing `IncludeScopes`+`ParseStateValues` OTel bridge reused unchanged.
 - [ ] **LOG-02**: A new open-generic `InboundExecutionScopeConsumeFilter<T>` scopes the execution id-set for `IExecutionCorrelated` messages and passes through all others; registered once bus-wide in `AddBaseConsoleMessaging` so both the orchestrator (`ResultConsumer`) and processor (`EntryStepDispatchConsumer`) are covered with no per-console wiring. `InboundCorrelationConsumeFilter` is left byte-unchanged.
-- [ ] **LOG-03**: A single `ExecutionLogScope` constants class in `Messaging.Contracts` (pure POCO leaf, no MassTransit ref) is the source of truth for scope keys, with key strings equal to the structured-param names so scope-derived and param-derived attributes coincide on the same ES field; `Guid.Empty` values are skipped (no zero-guid noise attributes).
+- [x] **LOG-03
+**: A single `ExecutionLogScope` constants class in `Messaging.Contracts` (pure POCO leaf, no MassTransit ref) is the source of truth for scope keys, with key strings equal to the structured-param names so scope-derived and param-derived attributes coincide on the same ES field; `Guid.Empty` values are skipped (no zero-guid noise attributes).
 - [ ] **LOG-04**: The per-result minted `ExecutionId` + output `EntryId` are captured via a nested `BeginScope` in `EntryStepDispatchConsumer` (overriding inbound values for the write/send log lines), and `ProcessorId` enriches ALL processor logs via an OTel `LogRecord` enricher reading `IProcessorContext.Id` (null-safe — emits nothing before identity resolves).
 - [ ] **LOG-05**: `WorkflowFireJob` (a Quartz job, outside the consume pipeline) opens an explicit `BeginScope(CorrelationId + WorkflowId)` in `Execute` so its fire logs correlate with the round-trip it triggers.
 - [ ] **LOG-06**: No log-shape regression (existing templates untouched, additive scopes only); the full hermetic + real-stack suite stays GREEN and the close-gate triple-SHA still holds; proof bar = hermetic scope-capture tests PLUS one extension of the existing real-stack E2E asserting ≥1 **scope-sourced, processor-side** execution id round-trips to ES.
@@ -189,7 +190,7 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | TEST-02 | Phase 28 | Complete |
 | LOG-01 | Phase 29 | Planned |
 | LOG-02 | Phase 29 | Planned |
-| LOG-03 | Phase 29 | Planned |
+| LOG-03 | Phase 29 | Complete |
 | LOG-04 | Phase 29 | Planned |
 | LOG-05 | Phase 29 | Planned |
 | LOG-06 | Phase 29 | Planned |
