@@ -35,6 +35,13 @@
     <PackageReference Include="MassTransit" />
     <PackageReference Include="StackExchange.Redis" />
     <PackageReference Include="JsonSchema.Net" />
+    <!-- LOG-04: the ProcessorId log enricher is a custom OTel BaseProcessor<LogRecord> + uses the
+         OpenTelemetryLoggerOptions.AddProcessor<T>() DI-resolved registration. OpenTelemetry (core) and
+         OpenTelemetry.Extensions.Hosting flow transitively from BaseConsole.Core, but BaseProcessor.Core
+         now references those types DIRECTLY (ProcessorIdLogEnricher + the AddProcessor registration), so
+         the dependency is declared explicitly. CPM-pinned at 1.15.3 — NO Directory.Packages.props change. -->
+    <PackageReference Include="OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
   </ItemGroup>
 
   <ItemGroup>

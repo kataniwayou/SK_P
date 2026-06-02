@@ -2,6 +2,7 @@ using BaseConsole.Core.DependencyInjection;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
 using BaseProcessor.Core.Liveness;
+using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Processing;
 using BaseProcessor.Core.Startup;
 using MassTransit;
@@ -9,6 +10,8 @@ using Messaging.Contracts;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
 
 namespace BaseProcessor.Core.DependencyInjection;
 
@@ -86,6 +89,18 @@ public static class BaseProcessorServiceCollectionExtensions
         // 6. The mutable identity/Healthy holder shared by the orchestrator (writer) and the Phase 03
         //    heartbeat (reader).
         services.AddSingleton<IProcessorContext, ProcessorContext>();
+
+        // 6b. LOG-04: the ProcessorId log enricher — a custom OTel BaseProcessor<LogRecord> that appends
+        //     ProcessorId from the singleton IProcessorContext.Id to EVERY processor LogRecord (null-safe
+        //     — nothing before identity resolves). DI-RESOLVED so it reads the SINGLETON IProcessorContext
+        //     (the instance AddProcessor overload cannot resolve DI). Registered ONLY here — processor-side
+        //     — never in the shared AddBaseConsoleObservability block (L3: the orchestrator has no
+        //     IProcessorContext and would throw at DI resolution). This is purely ADDITIVE: the
+        //     IncludeScopes/ParseStateValues/OTLP options stay owned by the unchanged shared block; we only
+        //     AddProcessor onto the same logger provider via the DI-resolved AddProcessor<T>() overload.
+        services.AddSingleton<ProcessorIdLogEnricher>();
+        services.ConfigureOpenTelemetryLoggerProvider((sp, lp) =>
+            lp.AddProcessor(sp.GetRequiredService<ProcessorIdLogEnricher>()));
 
         // 7. The two-loop startup orchestrator (identity-by-SourceHash + per-non-null-schema definition).
         services.AddHostedService<ProcessorStartupOrchestrator>();
