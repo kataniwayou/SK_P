@@ -75,8 +75,8 @@ public sealed class ResultConsumeTests
     {
         // 24.1 / D-24.1-05: the boot gate is removed — ResultConsumer no longer takes an IStartupGate.
         return new ResultConsumer(
-            store, new StepAdvancement(), new StepDispatcher(sendProvider),
-            NullLogger<ResultConsumer>.Instance);
+            store, new StepAdvancement(), new StepDispatcher(sendProvider, OrchestratorTestStubs.Metrics()),
+            OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
     }
 
     // ----- ContinuationDispatch: one field-copied dispatch per matched next step -----------------

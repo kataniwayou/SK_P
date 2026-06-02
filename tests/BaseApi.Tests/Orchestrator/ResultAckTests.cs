@@ -42,7 +42,7 @@ public sealed class ResultAckTests
     {
         // 24.1 / D-24.1-05: the boot gate is removed — ResultConsumer no longer takes an IStartupGate.
         return new ResultConsumer(
-            store, new StepAdvancement(), dispatcher, NullLogger<ResultConsumer>.Instance);
+            store, new StepAdvancement(), dispatcher, OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
     }
 
     // ----- R5: an id ABSENT from L1 acks cleanly, lifecycle-agnostic (no throw, no _error) -------

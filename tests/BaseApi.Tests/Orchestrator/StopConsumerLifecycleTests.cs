@@ -149,7 +149,7 @@ public sealed class StopConsumerLifecycleTests
             var dispatcher = Substitute.For<IStepDispatcher>();
             var advancement = new StepAdvancement();
             var resultConsumer = new ResultConsumer(
-                store, advancement, dispatcher, NullLogger<ResultConsumer>.Instance);
+                store, advancement, dispatcher, OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
 
             var correlationId = Guid.NewGuid();
             var executionId = Guid.NewGuid();

@@ -2,6 +2,7 @@ using MassTransit;
 using Microsoft.Extensions.Logging;
 using Orchestrator.Dispatch;
 using Orchestrator.L1;
+using Orchestrator.Observability;
 using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
 namespace Orchestrator.Consumers;
@@ -38,11 +39,17 @@ public sealed class ResultConsumer(
     IWorkflowL1Store store,
     StepAdvancement advancement,
     IStepDispatcher dispatcher,
+    OrchestratorMetrics metrics,
     ILogger<ResultConsumer> logger) : IConsumer<ExecutionResult>
 {
     public async Task Consume(ConsumeContext<ExecutionResult> context)
     {
         var m = context.Message;
+
+        // METRIC-04 (D-06): count EVERY consumed result at the TOP, BEFORE the L1 read, so the graceful
+        // L1-miss ack below is ALSO counted. ExecutionResult.ProcessorId is a non-nullable Guid (no guard
+        // needed). Tagged ProcessorId only — no workflowId (cardinality); service_instance_id is ambient.
+        metrics.ResultConsumed.Add(1, new KeyValuePair<string, object?>("ProcessorId", m.ProcessorId.ToString("D")));
 
         // L1-only read (D-08): TryGet then the step map — no Upsert/Remove/stripe TryAcquire, no L2.
         if (!store.TryGet(m.WorkflowId, out var wf) || !wf.Steps.TryGetValue(m.StepId, out var completed))

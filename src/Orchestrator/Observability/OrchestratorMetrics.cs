@@ -13,9 +13,9 @@ namespace Orchestrator.Observability;
 /// mp.AddMeter(OrchestratorMetrics.MeterName))</c> registration in <c>Program.cs</c> (D-02 symmetry).
 /// </para>
 /// <para>
-/// The counter names are snake_case with NO <c>_total</c> suffix (D-03): the collector's prometheus
-/// exporter <c>add_metric_suffixes</c> default appends <c>_total</c>, so naming them here with
-/// <c>_total</c> would yield <c>_total_total</c>. Each counter is tagged <c>ProcessorId</c> at the
+/// The counter names are snake_case with NO Prometheus counter suffix (D-03): the collector's
+/// prometheus exporter <c>add_metric_suffixes</c> default appends the suffix itself, so embedding it
+/// in the instrument name here would double it. Each counter is tagged <c>ProcessorId</c> at the
 /// increment site and inherits the ambient <c>service_instance_id</c> resource label from Plan 01.
 /// </para>
 /// </summary>
@@ -33,7 +33,7 @@ public sealed class OrchestratorMetrics
     public OrchestratorMetrics(IMeterFactory meterFactory)
     {
         var meter = meterFactory.Create(MeterName);
-        DispatchSent = meter.CreateCounter<long>("orchestrator_dispatch_sent");       // D-03 — no _total
-        ResultConsumed = meter.CreateCounter<long>("orchestrator_result_consumed");   // D-03 — no _total
+        DispatchSent = meter.CreateCounter<long>("orchestrator_dispatch_sent");       // D-03 — collector appends the suffix
+        ResultConsumed = meter.CreateCounter<long>("orchestrator_result_consumed");   // D-03 — collector appends the suffix
     }
 }

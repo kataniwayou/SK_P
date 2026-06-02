@@ -144,7 +144,7 @@ public sealed class WorkflowFireJobScopeTests
 
                 var logger = new CapturingLogger();
                 var job = new WorkflowFireJob(
-                    store, new StepDispatcher(harness.Bus), workflowScheduler, fakeTime, logger);
+                    store, new StepDispatcher(harness.Bus, OrchestratorTestStubs.Metrics()), workflowScheduler, fakeTime, logger);
 
                 await job.Execute(FireContext(workflowId, ct));
 

@@ -2,8 +2,11 @@ using System.Text.Json;
 using MassTransit;
 using Messaging.Contracts;
 using Messaging.Contracts.Projections;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using Orchestrator.Observability;
 using StackExchange.Redis;
+using System.Diagnostics.Metrics;
 
 namespace BaseApi.Tests.Orchestrator;
 
@@ -92,6 +95,19 @@ internal static class OrchestratorTestStubs
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
         return mux;
+    }
+
+    /// <summary>
+    /// A real <see cref="OrchestratorMetrics"/> for hermetic tests — built from a live
+    /// <see cref="IMeterFactory"/> (Plan 30-02 added the metrics ctor param to StepDispatcher +
+    /// ResultConsumer). No collector is wired, so the increments are no-ops in-test; this just
+    /// satisfies the non-null ctor dependency.
+    /// </summary>
+    public static OrchestratorMetrics Metrics()
+    {
+        var meterFactory = new ServiceCollection().AddMetrics().BuildServiceProvider()
+            .GetRequiredService<IMeterFactory>();
+        return new OrchestratorMetrics(meterFactory);
     }
 
     /// <summary>A ConsumeContext substitute carrying <paramref name="message"/> and a cancellation token.</summary>
