@@ -48,7 +48,8 @@ public static class MessagingServiceCollectionExtensions
             x.UsingRabbitMq((ctx, c) =>
             {
                 c.Host(rabbitHost, h => { h.Username(rabbitUser); h.Password(rabbitPass); });
-                c.UseConsumeFilter(typeof(InboundCorrelationConsumeFilter<>), ctx);   // CORR-01 bus-wide (open-generic)
+                c.UseConsumeFilter(typeof(InboundCorrelationConsumeFilter<>), ctx);     // CORR-01 (OUTER) bus-wide (open-generic)
+                c.UseConsumeFilter(typeof(InboundExecutionScopeConsumeFilter<>), ctx);  // LOG-02 (INNER) execution-id scope (D-02)
                 c.UseSendFilter(typeof(OutboundCorrelationSendFilter<>), ctx);        // CORR-02
                 c.UsePublishFilter(typeof(OutboundCorrelationPublishFilter<>), ctx);  // CORR-02
                 configureBus?.Invoke(ctx, c);   // OPTIONAL bus-factory seam (Phase 24 D-06) — scheduler/redelivery
