@@ -222,8 +222,26 @@ public sealed class EntryStepDispatchConsumer(
         await endpoint.Send(result, CancellationToken.None);
         metrics.ResultSent.Add(1,
             new KeyValuePair<string, object?>("ProcessorId", context.Id!.Value.ToString("D")),
-            new KeyValuePair<string, object?>("outcome", result.Outcome.ToString().ToLowerInvariant()));
+            new KeyValuePair<string, object?>("outcome", OutcomeLabel(result.Outcome)));
     }
+
+    /// <summary>
+    /// Maps a build-path <see cref="StepOutcome"/> to its pinned, lower-case Prometheus label literal
+    /// (METRIC-05 / IN-04). Returns interned string constants — NO per-send allocation, unlike
+    /// <c>Outcome.ToString().ToLowerInvariant()</c>. Critically, the literals are decoupled from the
+    /// C# enum member names: an enum rename can no longer silently change an emitted Prometheus label.
+    /// Build paths NEVER emit <see cref="StepOutcome.Processing"/> (Pitfall 3), so the value set is the
+    /// bounded {completed, failed, cancelled}; <see cref="StepOutcome.Processing"/> is mapped defensively
+    /// to <c>"processing"</c> to keep the switch exhaustive without a throw on a never-taken arm.
+    /// </summary>
+    private static string OutcomeLabel(StepOutcome outcome) => outcome switch
+    {
+        StepOutcome.Completed  => "completed",
+        StepOutcome.Failed     => "failed",
+        StepOutcome.Cancelled  => "cancelled",
+        StepOutcome.Processing => "processing",   // never reached on a send path (Pitfall 3) — kept for exhaustiveness
+        _                      => outcome.ToString().ToLowerInvariant(),
+    };
 
     // ---- Builders (Pattern 3 / D-11/D-13): inherit ids, copy body CorrelationId (EXEC-10), mint ExecutionId ----
 
