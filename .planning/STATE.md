@@ -39,6 +39,7 @@ Last activity: 2026-06-02
 | 26 | BaseProcessor.Core — Library, Identity & Liveness | BPC-01/02/03, IDENT-03/04, RPC-04, SCHEMA-01/02, LIVE-01..06, CONFIG-01 (15) | Not started |
 | 27 | Execution Round-Trip | EXEC-01..10, CONFIG-02 (11) | Not started |
 | 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Complete (4/4 plans — close gate exit 0) |
+| 29 | Structured Execution-Scope Logging | LOG-01..06 (proposed) | Not planned yet (added 2026-06-02) |
 
 Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProcessor.Core: library + identity + liveness) → 27 (execution round-trip) → 28 (SourceHash + Processor.Sample + E2E closeout). See .planning/ROADMAP.md for success criteria + cross-phase constraints.
 
@@ -711,6 +712,7 @@ Forward-looking notes:
 - Phase 11 added: Migrate Prometheus and Elastic containers from compose stack sk2_1 to sk_p, wire OpenTelemetry collector to ship logs to Elastic and metrics to Prometheus. Smoke test: verify logs appear in Elastic and metrics appear in Prometheus.
 - Phase 22 added (v3.4.0 follow-up): L2 root-parent restructure + processor self-registration boundary — two-level L2 hierarchy (root-parent array of workflowIds → per-workflow child keys), hardcoded `{prefix}` const, remove orchestrator-side processor L2 creation in favor of existence-check + timestamp liveness (keep edge-schema validation). Covers mods 1-3. Requirements TBD at spec.
 - Phase 23 added (v3.4.0 follow-up): Orchestrator stop + reload lifecycle over the new L2 structure — stop unlinks workflow from root + cascade-deletes child keys + publishes jobIds (not workflowIds); startup reloads all workflowIds from root, start-orchestration reloads the specific workflowId from its own key; both hydrate L1 transiently (no processors, no root-parent). Covers mods 4-6. Requirements TBD at spec.
+- Phase 29 added (v3.5.0 follow-up): Structured execution-scope logging — ambient structured-attribute logs (CorrelationId, WorkflowId, StepId, ProcessorId, ExecutionId, EntryId) via MEL log scopes + OTel IncludeScopes → Elasticsearch; new bus-wide `InboundExecutionScopeConsumeFilter` (execution id-set for `IExecutionCorrelated`, both consoles) alongside the unchanged `CorrelationId` filter, shared `ExecutionLogScope` keys (skip `Guid.Empty`), per-result inner scope for minted ExecutionId/output EntryId, process-wide ProcessorId enricher from `IProcessorContext`, explicit scope in the Quartz `WorkflowFireJob`. Requirements LOG-01..06 TBD at spec.
 
 ### Pending Todos
 
