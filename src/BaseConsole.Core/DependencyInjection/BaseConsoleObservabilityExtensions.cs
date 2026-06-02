@@ -81,6 +81,12 @@ public static class BaseConsoleObservabilityExtensions
     /// from <c>BaseApi.Core</c>'s <c>ObservabilityServiceCollectionExtensions</c> (D-09 —
     /// <c>BaseConsole.Core</c> is hard-forbidden from referencing <c>BaseApi.Core</c>, and a ~6-line
     /// helper is not worth a shared lib; <c>Messaging.Contracts</c> is the wrong home).
+    /// <para>
+    /// DRIFT GUARD (IN-03) — this precedence expression is mirrored byte-for-byte in THREE places that
+    /// MUST change in lock-step: (1) here, (2) <c>BaseApi.Core/DependencyInjection/ObservabilityServiceCollectionExtensions.cs</c>
+    /// (<c>ResolveInstanceId</c>), (3) the hermetic mirror <c>tests/BaseApi.Tests/Observability/ResolveInstanceIdFacts.cs</c>
+    /// (<c>Resolve</c>), which exists to catch precedence drift. Edit all three together.
+    /// </para>
     /// </summary>
     private static string ResolveInstanceId() =>
         Environment.GetEnvironmentVariable("POD_NAME")
