@@ -1,9 +1,10 @@
 ---
 phase: 30-runtime-business-metrics
 verified: 2026-06-03T00:00:00Z
-status: human_needed
-score: 6/7 must-haves verified
+status: passed
+score: 7/7 must-haves verified
 overrides_applied: 0
+human_verification_resolved: "2026-06-03 — live run PASSED: dotnet test tests/BaseApi.Tests -- --filter-class \"*MetricsRoundTripE2ETests\" = Passed 1 / Failed 0 (2m47s) against the full compose stack (orchestrator + baseapi-service + processor-sample rebuilt to current Phase 30 code; prometheus :9090 healthy). All in-test Prometheus assertions held. See 30-HUMAN-UAT.md."
 human_verification:
   - test: "Run: docker compose up -d (full stack including prometheus, orchestrator, processor-sample). Then: dotnet test tests/BaseApi.Tests -- --filter-class \"*MetricsRoundTripE2ETests\""
     expected: "Exit 0. All six PollPromForQuery assertions pass: orchestrator_dispatch_sent_total, orchestrator_result_consumed_total, processor_dispatch_consumed_total, processor_result_sent_total series exist for the exercised ProcessorId; the bottleneck PromQL evaluates numerically; a process_runtime_dotnet_* series carries a non-empty service_instance_id. Label assertions confirm ProcessorId + service_instance_id present, no workflowId, outcome ∈ {completed,failed,cancelled} on result_sent."
@@ -14,7 +15,7 @@ human_verification:
 
 **Phase Goal:** Every service emits code-defined metrics carrying a per-replica `service_instance_id` label so that, across multiple orchestrator/processor replicas, PromQL can measure the rate of orchestrator→processor dispatch sending vs processor consuming (the per-processor bottleneck) and per-processor outcome rates — without high-cardinality workflow labels and without collector-side metric config.
 **Verified:** 2026-06-03T00:00:00Z
-**Status:** human_needed
+**Status:** passed (live human-verification item resolved 2026-06-03 — MetricsRoundTripE2ETests Passed 1/0 against the full live stack on current code)
 **Re-verification:** No — initial verification.
 
 ---
