@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: completed
-stopped_at: Phase 28 context gathered
-last_updated: "2026-06-02T06:13:03.961Z"
-last_activity: 2026-06-02
+status: executing
+stopped_at: Phase 28 Plan 01 complete
+last_updated: "2026-06-02T06:31:32.000Z"
+last_activity: 2026-06-02 -- Phase 28 Plan 01 (SourceHash + Processor.Sample) complete
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 12
-  completed_plans: 8
-  percent: 67
+  completed_plans: 9
+  percent: 75
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 27 — execution-round-trip
+**Current focus:** Phase 28 — sourcehash-identity-processor-sample-e2e-closeout
 
 ## Current Position
 
 Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 27 (execution-round-trip) — COMPLETE (3/3 plans); Phase 28 next
-Plan: 3 of 3 — COMPLETE
-Status: Phase 27 complete — execution round-trip wired end-to-end (EXEC-01..10 + CONFIG-02)
-Last activity: 2026-06-02
+Phase: 28 (sourcehash-identity-processor-sample-e2e-closeout) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 28 (1/4 plans complete)
+Last activity: 2026-06-02 -- Phase 28 Plan 01 (SourceHash + Processor.Sample) complete
 
 ### Milestone Phases (v3.5.0)
 
@@ -38,11 +38,19 @@ Last activity: 2026-06-02
 | 25 | Shared Contracts + WebApi Responders | CONTRACT-01/02/03, RPC-01/02/03 (6) | Not started |
 | 26 | BaseProcessor.Core — Library, Identity & Liveness | BPC-01/02/03, IDENT-03/04, RPC-04, SCHEMA-01/02, LIVE-01..06, CONFIG-01 (15) | Not started |
 | 27 | Execution Round-Trip | EXEC-01..10, CONFIG-02 (11) | Not started |
-| 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Not started |
+| 28 | SourceHash Identity + Processor.Sample + E2E Closeout | IDENT-01/02, SAMPLE-01/02, TEST-01/02 (6) | Executing (1/4 plans) |
 
 Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProcessor.Core: library + identity + liveness) → 27 (execution round-trip) → 28 (SourceHash + Processor.Sample + E2E closeout). See .planning/ROADMAP.md for success criteria + cross-phase constraints.
 
 > v3.4.0 execution history (phase/plan completion logs, performance metrics) is retained below for reference.
+
+### Phase 28 Plan 01 — COMPLETE (SourceHash.targets + Processor.Sample foundation; IDENT-01/02 + SAMPLE-01; 2026-06-02)
+
+- 4 commits: `49cff0a` (feat: SourceHash.targets — inline RoslynCodeTaskFactory ComputeSourceHash + two-target compute/emit split), `7b78088` (fix Rule 1: hook emit BeforeTargets=CoreGenerateAssemblyInfo — plain CoreCompile never embedded), `46e1e60` (feat: Processor.Sample concrete + SK_P.sln entry {B7482AA3-…}), `41bdf89` (test: SampleProcessorFacts + SourceHashEmbedFacts).
+- Embed proven: generated AssemblyInfo carries `[assembly: AssemblyMetadata("SourceHash", "ab923430…3219a8")]`, persists on incremental no-change rebuild; SourceHashEmbedFacts READS it (D-08, no recompute) and asserts ^[a-f0-9]{64}$ + the impl-file exclusion (BaseConsole.Core / Messaging.Contracts / generated never fold in). SampleProcessor overrides only ProcessAsync → one ProcessResult("processor-sample-ok").
+- Verification (all green): `dotnet build src/BaseProcessor.Core -c Debug` 0/0; `dotnet build src/Processor.Sample -c Debug` 0/0; hermetic suite 391/391 GREEN (was 387 — +4 facts; the MTP runner ran the full suite); `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error. Targeted: SourceHashEmbedFacts 2/2, SampleProcessorFacts 2/2.
+- Deviations (3 auto-fixed, all correctness-essential): Rule 1 — emit hook (would crash the processor at boot via the reader fail-fast); Rule 1 — CS0118 BaseProcessor namespace-shadows-type (aliased); Rule 3 — `using Xunit;` + xUnit2013 → Assert.Single. Note: SK_P.sln carried a UTF-8 BOM in HEAD already (pre-existing, NOT introduced — Edit preserved bytes, no mojibake); flagged not fixed.
+- SUMMARY: 28-01-SUMMARY.md (Self-Check PASSED). IDENT-01/02 + SAMPLE-01 complete. Phase 28 = 1/4 plans; Plan 02 (Dockerfile/compose + cross-OS dual-build reproducibility, Pitfall 1) next.
 
 ### Phase 27 Plan 03 — COMPLETE (dispatch endpoint wiring: bind-then-MarkHealthy, EXEC-01; 2026-06-02)
 

@@ -19,8 +19,8 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 ### Processor Identity (assembly-embedded SourceHash)
 
-- [ ] **IDENT-01**: An MSBuild target (`BeforeTargets=CoreCompile`) computes the implementation SourceHash — SHA-256, lowercase 64-hex, LF-normalized, per-file hashes folded deterministically (ordinal path sort) over `BaseProcessor.Core` + the concrete's `.cs` (excluding generated files, `BaseConsole.Core`, `Messaging.Contracts`).
-- [ ] **IDENT-02**: The hash is embedded as `[assembly: AssemblyMetadata("SourceHash", …)]` and the target re-runs when implementation source changes (no stale hash on incremental builds).
+- [x] **IDENT-01**: An MSBuild target (`BeforeTargets=CoreCompile`) computes the implementation SourceHash — SHA-256, lowercase 64-hex, LF-normalized, per-file hashes folded deterministically (ordinal path sort) over `BaseProcessor.Core` + the concrete's `.cs` (excluding generated files, `BaseConsole.Core`, `Messaging.Contracts`).
+- [x] **IDENT-02**: The hash is embedded as `[assembly: AssemblyMetadata("SourceHash", …)]` and the target re-runs when implementation source changes (no stale hash on incremental builds).
 - [x] **IDENT-03
 **: At runtime the processor reads its SourceHash from assembly metadata via reflection.
 - [x] **IDENT-04
@@ -92,7 +92,7 @@ Phase numbering continues from 24 (this milestone starts at **Phase 25**). REQ-I
 
 ### Sample Concrete
 
-- [ ] **SAMPLE-01**: `Processor.Sample` is the first concrete console (family convention `Processor.<Purpose>`), implementing `ProcessAsync` with a minimal POC dummy result list.
+- [x] **SAMPLE-01**: `Processor.Sample` is the first concrete console (family convention `Processor.<Purpose>`), implementing `ProcessAsync` with a minimal POC dummy result list.
 - [ ] **SAMPLE-02**: `Processor.Sample` ships a multistage Dockerfile and joins the compose stack (mirroring the Orchestrator tier).
 
 ### Configuration
@@ -172,9 +172,9 @@ Which phases cover which requirements. Populated during roadmap creation (Phase 
 | EXEC-09 | Phase 27 | Complete |
 | EXEC-10 | Phase 27 | Complete |
 | CONFIG-02 | Phase 27 | Complete |
-| IDENT-01 | Phase 28 | Pending |
-| IDENT-02 | Phase 28 | Pending |
-| SAMPLE-01 | Phase 28 | Pending |
+| IDENT-01 | Phase 28 | Complete |
+| IDENT-02 | Phase 28 | Complete |
+| SAMPLE-01 | Phase 28 | Complete |
 | SAMPLE-02 | Phase 28 | Pending |
 | TEST-01 | Phase 28 | Pending |
 | TEST-02 | Phase 28 | Pending |
