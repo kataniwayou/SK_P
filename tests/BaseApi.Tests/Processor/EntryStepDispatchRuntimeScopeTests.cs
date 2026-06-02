@@ -78,12 +78,11 @@ public sealed class EntryStepDispatchRuntimeScopeTests
     }
 
     /// <summary>Records the ExecutionResult the consumer Sends to queue:orchestrator-result.</summary>
-    private sealed class RecordingResultConsumer : IConsumer<ExecutionResult>
+    private sealed class RecordingResultConsumer(List<ExecutionResult> received) : IConsumer<ExecutionResult>
     {
-        public static readonly List<ExecutionResult> Received = new();
         public Task Consume(ConsumeContext<ExecutionResult> context)
         {
-            lock (Received) Received.Add(context.Message);
+            lock (received) received.Add(context.Message);
             return Task.CompletedTask;
         }
     }
@@ -102,7 +101,7 @@ public sealed class EntryStepDispatchRuntimeScopeTests
     {
         var ct = TestContext.Current.CancellationToken;
         var capturing = new RecordCapturingProvider();
-        lock (RecordingResultConsumer.Received) RecordingResultConsumer.Received.Clear();
+        var received = new List<ExecutionResult>();
 
         var workflowId = Guid.NewGuid();
         var stepId = Guid.NewGuid();
@@ -122,6 +121,7 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             .AddSingleton<IOptions<ProcessorLivenessOptions>>(DispatchTestKit.Options(300))
             // The bus-wide InboundCorrelationConsumeFilter needs the accessor (as AddBaseConsoleMessaging registers it).
             .AddSingleton<ICorrelationAccessor, AsyncLocalCorrelationAccessor>()
+            .AddSingleton(new RecordingResultConsumer(received))
             .AddMassTransitTestHarness(x =>
             {
                 // The result endpoint so the consumer's Send to queue:orchestrator-result lands somewhere.
@@ -184,15 +184,15 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             // Wait until the result reaches the recording consumer (proves the Completed path ran).
             for (var i = 0; i < 100; i++)
             {
-                lock (RecordingResultConsumer.Received)
-                    if (RecordingResultConsumer.Received.Count > 0) break;
+                lock (received)
+                    if (received.Count > 0) break;
                 await Task.Delay(50, ct);
             }
             ExecutionResult sent;
-            lock (RecordingResultConsumer.Received)
+            lock (received)
             {
-                Assert.NotEmpty(RecordingResultConsumer.Received);
-                sent = RecordingResultConsumer.Received[0];
+                Assert.NotEmpty(received);
+                sent = received[0];
             }
 
             // The Completed-path LogRecord: the one carrying the minted ExecutionId + EntryId (nested scope).
