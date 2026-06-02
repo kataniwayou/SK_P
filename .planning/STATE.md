@@ -4,14 +4,14 @@ milestone: v3.5.0
 milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
 status: Phase 30 added (METRIC-01..07) — awaiting /gsd-spec-phase 30
 stopped_at: Phase 30 context gathered
-last_updated: "2026-06-02T19:24:45.750Z"
+last_updated: "2026-06-02T19:51:01.705Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 6
   completed_phases: 5
-  total_plans: 17
+  total_plans: 21
   completed_plans: 17
-  percent: 100
+  percent: 81
 ---
 
 # Project State
@@ -782,4 +782,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 29 (structured-execution-scope-logging) — 5 plans — 2026-06-02T14:41:07.498Z
+**Planned Phase:** 30 (runtime-business-metrics) — 4 plans — 2026-06-02T19:51:01.695Z

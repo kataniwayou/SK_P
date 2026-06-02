@@ -488,5 +488,3 @@ observability extensions, BaseProcessorServiceCollectionExtensions, ProcessorIdL
 IProcessorContext, StepOutcome, ExecutionResult, Orchestrator/Program.cs, ElasticsearchTestClient,
 SampleRoundTripE2ETests).
 **Pattern extraction date:** 2026-06-02
-</content>
-</invoke>
