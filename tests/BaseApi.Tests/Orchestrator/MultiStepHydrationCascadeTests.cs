@@ -306,4 +306,73 @@ public sealed class MultiStepHydrationCascadeTests
             await scheduler.Shutdown(waitForJobsToComplete: false, ct);
         }
     }
+
+    /// <summary>
+    /// Behavior lock for the MERGE (diamond / fan-in) topology: a node reachable from two predecessors
+    /// (<c>e -> { p1, p2 }; p1 -> m; p2 -> m; m -> mTerm</c>). Two INTENDED properties are asserted:
+    /// <list type="number">
+    /// <item><b>Hydration loads the merge node exactly once</b> — BFS reaches <c>m</c> from both
+    /// <c>p1</c> and <c>p2</c>, but the <c>seen</c> guard enqueues it once, so L1 holds 5 distinct steps
+    /// (no infinite loop, no duplicate L1 entry on the diamond).</item>
+    /// <item><b>NO join/barrier — each predecessor independently advances to the merge node.</b>
+    /// <c>SelectNext(p1)</c> AND <c>SelectNext(p2)</c> EACH yield <c>m</c>, so at runtime the orchestrator
+    /// dispatches <c>m</c> (and re-runs its whole subtree) ONCE PER COMPLETED PREDECESSOR. This duplicate
+    /// execution on convergence is the REQUESTED/intended behavior (confirmed against the live ES proof:
+    /// the merge node + subtree executed twice per trigger). There is deliberately no fan-in dedup; this
+    /// test guards that intent so a future change can't silently add a join barrier.</item>
+    /// </list>
+    /// </summary>
+    [Fact]
+    public async Task MergeNode_LoadedOnce_ButEachPredecessorIndependentlyAdvancesToIt()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var wfId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var e = Guid.NewGuid();      // entry, fans out to p1 + p2
+        var p1 = Guid.NewGuid();     // predecessor 1 of the merge node
+        var p2 = Guid.NewGuid();     // predecessor 2 of the merge node
+        var m = Guid.NewGuid();      // MERGE node — two incoming edges (p1, p2)
+        var mTerm = Guid.NewGuid();  // terminal after the merge node
+
+        var values = new Dictionary<string, string>
+        {
+            [L2ProjectionKeys.Root(wfId)] = SerializeRootMulti(jobId, e),
+            [L2ProjectionKeys.Step(wfId, e)] = SerializeStep(Guid.NewGuid(), p1, p2), // fan-out
+            [L2ProjectionKeys.Step(wfId, p1)] = SerializeStep(Guid.NewGuid(), m),     // p1 -> m
+            [L2ProjectionKeys.Step(wfId, p2)] = SerializeStep(Guid.NewGuid(), m),     // p2 -> m (merge)
+            [L2ProjectionKeys.Step(wfId, m)] = SerializeStep(Guid.NewGuid(), mTerm),
+            [L2ProjectionKeys.Step(wfId, mTerm)] = SerializeStep(Guid.NewGuid()),
+        };
+
+        var store = new WorkflowL1Store();
+        var scheduler = await NewRamSchedulerAsync();
+        try
+        {
+            var lifecycle = NewLifecycle(Mux(values), store, scheduler);
+            await lifecycle.HydrateAndScheduleAsync(wfId, ct);
+
+            Assert.True(store.TryGet(wfId, out var entry));
+
+            // (1) Diamond hydrated WITHOUT duplication/loop — m loaded exactly once → 5 distinct steps.
+            Assert.Equal(5, entry.Steps.Count);
+            foreach (var id in new[] { e, p1, p2, m, mTerm })
+                Assert.Contains(id, entry.Steps.Keys);
+
+            var adv = new StepAdvancement();
+
+            // (2) NO JOIN: each predecessor independently advances to the merge node — so at runtime
+            // m is dispatched once per completed predecessor (intended duplicate execution).
+            Assert.Equal(m, adv.SelectNext(StepOutcome.Completed, entry.Steps[p1], entry.Steps).Single().stepId);
+            Assert.Equal(m, adv.SelectNext(StepOutcome.Completed, entry.Steps[p2], entry.Steps).Single().stepId);
+
+            // The merge node continues to its terminal; terminal has no successors.
+            Assert.Equal(mTerm, adv.SelectNext(StepOutcome.Completed, entry.Steps[m], entry.Steps).Single().stepId);
+            Assert.Empty(adv.SelectNext(StepOutcome.Completed, entry.Steps[mTerm], entry.Steps));
+        }
+        finally
+        {
+            await scheduler.Shutdown(waitForJobsToComplete: false, ct);
+        }
+    }
 }
