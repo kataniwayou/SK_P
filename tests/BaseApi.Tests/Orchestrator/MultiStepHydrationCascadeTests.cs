@@ -52,8 +52,12 @@ public sealed class MultiStepHydrationCascadeTests
     }
 
     private static string SerializeRoot(Guid jobId, Guid entryStepId) =>
+        SerializeRootMulti(jobId, entryStepId);
+
+    /// <summary>Root projection with one OR MORE entry steps (each the head of a separate pipeline).</summary>
+    private static string SerializeRootMulti(Guid jobId, params Guid[] entryStepIds) =>
         JsonSerializer.Serialize(new WorkflowRootProjection(
-            EntryStepIds: [entryStepId],
+            EntryStepIds: [.. entryStepIds],
             Cron: "*/5 * * * *",
             JobId: jobId,
             Liveness: new LivenessProjection(DateTime.UtcNow, Interval: 0, Status: "active"),
@@ -135,6 +139,87 @@ public sealed class MultiStepHydrationCascadeTests
             // S3 is terminal — no successors.
             var afterS3 = advancement.SelectNext(StepOutcome.Completed, entry.Steps[s3], entry.Steps).ToList();
             Assert.Empty(afterS3);
+        }
+        finally
+        {
+            await scheduler.Shutdown(waitForJobsToComplete: false, ct);
+        }
+    }
+
+    /// <summary>
+    /// Regression guard for the two-separated-pipelines topology: ONE workflow with TWO entry steps,
+    /// each the head of an independent series (pipeline A: a1->a2->a3; pipeline B: b1->b2->b3->b4), one
+    /// schedule, NOT merged. Hydration must seed the BFS from ALL <c>EntryStepIds</c> so BOTH full graphs
+    /// land in L1, and advancement must walk each pipeline independently with no cross-pipeline edge.
+    /// <para>
+    /// <b>Red/green:</b> entry-only hydration would leave <c>Steps</c> == { a1, b1 } (count 2), so the
+    /// <c>Steps.Count == 7</c> assertion FAILS on the old code and PASSES with the BFS fix. The disjoint /
+    /// no-cross-edge assertions prove the two pipelines stay SEPARATED (no accidental merge).
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task HydratesMultipleEntryPipelines_Separated_NoMerge()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var wfId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        // Pipeline A: a1 (entry) -> a2 -> a3 (terminal)
+        Guid a1 = Guid.NewGuid(), a2 = Guid.NewGuid(), a3 = Guid.NewGuid();
+        // Pipeline B: b1 (entry) -> b2 -> b3 -> b4 (terminal)
+        Guid b1 = Guid.NewGuid(), b2 = Guid.NewGuid(), b3 = Guid.NewGuid(), b4 = Guid.NewGuid();
+
+        // TWO entry steps; downstream steps reachable ONLY via NextStepIds (never in EntryStepIds).
+        var values = new Dictionary<string, string>
+        {
+            [L2ProjectionKeys.Root(wfId)] = SerializeRootMulti(jobId, a1, b1),
+            [L2ProjectionKeys.Step(wfId, a1)] = SerializeStep(Guid.NewGuid(), a2),
+            [L2ProjectionKeys.Step(wfId, a2)] = SerializeStep(Guid.NewGuid(), a3),
+            [L2ProjectionKeys.Step(wfId, a3)] = SerializeStep(Guid.NewGuid()),
+            [L2ProjectionKeys.Step(wfId, b1)] = SerializeStep(Guid.NewGuid(), b2),
+            [L2ProjectionKeys.Step(wfId, b2)] = SerializeStep(Guid.NewGuid(), b3),
+            [L2ProjectionKeys.Step(wfId, b3)] = SerializeStep(Guid.NewGuid(), b4),
+            [L2ProjectionKeys.Step(wfId, b4)] = SerializeStep(Guid.NewGuid()),
+        };
+
+        var store = new WorkflowL1Store();
+        var scheduler = await NewRamSchedulerAsync();
+        try
+        {
+            var lifecycle = NewLifecycle(Mux(values), store, scheduler);
+            await lifecycle.HydrateAndScheduleAsync(wfId, ct);
+
+            Assert.True(store.TryGet(wfId, out var entry));
+
+            // CORE REGRESSION: BOTH full pipelines hydrated from the TWO entry steps (3 + 4 = 7 steps).
+            // Entry-only hydration would leave Steps == { a1, b1 } (count 2) and this would fail.
+            Assert.Equal(7, entry.Steps.Count);
+            foreach (var id in new[] { a1, a2, a3, b1, b2, b3, b4 })
+                Assert.Contains(id, entry.Steps.Keys);
+
+            var adv = new StepAdvancement();
+
+            // Pipeline A walks independently to its own terminal.
+            Assert.Equal(a2, adv.SelectNext(StepOutcome.Completed, entry.Steps[a1], entry.Steps).Single().stepId);
+            Assert.Equal(a3, adv.SelectNext(StepOutcome.Completed, entry.Steps[a2], entry.Steps).Single().stepId);
+            Assert.Empty(adv.SelectNext(StepOutcome.Completed, entry.Steps[a3], entry.Steps));
+
+            // Pipeline B walks independently to its own terminal.
+            Assert.Equal(b2, adv.SelectNext(StepOutcome.Completed, entry.Steps[b1], entry.Steps).Single().stepId);
+            Assert.Equal(b3, adv.SelectNext(StepOutcome.Completed, entry.Steps[b2], entry.Steps).Single().stepId);
+            Assert.Equal(b4, adv.SelectNext(StepOutcome.Completed, entry.Steps[b3], entry.Steps).Single().stepId);
+            Assert.Empty(adv.SelectNext(StepOutcome.Completed, entry.Steps[b4], entry.Steps));
+
+            // SEPARATION: the two pipelines are disjoint and no step advances across the boundary.
+            var pipelineA = new HashSet<Guid> { a1, a2, a3 };
+            var pipelineB = new HashSet<Guid> { b1, b2, b3, b4 };
+            Assert.Empty(pipelineA.Intersect(pipelineB));
+            foreach (var id in pipelineA)
+                foreach (var (next, _) in adv.SelectNext(StepOutcome.Completed, entry.Steps[id], entry.Steps))
+                    Assert.DoesNotContain(next, pipelineB);
+            foreach (var id in pipelineB)
+                foreach (var (next, _) in adv.SelectNext(StepOutcome.Completed, entry.Steps[id], entry.Steps))
+                    Assert.DoesNotContain(next, pipelineA);
         }
         finally
         {
