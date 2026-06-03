@@ -64,11 +64,18 @@ public sealed class WorkflowLifecycle(
             return;
         }
 
-        // Follow each entry-step key into L1 (read-only). A corrupt/missing step is a business skip
-        // for THAT step (the rest still hydrate).
+        // Follow the FULL reachable step graph into L1 (read-only), BFS from the entry steps along
+        // each step's NextStepIds. Hydrating only entry steps would leave downstream steps absent from
+        // the L1 map, so StepAdvancement.SelectNext would silently skip every continuation edge
+        // (TryGetValue miss) and no multi-step series could advance past its entry step. A
+        // corrupt/missing step is a business skip for THAT step — its subtree is simply not enqueued
+        // beyond what other paths reach; the rest still hydrate.
         var steps = new Dictionary<Guid, StepProjection>();
-        foreach (var stepId in root.EntryStepIds)
+        var toVisit = new Queue<Guid>(root.EntryStepIds);
+        var seen = new HashSet<Guid>(root.EntryStepIds);
+        while (toVisit.Count > 0)
         {
+            var stepId = toVisit.Dequeue();
             var stepRaw = await db.StringGetAsync(OrchestratorL2Keys.Step(workflowId, stepId));
             if (stepRaw.IsNullOrEmpty)
             {
@@ -82,6 +89,9 @@ public sealed class WorkflowLifecycle(
                 var step = JsonSerializer.Deserialize<StepProjection>(stepRaw!)
                            ?? throw new JsonException("step deserialized to null");
                 steps[stepId] = step;
+                foreach (var nextId in step.NextStepIds ?? Enumerable.Empty<Guid>())
+                    if (seen.Add(nextId))
+                        toVisit.Enqueue(nextId);
             }
             catch (Exception ex) when (IsBusiness(ex))
             {
