@@ -309,17 +309,24 @@ public sealed class MultiStepHydrationCascadeTests
 
     /// <summary>
     /// Behavior lock for the MERGE (diamond / fan-in) topology: a node reachable from two predecessors
-    /// (<c>e -> { p1, p2 }; p1 -> m; p2 -> m; m -> mTerm</c>). Two INTENDED properties are asserted:
+    /// (<c>e -> { p1, p2 }; p1 -> m; p2 -> m; m -> mTerm</c>).
+    /// <para>
+    /// <b>Design principle (intended):</b> a step does its work for EVERY inbound dispatch it receives —
+    /// it does not matter which predecessor produced that work — as long as the pipeline is a legitimate
+    /// graph. The orchestrator advances per completed edge with no fan-in join/dedup, so a convergence
+    /// node executes ONCE PER COMPLETED PREDECESSOR (re-running its whole subtree each time). This
+    /// per-edge / source-agnostic duplicate execution is the REQUESTED behavior — confirmed by the live
+    /// ES proof (the merge node + subtree ran twice per trigger). This test guards that intent so a
+    /// future change cannot silently introduce a join barrier or fan-in dedup.
+    /// </para>
+    /// Two properties are asserted:
     /// <list type="number">
     /// <item><b>Hydration loads the merge node exactly once</b> — BFS reaches <c>m</c> from both
     /// <c>p1</c> and <c>p2</c>, but the <c>seen</c> guard enqueues it once, so L1 holds 5 distinct steps
     /// (no infinite loop, no duplicate L1 entry on the diamond).</item>
-    /// <item><b>NO join/barrier — each predecessor independently advances to the merge node.</b>
-    /// <c>SelectNext(p1)</c> AND <c>SelectNext(p2)</c> EACH yield <c>m</c>, so at runtime the orchestrator
-    /// dispatches <c>m</c> (and re-runs its whole subtree) ONCE PER COMPLETED PREDECESSOR. This duplicate
-    /// execution on convergence is the REQUESTED/intended behavior (confirmed against the live ES proof:
-    /// the merge node + subtree executed twice per trigger). There is deliberately no fan-in dedup; this
-    /// test guards that intent so a future change can't silently add a join barrier.</item>
+    /// <item><b>Each predecessor independently hands the merge node work</b> — <c>SelectNext(p1)</c> AND
+    /// <c>SelectNext(p2)</c> EACH yield <c>m</c>, so at runtime <c>m</c> is dispatched (and its subtree
+    /// re-run) once per completed predecessor — the source-agnostic per-dispatch execution above.</item>
     /// </list>
     /// </summary>
     [Fact]
