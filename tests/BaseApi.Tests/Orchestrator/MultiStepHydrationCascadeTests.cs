@@ -226,4 +226,84 @@ public sealed class MultiStepHydrationCascadeTests
             await scheduler.Shutdown(waitForJobsToComplete: false, ct);
         }
     }
+
+    /// <summary>
+    /// Regression guard for the FAN-OUT topology: a single step with MULTIPLE <c>NextStepIds</c>
+    /// (<c>s2 -> { bMain, bSide }</c>), each branch ending in its own terminal. Distinct from the
+    /// linear-chain facts above — it locks two behaviors the linear tests cannot exercise:
+    /// (1) BFS hydration follows EVERY outgoing edge of a node (not just the first), so BOTH branches'
+    /// steps land in L1; (2) <see cref="StepAdvancement.SelectNext"/> returns MULTIPLE successors for
+    /// the fan-out node (the orchestrator dispatches one continuation per match).
+    /// <para>
+    /// <b>Red/green:</b> entry-only hydration leaves <c>Steps == { s1 }</c> (count 1) → fails; a
+    /// first-edge-only BFS would drop <c>bSide</c>/<c>bSideTerm</c> (count 4, <c>SelectNext(s2)</c>
+    /// yields 1) → fails; the full BFS fix loads all 6 and <c>SelectNext(s2)</c> yields both → passes.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task HydratesFanOutBranch_BothSuccessorsAndBothTerminals()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var wfId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var s1 = Guid.NewGuid();        // entry
+        var s2 = Guid.NewGuid();        // FAN-OUT node -> two branches
+        var bMain = Guid.NewGuid();     // branch 1 head
+        var bMainTerm = Guid.NewGuid(); // branch 1 terminal
+        var bSide = Guid.NewGuid();     // branch 2 head
+        var bSideTerm = Guid.NewGuid(); // branch 2 terminal
+
+        // s1 -> s2 -> { bMain -> bMainTerm , bSide -> bSideTerm }. s2 has TWO NextStepIds (fan-out);
+        // every downstream step is reachable ONLY via NextStepIds (never in EntryStepIds).
+        var values = new Dictionary<string, string>
+        {
+            [L2ProjectionKeys.Root(wfId)] = SerializeRootMulti(jobId, s1),
+            [L2ProjectionKeys.Step(wfId, s1)] = SerializeStep(Guid.NewGuid(), s2),
+            [L2ProjectionKeys.Step(wfId, s2)] = SerializeStep(Guid.NewGuid(), bMain, bSide), // fan-out
+            [L2ProjectionKeys.Step(wfId, bMain)] = SerializeStep(Guid.NewGuid(), bMainTerm),
+            [L2ProjectionKeys.Step(wfId, bMainTerm)] = SerializeStep(Guid.NewGuid()),
+            [L2ProjectionKeys.Step(wfId, bSide)] = SerializeStep(Guid.NewGuid(), bSideTerm),
+            [L2ProjectionKeys.Step(wfId, bSideTerm)] = SerializeStep(Guid.NewGuid()),
+        };
+
+        var store = new WorkflowL1Store();
+        var scheduler = await NewRamSchedulerAsync();
+        try
+        {
+            var lifecycle = NewLifecycle(Mux(values), store, scheduler);
+            await lifecycle.HydrateAndScheduleAsync(wfId, ct);
+
+            Assert.True(store.TryGet(wfId, out var entry));
+
+            // (1) BFS followed BOTH edges off the fan-out node — all 6 reachable steps in L1.
+            Assert.Equal(6, entry.Steps.Count);
+            foreach (var id in new[] { s1, s2, bMain, bMainTerm, bSide, bSideTerm })
+                Assert.Contains(id, entry.Steps.Keys);
+
+            var adv = new StepAdvancement();
+
+            // s1 -> s2 (single successor).
+            Assert.Equal(s2, adv.SelectNext(StepOutcome.Completed, entry.Steps[s1], entry.Steps).Single().stepId);
+
+            // (2) FAN-OUT: s2 yields BOTH successors (the multi-successor case the linear facts never hit).
+            var afterS2 = adv.SelectNext(StepOutcome.Completed, entry.Steps[s2], entry.Steps)
+                .Select(n => n.stepId).ToHashSet();
+            Assert.Equal(2, afterS2.Count);
+            Assert.Contains(bMain, afterS2);
+            Assert.Contains(bSide, afterS2);
+
+            // Each branch walks independently to its own terminal.
+            Assert.Equal(bMainTerm, adv.SelectNext(StepOutcome.Completed, entry.Steps[bMain], entry.Steps).Single().stepId);
+            Assert.Equal(bSideTerm, adv.SelectNext(StepOutcome.Completed, entry.Steps[bSide], entry.Steps).Single().stepId);
+
+            // Both leaves terminate (no successors).
+            Assert.Empty(adv.SelectNext(StepOutcome.Completed, entry.Steps[bMainTerm], entry.Steps));
+            Assert.Empty(adv.SelectNext(StepOutcome.Completed, entry.Steps[bSideTerm], entry.Steps));
+        }
+        finally
+        {
+            await scheduler.Shutdown(waitForJobsToComplete: false, ct);
+        }
+    }
 }
