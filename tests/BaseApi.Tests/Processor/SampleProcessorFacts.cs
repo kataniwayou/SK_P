@@ -1,5 +1,6 @@
 using System.Reflection;
 using BaseProcessor.Core.Processing;
+using Microsoft.Extensions.Logging;
 using Processor.Sample;
 using Xunit;
 
@@ -7,7 +8,9 @@ namespace BaseApi.Tests.Processor;
 
 /// <summary>
 /// Hermetic unit facts for <see cref="SampleProcessor"/> (SAMPLE-01 / D-04): the one concrete
-/// transform returns exactly one deterministic <see cref="ProcessResult"/>.
+/// transform deserializes the dispatch <c>config</c> — the per-step assignment payload — logs it,
+/// and echoes it back as the single <see cref="ProcessResult"/>. A blank payload falls back to the
+/// fixed <c>"processor-sample-ok"</c> token.
 ///
 /// <para>
 /// <see cref="SampleProcessor"/> is <c>sealed</c> and its <c>ProcessAsync</c> is <c>protected</c>
@@ -17,6 +20,25 @@ namespace BaseApi.Tests.Processor;
 /// </summary>
 public sealed class SampleProcessorFacts
 {
+    /// <summary>Records every formatted log message at the level it was emitted.</summary>
+    private sealed class CapturingLogger : ILogger<SampleProcessor>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception)));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
+    }
+
     private static Task<IReadOnlyList<ProcessResult>> InvokeProcessAsync(
         SampleProcessor processor, string inputData, string config)
     {
@@ -28,28 +50,33 @@ public sealed class SampleProcessorFacts
     }
 
     [Fact]
-    public async Task ProcessAsync_Returns_Single_Deterministic_Result()
+    public async Task ProcessAsync_Deserializes_Payload_Logs_It_And_Echoes_It()
     {
-        var processor = new SampleProcessor();
+        var logger = new CapturingLogger();
+        var processor = new SampleProcessor(logger);
 
-        var result = await InvokeProcessAsync(processor, "any-input", "any-config");
+        // config is a JSON string — exactly what the assignment payload "\"StepA1\"" looks like on the wire.
+        var result = await InvokeProcessAsync(processor, "any-input", "\"StepA1\"");
 
-        // Exactly one result (result.Count == 1) — Assert.Single is the xUnit-sanctioned size check.
         var only = Assert.Single(result);
-        Assert.Equal("processor-sample-ok", only.OutputData);
+        Assert.Equal("StepA1", only.OutputData);
+
+        var logged = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Information, logged.Level);
+        Assert.Contains("sample payload received", logged.Message);
+        Assert.Contains("StepA1", logged.Message);
     }
 
     [Fact]
-    public async Task ProcessAsync_Is_Deterministic_Across_Inputs()
+    public async Task ProcessAsync_Blank_Config_Falls_Back_To_Fixed_Token()
     {
-        var processor = new SampleProcessor();
+        var logger = new CapturingLogger();
+        var processor = new SampleProcessor(logger);
 
-        var first = await InvokeProcessAsync(processor, "input-A", "config-A");
-        var second = await InvokeProcessAsync(processor, "input-B", "config-B");
+        var result = await InvokeProcessAsync(processor, "any-input", "");
 
-        var firstOnly = Assert.Single(first);
-        var secondOnly = Assert.Single(second);
-        Assert.Equal(firstOnly.OutputData, secondOnly.OutputData);
-        Assert.Equal("processor-sample-ok", secondOnly.OutputData);
+        var only = Assert.Single(result);
+        Assert.Equal("processor-sample-ok", only.OutputData);
+        Assert.Single(logger.Entries); // still logs (payload null) — proves the seam always runs
     }
 }
