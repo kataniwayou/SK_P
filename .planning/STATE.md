@@ -4,14 +4,14 @@ milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: Phase planned
 stopped_at: Phase 31 context gathered
-last_updated: "2026-06-04T11:50:51.792Z"
+last_updated: "2026-06-04T12:38:15.102Z"
 last_activity: 2026-06-04
 progress:
   total_phases: 8
   completed_phases: 6
-  total_plans: 21
+  total_plans: 27
   completed_plans: 21
-  percent: 100
+  percent: 78
 ---
 
 # Project State
@@ -823,4 +823,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 30 (runtime-business-metrics) — 4 plans — 2026-06-02T19:51:01.695Z
+**Planned Phase:** 31 (idempotent-execution-exactly-once-effect) — 6 plans — 2026-06-04T12:38:15.093Z
