@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.5.0
-milestone_name: Processor Console — Self-Registration, Liveness & Execution Round-Trip
-status: milestone_complete
-stopped_at: Completed 30-04-PLAN.md
-last_updated: "2026-06-02T20:55:00.000Z"
-last_activity: 2026-06-02
+milestone: v3.6.0
+milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
+status: phase_planned
+stopped_at: Phase 31 added (CONTEXT written; awaiting spec)
+last_updated: "2026-06-04T00:00:00.000Z"
+last_activity: 2026-06-04
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 21
-  completed_plans: 21
-  percent: 100
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,15 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 30 — runtime-business-metrics
+**Current focus:** Phase 31 — idempotent execution round-trip (exactly-once-effect)
 
 ## Current Position
 
-Milestone: v3.5.0 (Processor Console — Self-Registration, Liveness & Execution Round-Trip) — started 2026-06-01
-Phase: 30
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-02
+Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
+Phase: 31
+Plan: Not started (CONTEXT written 2026-06-04; next: /gsd-spec-phase 31)
+Status: Phase planned
+Last activity: 2026-06-04
+
+### Phase 31 — Idempotent Execution Round-Trip (Exactly-Once-Effect) — PLANNED (2026-06-04)
+
+- Design agreed in a long discussion (Redis exception handling → Immediate(3) idempotency → deterministic content-addressed identity + effect-first receiver dedup). Full design captured in `.planning/phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md`.
+- Core: `H = hash(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded); content-addressed two-level L2 data; symmetric effect-first `flag[H]=Pending|Ack` dedup via atomic CAS; merge correctness via input EntryId; manifest fan-out; Cancelled-on-Immediate(3)-exhaustion → halt Quartz job.
+- Achieves exactly-once-EFFECT (not exactly-once-execution — ProcessAsync must be pure / side-effect-idempotent). Reworks Phase-27 `EntryStepDispatchConsumer` + Phase-24 orchestrator advancement.
+- Next: `/gsd-spec-phase 31` to formalize IDEM-* requirements + the open decisions (Cancelled trip threshold / blast radius / resume; identical-input-merge collapse vs predecessorStepId; back-off retry vs Immediate).
 
 ### Phase 30 Plan 04 — COMPLETE (RealStack MetricsRoundTripE2ETests; METRIC-01..07 capstone; 2026-06-02)
 

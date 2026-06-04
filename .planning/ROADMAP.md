@@ -5,7 +5,8 @@
 - ✅ **v3.2.0 Steps API MVP** — Phases 1-11 (shipped 2026-05-28) — see [milestones/v3.2.0-ROADMAP.md](milestones/v3.2.0-ROADMAP.md)
 - ✅ **v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline** — Phases 12-16 (shipped 2026-05-29) — see [milestones/v3.3.0-ROADMAP.md](milestones/v3.3.0-ROADMAP.md)
 - ✅ **v3.4.0 BaseConsole + Orchestrator Messaging** — Phases 17-24 + 24.1 (shipped 2026-06-01) — see [milestones/v3.4.0-ROADMAP.md](milestones/v3.4.0-ROADMAP.md)
-- 🚧 **v3.5.0 Processor Console — Self-Registration, Liveness & Execution Round-Trip** — Phases 25-28 (in progress)
+- ✅ **v3.5.0 Processor Console — Self-Registration, Liveness & Execution Round-Trip** — Phases 25-30 (shipped 2026-06-02)
+- 🚧 **v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip** — Phase 31+ (planning)
 
 ## Phases (shipped milestones)
 
@@ -167,10 +168,28 @@
 - [x] 30-03-PLAN.md — BaseProcessor.Core counters: dispatch_consumed + result_sent{outcome} via firewall-correct meter seam (METRIC-05) — 2026-06-02
 - [x] 30-04-PLAN.md — RealStack MetricsRoundTripE2ETests: Prometheus series + by-ProcessorId bottleneck PromQL (METRIC-06; live proof of 01..05; 07 gate) — 2026-06-02
 
+## 🚧 v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip (Planning)
+
+**Milestone Goal:** Make the orchestrator↔processor execution round-trip **exactly-once-effect** under at-least-once delivery — so `Immediate(3)` retries, broker redeliveries, publish-confirm ambiguity, the orchestrator's own re-dispatch, and fan-in/merge all stop producing duplicate downstream execution, with zero lost branches. Achieved by **deterministic content-addressed identity + effect-first receiver dedup**, not producer-side detection (which is provably impossible — confirmation is lossy in one direction).
+
+- [ ] **Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)** — Deterministic per-fire identity `H = hash(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded, lineage only); content-addressed two-level L2 data (`data[hash(result)]` blobs + `data[hash(manifest)]` manifest); symmetric effect-first `flag[H] = Pending|Ack` dedup via atomic CAS on every send/receive (processor inbound dispatch + orchestrator inbound result); merge correctness + no-override via input `EntryId`; manifest fan-out (successor stepId/processorId, regenerated executionId); `Cancelled`-on-`Immediate(3)`-exhaustion → orchestrator halts the Quartz job (circuit-breaker). Reworks `EntryStepDispatchConsumer` + orchestrator `ResultConsumer`/advancement; extends the wire contracts + `L2ProjectionKeys`. See [31-CONTEXT.md](phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md). (planned 2026-06-04)
+
+### Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)
+**Goal**: Every duplicate inbound message — from `Immediate(3)`, broker redelivery, publish-confirm ambiguity, the orchestrator's own re-dispatch, or a fan-in/merge re-dispatch — reproduces the same deterministic identity and is collapsed at the receiving node, so each step's downstream effect happens exactly once with no lost branch; the processor business transform (`ProcessAsync`) needs no idempotency logic.
+**Depends on**: Phase 30 (the full v3.5.0 round-trip + both consoles + metrics in place; Phase 31 reworks the Phase 27 consumer + the Phase 24 advancement)
+**Requirements**: IDEM-* (formalized at spec) — deterministic identity, content-addressed data, effect-first CAS dedup, merge/fan-out correctness, Cancelled circuit-breaker.
+**Success Criteria** (what must be TRUE — to be sharpened at spec):
+  1. The dedup identity `H = hash(correlationId, workflowId, stepId, processorId, EntryId)` is deterministic (correlationId = per-fire job id; EntryId = `hash(data)`; executionId excluded), so a retry/redelivery/re-dispatch of the same logical message yields the same `H`.
+  2. L2 data is content-addressed at two levels (result blobs + manifest), all writes idempotent; an empty result is a terminal branch.
+  3. Receiver dedup is **effect-first**: the downstream effect (send / dispatch) is produced before `flag[H]` is CAS-flipped `Pending → Ack`, so a crash in the window yields a *collapsed duplicate*, never a lost branch; the flip is atomic (no concurrency double-process).
+  4. A merge step's per-edge executions are distinguished by their input `EntryId` (no false dedup, no output override); the merge is per-edge, not a join.
+  5. A live real-stack proof: the dual-pipeline workflow under the **merge** topology, run across multiple cron fires plus an induced `Immediate(3)`/redelivery, shows in ES **exactly the expected per-fire effect set with no extra downstream execution** (the inverse of the `StepB4`-×2 duplicate), and an induced processor exhaustion emits `Cancelled` and halts the Quartz job.
+**Plans**: TBD (spec → discuss → plan)
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 25 → 26 → 27 → 28 → 29
+Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31
 
 | Phase | Milestone | Plans Complete | Status   | Completed  |
 | ----- | --------- | -------------- | -------- | ---------- |
@@ -191,6 +210,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29
 | 28. SourceHash Identity + Processor.Sample + E2E Closeout | v3.5.0 | 4/4 | Complete    | 2026-06-02 |
 | 29. Structured Execution-Scope Logging | v3.5.0 | 5/5 | Complete    | 2026-06-02 |
 | 30. Runtime & Business Metrics | v3.5.0 | 4/4 | Complete    | 2026-06-02 |
+| 31. Idempotent Execution Round-Trip (Exactly-Once-Effect) | v3.6.0 | 0/TBD | Planning | — |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 STARTED 2026-06-01 (4 phases 25-28, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip; build order 25→26→27→28). 38/38 requirements mapped.*
