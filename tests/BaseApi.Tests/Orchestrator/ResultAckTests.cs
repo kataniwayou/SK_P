@@ -209,7 +209,11 @@ public sealed class ResultAckTests
             && c.GetArguments().Length > 1
             && c.GetArguments()[0] is RedisKey sk && sk.ToString() == flagKey
             && c.GetArguments()[1] is RedisValue sv && sv.ToString() == "Ack"
-            && c.GetArguments().Any(a => a is ValueCondition vc && vc.ToString() == "XX"));
+            // SET XX surfaces as a ValueCondition("XX") on the (RedisKey,RedisValue,Expiration,ValueCondition,
+            // CommandFlags) overload, OR as a When.Exists enum on the keepTtl
+            // (RedisKey,RedisValue,TimeSpan?,bool,When,CommandFlags) overload the flip now binds (Phase 31
+            // keepTtl preserves the sender TTL). Accept either so the assertion is overload-robust.
+            && c.GetArguments().Any(a => (a is ValueCondition vc && vc.ToString() == "XX") || (a is When w && w == When.Exists)));
     }
 
     // ----- an inbound result whose flag[m.H] is already "Ack" is dropped (no dispatch, no flip) -------
