@@ -211,7 +211,9 @@ public sealed class EntryStepDispatchConsumer(
         // seed + send) is produced. When.Exists = SET XX: a false return means Pending was lost (crash
         // residual) — NOT an error, do NOT throw (Pitfall 3); downstream H dedup absorbs the residual. Do
         // NOT flip the outbound resultH to Ack — the orchestrator owns that flip on its hop (Plan 04).
-        await db.StringSetAsync(L2ProjectionKeys.Flag(dispatch.H), "Ack", when: When.Exists);
+        // keepTtl: SET XX without KEEPTTL would CLEAR the sender's 300s TTL, making every deduped flag a
+        // permanent skp:flag:* key (unbounded Redis growth). KEEPTTL preserves the bound so Ack flags drain.
+        await db.StringSetAsync(L2ProjectionKeys.Flag(dispatch.H), "Ack", expiry: null, keepTtl: true, when: When.Exists);
         // returns normally -> ACK only after the send + flip (D-15).
     }
 

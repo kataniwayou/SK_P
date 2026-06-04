@@ -104,7 +104,9 @@ public sealed class ResultConsumer(
         // Flip the inbound result's flag Pending->Ack ONLY after the fan-out effect. When.Exists = SET XX: a
         // false return means the Pending seed (the processor's outbound pre-write, Plan 03) was lost — NOT an
         // error, do NOT throw (D-07/T-31-14); the next-hop child-H dedup absorbs the residual.
-        await db.StringSetAsync(L2ProjectionKeys.Flag(m.H), "Ack", when: When.Exists);
+        // keepTtl: SET XX without KEEPTTL would CLEAR the sender's 300s TTL, making every deduped flag a
+        // permanent skp:flag:* key (unbounded Redis growth). KEEPTTL preserves the bound so Ack flags drain.
+        await db.StringSetAsync(L2ProjectionKeys.Flag(m.H), "Ack", expiry: null, keepTtl: true, when: When.Exists);
         // returns normally -> ACK. An infra fault from Send / Redis propagates -> Immediate(3) -> _error.
     }
 }
