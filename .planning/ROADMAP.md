@@ -172,7 +172,8 @@
 
 **Milestone Goal:** Make the orchestrator↔processor execution round-trip **exactly-once-effect** under at-least-once delivery — so `Immediate(3)` retries, broker redeliveries, publish-confirm ambiguity, the orchestrator's own re-dispatch, and fan-in/merge all stop producing duplicate downstream execution, with zero lost branches. Achieved by **deterministic content-addressed identity + effect-first receiver dedup**, not producer-side detection (which is provably impossible — confirmation is lossy in one direction).
 
-- [ ] **Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)** — Deterministic per-fire identity `H = hash(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded, lineage only); content-addressed two-level L2 data (`data[hash(result)]` blobs + `data[hash(manifest)]` manifest); symmetric effect-first `flag[H] = Pending|Ack` dedup via atomic CAS on every send/receive (processor inbound dispatch + orchestrator inbound result); merge correctness + no-override via input `EntryId`; manifest fan-out (successor stepId/processorId, regenerated executionId); `Cancelled`-on-`Immediate(3)`-exhaustion → orchestrator halts the Quartz job (circuit-breaker). Reworks `EntryStepDispatchConsumer` + orchestrator `ResultConsumer`/advancement; extends the wire contracts + `L2ProjectionKeys`. See [31-CONTEXT.md](phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md). (planned 2026-06-04)
+- [ ] **Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)** — Deterministic per-fire identity `H = hash(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded, lineage only); content-addressed two-level L2 data (`data[hash(result)]` blobs + `data[hash(manifest)]` manifest); symmetric effect-first `flag[H] = Pending|Ack` dedup via atomic CAS on every send/receive (processor inbound dispatch + orchestrator inbound result); merge correctness + no-override via input `EntryId` (identical-input collapse); manifest fan-out (successor stepId/processorId, regenerated executionId); configurable retry count (default `Immediate(N)`). Reworks `EntryStepDispatchConsumer` + orchestrator `ResultConsumer`/advancement; extends the wire contracts + `L2ProjectionKeys`. **SPEC locked (8 requirements)** — see [31-SPEC.md](phases/31-idempotent-execution-exactly-once-effect/31-SPEC.md) / [31-CONTEXT.md](phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md). (spec'd 2026-06-04)
+- [ ] **Phase 32: Cancelled Circuit-Breaker** — On retry-budget exhaustion the processor emits `Cancelled` (sends the consumed message back) and performs a **two-level stop**: sets a `cancelled[workflowId]` marker in L2 (every receiver checks-and-drops in-flight messages → current fire drains to a halt) and signals the orchestrator, which resolves `jobId` from **L1** and unschedules the Quartz job (future fires). `Cancelled` is a terminal stop intercepted before `SelectNext` (advances no successor); **remove `StepEntryCondition.PreviousCancelled` (3)** (leave as gap; validator `IsInEnum` auto-rejects). Trip on first exhaustion (the configurable retry count is the transient-tolerance knob). Design record: the deferred Failure-policy section of [31-CONTEXT.md](phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md). (planned 2026-06-04)
 
 ### Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)
 **Goal**: Every duplicate inbound message — from `Immediate(3)`, broker redelivery, publish-confirm ambiguity, the orchestrator's own re-dispatch, or a fan-in/merge re-dispatch — reproduces the same deterministic identity and is collapsed at the receiving node, so each step's downstream effect happens exactly once with no lost branch; the processor business transform (`ProcessAsync`) needs no idempotency logic.
@@ -183,7 +184,19 @@
   2. L2 data is content-addressed at two levels (result blobs + manifest), all writes idempotent; an empty result is a terminal branch.
   3. Receiver dedup is **effect-first**: the downstream effect (send / dispatch) is produced before `flag[H]` is CAS-flipped `Pending → Ack`, so a crash in the window yields a *collapsed duplicate*, never a lost branch; the flip is atomic (no concurrency double-process).
   4. A merge step's per-edge executions are distinguished by their input `EntryId` (no false dedup, no output override); the merge is per-edge, not a join.
-  5. A live real-stack proof: the dual-pipeline workflow under the **merge** topology, run across multiple cron fires plus an induced `Immediate(3)`/redelivery, shows in ES **exactly the expected per-fire effect set with no extra downstream execution** (the inverse of the `StepB4`-×2 duplicate), and an induced processor exhaustion emits `Cancelled` and halts the Quartz job.
+  5. A live real-stack proof: the dual-pipeline workflow under the **merge** topology, run across multiple cron fires plus an induced `Immediate(N)`/redelivery, shows in ES **exactly the expected per-fire effect set with no extra downstream execution** (the inverse of the `StepB4`-×2 duplicate).
+**Plans**: TBD (spec → discuss → plan). **SPEC locked** — see 31-SPEC.md (8 requirements, ambiguity 0.13).
+
+### Phase 32: Cancelled Circuit-Breaker
+**Goal**: On retry-budget exhaustion, a workflow is cleanly and completely stopped — current in-flight fire halted and future cron fires unscheduled — via an explicit `Cancelled` terminal outcome, instead of silently dead-lettering to `_error`.
+**Depends on**: Phase 31 (deterministic `H` dedup + configurable retry must exist; `Cancelled` is deduped via `H`, and the final-attempt handler reads the configured retry limit)
+**Requirements**: CANCEL-* (formalized at spec)
+**Success Criteria** (what must be TRUE — to be sharpened at spec):
+  1. On `GetRetryAttempt() == configured Limit`, the processor sends the consumed message back as `Cancelled` (not dead-lettered) and sets `cancelled[workflowId] = true` in L2 (effect-first: marker → send → ack).
+  2. Every receiver (processor `EntryStepDispatchConsumer`, orchestrator `ResultConsumer`) checks `cancelled[workflowId]` before processing and drops in-flight messages → the current fire drains to a halt (stops advancing, no rollback).
+  3. The orchestrator, on `Cancelled`, resolves `jobId` from **L1** (`store.TryGet → wf.JobId`, no L2 read) and unschedules the Quartz job; `Cancelled` is intercepted **before** `SelectNext` (advances no successor, regardless of entry condition).
+  4. `StepEntryCondition.PreviousCancelled (3)` is removed (left as a numeric gap; `IsInEnum` validator auto-rejects 3); no live step uses `EntryCondition == 3`.
+  5. Open decisions resolved at spec: trip-on-first-exhaustion (chosen) blast radius (whole-workflow); the resume path (clear marker + re-Start); `_error` retained as the backstop for bus-down exhaustion.
 **Plans**: TBD (spec → discuss → plan)
 
 ## Progress
@@ -210,7 +223,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31
 | 28. SourceHash Identity + Processor.Sample + E2E Closeout | v3.5.0 | 4/4 | Complete    | 2026-06-02 |
 | 29. Structured Execution-Scope Logging | v3.5.0 | 5/5 | Complete    | 2026-06-02 |
 | 30. Runtime & Business Metrics | v3.5.0 | 4/4 | Complete    | 2026-06-02 |
-| 31. Idempotent Execution Round-Trip (Exactly-Once-Effect) | v3.6.0 | 0/TBD | Planning | — |
+| 31. Idempotent Execution Round-Trip (Exactly-Once-Effect) | v3.6.0 | 0/TBD | Spec'd | — |
+| 32. Cancelled Circuit-Breaker | v3.6.0 | 0/TBD | Planning | — |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 STARTED 2026-06-01 (4 phases 25-28, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip; build order 25→26→27→28). 38/38 requirements mapped.*
