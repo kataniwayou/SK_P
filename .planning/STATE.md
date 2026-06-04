@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: ready_to_plan
-stopped_at: 31-06 tasks 1-2 authored + verified; Task 3 live human-verify gate pending operator
-last_updated: "2026-06-04T14:49:26.000Z"
-last_activity: 2026-06-04 -- Phase 31 Plan 06 authored (real-stack E2E + close gate); live gate pending
+stopped_at: Phase 31 complete (exactly-once proven, 3×GREEN) + Phase 31.1 complete (NET-ZERO-31 resolved, close gate PASSED)
+last_updated: "2026-06-04T18:30:00.000Z"
+last_activity: 2026-06-04 -- Phase 31 + 31.1 complete; phase-31-close.ps1 PASSED (3×446 GREEN + psql/redis/rabbitmq triple-SHA all HELD)
 progress:
   total_phases: 8
   completed_phases: 7
@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 31 — idempotent-execution-exactly-once-effect
+**Current focus:** Phase 32 — cancelled-circuit-breaker (Phase 31 + gap-closure 31.1 complete)
 
 ## Current Position
 
@@ -31,7 +31,13 @@ Plan: Not started
 Status: Ready to plan
 Last activity: 2026-06-04
 
-### Phase 31 Plan 06 — AUTHORED (real-stack exactly-once-effect E2E + phase-31 close gate; req-8 PENDING live gate; 2026-06-04)
+### Phase 31.1 — COMPLETE (close-gate redis net-zero / NET-ZERO-31 resolved; 2026-06-04)
+- **Live gate PASSED:** `phase-31-close.ps1` — 3×GREEN (Run 1/2/3 = Passed 446), psql `\l` SHA `b48ce783…` HELD, redis `--scan` SHA `9f09db5b…` HELD (BEFORE==AFTER), rabbitmq `list_queues` SHA `2eca7621…` HELD.
+- **Root cause fixed:** RealStack E2E tests left self-rescheduling cron workflows firing → per-fire `skp:flag:{H}` name-churn. Fix = stop-workflow-in-teardown across the 5 RealStack tests + close-gate settle-drain + one-time RAMJobStore purge (orchestrator restart). Production `keepTtl` flag-TTL fix landed in Phase 31 (`2a4837f`); `ResultAckTests` made overload-robust.
+- **Operational note:** the gate's `dotnet build` recomputes `Processor.Sample`'s embedded SourceHash — rebuild the processor-sample/orchestrator/baseapi-service containers (`docker compose up -d --build`) before the live gate or the liveness gate fails on a procId mismatch.
+- SUMMARY: 31.1-SUMMARY.md.
+
+### Phase 31 Plan 06 — COMPLETE (real-stack exactly-once-effect E2E + phase-31 close gate; req-8 proven live; 2026-06-04)
 
 - **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `98bae9f` (test: IdempotentExactlyOnceE2ETests — merge topology + induced redelivery, zero downstream dup), `2b945f5` (feat: phase-31-close.ps1 — 3-GREEN + triple-SHA covering skp:flag:* + 64-hex skp:data:*).
 - **Wave note:** wave 4, depends_on [31-03, 31-04, 31-05]. The milestone's only end-to-end req-8 proof, exercising the full content-addressed round-trip the prior waves built (processor producer 31-03 + orchestrator consumer 31-04 + retry budget 31-05).

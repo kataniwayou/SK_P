@@ -6,6 +6,7 @@ score: 8/8 requirements verified (req-8 close-gate redis net-zero deferred to Ph
 overrides_applied: 0
 deferred_gaps:
   - id: NET-ZERO-31
+    status: RESOLVED in Phase 31.1 (2026-06-04) — phase-31-close.ps1 PASSED, all three triple-SHA invariants HELD (redis BEFORE==AFTER). See 31.1-SUMMARY.md.
     summary: "Close-gate redis --scan triple-SHA BEFORE!=AFTER. Recurring test workflows (cron `* * * * *`, self-rescheduled by WorkflowFireJob) keep firing in the sk-orchestrator container and mint per-fire-unique skp:flag:{H} key names forever; no E2E test stops its workflow, so the keyspace name-set churns unboundedly. Prior phases were immune (content-addressed data-key names are deterministic). Tracked for remediation in Phase 31.1 (stop-workflow-in-teardown discipline across the E2E suite + purge leaked workflow rows + gate settle). Does NOT affect the exactly-once-effect guarantee, which is proven live (req-8a, 3xGREEN)."
 human_verification_resolved: "2026-06-04 — live exactly-once-effect PROVEN on the full v3.6.0 compose stack (orchestrator + baseapi-service + processor-sample rebuilt to the new string-EntryId+H wire contract). phase-31-close.ps1: 3-consecutive-GREEN cadence GREEN (Run 1/2/3 = Passed 446 / Failed 0 each); psql \\l triple-SHA HELD; rabbitmqctl list_queues triple-SHA HELD. The capstone MergeTopology_InducedRedelivery_ProducesExactlyOnceDownstreamEffect asserts EXACTLY ONE downstream StepA1 effect per CorrelationId despite a same-H redelivery (the live inverse of StepB4 x2)."
 ---
