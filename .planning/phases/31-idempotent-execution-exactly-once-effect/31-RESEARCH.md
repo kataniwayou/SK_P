@@ -373,20 +373,25 @@ foreach (var (stepId, step) in advancement.SelectNext(m.Outcome, completed, wf.S
 
 No new auth/session/access-control surface (V2/V3/V4 unchanged — this is intra-cluster messaging behind the existing boundary).
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three discretion items were decided during planning (2026-06-04). Resolutions pinned in the plans noted below.
 
 1. **Failed/Cancelled result EntryId after Guid->string (Discretion-adjacent).**
    - What we know: today `BuildFailed`/`BuildCancelled` set `EntryId = Guid.Empty` (no data written). After the type change there is no `Guid.Empty`.
    - What's unclear: the planner must pick the string sentinel for "no output" on a Failed/Cancelled result (empty string `""` vs `hash("[]")`). The orchestrator `ResultConsumer` must handle it (a Failed result fans to no successor via `SelectNext` outcome-match anyway).
    - Recommendation: use `hash("[]")` (the empty-manifest EntryId) for consistency — a Failed result then naturally has a terminal manifest; OR `""` if the receiver short-circuits on outcome before reading the manifest. Planner's call; pin it in the plan and test it.
+   - **RESOLVED: empty string `""`** for the Failed/Cancelled "no output" sentinel — it mirrors the old `Guid.Empty`, is never a content key, and the receiver short-circuits on outcome before reading the manifest. Pinned in Plans 31-02 and 31-03.
 
 2. **Per-process RetryOptions: one shared record or two copies (explicit Discretion in D-10/CONTEXT).**
    - What we know: Orchestrator (3 ConsumerDefinition sites) and BaseProcessor.Core (1 inline bind) are separate processes with separate appsettings.
    - Recommendation: a shared `RetryOptions` record type in a leaf both reference (e.g. `Messaging.Contracts` or a config leaf), bound independently per process via `IOptions`. The record SHAPE is shared; the BOUND VALUES are per-process. This is the single-source-of-truth D-10 wants for Phase 32's `GetRetryAttempt()==Limit` check.
+   - **RESOLVED: one shared `RetryOptions` record** in `Messaging.Contracts`, bound independently per process via `IOptions` (shape shared, values per-process). Pinned in Plans 31-01 and 31-05.
 
 3. **Merge topology fixture for req-8 (test-construction detail).**
    - What we know: there is NO literal "StepB4" named fixture in the tree — it is a live-stack observation. `SampleRoundTripE2ETests` seeds a single-entry workflow.
    - Recommendation: the E2E seeds TWO entry steps feeding ONE successor (`NextStepIds` from both predecessors -> the merge step), mirroring the dual-pipeline merge the SPEC describes; assert the merge step's downstream effect appears exactly once per fire (collapse) or per-distinct-input (distinct H), per req-5/req-8.
+   - **RESOLVED: build the merge topology test-side** in the E2E — two entry steps both with `NextStepIds` -> one successor step; no named fixture exists. Pinned in Plan 31-06.
 
 ## Environment Availability
 
