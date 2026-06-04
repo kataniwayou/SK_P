@@ -41,6 +41,12 @@ builder.Services.AddBaseConsoleMessaging(builder.Configuration,
             .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
         x.AddConsumer<StopOrchestrationConsumer, StopOrchestrationConsumerDefinition>()
             .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
+        // Phase 32 (req-4 / D-06): the future-fire stop. Consumes the MassTransit-auto-published
+        // Fault<EntryStepDispatch> on the SAME per-replica fan-out endpoint as Start/Stop (NOT the shared
+        // orchestrator-result queue — Pitfall 5) so EVERY replica receives the fault and the
+        // schedule-owning one unschedules the Quartz job (others no-op).
+        x.AddConsumer<FaultUnscheduleConsumer, FaultUnscheduleConsumerDefinition>()
+            .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });   // per-replica fan-out (D-06)
         // ORCH-RESULT-02: shared competing-consumer (NO InstanceId/Temporary) — the inverse of the
         // Start/Stop fan-out. ResultConsumerDefinition binds the stable "orchestrator-result" endpoint.
         x.AddConsumer<ResultConsumer, ResultConsumerDefinition>();
