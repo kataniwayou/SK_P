@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Completed 31-05-PLAN.md
-last_updated: "2026-06-04T13:18:00.000Z"
-last_activity: 2026-06-04 -- Phase 31 Plan 05 complete
+stopped_at: Completed 31-03-PLAN.md
+last_updated: "2026-06-04T13:52:17.000Z"
+last_activity: 2026-06-04 -- Phase 31 Plan 03 complete
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 27
-  completed_plans: 24
-  percent: 89
+  completed_plans: 25
+  percent: 93
 ---
 
 # Project State
@@ -27,9 +27,19 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 31 (idempotent-execution-exactly-once-effect) — EXECUTING
-Plan: 5 of 6 (wave 2 — ran in parallel with 31-02; disjoint file set)
+Plan: 5 of 6 plans complete (01/02/03/05 done; 04 + 06 remain)
 Status: Executing Phase 31
-Last activity: 2026-06-04 -- Phase 31 Plan 05 complete
+Last activity: 2026-06-04 -- Phase 31 Plan 03 complete
+
+### Phase 31 Plan 03 — COMPLETE (effect-first content-addressed processor receiver — drop-on-Ack dedup + two-level write + manifest + outbound Pending pre-write; req-3, req-4; 2026-06-04)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `73c0cab` (feat: dedup gate + content-addressed two-level write + manifest + outbound Pending pre-write in EntryStepDispatchConsumer), `b008995` (test: EffectFirstDedupFacts + realign 7 pre-existing consumer facts to manifest collapse).
+- **Wave note:** wave 3, depends_on [31-02]. Pure logic rework of the processor consumer against the stable string `EntryId`/`H` contract — replaced the Plan-02 `NewId.NextGuid().ToString("D")` shim with `MessageIdentity.HashBlob`, removed the `IsNullOrEmpty` source-step branch in favor of `InputDefinition==null`, and wired the effect-first flag dedup.
+- **Effect-first producer half (D-06):** drop-on-Ack gate on `flag[dispatch.H]` at consume top -> no effect; content-addressed two-level write (`data[HashBlob(blob)]` blobs + `data[HashManifest(manifest)]` manifest); ONE manifest `ExecutionResult` per dispatch (`EntryId = manifestEntryId`, `H = ComputeH(corr,wf,step,proc,manifestEntryId)`); outbound `flag[resultH]="Pending"` SENDER pre-write seeding the orchestrator hop (Plan 04 flips it); inbound `flag[dispatch.H]` Pending->Ack via `StringSet When.Exists` AFTER the send. Empty result sends a terminal `"[]"`. Any invalid output blob = whole-dispatch business Failed (EntryId/H="").
+- **`EffectFirstDedupFacts`** (5 hermetic facts): drop-on-Ack no-effect; effect-then-CAS in order; outbound Pending pre-write before send; inbound flip `When.Exists`; crash-window redelivery re-produces same data key + same result H (collapsed duplicate, never loss).
+- **Deviations (2):** Rule 1 — realigned 7 pre-existing consumer facts broken by the intended N->1 manifest collapse + dedup gate (the wave's full-suite-green verification requires it; no protocol logic invented). Rule 3 — replaced a fragile cross-overload `Received.InOrder` with a captured-call ordering check in `Effect_Then_AckCas_InOrder`.
+- **Verification (all green):** `dotnet build src/BaseProcessor.Core -c Debug` 0/0; `--filter-class "*EffectFirstDedupFacts"` 5/5; Processor namespace 56/56; full hermetic suite `--filter-not-trait "Category=RealStack"` = **Passed 434 / Failed 0** (429 prior + 5 new EffectFirstDedupFacts; the realigned facts net-equal after the 1-fact rename/replace).
+- SUMMARY: 31-03-SUMMARY.md (Self-Check PASSED). req-3 (processor content-addressed write) + req-4 (processor-hop effect-first dedup) landed with green coverage. Phase 31 = 5/6 plans complete; **Plan 04** (orchestrator inbound dedup + manifest fan-out + entry-step EntryId + sender pre-write, req-2/4/5/6, wave 3) + **Plan 06** (live E2E, req-8, wave 4) remain.
 
 ### Phase 31 Plan 05 — COMPLETE (config-bound retry budget — 4 Immediate(3) sites → IOptions<RetryOptions>.Limit; req-7; 2026-06-04)
 
@@ -844,9 +854,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 31 context gathered
-Resume file: --resume-file
+Last session: 2026-06-04T13:52:17Z
+Stopped at: Completed 31-03-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.

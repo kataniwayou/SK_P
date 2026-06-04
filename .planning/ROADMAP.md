@@ -188,7 +188,7 @@
 **Plans**: 6 plans (4 waves) — planned 2026-06-04. **SPEC locked** — see 31-SPEC.md (8 requirements, ambiguity 0.13).
   - [x] 31-01-PLAN.md — shared hash helper + L2 key builders + RetryOptions + golden tests (req-1, req-7) [wave 1]
   - [x] 31-02-PLAN.md — EntryId Guid→string + H contract ripple, compile-green (req-1, req-2) [wave 2]
-  - [ ] 31-03-PLAN.md — processor receiver rework: content-addressed two-level write + manifest + effect-first dedup (req-3, req-4) [wave 3]
+  - [x] 31-03-PLAN.md — processor receiver rework: content-addressed two-level write + manifest + effect-first dedup (req-3, req-4) [wave 3]
   - [ ] 31-04-PLAN.md — orchestrator inbound dedup + manifest fan-out + entry-step EntryId + sender pre-write (req-2, req-4, req-5, req-6) [wave 3]
   - [x] 31-05-PLAN.md — configurable retry: 4 sites bound from RetryOptions per process (req-7) [wave 2]
   - [ ] 31-06-PLAN.md — live exactly-once E2E (merge topology + induced retry) + phase-31-close.ps1 (req-8) [wave 4]
