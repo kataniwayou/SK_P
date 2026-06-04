@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Phase 32 Plan 04 complete
-last_updated: "2026-06-04T19:27:00.000Z"
-last_activity: 2026-06-04 -- Phase 32 Plan 04 complete (breaker processor half — check-and-drop gate + flag[H] dedup counter + final-attempt breaker catch; the only genuinely new logic this phase)
+stopped_at: Phase 32 Plan 05 complete
+last_updated: "2026-06-04T20:05:00.000Z"
+last_activity: 2026-06-04 -- Phase 32 Plan 05 complete (breaker orchestrator half — ResultConsumer check-and-drop gate + orchestrator_result_deduped counter; in-flight stop now symmetric on both hops)
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 34
-  completed_plans: 30
-  percent: 88
+  completed_plans: 31
+  percent: 91
 ---
 
 # Project State
@@ -27,9 +27,19 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 32 (cancelled-circuit-breaker) — EXECUTING
-Plan: 5 of 7 (01/02/04 complete; 03 CANCELLED)
+Plan: 6 of 7 (01/02/04/05 complete; 03 CANCELLED)
 Status: Executing Phase 32
-Last activity: 2026-06-04 -- Phase 32 Plan 04 complete (breaker processor half — check-and-drop gate + flag[H] dedup counter + final-attempt breaker catch; the only genuinely new logic this phase)
+Last activity: 2026-06-04 -- Phase 32 Plan 05 complete (breaker orchestrator half — ResultConsumer check-and-drop gate + orchestrator_result_deduped counter; in-flight stop now symmetric on both hops)
+
+### Phase 32 Plan 05 — COMPLETE (breaker orchestrator half — ResultConsumer check-and-drop gate + orchestrator_result_deduped counter; req-3/req-7; 2026-06-04)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `00bfeb2` (test RED: ResultCheckAndDropFacts — failing orchestrator check-and-drop + dedup counter), `e43bc1b` (feat GREEN: ResultConsumer check-and-drop gate + orchestrator_result_deduped counter).
+- **Wave 2, depends_on [32-02].** The orchestrator half of the in-flight stop — two surgical `ResultConsumer` edits MIRRORING the processor-side 32-04 gate. Completes req-3's "every receiver checks the marker before processing": both the processor (32-04) and the orchestrator (this plan) drain to a halt. The orchestrator only checks-and-drops — it does NOT set the marker and does NOT trip the breaker (the trip is processor-side per D-01).
+- **TDD task (req-3 orchestrator / req-7 dedup; D-05/D-10/D-13):** Edit 1 — at the existing `flag[m.H]=="Ack"` gate, increment `metrics.ResultDeduped.Add(1, ProcessorId)` (`m.ProcessorId.ToString("D")` — non-nullable Guid, NO bang, mirrors the `:55` ResultConsumed idiom) before the drop-return. Edit 2 — cancelled check-and-drop placed AFTER the flag[H] gate and BEFORE `store.TryGet`: `if ((string?)StringGetAsync(Cancelled(m.WorkflowId)) == CancelledMarkerValue) return;` — reads the marker ONLY (never flag[H], D-13); ack-and-discard with no advancement/manifest/fan-out/flip, NO dedup counter, and NO marker write (the orchestrator never WRITES it — D-01). `ResultCheckAndDropFacts` (3): flag-Ack -> ONE orchestrator_result_deduped + ProcessorId tag + no dispatch/flip (scoped MeterListener); cancelled-set -> ack-and-discard with no dispatch, ZERO counter, no StringSetAsync to ANY key (D-13 no-write guard); a DIFFERENT workflow's marker leaves THIS un-cancelled result processing normally (workflowId-keyed, RecordingDispatcher).
+- **No deviations of substance** — the single autonomous TDD task ran as written, both literal plan snippets realized verbatim. The plan's `<verification>` anticipated possible Rule-3 realignment if a pre-existing ResultConsumer test hit the cancelled read; NONE needed (the existing `NoopRedis` returns Null for the cancelled key -> all pre-existing facts pass unchanged). No auth gates. No architectural decisions (Rule 4 not triggered).
+- **Pre-existing flaky-suite note (NOT a regression):** the full hermetic run showed 1 failure; stashing the lone source change (`ResultConsumer.cs`) and re-running the Orchestrator namespace on the baseline failed 5 (count varies 5/3/1 run-to-run) — a non-deterministic in-memory-MassTransit-harness race present WITHOUT this plan's edit (matches MEMORY `reference_close_gate_surfaces_stale_flaky_tests`). All 3 directly-impacted classes pass deterministically in isolation. Logged to deferred-items.md; the live phase-32 close gate (Plan 06) is the authoritative full-suite signal.
+- **Verification (authored task green):** `dotnet build src/Orchestrator -c Debug` 0/0; `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error; `--filter-class "*ResultCheckAndDropFacts"` 3/3; `*ResultAckTests` 6/6 + `*ResultConsumeTests` 2/2 in isolation (zero regression); acceptance greps hold (`ResultDeduped.Add(1,` in the flag-Ack branch; `StringGetAsync(Cancelled(m.WorkflowId))` vs `CancelledMarkerValue` AFTER the flag gate, BEFORE store.TryGet; `StringSetAsync.*Cancelled` = 0 matches); no file deletions across the 2 commits; full hermetic suite = **Passed 461 / Failed 1 of 462** (459 prior + 3 new; the 1 failure is the pre-existing harness flake).
+- SUMMARY: 32-05-SUMMARY.md (Self-Check PASSED). Phase 32 = 4/7 plans complete (01/02/04/05; 03 CANCELLED); **Plan 06** (Fault<EntryStepDispatch> fanout consumer — future-fire unschedule, req-4) + the real-stack E2E + close gate + **Plan 07** remain. In-flight stop (req-3) is now SYMMETRIC/complete on both hops.
 
 ### Phase 32 Plan 04 — COMPLETE (breaker processor half — check-and-drop gate + flag[H] dedup counter + final-attempt breaker catch; req-1/req-2/req-3/req-7; 2026-06-04)
 
