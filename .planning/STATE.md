@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
-status: planning
-stopped_at: Phase 32 planned (7 plans, 4 waves) — ready to execute
-last_updated: "2026-06-04T18:40:57.693Z"
-last_activity: 2026-06-04
+status: executing
+stopped_at: Phase 32 Plan 01 complete
+last_updated: "2026-06-04T18:58:00.000Z"
+last_activity: 2026-06-04 -- Phase 32 Plan 01 complete (Wave-0 MassTransit-reality probes; R1+R2 cleared)
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 34
-  completed_plans: 27
-  percent: 79
+  completed_plans: 28
+  percent: 82
 ---
 
 # Project State
@@ -21,15 +21,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 32 — cancelled-circuit-breaker (Phase 31 + gap-closure 31.1 complete)
+**Current focus:** Phase 32 — cancelled-circuit-breaker
 
 ## Current Position
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
-Phase: 32
-Plan: 7 plans across 4 waves (checker PASSED — all 12 dimensions, 0 issues)
-Status: Planned — ready to execute
-Last activity: 2026-06-04
+Phase: 32 (cancelled-circuit-breaker) — EXECUTING
+Plan: 2 of 7
+Status: Executing Phase 32
+Last activity: 2026-06-04 -- Phase 32 Plan 01 complete (Wave-0 MassTransit-reality probes; R1+R2 cleared)
+
+### Phase 32 Plan 01 — COMPLETE (Wave-0 MassTransit-reality probes; R1+R2 cleared; 2026-06-04)
+
+- **2 task commits (scoped paths only).** `998dd49` (test: RetryAttemptNumberingFacts — pin GetRetryAttempt() exhaustion boundary == Limit, R1), `3aca386` (test: FaultConsumerBindingFacts — prove Fault<EntryStepDispatch>.Message.WorkflowId round-trips, R2).
+- **Wave 0, depends_on [].** Two hermetic probes against a REAL in-memory MassTransit harness (not NSubstitute stubs) that pin the two load-bearing assumptions before Plan 04 (breaker seam) and Plan 05/06 (fault consumer) depend on them. No production code touched.
+- **Task 1 — RetryAttemptNumberingFacts (R1/A1+A2):** one explicit `ReceiveEndpoint` with a SINGLE `UseMessageRetry(r => r.Immediate(LIMIT))` (LIMIT=3); a probe consumer records `context.GetRetryAttempt()` per delivery then throws to exhaust. **PINNED: observed attempts = 0,1,2,3; the exhausting delivery records `== LIMIT`; total deliveries = LIMIT+1; MT publishes Fault from the same exhaustion.** The SPEC's `GetRetryAttempt() == Limit` is CONFIRMED — NO escalation, NO `[Trait("Escalate","Risk-R1")]`. The MassTransit#1217/#3216 "returns 0 every delivery" bug does NOT manifest for this single endpoint-level policy. Plan 04 may gate the breaker catch on `ctx.GetRetryAttempt() == retryOptions.Value.Limit`.
+- **Task 2 — FaultConsumerBindingFacts (R2/D-06):** a throwing `IConsumer<EntryStepDispatch>` with `Immediate(0)` + a probe `IConsumer<Fault<EntryStepDispatch>>`; publishes one `EntryStepDispatch` with a known fixed WorkflowId; the probe captures `context.Message.Message.WorkflowId` (double `.Message`). **PROVEN: probe invoked exactly once, captured WorkflowId == known (not Guid.Empty).** `Fault.Message` IS the original instance — D-06 holds with NO fallback; Plan 05's `FaultUnscheduleConsumer` can rely on the double-`.Message` extraction.
+- **No deviations** — both autonomous tasks as-written; no production change; Risk R1 cleared (boundary == Limit), Risk R2 cleared (WorkflowId round-trips).
+- **Verification (all green):** both `--filter-class` runs 1/1; `dotnet build tests/BaseApi.Tests -c Debug` 0/0; full hermetic suite `--filter-not-trait "Category=RealStack"` = **Passed 443 / Failed 0** (441 prior + 2 new, zero regression).
+- SUMMARY: 32-01-SUMMARY.md (Self-Check PASSED). Phase 32 = 1/7 plans; Plans 02 (L2 marker builder + counters, wave 1) + 03 (enum cleanup, wave 1) next.
 
 ### Phase 31.1 — COMPLETE (close-gate redis net-zero / NET-ZERO-31 resolved; 2026-06-04)
 

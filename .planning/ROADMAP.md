@@ -205,7 +205,7 @@
   4. `StepEntryCondition.PreviousCancelled (3)` is removed (left as a numeric gap; `IsInEnum` validator auto-rejects 3); no live step uses `EntryCondition == 3`.
   5. Open decisions resolved at spec: trip-on-first-exhaustion (chosen) blast radius (whole-workflow); the resume path (clear marker + re-Start); `_error` retained as the backstop for bus-down exhaustion.
 **Plans**: 7 plans (4 waves) — planned 2026-06-04. **SPEC locked** — see 32-SPEC.md (8 requirements, ambiguity 0.11).
-  - [ ] 32-01-PLAN.md — Wave-0 MassTransit-reality probes: RetryAttemptNumberingFacts (R1) + FaultConsumerBindingFacts (R2) (req-1, req-4) [wave 0]
+  - [x] 32-01-PLAN.md — Wave-0 MassTransit-reality probes: RetryAttemptNumberingFacts (R1) + FaultConsumerBindingFacts (R2) (req-1, req-4) [wave 0]
   - [ ] 32-02-PLAN.md — additive foundation: L2ProjectionKeys.Cancelled marker builder + 3 observability counters (req-2, req-7) [wave 1]
   - [ ] 32-03-PLAN.md — enum cleanup: remove StepEntryCondition.PreviousCancelled (3); keep StepOutcome.Cancelled (3) (req-6) [wave 1]
   - [ ] 32-04-PLAN.md — processor breaker seam: final-attempt marker-set + trip counter/log + check-and-drop + dedup counter (req-1, req-2, req-3, req-7) [wave 2]
