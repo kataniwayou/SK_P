@@ -85,11 +85,11 @@ Today (Phase 27) `EntryStepDispatchConsumer` mints `entryId`/`executionId` via `
 ## Acceptance Criteria
 
 - [ ] `H = SHA-256(correlationId, workflowId, stepId, processorId, EntryId)` is deterministic, identical across a simulated retry, and unaffected by `executionId`.
-- [ ] Entry-step dispatch carries a non-empty `EntryId == hash(correlationId, stepId)`; source-step processing keys on `InputDefinition == null`, not `EntryId == Guid.Empty`.
+- [x] Entry-step dispatch carries a non-empty `EntryId == hash(correlationId, stepId)`; source-step processing keys on `InputDefinition == null`, not `EntryId == Guid.Empty`.
 - [ ] Result blobs and manifest are content-addressed; identical content → same key (no orphan); empty result advances zero successors.
-- [ ] `flag[H]` dedup is effect-first with an atomic CAS; a duplicate whose effect completed is dropped; a crash-window re-run re-produces a collapsed duplicate (no loss).
-- [ ] Merge: different-output branches → distinct `H`, no override; identical-output branches → collapse to one.
-- [ ] Manifest fan-out dispatches one successor per (item, `NextStep`) with the successor's `stepId`/`processorId` + the item `EntryId`; an orchestrator re-dispatch is deduped.
+- [x] `flag[H]` dedup is effect-first with an atomic CAS; a duplicate whose effect completed is dropped; a crash-window re-run re-produces a collapsed duplicate (no loss).
+- [x] Merge: different-output branches → distinct `H`, no override; identical-output branches → collapse to one.
+- [x] Manifest fan-out dispatches one successor per (item, `NextStep`) with the successor's `stepId`/`processorId` + the item `EntryId`; an orchestrator re-dispatch is deduped.
 - [ ] Retry count is configurable (verified by attempt count); `data` + `flag` key builders produce `prefix + 64-hex` (golden test).
 - [ ] Real-stack: merge topology across fires + induced retry/redelivery shows the expected per-fire downstream effect set with NO extra execution (the `StepB4`-×2 inverse); close gate (3-GREEN + triple-SHA) holds.
 

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Completed 31-03-PLAN.md
-last_updated: "2026-06-04T13:52:17.000Z"
-last_activity: 2026-06-04 -- Phase 31 Plan 03 complete
+stopped_at: Completed 31-04-PLAN.md
+last_updated: "2026-06-04T14:33:55.000Z"
+last_activity: 2026-06-04 -- Phase 31 Plan 04 complete
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 27
-  completed_plans: 25
-  percent: 93
+  completed_plans: 26
+  percent: 96
 ---
 
 # Project State
@@ -27,9 +27,20 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 31 (idempotent-execution-exactly-once-effect) — EXECUTING
-Plan: 5 of 6 plans complete (01/02/03/05 done; 04 + 06 remain)
+Plan: 5 of 6 plans complete (01/02/03/04/05 done; 06 remains)
 Status: Executing Phase 31
-Last activity: 2026-06-04 -- Phase 31 Plan 03 complete
+Last activity: 2026-06-04 -- Phase 31 Plan 04 complete
+
+### Phase 31 Plan 04 — COMPLETE (orchestrator exactly-once-effect consumer half — inbound flag[H] dedup + manifest N×M fan-out + entry-step EntryId + deterministic child H sender pre-write; req-2, req-4, req-5, req-6; 2026-06-04)
+
+- **3 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `f9b7601` (feat: StepDispatcher deterministic child H + flag[H]=Pending sender pre-write; WorkflowFireJob entry-step EntryId), `6e275fb` (feat: ResultConsumer inbound flag[H] dedup + manifest unbundle + N×M fan-out + test realignment), `3c30bdb` (test: ManifestFanoutFacts + MergeCollapseFacts + flip deferred FireDispatch req-2).
+- **Wave note:** wave 3, depends_on [31-02]. The symmetric orchestrator half of 31-03's processor producer: it unbundles the manifest 31-03 emits and dedups on flag[m.H]. `IConnectionMultiplexer` is already DI-registered in the Orchestrator (WorkflowLifecycle/HydrationBackgroundService), so production wiring of the new ctor deps is automatic.
+- **StepDispatcher (D-02/D-06):** computes `h = ComputeH(corr, wf, step, proc, entryId)` (executionId excluded), stamps it, pre-writes `flag[h]="Pending"` (unconditional, 300s const TTL) BEFORE Send — the symmetric inbound analog of 31-03's outbound seed. **WorkflowFireJob (req-2):** entry-step `EntryId = MessageIdentity.EntryEntryId(correlationId, entryStepId)` (was `""`).
+- **ResultConsumer (req-4/5/6, D-06/D-08):** drop-on-Ack gate on `flag[m.H]` at consume top (after the metrics increment); manifest unbundle `Deserialize<string[]>(data[m.EntryId] ?? "[]")` (empty EntryId short-circuits; missing key -> zero items, T-31-11 graceful); N×M fan-out (`foreach item × foreach SelectNext successor` -> dispatch with item EntryId + `NewId.NextGuid()` executionId; child H computed in DispatchAsync); `flag[m.H]` Pending->Ack via `StringSet When.Exists` after fan-out.
+- **ManifestFanoutFacts (req-6, 3) + MergeCollapseFacts (req-5, 3):** 2-item×1-successor -> 2 distinct dispatches; empty `"[]"` -> 0 dispatch + flag flip; redeliver -> deterministic child H, already-Ack dropped; different-output predecessors -> distinct child H (no override); identical output -> same child H (collapse); child H independent of predecessor step id. FireDispatch req-2 deferred assertion flipped to non-empty `EntryEntryId(corr, stepId)`; marker removed.
+- **Deviation (1):** Rule 1 — realigned 3 pre-existing orchestrator hermetic tests (ResultConsumeTests, ResultAckTests, StopConsumerLifecycleTests) + threaded the new `IConnectionMultiplexer` ctor arg through every direct `new StepDispatcher`/`new ResultConsumer` site (OrchestratorTestStubs.NoopRedis); the old L1-only / EntryId-passthrough invariant is superseded by the dedup+manifest behavior. Used a concrete RecordingDispatcher (not Substitute) for fan-out assertions — NSubstitute Received-matcher resolution against a captured mixed concrete+Arg call proved fragile; `When.Exists` binds the ValueCondition "XX" overload.
+- **Verification (all green):** `dotnet build src/Orchestrator -c Debug` 0/0; new facts + FireDispatch 9/9; full hermetic suite `--filter-not-trait "Category=RealStack"` = **Passed 441 / Failed 0** (434 prior + 7 net new).
+- SUMMARY: 31-04-SUMMARY.md (Self-Check PASSED). req-2 (entry EntryId), req-4 (orchestrator-hop dedup), req-5 (merge), req-6 (N×M + redeliver dedup) landed with green coverage. Exactly-once-effect is now symmetric/complete on BOTH hops. Phase 31 = 5/6 plans complete; **Plan 06** (live E2E, req-8, wave 4) remains.
 
 ### Phase 31 Plan 03 — COMPLETE (effect-first content-addressed processor receiver — drop-on-Ack dedup + two-level write + manifest + outbound Pending pre-write; req-3, req-4; 2026-06-04)
 
