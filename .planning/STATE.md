@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Completed 31-01-PLAN.md
-last_updated: "2026-06-04T12:49:02.000Z"
-last_activity: 2026-06-04 -- Phase 31 Plan 01 complete
+stopped_at: Completed 31-02-PLAN.md
+last_updated: "2026-06-04T13:07:31.000Z"
+last_activity: 2026-06-04 -- Phase 31 Plan 02 complete
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 27
-  completed_plans: 22
-  percent: 81
+  completed_plans: 23
+  percent: 85
 ---
 
 # Project State
@@ -27,9 +27,19 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 31 (idempotent-execution-exactly-once-effect) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Executing Phase 31
-Last activity: 2026-06-04 -- Phase 31 Plan 01 complete
+Last activity: 2026-06-04 -- Phase 31 Plan 02 complete
+
+### Phase 31 Plan 02 — COMPLETE (EntryId Guid→string + H contract ripple, compile-green; req-1, req-2; 2026-06-04)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `4e8206c` (feat: re-type EntryId Guid→string + add H across the 3 wire contracts and production ripple sites), `735dffd` (test: re-type the EntryId-as-Guid test assertions to string across ~17 contract/processor/orchestrator/console test files).
+- **Contracts:** `IExecutionCorrelated.EntryId` Guid→`string`; `EntryStepDispatch` + `ExecutionResult` each carry `string EntryId { get; init; } = ""` and a new `string H { get; init; } = ""` (H on the concrete records, NOT the interface — kept minimal). Failed/Cancelled "no output" sentinel pinned `""` (was `Guid.Empty`; never a content key, Open Q1).
+- **Production ripple (behavior byte-equivalent):** `IStepDispatcher`/`StepDispatcher` `entryId` param Guid→`string`; `WorkflowFireJob` dispatches `""` placeholder (Plan 04 injects `EntryEntryId` hash + `H`); `ResultConsumer` flows `m.EntryId` through unchanged (now string); `EntryStepDispatchConsumer` guard `== Guid.Empty`→`string.IsNullOrEmpty`, output-write + `BuildCompleted` feed `newEntryId.ToString("D")` into the now-string `ExecutionData(string)`/`BuildCompleted(string)` (TEMP shim — Guid local stays this plan; Plan 03 → `MessageIdentity.HashBlob`), `BuildFailed`/`BuildCancelled` `EntryId = ""`; `InboundExecutionScopeConsumeFilter` `!= Guid.Empty`→`!string.IsNullOrEmpty`, assign `ec.EntryId` verbatim (other 4 Guid id-guards unchanged).
+- **Test ripple:** `DispatchTestKit.Dispatch` `entryId` Guid→`string` (default `""`); the 6 `Dispatch*Facts` entryId locals → `.ToString("D")` (L2 seed key + dispatch EntryId share one byte-identical content address); `EntryStepDispatchScope/Runtime` `""` sentinel; output-write `Guid.Empty` asserts → `string.IsNullOrEmpty`/`Equal("")`; contract tests round-trip string EntryId + assert `H` default; `ConsoleExecutionScopeFilterTests.ExecProbeMessage.EntryId` Guid→`string` + new `Case_D` empty-string-EntryId skip proof; `FireDispatchTests` `EntryId == ""` with `// Plan 04 changes this to the non-empty hash (req-2)` marker.
+- **Deviations (2):** (1) Rule 3 — `tests/.../Orchestrator/ResultAckTests.cs` was ABSENT from the plan's test inventory but had 5 `DispatchAsync(... Arg.Any<Guid>() ...)` 7th-arg matchers that broke `dotnet build SK_P.sln` (CS1503); changed them to `Arg.Any<string>()` (no behavior change). (2) Rule 2 — added `Case_D_Empty_String_EntryId_Is_Skipped` per the plan's explicit Console-test instruction (the existing Case B only proves a Guid.Empty ExecutionId skip). Also: the plan listed `EntryStepDispatchTests.cs`/`ExecutionResultContractTests.cs` under `Contracts/` but they live under `Orchestrator/`. Decision: KEPT the now-unused `L2ProjectionKeys.ExecutionData(Guid)` overload (not in files_modified; no caller references it after the ripple — harmless, out-of-scope).
+- **Verification (all green):** `dotnet build SK_P.sln -c Debug` 0 Warning / 0 Error; `dotnet test tests/BaseApi.Tests -- --filter-not-trait "Category=RealStack"` = **Passed 426 / Failed 0** (zero regression, +Case_D vs prior count).
+- SUMMARY: 31-02-SUMMARY.md (Self-Check PASSED). req-1 (re-affirmed) + req-2 (partial — contract shape + entry-step placeholder; Plan 04 lands the real entry-step hash) progressed. Phase 31 = 2/6 plans; Plan 03 (processor receiver rework: content-addressed two-level write + manifest + effect-first dedup, req-3/req-4, wave 3) next — now a pure logic change against the stable string contract.
 
 ### Phase 31 Plan 01 — COMPLETE (deterministic-identity foundation: MessageIdentity + L2 key builders + RetryOptions + golden tests; req-1, req-7; 2026-06-04)
 
