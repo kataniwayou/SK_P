@@ -9,19 +9,17 @@ using Xunit;
 namespace BaseApi.Tests.Orchestrator;
 
 /// <summary>
-/// Phase 32 Wave-1 (req-7, D-10/D-11). Hermetic guard for the THREE new breaker/dedup counters added to
-/// the existing Phase-30 meters: the processor-side <c>processor_dispatch_deduped</c> +
-/// <c>workflow_cancelled</c> (the trip is processor-side per D-01) and the orchestrator-side
+/// Phase 32.1 (req-4 dedup). Hermetic guard for the retained dedup counters on the Phase-30 meters: the
+/// processor-side <c>processor_dispatch_deduped</c> and the orchestrator-side
 /// <c>orchestrator_result_deduped</c>. Constructs both holders from a real <see cref="IMeterFactory"/>
 /// (the .NET 8 blessed pattern — no <c>static Meter</c> field, so no cross-test static leak) and asserts:
 /// <list type="bullet">
-///   <item><description>all three new counters are non-null;</description></item>
+///   <item><description>both dedup counters are non-null;</description></item>
 ///   <item><description>the meter-name consts are unchanged (<c>"BaseProcessor"</c> / <c>"Orchestrator"</c>);</description></item>
 ///   <item><description>a recorded measurement carries the bounded <c>ProcessorId</c> tag but NO
 ///   <c>workflowId</c>/<c>WorkflowId</c> tag key (T-32-02 cardinality guard, mirrors T-30-04).</description></item>
 /// </list>
-/// Plan 04 extends THIS class with the increment-once-per-trip / once-per-drop behavioral assertions at
-/// the real trip/drop sites. Hermetic (default Category) — no real stack.
+/// Hermetic (default Category) — no real stack.
 /// </summary>
 public sealed class BreakerMetricsFacts
 {
@@ -49,7 +47,6 @@ public sealed class BreakerMetricsFacts
             var metrics = new ProcessorMetrics(meterFactory);
 
             Assert.NotNull(metrics.DispatchDeduped);
-            Assert.NotNull(metrics.WorkflowCancelled);
         }
     }
 
@@ -99,11 +96,10 @@ public sealed class BreakerMetricsFacts
 
             var tag = new KeyValuePair<string, object?>("ProcessorId", processorId);
             procMetrics.DispatchDeduped.Add(1, tag);
-            procMetrics.WorkflowCancelled.Add(1, tag);
             orchMetrics.ResultDeduped.Add(1, tag);
         }
 
-        Assert.Equal(3, capturedTagKeySets.Count);
+        Assert.Equal(2, capturedTagKeySets.Count);
         foreach (var keys in capturedTagKeySets)
         {
             Assert.Contains("ProcessorId", keys);
