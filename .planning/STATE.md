@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Completed 32.1-01-PLAN.md
+stopped_at: Authored 32.1-02-PLAN.md (live GATE_EXIT=0 operator gate PENDING)
 last_updated: "2026-06-05T00:00:00.000Z"
-last_activity: 2026-06-05 -- Phase 32.1 Plan 01 complete (breaker reverted)
+last_activity: 2026-06-05 -- Phase 32.1 Plan 02 authored (phase-32.1-close.ps1; live close gate = operator gate, do-not-block)
 progress:
   total_phases: 9
   completed_phases: 8
@@ -26,10 +26,20 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
-Phase: 32.1 (dead-letter-on-exhaustion) — EXECUTING
+Phase: 32.1 (dead-letter-on-exhaustion) — EXECUTING (Plan 02 authored; live close gate PENDING operator)
 Plan: 2 of 2
-Status: Executing Phase 32.1
-Last activity: 2026-06-05 -- Phase 32.1 Plan 01 complete (breaker reverted)
+Status: Executing Phase 32.1 — close gate authored, live GATE_EXIT=0 is the operator gate
+Last activity: 2026-06-05 -- Phase 32.1 Plan 02 authored (phase-32.1-close.ps1 close gate; live net-zero proof = operator gate)
+
+### Phase 32.1 Plan 02 — AUTHORED, LIVE GATE PENDING (phase-32.1-close.ps1 — clone phase-31-close, NO skp:cancelled:* scan-clean; req-5; 2026-06-05)
+
+- **1 task commit (scoped paths only — the in-progress `.planning/` archive deletions + untracked psql-*.txt/launchSettings.json/.claude/27-PATTERNS.md left untouched, NOT staged, NOT reverted).** `d7f34db` (chore: add phase-32.1-close.ps1, delete superseded phase-32-close.ps1 — git recorded as rename R069).
+- **Wave 2, depends_on [32.1-01]. autonomous:false** — Task 2 (the LIVE close gate) needs the full v3.6.0 compose stack up healthy with REBUILT processor-sample/orchestrator/baseapi containers (embedded SourceHash must match the host build); not executable/observable in this non-interactive environment. Handled per the Phase-31/31.1/32-07 precedent: authored + committed the script, documented the live run as the operator runbook in the SUMMARY Pending-Verification section (do-not-block; auto-approve-human-verify policy).
+- **Task 1 — phase-32.1-close.ps1 (req-5):** byte-faithful clone of `phase-31-close.ps1` relabeled 31 -> 32.1 (version stays **v3.6.0** — Phase 31/31.1/32/32.1 share the milestone). Header line 1 `# Phase 32.1 close gate — v3.6.0 (triple-SHA)`; line 2 `# Dead-letter on exhaustion (breaker reverted) closeout`. **NO `skp:cancelled:*` scan-clean** — the Phase-32 gate carried an explicit `--scan --pattern 'skp:cancelled:*'` + `del` (the no-TTL marker never self-expired); the breaker is reverted (Plan 01) so no such key is ever written, and the simpler phase-31 protocol is the correct gate. Retains the steady-state Processor pre-flight (GET-or-create on the unique source-hash), the v3.6.0 `$services` health gate (processor-sample REQUIRED healthy), the UNFILTERED `redis-cli --scan` BEFORE/AFTER triple-SHA, the settle-drain for TTL-bounded `skp:flag:*`/`skp:data:*`, the 3-consecutive-GREEN loop (RealStack live), the Release+Debug zero-warning build, the psql `\l` + rabbitmqctl `list_queues` SHAs, and NO destructive whole-db flush. Superseded `phase-32-close.ps1` deleted (`git ls-files` ZERO matches).
+- **No deviations of substance** — the clone applied only the named relabels. Two comment-token rewordings ("NO FLUSHDB" -> "NO destructive whole-db flush"; "skp:cancelled:* scan-clean" -> "no-TTL cancellation marker scan-clean") so the threat-model `grep -c FLUSHDB == 0` + `grep -c skp:cancelled == 0` acceptance assertions hold without weakening any guard (the phase-31 source carries the same literal "NO FLUSHDB" comment). No bugs, no blocking issues, no architectural decisions, no auth gates.
+- **Verification (authored, all green):** ParseFile exit 0 (PARSE OK); first 3 bytes `35 32 80` (BOM-free); `grep -c FLUSHDB` == 0; `grep -c skp:cancelled` == 0; `grep -c "redis-cli --scan"` == 12; `grep -c v3.6.0` == 6; `grep -cE "v3.6.1|v3.7"` == 0; header line 1 contains "Phase 32.1 close gate"; `grep -cE "Phase 31|phase-31-close"` == 1 (the single provenance/clone-source line, matching the phase-31 gate's own single phase-29 reference); `git ls-files scripts/ | grep phase-32-close` == 0.
+- **PENDING (Task 2, BLOCKING operator gate):** rebuild the v3.6.0 stack (`docker compose up -d --build processor-sample orchestrator baseapi-service`) → run `pwsh -NoProfile -File ./scripts/phase-32.1-close.ps1` (expect GATE_EXIT=0 — 3xGREEN + triple-SHA BEFORE==AFTER; no skp:cancelled:* key should appear). Read GATE_*_EXIT from the gate output, NOT the bg-task wrapper exit. req-5's live half flips to complete + plan-counter advances only after the operator reports GATE_EXIT=0. Runbook + failure triage in 32.1-02-SUMMARY Pending-Verification.
+- SUMMARY: 32.1-02-SUMMARY.md (Self-Check PASSED for the authored artifact; Pending-Verification section for the live gate). Phase 32.1 = 2/2 plans authored (01 complete + 02 authored); the phase closes on the operator gate.
 
 ### Phase 32.1 Plan 01 — COMPLETE (breaker reverted — plain dead-lettering on exhaustion; NET DELETION; req-1/req-2/req-3/req-4/req-6; 2026-06-05)
 

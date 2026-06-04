@@ -227,7 +227,7 @@
   6. `StepEntryCondition` / `StepOutcome` untouched.
 **Plans**: 2 plans, 2 waves — planned 2026-06-05 (see 32.1-SPEC.md, 6 requirements, ambiguity 0.05)
 - [x] 32.1-01-PLAN.md — revert the breaker across 7 src files + trim breaker tests (catch, both check-and-drop gates, RetryOptions ctor dep, Fault consumer + Program.cs, Cancelled key+sentinel, WorkflowCancelled metric); keep flag[H] dedup gates + DispatchDeduped/ResultDeduped byte-intact (req-1..req-4, req-6) [wave 1] — COMPLETE 2026-06-05 (c046cc8 + f325a5f; Release 0/0, hermetic 447/0, zero dangling refs)
-- [ ] 32.1-02-PLAN.md — author scripts/phase-32.1-close.ps1 (clone phase-31, NO skp:cancelled:* scan-clean) + delete phase-32-close.ps1; live GATE_EXIT=0 operator gate (req-5) [wave 2]
+- [~] 32.1-02-PLAN.md — author scripts/phase-32.1-close.ps1 (clone phase-31, NO skp:cancelled:* scan-clean) + delete phase-32-close.ps1; live GATE_EXIT=0 operator gate (req-5) [wave 2] — AUTHORED + committed 2026-06-05 (d7f34db; ParseFile 0, BOM-free 35 32 80, FLUSHDB/skp:cancelled greps == 0, redis --scan retained, phase-32-close.ps1 deleted); live GATE_EXIT=0 is the PENDING operator gate
 
 ## Progress
 
@@ -256,7 +256,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31
 | 31. Idempotent Execution Round-Trip (Exactly-Once-Effect) | v3.6.0 | 6/6 | Complete    | 2026-06-04 |
 | 31.1 Close-Gate Redis Net-Zero (gap closure) | v3.6.0 | 1/1 | Complete | 2026-06-04 |
 | 32. Cancelled Circuit-Breaker | v3.6.0 | 5/6 | Superseded by 32.1 | — |
-| 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 1/2 | Executing | — |
+| 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 2/2 | Authored — live close gate PENDING operator | — |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 STARTED 2026-06-01 (4 phases 25-28, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip; build order 25→26→27→28). 38/38 requirements mapped.*
