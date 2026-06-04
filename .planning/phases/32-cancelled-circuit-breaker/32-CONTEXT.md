@@ -12,6 +12,35 @@ On retry-budget exhaustion, a workflow is cleanly and completely stopped — the
 This phase clarifies HOW to implement that stop. New capabilities belong in other phases.
 </domain>
 
+<spec_lock>
+## Requirements (locked via SPEC.md)
+
+**8 requirements are locked.** See `32-SPEC.md` for full requirements, boundaries, and acceptance criteria.
+
+Downstream agents MUST read `32-SPEC.md` before planning or implementing. Requirements are not duplicated here — the `<decisions>` section below captures only the HOW (D-01…D-13).
+
+**Note on ordering:** discuss-phase ran *before* spec-phase on this phase, so this CONTEXT.md was the source 32-SPEC.md was derived from. The two are consistent: each SPEC requirement traces to a D-* decision (req-1→D-01, req-2→D-02/D-05/D-07, req-3→D-05, req-4→D-03/D-06, req-5→D-04/D-03, req-6→D-12, req-7→D-10/D-11, req-8→D-08/D-13).
+
+**In scope (from SPEC.md):**
+- Breaker trigger on `GetRetryAttempt() == RetryOptions.Limit` (infra-fault exhaustion only)
+- `L2ProjectionKeys.Cancelled(workflowId)` marker builder + effect-first marker-set on the final attempt
+- Check-and-drop gate at both `EntryStepDispatchConsumer` and `ResultConsumer`
+- `IConsumer<Fault<EntryStepDispatch>>` per-replica fan-out endpoint that unschedules the Quartz job via existing Stop/Teardown machinery
+- Removal of `StepEntryCondition.PreviousCancelled (3)` (numeric gap; keep `StepOutcome.Cancelled (3)`)
+- `processor_dispatch_deduped_total` + `orchestrator_result_deduped_total` + `workflow_cancelled_total` counters and a structured trip log
+- Manual resume via existing `POST /orchestration/start` (clear marker + re-start)
+
+**Out of scope (from SPEC.md):**
+- Persistent business-failure circuit-breaking (B2) — would rework the D-15 catch-and-`Failed` contract; deferred
+- A dedicated `POST /orchestration/resume` endpoint or auto-cooldown (TTL) resume — rejected in favour of manual clear + re-start (D-08)
+- Renumbering `StepEntryCondition` 0/1/2/4/5 — would reinterpret existing step data
+- Routing a `Cancelled` `ExecutionResult` over `orchestrator-result` for the halt — wrong channel (D-04)
+- Putting the Fault path through the `flag[H]` CAS dedup — naturally idempotent (D-13)
+- Changing the existing token-cancellation `Cancelled` business outcome (EXEC-08)
+- Multi-replica deployment itself — design is multi-replica-correct, but one replica runs today
+
+</spec_lock>
+
 <decisions>
 ## Implementation Decisions
 
@@ -53,6 +82,9 @@ This phase clarifies HOW to implement that stop. New capabilities belong in othe
 ## Canonical References
 
 **Downstream agents MUST read these before planning or implementing.**
+
+### Locked requirements (SPEC)
+- `.planning/phases/32-cancelled-circuit-breaker/32-SPEC.md` — Locked requirements — MUST read before planning. 8 falsifiable requirements + boundaries + pass/fail acceptance criteria (ambiguity 0.11). Each requirement traces to a D-* decision below.
 
 ### Design record (the source of this phase, partially overridden by D-03/D-04/D-06)
 - `.planning/phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md` §"Failure-policy hook (Cancelled = unconditional, two-level stop) — DEFERRED TO PHASE 32" — the original two-level-stop design; note the Cancelled-message → Fault-fanout change made in this discussion.

@@ -92,3 +92,9 @@ User confirmed the `Fault<T>` publish does NOT go through the `flag[H]` "Pending
 ## Deferred Ideas
 
 - B2 (business-failure circuit-breaking); dedicated `/resume` endpoint / auto-cooldown resume.
+
+---
+
+## Addendum — 2026-06-04 (spec reconciliation, no new Q&A)
+
+After this discussion, `/gsd-spec-phase 32` ran and produced `32-SPEC.md` (8 falsifiable requirements, ambiguity 0.11) derived from the decisions above. A follow-up `/gsd-discuss-phase 32` then reconciled the two: a `<spec_lock>` section + a `32-SPEC.md` canonical ref were added to CONTEXT.md so the planner reads the locked requirements first. **No gray areas were re-opened — D-01…D-13 are unchanged.** Each SPEC requirement traces to a decision: req-1→D-01, req-2→D-02/D-05/D-07, req-3→D-05, req-4→D-03/D-06, req-5→D-04/D-03, req-6→D-12, req-7→D-10/D-11, req-8→D-08/D-13.
