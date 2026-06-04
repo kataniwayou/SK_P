@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
-status: ready_to_plan
-stopped_at: Phase 31 complete (exactly-once proven, 3×GREEN) + Phase 31.1 complete (NET-ZERO-31 resolved, close gate PASSED)
-last_updated: "2026-06-04T18:30:00.000Z"
-last_activity: 2026-06-04 -- Phase 31 + 31.1 complete; phase-31-close.ps1 PASSED (3×446 GREEN + psql/redis/rabbitmq triple-SHA all HELD)
+status: planning
+stopped_at: Phase 32 context gathered
+last_updated: "2026-06-04T17:40:30.075Z"
+last_activity: 2026-06-04
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 27
-  completed_plans: 26
-  percent: 88
+  completed_plans: 27
+  percent: 100
 ---
 
 # Project State
@@ -32,6 +32,7 @@ Status: Ready to plan
 Last activity: 2026-06-04
 
 ### Phase 31.1 — COMPLETE (close-gate redis net-zero / NET-ZERO-31 resolved; 2026-06-04)
+
 - **Live gate PASSED:** `phase-31-close.ps1` — 3×GREEN (Run 1/2/3 = Passed 446), psql `\l` SHA `b48ce783…` HELD, redis `--scan` SHA `9f09db5b…` HELD (BEFORE==AFTER), rabbitmq `list_queues` SHA `2eca7621…` HELD.
 - **Root cause fixed:** RealStack E2E tests left self-rescheduling cron workflows firing → per-fire `skp:flag:{H}` name-churn. Fix = stop-workflow-in-teardown across the 5 RealStack tests + close-gate settle-drain + one-time RAMJobStore purge (orchestrator restart). Production `keepTtl` flag-TTL fix landed in Phase 31 (`2a4837f`); `ResultAckTests` made overload-robust.
 - **Operational note:** the gate's `dotnet build` recomputes `Processor.Sample`'s embedded SourceHash — rebuild the processor-sample/orchestrator/baseapi-service containers (`docker compose up -d --build`) before the live gate or the liveness gate fails on a procId mismatch.
@@ -883,9 +884,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-04T13:52:17Z
-Stopped at: Completed 31-03-PLAN.md
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 32 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
