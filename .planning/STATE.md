@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Phase 32 Plan 05 complete
-last_updated: "2026-06-04T20:05:00.000Z"
-last_activity: 2026-06-04 -- Phase 32 Plan 05 complete (breaker orchestrator half — ResultConsumer check-and-drop gate + orchestrator_result_deduped counter; in-flight stop now symmetric on both hops)
+stopped_at: Completed 32-06-PLAN.md
+last_updated: "2026-06-04T20:20:59.043Z"
+last_activity: 2026-06-04 -- Phase 32 Plan 06 complete (future-fire stop — FaultUnscheduleConsumer on the per-replica fan-out endpoint unschedules the Quartz job on Fault<EntryStepDispatch>; req-4 future-fire half + req-8 idempotency half land)
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 34
-  completed_plans: 31
-  percent: 91
+  completed_plans: 33
+  percent: 97
 ---
 
 # Project State
@@ -27,9 +27,20 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 32 (cancelled-circuit-breaker) — EXECUTING
-Plan: 6 of 7 (01/02/04/05 complete; 03 CANCELLED)
+Plan: 7 of 7 (01/02/04/05/06 complete; 03 CANCELLED)
 Status: Executing Phase 32
-Last activity: 2026-06-04 -- Phase 32 Plan 05 complete (breaker orchestrator half — ResultConsumer check-and-drop gate + orchestrator_result_deduped counter; in-flight stop now symmetric on both hops)
+Last activity: 2026-06-04 -- Phase 32 Plan 06 complete (future-fire stop — FaultUnscheduleConsumer on the per-replica fan-out endpoint unschedules the Quartz job on Fault<EntryStepDispatch>; req-4 future-fire half + req-8 idempotency half land)
+
+### Phase 32 Plan 06 — COMPLETE (future-fire stop — FaultUnscheduleConsumer on the per-replica fan-out endpoint; req-4/req-8; D-06/D-13; 2026-06-04)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `33b1d8b` (feat: FaultUnscheduleConsumer + Definition + Program.cs registration), `b05b34b` (test: FaultUnscheduleFacts + FaultIdempotencyFacts).
+- **Wave 2, depends_on [32-01].** The future-fire half of the cancelled circuit-breaker — a new `FaultUnscheduleConsumer : IConsumer<Fault<EntryStepDispatch>>` on a per-replica `InstanceId`+`Temporary` fan-out endpoint (mirrors Start/Stop, NOT the shared `orchestrator-result` queue). On the MassTransit-auto-published `Fault<EntryStepDispatch>` (from the Plan-04 breaker re-throw exhausting `UseMessageRetry`), every replica extracts `WorkflowId` via `context.Message.Message.WorkflowId` (double `.Message`, proven by Plan-01 `FaultConsumerBindingFacts` — NO fallback), resolves `jobId` from L1, and unschedules via the existing idempotent keep-L1 `UnscheduleOnlyAsync`. Only the schedule-owning replica acts; others no-op. Almost entirely reuse + wiring.
+- **Task 1 — consumer + definition + registration (req-4/req-8; D-06/D-13):** `FaultUnscheduleConsumer` ctor takes ONLY `WorkflowLifecycle` + `ILogger` (NO Redis handle), so it CANNOT seed `flag[H]=Pending` or write the cancelled marker by construction (D-13 / T-32-08c). `FaultUnscheduleConsumerDefinition` uses `EndpointName = "orchestrator"` (SHARED per-replica fan-out base name, Pitfall 5) + `UseMessageRetry(r => r.Immediate(_retryOptions.Value.Limit))`, OMITTING `r.Ignore<WorkflowRootNotFoundException>()` (the fault path's `UnscheduleOnlyAsync` no-ops on absent-L1, never throws it). `Program.cs` adds `AddConsumer<FaultUnscheduleConsumer, FaultUnscheduleConsumerDefinition>().Endpoint(InstanceId/Temporary)` after the Stop registration, sharing the existing `instanceId` closure.
+- **Task 2 — FaultUnscheduleFacts (3) + FaultIdempotencyFacts (2):** present-in-L1 → job deleted (CheckExists flips false) + L1 kept; absent-from-L1 → no throw + unrelated job untouched; unschedule keyed on `context.Message.Message.WorkflowId` (only the target's job deleted, second workflow survives); two identical deliveries == one end state + NO StringSetAsync to ANY key across both overloads (D-13); ctor has exactly two params, no `IConnectionMultiplexer`/`IDatabase` (reflection guard). NSubstitute `Fault<EntryStepDispatch>` whose `.Message` returns a real `EntryStepDispatch`, driven through a real `WorkflowLifecycle` over a real RAM Quartz scheduler.
+- **Deviation (1, Rule 3 mechanical):** the plan's test snippet implied a probe job via `Quartz.Simpl.NoOpJob`, which is absent in this repo's Quartz version (CS0234). Scheduled instead via the real `WorkflowScheduler.ScheduleAsync` (builds the production `WorkflowFireJob`) — the faithful analog already used by `SchedulingTests`/`StopConsumerLifecycleTests`. Fix was pre-first-green, folded into the Task-2 test commit. No auth gates. No architectural decisions (Rule 4 not triggered).
+- **Pre-existing flaky-suite note (NOT a regression):** the full hermetic run showed exactly 1 failure — `BreakerTriggerFacts.ProcessAsyncThrow_StaysFailed_TripsNothing_NoRethrow`, a **Plan-32-04 Processor-namespace test** (commit `69b06fa`, before this plan). This plan touched ZERO processor code/tests (Orchestrator-only). Proven independent: `--filter-class "*BreakerTriggerFacts"` passes 3/3 in isolation; the entire Orchestrator namespace (95 tests, incl. both new 32-06 classes + the Plan-01 binding probe) is 95/95 in isolation; the failure surfaces only under cross-namespace ordering — the same in-memory-MassTransit/GetRetryAttempt-payload harness race logged from Plan 05 (MEMORY `reference_close_gate_surfaces_stale_flaky_tests`). Logged to deferred-items.md; the live phase-32 close gate (Plan 07) is the authoritative full-suite signal.
+- **Verification (authored tasks green):** `dotnet build src/Orchestrator -c Debug` 0/0; `dotnet build tests/BaseApi.Tests -c Debug` 0/0; `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error; `--filter-class "*FaultUnscheduleFacts"` 3/3; `--filter-class "*FaultIdempotencyFacts"` 2/2; full Orchestrator namespace in isolation **95 / 0**; grep confirms `FaultUnscheduleConsumer.cs` has no `Flag(`/`StringSet`/`StringGet`/`IConnectionMultiplexer`/`IDatabase` (no Redis handle, D-13); no file deletions across the 2 commits.
+- SUMMARY: 32-06-SUMMARY.md (Self-Check PASSED). Phase 32 = 5/7 plans complete (01/02/04/05/06; 03 CANCELLED); req-4 (Fault fanout → Quartz unschedule, both in-flight + future-fire halves now complete) + req-8 (idempotency half — the fault path touches no flag[H]) land. **Plan 07** (real-stack E2E + phase-32 close gate) remains.
 
 ### Phase 32 Plan 05 — COMPLETE (breaker orchestrator half — ResultConsumer check-and-drop gate + orchestrator_result_deduped counter; req-3/req-7; 2026-06-04)
 
@@ -518,6 +529,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 29 P05 | operator-gated (3x ~4m live gate + gap fix) | 3 tasks (+1 gap fix) | 4 files (2 created, 2 modified) |
 | Phase 30 P01 | 8min | 2 tasks | 4 files |
 | Phase 30 P03 | 21min | 2 tasks | 8 files |
+| Phase 32 P06 | ~25m | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -926,9 +938,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 32 context gathered
-Resume file: --resume-file
+Last session: 2026-06-04T20:20:58.450Z
+Stopped at: Completed 32-06-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
