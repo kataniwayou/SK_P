@@ -225,7 +225,9 @@
   4. Phase-32 breaker tests + E2E + `phase-32-close.ps1` removed; hermetic suite green, zero dangling references.
   5. `scripts/phase-32.1-close.ps1` authored (3×GREEN + triple-SHA); live `GATE_EXIT=0` is the operator gate.
   6. `StepEntryCondition` / `StepOutcome` untouched.
-**Plans**: TBD — **SPEC locked** 2026-06-05 (see 32.1-SPEC.md, 6 requirements, ambiguity 0.05). Awaiting `/gsd-plan-phase 32.1`.
+**Plans**: 2 plans, 2 waves — planned 2026-06-05 (see 32.1-SPEC.md, 6 requirements, ambiguity 0.05)
+- [ ] 32.1-01-PLAN.md — revert the breaker across 7 src files + trim breaker tests (catch, both check-and-drop gates, RetryOptions ctor dep, Fault consumer + Program.cs, Cancelled key+sentinel, WorkflowCancelled metric); keep flag[H] dedup gates + DispatchDeduped/ResultDeduped byte-intact (req-1..req-4, req-6) [wave 1]
+- [ ] 32.1-02-PLAN.md — author scripts/phase-32.1-close.ps1 (clone phase-31, NO skp:cancelled:* scan-clean) + delete phase-32-close.ps1; live GATE_EXIT=0 operator gate (req-5) [wave 2]
 
 ## Progress
 
