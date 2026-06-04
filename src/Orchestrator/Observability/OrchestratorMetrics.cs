@@ -30,10 +30,17 @@ public sealed class OrchestratorMetrics
     /// <summary><c>orchestrator_result_consumed</c> — incremented at the TOP of ResultConsumer.Consume.</summary>
     public Counter<long> ResultConsumed { get; }
 
+    /// <summary>
+    /// Phase 32 (D-10): <c>orchestrator_result_deduped</c> — incremented at the existing
+    /// <c>flag[H]=="Ack"</c> drop gate in ResultConsumer (Plan 04 wires the increment).
+    /// </summary>
+    public Counter<long> ResultDeduped { get; }
+
     public OrchestratorMetrics(IMeterFactory meterFactory)
     {
         var meter = meterFactory.Create(MeterName);
-        DispatchSent = meter.CreateCounter<long>("orchestrator_dispatch_sent");       // D-03 — collector appends the suffix
-        ResultConsumed = meter.CreateCounter<long>("orchestrator_result_consumed");   // D-03 — collector appends the suffix
+        DispatchSent   = meter.CreateCounter<long>("orchestrator_dispatch_sent");       // D-03 — collector appends the suffix
+        ResultConsumed = meter.CreateCounter<long>("orchestrator_result_consumed");     // D-03 — collector appends the suffix
+        ResultDeduped  = meter.CreateCounter<long>("orchestrator_result_deduped");      // Phase 32 D-10 — collector appends the suffix
     }
 }
