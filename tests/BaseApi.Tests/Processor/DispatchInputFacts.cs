@@ -51,7 +51,11 @@ public sealed class DispatchInputFacts
 
         Assert.True(processor.Invoked);
         Assert.Equal(string.Empty, processor.LastInputData);                     // invoked with ""
-        await db.DidNotReceive().StringGetAsync(Arg.Any<StackExchange.Redis.RedisKey>(), Arg.Any<StackExchange.Redis.CommandFlags>());
+        // Plan 31-03: an empty EntryId short-circuits the L2 DATA read (a source step has no input key) —
+        // the only StringGet on this path is the effect-first dedup flag gate (flag[dispatch.H]).
+        await db.DidNotReceive().StringGetAsync(
+            Arg.Is<StackExchange.Redis.RedisKey>(k => k.ToString().StartsWith(L2ProjectionKeys.Prefix + "data:")),
+            Arg.Any<StackExchange.Redis.CommandFlags>());
     }
 
     [Fact]

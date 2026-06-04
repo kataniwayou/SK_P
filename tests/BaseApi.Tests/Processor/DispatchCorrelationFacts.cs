@@ -8,13 +8,15 @@ using ExecutionResult = Messaging.Contracts.ExecutionResult;
 namespace BaseApi.Tests.Processor;
 
 /// <summary>
-/// EXEC-10 correlation fact: the dispatch BODY <c>CorrelationId</c> flows onto every emitted
+/// EXEC-10 correlation fact: the dispatch BODY <c>CorrelationId</c> flows onto the emitted
 /// <see cref="ExecutionResult"/> (mirrors <c>StepDispatcher</c> threading the correlation id through).
+/// Plan 31-03 (req-3): N result blobs collapse into ONE manifest result, so the correlation id flows onto
+/// that single result.
 /// </summary>
 public sealed class DispatchCorrelationFacts
 {
     [Fact]
-    public async Task Body_CorrelationId_Flows_To_Every_Result()
+    public async Task Body_CorrelationId_Flows_To_The_Manifest_Result()
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid().ToString("D");
@@ -34,9 +36,8 @@ public sealed class DispatchCorrelationFacts
                 DispatchTestKit.Dispatch(entryId, correlationId), ct));
 
             Assert.True(await harness.Consumed.Any<ExecutionResult>(ct));
-            var consumed = harness.Consumed.Select<ExecutionResult>(ct).ToList();
-            Assert.Equal(2, consumed.Count);
-            Assert.All(consumed, c => Assert.Equal(correlationId, c.Context.Message.CorrelationId));
+            var sent = Assert.Single(harness.Consumed.Select<ExecutionResult>(ct));   // ONE manifest result
+            Assert.Equal(correlationId, sent.Context.Message.CorrelationId);
         }
         finally { await harness.Stop(ct); }
     }

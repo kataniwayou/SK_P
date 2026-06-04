@@ -2,6 +2,7 @@ using BaseApi.Tests.Orchestrator;
 using MassTransit;
 using MassTransit.Testing;
 using Messaging.Contracts;
+using Messaging.Contracts.Hashing;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
@@ -11,10 +12,13 @@ using ExecutionResult = Messaging.Contracts.ExecutionResult;
 namespace BaseApi.Tests.Processor;
 
 /// <summary>
-/// EXEC-07/08 send-discipline facts driven through the real in-memory harness Send pipeline: results
-/// are sent one-by-one (individual messages) to <c>queue:orchestrator-result</c>; an empty result list
-/// sends nothing and acks; a token-tripped cancellation sends one <see cref="StepOutcome.Cancelled"/>;
-/// any other transform exception sends one <see cref="StepOutcome.Failed"/> carrying the message.
+/// EXEC-07/08 send-discipline facts driven through the real in-memory harness Send pipeline. Plan 31-03
+/// (req-3): the consumer collapses N result blobs into ONE content-addressed manifest result, so it sends
+/// exactly ONE <see cref="ExecutionResult"/> to <c>queue:orchestrator-result</c> on the Completed path —
+/// INCLUDING the empty-result case, which sends a terminal <c>"[]"</c> manifest result (so the
+/// orchestrator observes-and-terminates and acks, Pitfall 4). A token-tripped cancellation sends one
+/// <see cref="StepOutcome.Cancelled"/>; any other transform exception sends one
+/// <see cref="StepOutcome.Failed"/> carrying the message.
 /// </summary>
 public sealed class DispatchResultSendFacts
 {
@@ -23,7 +27,7 @@ public sealed class DispatchResultSendFacts
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = "{}" }, out db);
 
     [Fact]
-    public async Task EmptyList_AcksWithNoMessage()
+    public async Task EmptyResult_Sends_One_Terminal_Manifest_Result()
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid().ToString("D");
@@ -40,13 +44,21 @@ public sealed class DispatchResultSendFacts
             await consumer.Consume(OrchestratorTestStubs.Context(
                 DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), ct));
 
-            Assert.False(await harness.Sent.Any<ExecutionResult>(ct));            // ack-only, no message
+            // Plan 31-03 (req-3, Pitfall 4): an empty result still SENDS one terminal "[]" manifest result
+            // (EntryId = hash("[]"), non-empty H) so the orchestrator observes-and-terminates and acks.
+            Assert.True(await harness.Consumed.Any<ExecutionResult>(ct));
+            var sent = Assert.Single(harness.Consumed.Select<ExecutionResult>(ct));
+            Assert.Equal(StepOutcome.Completed, sent.Context.Message.Outcome);
+            var emptyManifest = MessageIdentity.HashManifest(
+                System.Text.Json.JsonSerializer.Serialize(Array.Empty<string>()));
+            Assert.Equal(emptyManifest, sent.Context.Message.EntryId);
+            Assert.False(string.IsNullOrEmpty(sent.Context.Message.H));
         }
         finally { await harness.Stop(ct); }
     }
 
     [Fact]
-    public async Task Sends_One_By_One()
+    public async Task Multiple_Results_Collapse_Into_One_Manifest_Send()
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid().ToString("D");
@@ -63,10 +75,15 @@ public sealed class DispatchResultSendFacts
             await consumer.Consume(OrchestratorTestStubs.Context(
                 DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), ct));
 
+            // Plan 31-03 (req-3): three blobs collapse into ONE manifest result whose EntryId = hash of the
+            // JSON array of the three blob hashes.
             Assert.True(await harness.Consumed.Any<ExecutionResult>(ct));
             var consumed = harness.Consumed.Select<ExecutionResult>(ct).ToList();
-            Assert.Equal(3, consumed.Count);                                      // three individual messages
-            Assert.All(consumed, c => Assert.Equal(StepOutcome.Completed, c.Context.Message.Outcome));
+            var sent = Assert.Single(consumed);                                   // ONE manifest message
+            Assert.Equal(StepOutcome.Completed, sent.Context.Message.Outcome);
+            var manifest = MessageIdentity.HashManifest(System.Text.Json.JsonSerializer.Serialize(
+                new[] { MessageIdentity.HashBlob("a"), MessageIdentity.HashBlob("b"), MessageIdentity.HashBlob("c") }));
+            Assert.Equal(manifest, sent.Context.Message.EntryId);
         }
         finally { await harness.Stop(ct); }
     }

@@ -1,17 +1,20 @@
 using BaseApi.Tests.Composition;
 using BaseApi.Tests.Orchestrator;
 using Messaging.Contracts;
+using Messaging.Contracts.Hashing;
 using Messaging.Contracts.Projections;
 using Xunit;
 
 namespace BaseApi.Tests.Processor;
 
 /// <summary>
-/// EXEC-05 output-write facts against the real localhost:6380 Redis (<see cref="RedisFixture"/>): a
-/// result that passes its <c>OutputDefinition</c> mints a new entryId and writes its OutputData to
-/// <c>L2[data(newEntryId)]</c> with the configured execution-data TTL (CONFIG-02); a result that fails
-/// the definition is <see cref="StepOutcome.Failed"/> with an empty-string <c>EntryId</c> and writes
-/// NOTHING. Every minted key is <c>_redis.Track</c>'d for net-zero teardown (D-23).
+/// EXEC-05 output-write facts against the real localhost:6380 Redis (<see cref="RedisFixture"/>). Plan
+/// 31-03 (req-3): a result that passes its <c>OutputDefinition</c> is content-addressed — its OutputData
+/// is written at <c>L2[data(hash(blob))]</c> with the configured TTL (CONFIG-02) — and the consumer sends
+/// ONE manifest result whose <c>EntryId</c> = hash of the JSON array of blob hashes (the manifest is also
+/// written at <c>L2[data(manifestEntryId)]</c>). A result that FAILS its definition is a whole-dispatch
+/// <see cref="StepOutcome.Failed"/> with an empty-string <c>EntryId</c> and writes NOTHING. Every written
+/// key is <c>_redis.Track</c>'d for net-zero teardown (D-23).
 /// <para>Uses a no-input source processor (empty definition + empty entryId) so the consumer skips the
 /// L2 READ and exercises only the WRITE path on real Redis.</para>
 /// </summary>
@@ -33,18 +36,29 @@ public sealed class DispatchOutputWriteFacts : IClassFixture<RedisFixture>
         var consumer = DispatchTestKit.Build(
             _redis.Multiplexer, context, processor, send, executionDataTtlSeconds: ttl);
 
-        await consumer.Consume(OrchestratorTestStubs.Context(
-            DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
+        var dispatch = DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid());
+        await consumer.Consume(OrchestratorTestStubs.Context(dispatch, ct));
 
         var sent = Assert.Single(send.Sent);
         Assert.Equal(StepOutcome.Completed, sent.Outcome);
         Assert.False(string.IsNullOrEmpty(sent.EntryId));
-        var key = L2ProjectionKeys.ExecutionData(sent.EntryId);
-        _redis.Track(key);                                                        // net-zero teardown (D-23)
+
+        // Plan 31-03: the blob is content-addressed at data[hash(blob)] (NOT the manifest entryId), and
+        // the manifest itself is written at data[manifestEntryId] = sent.EntryId.
+        var blobHash = MessageIdentity.HashBlob("out");
+        var blobKey = L2ProjectionKeys.ExecutionData(blobHash);
+        var manifestKey = L2ProjectionKeys.ExecutionData(sent.EntryId);
+        var manifestJson = System.Text.Json.JsonSerializer.Serialize(new[] { blobHash });
+        var pendingKey = L2ProjectionKeys.Flag(sent.H);                           // outbound Pending pre-write
+        _redis.Track(blobKey);
+        _redis.Track(manifestKey);
+        _redis.Track(pendingKey);                                                 // net-zero teardown (D-23)
 
         var db = _redis.Multiplexer.GetDatabase();
-        Assert.Equal("out", await db.StringGetAsync(key));                        // OutputData written raw
-        var remaining = await db.KeyTimeToLiveAsync(key);
+        Assert.Equal("out", await db.StringGetAsync(blobKey));                    // OutputData written raw, content-addressed
+        Assert.Equal(manifestJson, await db.StringGetAsync(manifestKey));         // manifest = ["<blobHash>"]
+        Assert.Equal("Pending", await db.StringGetAsync(pendingKey));            // outbound flag[resultH]="Pending" seeded
+        var remaining = await db.KeyTimeToLiveAsync(blobKey);
         Assert.NotNull(remaining);
         Assert.InRange(remaining!.Value.TotalSeconds, ttl - 5, ttl);             // CONFIG-02 TTL applied
     }
@@ -69,10 +83,12 @@ public sealed class DispatchOutputWriteFacts : IClassFixture<RedisFixture>
     }
 
     [Fact]
-    public async Task MixedBatch_Completed_And_Failed()
+    public async Task AnyInvalidBlob_FailsWholeDispatch()
     {
         var ct = TestContext.Current.CancellationToken;
-        // One valid output ("{\"x\":1}") + one invalid ("{}") vs a definition requiring "x".
+        // One valid output ("{\"x\":1}") + one invalid ("{}") vs a definition requiring "x". Plan 31-03:
+        // a blob that fails output-schema validation is a WHOLE-DISPATCH business Failed (D-09) — the
+        // consumer sends ONE Failed result with EntryId="" and does NOT emit a Completed manifest result.
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results("{\"x\":1}", "{}"));
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = RequiresXDef };
         var send = new DispatchTestKit.CapturingSendProvider();
@@ -81,17 +97,14 @@ public sealed class DispatchOutputWriteFacts : IClassFixture<RedisFixture>
         await consumer.Consume(OrchestratorTestStubs.Context(
             DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
 
-        Assert.Equal(2, send.Sent.Count);
-        var completed = Assert.Single(send.Sent, r => r.Outcome == StepOutcome.Completed);
-        var failed = Assert.Single(send.Sent, r => r.Outcome == StepOutcome.Failed);
+        var sent = Assert.Single(send.Sent);
+        Assert.Equal(StepOutcome.Failed, sent.Outcome);
+        Assert.Equal("", sent.EntryId);                                           // Failed short-circuits the manifest
+        Assert.Equal("", sent.H);                                                 // no outbound dedup identity on Failed
+        Assert.NotNull(sent.ErrorMessage);
 
-        Assert.False(string.IsNullOrEmpty(completed.EntryId));
-        var key = L2ProjectionKeys.ExecutionData(completed.EntryId);
-        _redis.Track(key);                                                        // net-zero teardown (D-23)
-        var db = _redis.Multiplexer.GetDatabase();
-        Assert.Equal("{\"x\":1}", await db.StringGetAsync(key));                  // only the valid output written
-
-        Assert.Equal("", failed.EntryId);                                         // invalid -> nothing written
+        // The first (valid) blob was content-addressed before the second failed — track it for teardown.
+        _redis.Track(L2ProjectionKeys.ExecutionData(MessageIdentity.HashBlob("{\"x\":1}")));
     }
 
 }

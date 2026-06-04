@@ -1,4 +1,6 @@
 using BaseApi.Tests.Orchestrator;
+using Messaging.Contracts;
+using Messaging.Contracts.Hashing;
 using Messaging.Contracts.Projections;
 using Xunit;
 
@@ -6,8 +8,9 @@ namespace BaseApi.Tests.Processor;
 
 /// <summary>
 /// EXEC-04/06 invoke facts: the consumer invokes the <c>ProcessAsync</c> seam with the L2 input value
-/// and the dispatch <c>Payload</c> as config, and mints a DISTINCT per-result <c>ExecutionId</c> for
-/// each returned result. Output definition is null here (validation skipped) so each result is Completed.
+/// and the dispatch <c>Payload</c> as config. Plan 31-03 collapses N result blobs into ONE
+/// content-addressed manifest result (req-3), so the per-result mint is no longer observable on the wire;
+/// instead the single result carries the manifest EntryId = hash(JSON array of blob hashes).
 /// </summary>
 public sealed class DispatchInvokeFacts
 {
@@ -32,7 +35,7 @@ public sealed class DispatchInvokeFacts
     }
 
     [Fact]
-    public async Task Mints_Distinct_ExecutionIds_Per_Result()
+    public async Task Collapses_Multiple_Results_Into_One_Manifest_Result()
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid().ToString("D");
@@ -46,8 +49,15 @@ public sealed class DispatchInvokeFacts
         await consumer.Consume(OrchestratorTestStubs.Context(
             DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), ct));
 
-        Assert.Equal(2, send.Sent.Count);
-        Assert.All(send.Sent, r => Assert.NotEqual(Guid.Empty, r.ExecutionId));
-        Assert.NotEqual(send.Sent[0].ExecutionId, send.Sent[1].ExecutionId);     // distinct per-result mint
+        // Plan 31-03 (req-3): two blobs collapse into ONE manifest result whose EntryId = hash of the
+        // JSON array of the two blob hashes (content-addressed, deterministic), with a non-empty H.
+        var sent = Assert.Single(send.Sent);
+        Assert.Equal(StepOutcome.Completed, sent.Outcome);
+        Assert.NotEqual(Guid.Empty, sent.ExecutionId);
+
+        var manifestJson = System.Text.Json.JsonSerializer.Serialize(
+            new[] { MessageIdentity.HashBlob("a"), MessageIdentity.HashBlob("b") });
+        Assert.Equal(MessageIdentity.HashManifest(manifestJson), sent.EntryId);
+        Assert.False(string.IsNullOrEmpty(sent.H));                              // outbound dedup identity carried
     }
 }

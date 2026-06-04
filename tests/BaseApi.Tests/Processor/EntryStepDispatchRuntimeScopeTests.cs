@@ -221,10 +221,15 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             Assert.True(completedRecord.ContainsKey(ExecutionLogScope.ExecutionId));
             Assert.True(completedRecord.ContainsKey(ExecutionLogScope.EntryId));
 
-            // The minted ExecutionId/EntryId on the line equal the ones the sent ExecutionResult carries.
+            // Plan 31-03: the nested scope carries the per-blob LINEAGE ExecutionId + the CONTENT-ADDRESSED
+            // blob hash. N blobs collapse into ONE manifest result, so the scope ExecutionId is a real
+            // lineage Guid (independent of the result's own minted ExecutionId) and the scope EntryId is the
+            // blob hash (the sent result carries the MANIFEST EntryId).
             Assert.Equal(StepOutcome.Completed, sent.Outcome);
-            Assert.Equal(sent.ExecutionId.ToString(), completedRecord[ExecutionLogScope.ExecutionId]);
-            Assert.Equal(sent.EntryId.ToString(), completedRecord[ExecutionLogScope.EntryId]);
+            Assert.True(Guid.TryParse((string)completedRecord[ExecutionLogScope.ExecutionId], out var scopedExec)
+                && scopedExec != Guid.Empty);
+            Assert.Equal(Messaging.Contracts.Hashing.MessageIdentity.HashBlob("out"),
+                completedRecord[ExecutionLogScope.EntryId]);
 
             // T-18-04: the execution ids are reported ONLY as scope values — never interpolated into the
             // rendered message text. The line references CorrelationId (template), not any execution id.
@@ -232,8 +237,8 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             Assert.DoesNotContain(workflowId.ToString(), message);
             Assert.DoesNotContain(stepId.ToString(), message);
             Assert.DoesNotContain(processorId.ToString(), message);
-            Assert.DoesNotContain(sent.ExecutionId.ToString(), message);
-            Assert.DoesNotContain(sent.EntryId.ToString(), message);
+            Assert.DoesNotContain((string)completedRecord[ExecutionLogScope.ExecutionId], message);
+            Assert.DoesNotContain((string)completedRecord[ExecutionLogScope.EntryId], message);
         }
         finally
         {

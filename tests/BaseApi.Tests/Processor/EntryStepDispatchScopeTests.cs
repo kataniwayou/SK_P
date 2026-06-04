@@ -77,7 +77,11 @@ public sealed class EntryStepDispatchScopeTests
         await consumer.Consume(OrchestratorTestStubs.Context(
             DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
 
-        // The sent result carries the minted ids — the scope must report the SAME values (inner-overrides-outer).
+        // Plan 31-03: the per-blob write opens a nested scope carrying that blob's LINEAGE ExecutionId +
+        // its CONTENT-ADDRESSED blob hash (the per-result write key). N blobs collapse into ONE manifest
+        // result, so the scope EntryId is the BLOB hash (not the result's manifest EntryId) and the scope
+        // ExecutionId is the per-blob lineage id (the single manifest result carries its OWN minted
+        // lineage id — independent by design).
         var sent = Assert.Single(send.Sent);
         Assert.Equal(StepOutcome.Completed, sent.Outcome);
         Assert.NotEqual(Guid.Empty, sent.ExecutionId);
@@ -85,12 +89,14 @@ public sealed class EntryStepDispatchScopeTests
 
         var scope = NestedScope(logger);
 
-        // Exactly the two keys, each present exactly once, carrying the minted ids' .ToString() values.
+        // Exactly the two keys, each present exactly once.
         Assert.Equal(2, scope.Count);
         Assert.True(scope.ContainsKey(ExecutionLogScope.ExecutionId));
         Assert.True(scope.ContainsKey(ExecutionLogScope.EntryId));
-        Assert.Equal(sent.ExecutionId.ToString(), scope[ExecutionLogScope.ExecutionId]);   // scoped == sent
-        Assert.Equal(sent.EntryId.ToString(), scope[ExecutionLogScope.EntryId]);           // scoped == sent
+        Assert.True(Guid.TryParse((string)scope[ExecutionLogScope.ExecutionId], out var scopedExec)
+            && scopedExec != Guid.Empty);                                                  // a real lineage Guid
+        Assert.Equal(Messaging.Contracts.Hashing.MessageIdentity.HashBlob("out"),
+            scope[ExecutionLogScope.EntryId]);                                             // scoped == blob content address
 
         // One entry per key: only ONE captured scope carries these execution keys (no duplicate nesting).
         var carriers = logger.Scopes.Count(s =>
