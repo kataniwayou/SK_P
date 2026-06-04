@@ -81,6 +81,10 @@ The existing 32-CONTEXT.md was a stub; the real design record lives in 31-CONTEX
 
 **User's choice:** Keep both — they answer different questions (redelivery rate vs. trip count).
 
+## Clarification — Fault path is outside flag[H] dedup
+
+User confirmed the `Fault<T>` publish does NOT go through the `flag[H]` "Pending"/"Ack" mechanism: the job halt is idempotent (unschedule + marker SET/check), so no CAS dedup gate is needed on the fault path. → D-13.
+
 ## Claude's Discretion
 
 - Marker key shape (`L2ProjectionKeys.Cancelled(workflowId)`), exact metric names/tag literals, fault-consumer endpoint registration details, accepting the extra per-message Redis `GET`.
