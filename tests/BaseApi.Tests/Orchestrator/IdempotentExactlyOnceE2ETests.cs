@@ -147,10 +147,6 @@ public sealed class IdempotentExactlyOnceE2ETests
         // fresh per-fire correlationId, EntryId = EntryEntryId(corr, stepId) (req-2), H = ComputeH(...)
         // over the same five identity fields. The two sends carry the IDENTICAL H — so the processor's
         // effect-first flag[dispatch.H] gate collapses the second to a drop+ack with NO extra effect.
-        //
-        // The test plays the SENDER role: production StepDispatcher pre-writes flag[H]="Pending" before
-        // the Send so the consumer's When.Exists Pending->Ack flip has a key to flip. Mirror that
-        // symmetric pre-write here (same content address) — without it the dedup gate could never arm.
         var dupCorrelationId = NewId.NextGuid();
         var dupEntryId = MessageIdentity.EntryEntryId(dupCorrelationId, stepA1Id);
         var dupH = MessageIdentity.ComputeH(dupCorrelationId, wfId, stepA1Id, procId, dupEntryId);
@@ -163,8 +159,22 @@ public sealed class IdempotentExactlyOnceE2ETests
             H = dupH,
         };
 
-        await SendDispatchWithSenderPrewriteAsync(procId, dispatch, ct);  // delivery 1 — produces the effect
-        await SendDispatchWithSenderPrewriteAsync(procId, dispatch, ct);  // delivery 2 — SAME H -> dropped
+        // The test plays the SENDER role: production StepDispatcher pre-writes flag[H]="Pending" EXACTLY
+        // ONCE before its single Send (so the consumer's When.Exists Pending->Ack flip has a key to flip).
+        // A genuine broker REDELIVERY re-delivers the same already-enqueued message WITHOUT re-running the
+        // sender pre-write — so we pre-write once here, NOT per send. (Re-writing it before delivery 2
+        // would reset the gate Ack->Pending and re-arm it, which a real redelivery never does — letting
+        // the duplicate leak. That faithful single-pre-write is the crux of the exactly-once proof.)
+        await PrewriteFlagPendingAsync(dupH);
+
+        await SendDispatchAsync(procId, dispatch, ct);  // delivery 1 — produces the effect, flips flag->Ack
+
+        // Wait until delivery 1 has produced its effect and flipped flag[H] Pending->Ack before
+        // redelivering, so delivery 2 deterministically observes "Ack" (a true post-effect redelivery,
+        // not an in-flight race where both deliveries clear the gate before either flips it).
+        await PollForFlagAckAsync(dupH, ct);
+
+        await SendDispatchAsync(procId, dispatch, ct);  // delivery 2 — SAME H, flag==Ack -> dropped
 
         // ---- Assert ZERO downstream duplication for the induced redelivery ----
         // The processor emits the content-addressed-write log ONCE per produced effect, scoped to
@@ -172,15 +182,21 @@ public sealed class IdempotentExactlyOnceE2ETests
         // for dupCorrelationId (the StepB4-x2 inverse: NOT two). Poll until the effect is visible, then
         // assert the hit COUNT == 1 (the duplicate added none).
         using var es = new ElasticsearchTestClient();
-        var effectQuery = BuildEffectQuery(dupCorrelationId);
+
+        // Scope the effect probe to the DIRECTLY-REDELIVERED step (StepA1) under dupCorrelationId. StepA1's
+        // result fans out to its successor StepB (the merge topology), which ALSO logs an effect under the
+        // SAME correlationId — so a correlationId-only count would conflate the redelivered step with its
+        // downstream successor. Scoping to attributes.StepId isolates the exactly-once proof to the
+        // redelivered identity itself: StepA1 logs its content-addressed write EXACTLY ONCE despite the two
+        // deliveries (the duplicate, same H, is collapsed by the effect-first gate).
+        var effectQuery = BuildEffectQuery(dupCorrelationId, stepA1Id);
 
         var firstEffect = await es.PollEsForLog(effectQuery, timeoutMs: EsPollTimeoutMs, ct: ct);
         Assert.NotNull(firstEffect);
         Assert.Contains(DownstreamEffectMessage, firstEffect!.Value.GetRawText());
 
-        // The downstream-effect SET for this CorrelationId equals the expected per-fire set with ZERO
-        // duplicates. One identity (same H) re-delivered twice -> exactly one effect. A second hit here
-        // would be the duplicate leaking through — the exact failure this protocol prevents.
+        // One StepA1 identity (same H) re-delivered twice -> EXACTLY ONE StepA1 effect. A second hit here
+        // would be the duplicate leaking through — the live inverse of the historical StepB4 x2 bug.
         var effectCount = await CountEsHitsAsync(effectQuery, ct);
         Assert.Equal(1, effectCount);
 
@@ -198,21 +214,50 @@ public sealed class IdempotentExactlyOnceE2ETests
 
     // ---- Induced-duplicate sender (D-11): mirror StepDispatcher's symmetric flag pre-write + Send ----
 
-    private static async Task SendDispatchWithSenderPrewriteAsync(
-        Guid procId, EntryStepDispatch dispatch, CancellationToken ct)
+    // SENDER pre-write (D-06, symmetric inbound analog of the processor's outbound seed): write
+    // flag[H]="Pending" so the consumer's effect-first When.Exists flip Pending->Ack has a key to flip.
+    // Production StepDispatcher does this EXACTLY ONCE before its single Send; a broker redelivery never
+    // repeats it. Called once here (before delivery 1), NOT per send. TTL bounds the key.
+    private static async Task PrewriteFlagPendingAsync(string h)
     {
-        // SENDER pre-write (D-06, symmetric inbound analog of the processor's outbound seed): write
-        // flag[dispatch.H]="Pending" so the consumer's effect-first When.Exists flip Pending->Ack has a
-        // key to flip. Unconditional + idempotent on the re-send (Pending->Pending). TTL bounds the key.
-        await using (var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis))
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        await mux.GetDatabase().StringSetAsync(
+            L2ProjectionKeys.Flag(h), "Pending", expiry: TimeSpan.FromSeconds(300));
+    }
+
+    // Poll host Redis until the consumer flips flag[H] Pending->Ack (effect produced + result sent). Makes
+    // the redelivery deterministic: delivery 2 is sent only AFTER delivery 1's effect completed, so it
+    // genuinely observes "Ack" and is dropped — rather than racing delivery 1 through the gate.
+    private static async Task PollForFlagAckAsync(string h, CancellationToken ct)
+    {
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        var db = mux.GetDatabase();
+        var key = L2ProjectionKeys.Flag(h);
+
+        var deadline = DateTime.UtcNow.AddMilliseconds(OutputPollTimeoutMs);
+        var delay = 500;
+        while (DateTime.UtcNow < deadline)
         {
-            await mux.GetDatabase().StringSetAsync(
-                L2ProjectionKeys.Flag(dispatch.H), "Pending", expiry: TimeSpan.FromSeconds(300));
+            ct.ThrowIfCancellationRequested();
+            if ((string?)await db.StringGetAsync(key) == "Ack")
+            {
+                return; // delivery 1's effect completed and the gate is armed against the redelivery.
+            }
+
+            await Task.Delay(Math.Min(delay, 2_000), ct);
+            delay = Math.Min(delay * 2, 2_000);
         }
 
-        // Send (NOT publish) the dispatch to the processor's bare {id:D} dispatch queue — the same queue
-        // the live processor-sample container binds + consumes (queue: scheme is sender-only, bare name).
-        // IBusControl is not IAsyncDisposable, so Start/Stop are bracketed explicitly in try/finally.
+        Assert.Fail(
+            $"flag[{h}] never flipped Pending->Ack within {OutputPollTimeoutMs}ms — delivery 1 of the " +
+            "induced dispatch did not produce its effect, so the redelivery dedup cannot be proven.");
+    }
+
+    // Send (NOT publish) the dispatch to the processor's bare {id:D} dispatch queue — the same queue the
+    // live processor-sample container binds + consumes (queue: scheme is sender-only, bare name).
+    // IBusControl is not IAsyncDisposable, so Start/Stop are bracketed explicitly in try/finally.
+    private static async Task SendDispatchAsync(Guid procId, EntryStepDispatch dispatch, CancellationToken ct)
+    {
         var bus = Bus.Factory.CreateUsingRabbitMq(cfg =>
             cfg.Host("localhost", 5673, "/", h => { h.Username("guest"); h.Password("guest"); }));
         await bus.StartAsync(ct);
@@ -229,7 +274,7 @@ public sealed class IdempotentExactlyOnceE2ETests
 
     // ---- ES downstream-effect query + hit count (the zero-duplicate assertion) ----
 
-    private static string BuildEffectQuery(Guid correlationId) => $$"""
+    private static string BuildEffectQuery(Guid correlationId, Guid stepId) => $$"""
       {
         "size": 20,
         "track_total_hits": true,
@@ -238,8 +283,9 @@ public sealed class IdempotentExactlyOnceE2ETests
           "bool": {
             "must": [
               { "term": { "{{EsIndexNames.CorrelationIdFieldPath}}": "{{correlationId:D}}" } },
+              { "term": { "attributes.StepId": "{{stepId:D}}" } },
               { "term": { "resource.attributes.service.name": "processor-sample" } },
-              { "match_phrase": { "body.text": "{{DownstreamEffectMessage}}" } }
+              { "wildcard": { "body.text": "*{{DownstreamEffectMessage}}*" } }
             ]
           }
         }
