@@ -136,7 +136,7 @@ public sealed class FireDispatchTests
                 await workflowScheduler.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
                 var job = new WorkflowFireJob(
                     store,
-                    new StepDispatcher(harness.Bus, OrchestratorTestStubs.Metrics()), // IStepDispatcher wrapping the harness bus
+                    new StepDispatcher(harness.Bus, OrchestratorTestStubs.NoopRedis(), OrchestratorTestStubs.Metrics()), // IStepDispatcher wrapping the harness bus
                     workflowScheduler,
                     fakeTime,
                     NullLogger<WorkflowFireJob>.Instance);
@@ -202,7 +202,7 @@ public sealed class FireDispatchTests
                 var workflowScheduler = new WorkflowScheduler(scheduler, fakeTime);
                 await workflowScheduler.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
                 var job = new WorkflowFireJob(
-                    store, new StepDispatcher(harness.Bus, OrchestratorTestStubs.Metrics()), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
+                    store, new StepDispatcher(harness.Bus, OrchestratorTestStubs.NoopRedis(), OrchestratorTestStubs.Metrics()), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
 
                 await job.Execute(FireContext(workflowId, ct));
                 await job.Execute(FireContext(workflowId, ct));
@@ -260,7 +260,7 @@ public sealed class FireDispatchTests
                 var workflowScheduler = new WorkflowScheduler(scheduler, fakeTime);
                 await workflowScheduler.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
                 var job = new WorkflowFireJob(
-                    store, new StepDispatcher(harness.Bus, OrchestratorTestStubs.Metrics()), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
+                    store, new StepDispatcher(harness.Bus, OrchestratorTestStubs.NoopRedis(), OrchestratorTestStubs.Metrics()), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
 
                 Assert.True(store.TryGet(workflowId, out var before));
                 Assert.Equal(staleTimestamp, before.Liveness.Timestamp);

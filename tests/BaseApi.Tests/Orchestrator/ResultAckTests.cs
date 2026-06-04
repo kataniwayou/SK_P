@@ -39,10 +39,16 @@ public sealed class ResultAckTests
     }
 
     private static ResultConsumer Build(WorkflowL1Store store, IStepDispatcher dispatcher)
+        => Build(store, dispatcher, OrchestratorTestStubs.NoopRedis());
+
+    private static ResultConsumer Build(WorkflowL1Store store, IStepDispatcher dispatcher, IConnectionMultiplexer redis)
     {
         // 24.1 / D-24.1-05: the boot gate is removed — ResultConsumer no longer takes an IStartupGate.
+        // Plan 31-04: ResultConsumer now takes IConnectionMultiplexer for the effect-first dedup gate
+        // (flag[m.H]) + the manifest read (data[m.EntryId]).
         return new ResultConsumer(
-            store, new StepAdvancement(), dispatcher, OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
+            store, new StepAdvancement(), dispatcher, redis, OrchestratorTestStubs.Metrics(),
+            NullLogger<ResultConsumer>.Instance);
     }
 
     // ----- R5: an id ABSENT from L1 acks cleanly, lifecycle-agnostic (no throw, no _error) -------
@@ -130,16 +136,16 @@ public sealed class ResultAckTests
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    // ----- result path reads L1 only — NO L2/Redis read -----------------------------------------
+    // ----- result path reads L2 for dedup + manifest (Phase 31 supersedes the L1-only invariant) ----
 
     [Fact]
-    public async Task ResultPath_PerformsNoL2Read()
+    public async Task ResultPath_ReadsDedupFlag_And_UnbundlesManifest_ThenDispatches()
     {
+        // Phase 31-04 (D-06/D-08): the orchestrator hop is no longer L1-only — it reads flag[m.H] for the
+        // effect-first dedup gate AND data[m.EntryId] for the manifest. A one-item manifest x one matched
+        // successor dispatches exactly ONE continuation carrying the ITEM EntryId, then flips flag[m.H]->Ack.
         var ct = TestContext.Current.CancellationToken;
-        var dispatcher = Substitute.For<IStepDispatcher>();
-
-        // A Redis mux stub the result path must NEVER touch — DidNotReceive proves L1-only (SPEC req 3).
-        var db = Substitute.For<IDatabase>();
+        var dispatcher = new RecordingDispatcher();
 
         var workflowId = Guid.NewGuid();
         var completedStepId = Guid.NewGuid();
@@ -154,19 +160,99 @@ public sealed class ResultAckTests
         var store = new WorkflowL1Store();
         SeedWorkflow(store, workflowId, steps);
 
-        var consumer = Build(store, dispatcher);
+        var manifestEntryId = Guid.NewGuid().ToString("D");
+        var itemEntryId = "aa" + Guid.NewGuid().ToString("N");
+        var manifestJson = System.Text.Json.JsonSerializer.Serialize(new[] { itemEntryId });
+        var resultH = "ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddffff";
+
+        // flag[resultH] not "Ack" (Null -> pass the gate); data[manifestEntryId] -> the one-item manifest.
+        var db = Substitute.For<IDatabase>();
+        db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(ci =>
+            {
+                var key = ((RedisKey)ci[0]).ToString();
+                return key == L2ProjectionKeys.ExecutionData(manifestEntryId) ? (RedisValue)manifestJson : RedisValue.Null;
+            });
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+
+        var consumer = Build(store, dispatcher, mux);
         var result = new ExecutionResult(workflowId, completedStepId, Guid.NewGuid(), StepOutcome.Completed)
         {
             CorrelationId = Guid.NewGuid(),
+            EntryId = manifestEntryId,
+            H = resultH,
         };
 
         await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
 
-        // The continuation WAS dispatched (match found) yet ZERO Redis reads occurred.
-        await dispatcher.Received(1).DispatchAsync(
-            workflowId, nextStepId, nextProcessorId, Arg.Any<string>(),
+        // ONE continuation dispatched carrying the manifest ITEM EntryId + the matched successor's ids.
+        var dispatched = Assert.Single(dispatcher.Calls);
+        Assert.Equal(workflowId, dispatched.WorkflowId);
+        Assert.Equal(nextStepId, dispatched.StepId);
+        Assert.Equal(nextProcessorId, dispatched.ProcessorId);
+        Assert.Equal(itemEntryId, dispatched.EntryId);
+        Assert.NotEqual(Guid.Empty, dispatched.ExecutionId); // regenerated lineage
+
+        // The dedup gate read flag[m.H], then flipped it Pending->Ack via a SET XX (When.Exists). Inspect
+        // the recorded calls directly (robust to StringSetAsync overload binding — see EffectFirstDedupFacts).
+        // The `when: When.Exists` SET binds the modern StringSetAsync(RedisKey, RedisValue, Expiration,
+        // ValueCondition, CommandFlags) overload — When.Exists surfaces as a ValueCondition that renders
+        // "XX" (SET XX). Match by (key, value, "XX") across whichever overload was bound (robust like
+        // EffectFirstDedupFacts).
+        var flagKey = L2ProjectionKeys.Flag(resultH);
+        Assert.Contains(db.ReceivedCalls(), c =>
+            c.GetMethodInfo().Name == nameof(IDatabase.StringGetAsync)
+            && c.GetArguments().Length > 0 && c.GetArguments()[0] is RedisKey gk && gk.ToString() == flagKey);
+        Assert.Contains(db.ReceivedCalls(), c =>
+            c.GetMethodInfo().Name == nameof(IDatabase.StringSetAsync)
+            && c.GetArguments().Length > 1
+            && c.GetArguments()[0] is RedisKey sk && sk.ToString() == flagKey
+            && c.GetArguments()[1] is RedisValue sv && sv.ToString() == "Ack"
+            && c.GetArguments().Any(a => a is ValueCondition vc && vc.ToString() == "XX"));
+    }
+
+    // ----- an inbound result whose flag[m.H] is already "Ack" is dropped (no dispatch, no flip) -------
+
+    [Fact]
+    public async Task ResultWithFlagAlreadyAck_IsDropped_NoDispatch()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dispatcher = Substitute.For<IStepDispatcher>();
+
+        var workflowId = Guid.NewGuid();
+        var completedStepId = Guid.NewGuid();
+        var nextStepId = Guid.NewGuid();
+
+        var steps = new Dictionary<Guid, StepProjection>
+        {
+            [completedStepId] = Step(0, Guid.NewGuid(), "{}", nextStepId),
+            [nextStepId] = Step((int)StepOutcome.Completed, Guid.NewGuid(), "{}"),
+        };
+        var store = new WorkflowL1Store();
+        SeedWorkflow(store, workflowId, steps);
+
+        var resultH = "ac4eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        var db = Substitute.For<IDatabase>();
+        db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(ci => ((RedisKey)ci[0]).ToString() == L2ProjectionKeys.Flag(resultH) ? (RedisValue)"Ack" : RedisValue.Null);
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+
+        var consumer = Build(store, dispatcher, mux);
+        var result = new ExecutionResult(workflowId, completedStepId, Guid.NewGuid(), StepOutcome.Completed)
+        {
+            CorrelationId = Guid.NewGuid(),
+            EntryId = Guid.NewGuid().ToString("N"),
+            H = resultH,
+        };
+
+        // Drop-on-Ack: no throw, NO dispatch, NO manifest read.
+        await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
+
+        await dispatcher.DidNotReceive().DispatchAsync(
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
-        await db.DidNotReceive().StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
     }
 
     // ----- injected infra fault on Send propagates (does not ack-swallow) ------------------------
@@ -193,14 +279,46 @@ public sealed class ResultAckTests
         var store = new WorkflowL1Store();
         SeedWorkflow(store, workflowId, steps);
 
-        var consumer = Build(store, dispatcher);
+        // A one-item manifest so the fan-out actually issues a dispatch (which then throws the infra fault).
+        var manifestEntryId = Guid.NewGuid().ToString("D");
+        var manifestJson = System.Text.Json.JsonSerializer.Serialize(new[] { "aa" + Guid.NewGuid().ToString("N") });
+        var db = Substitute.For<IDatabase>();
+        db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(ci => ((RedisKey)ci[0]).ToString() == L2ProjectionKeys.ExecutionData(manifestEntryId)
+                ? (RedisValue)manifestJson : RedisValue.Null);
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+
+        var consumer = Build(store, dispatcher, mux);
         var result = new ExecutionResult(workflowId, completedStepId, Guid.NewGuid(), StepOutcome.Completed)
         {
             CorrelationId = Guid.NewGuid(),
+            EntryId = manifestEntryId,
+            H = "1234" + new string('0', 60),
         };
 
         // Infra fault must NOT be ack-swallowed — it propagates so the bounded retry -> _error.
         await Assert.ThrowsAsync<MassTransitException>(
             () => consumer.Consume(OrchestratorTestStubs.Context(result, ct)));
+    }
+
+    /// <summary>
+    /// A concrete recording <see cref="IStepDispatcher"/> — captures each <c>DispatchAsync</c> call's
+    /// args so the fan-out assertions are deterministic (avoids NSubstitute matcher fragility when the
+    /// same captured call is asserted with mixed concrete/Arg matchers).
+    /// </summary>
+    private sealed class RecordingDispatcher : IStepDispatcher
+    {
+        public sealed record Call(Guid WorkflowId, Guid StepId, Guid ProcessorId, string Payload,
+            Guid CorrelationId, Guid ExecutionId, string EntryId);
+
+        public List<Call> Calls { get; } = [];
+
+        public Task DispatchAsync(Guid workflowId, Guid stepId, Guid processorId, string payload,
+            Guid correlationId, Guid executionId, string entryId, CancellationToken ct)
+        {
+            Calls.Add(new Call(workflowId, stepId, processorId, payload, correlationId, executionId, entryId));
+            return Task.CompletedTask;
+        }
     }
 }

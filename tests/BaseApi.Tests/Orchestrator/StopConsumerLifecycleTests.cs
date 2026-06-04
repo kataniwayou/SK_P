@@ -1,4 +1,5 @@
 using Messaging.Contracts;
+using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Orchestrator.Consumers;
@@ -145,28 +146,47 @@ public sealed class StopConsumerLifecycleTests
             Assert.True(store.TryGet(workflowId, out _)); // L1 kept (drain)
 
             // Drive a late result for the stopped workflow's entry step through the ResultConsumer; it
-            // resolves in the kept L1 entry and dispatches the matching next step.
+            // resolves in the kept L1 entry, unbundles the manifest, and fans out the matching next step.
             var dispatcher = Substitute.For<IStepDispatcher>();
             var advancement = new StepAdvancement();
-            var resultConsumer = new ResultConsumer(
-                store, advancement, dispatcher, OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
 
             var correlationId = Guid.NewGuid();
             var executionId = Guid.NewGuid();
-            var entryId = Guid.NewGuid().ToString("D");
+            var entryId = Guid.NewGuid().ToString("D");   // the result's manifest EntryId (data[entryId] -> the array)
+            var resultH = "fade" + new string('0', 60);
+
+            // Plan 31-04: ResultConsumer reads flag[m.H] (dedup gate) + data[m.EntryId] (manifest). The
+            // manifest is a one-item array so the late result still fans out exactly one continuation
+            // carrying the ITEM EntryId + a regenerated executionId.
+            var itemEntryId = "bb" + Guid.NewGuid().ToString("N");
+            var manifestJson = System.Text.Json.JsonSerializer.Serialize(new[] { itemEntryId });
+            var resultDb = Substitute.For<IDatabase>();
+            resultDb.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+                .Returns(ci =>
+                {
+                    var key = ((RedisKey)ci[0]).ToString();
+                    return key == L2ProjectionKeys.ExecutionData(entryId) ? (RedisValue)manifestJson : RedisValue.Null;
+                });
+            var resultMux = Substitute.For<IConnectionMultiplexer>();
+            resultMux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(resultDb);
+            var resultConsumer = new ResultConsumer(
+                store, advancement, dispatcher, resultMux, OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
+
             var result = new ExecutionResult(workflowId, entryStepId, entryProcessorId, StepOutcome.Completed)
             {
                 CorrelationId = correlationId,
                 ExecutionId = executionId,
                 EntryId = entryId,
+                H = resultH,
             };
 
             await resultConsumer.Consume(OrchestratorTestStubs.Context(result, ct));
 
-            // The continuation for the matching next step was dispatched (ids from result, step data from L1).
+            // The continuation for the matching next step was dispatched (ids from result, step data from L1,
+            // EntryId = the manifest ITEM, executionId regenerated for lineage).
             await dispatcher.Received(1).DispatchAsync(
                 workflowId, nextStepId, nextProcessorId, "{\"k\":1}",
-                correlationId, executionId, entryId, Arg.Any<CancellationToken>());
+                correlationId, Arg.Any<Guid>(), itemEntryId, Arg.Any<CancellationToken>());
         }
         finally
         {

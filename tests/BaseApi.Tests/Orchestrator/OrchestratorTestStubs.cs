@@ -98,6 +98,21 @@ internal static class OrchestratorTestStubs
     }
 
     /// <summary>
+    /// A benign Redis multiplexer for the dispatch path (Plan 04 added an <see cref="IConnectionMultiplexer"/>
+    /// dependency to <c>StepDispatcher</c> for the <c>flag[H]="Pending"</c> sender pre-write and to
+    /// <c>ResultConsumer</c> for the inbound dedup gate + manifest read). Every <c>StringGetAsync</c>
+    /// returns <see cref="RedisValue.Null"/> (flag never "Ack", no manifest) and <c>StringSetAsync</c> is
+    /// a no-op true — so a test that does not care about the dedup/manifest behavior still constructs a
+    /// working dispatcher/consumer. The non-default-behavior tests build their own substitute db.
+    /// </summary>
+    public static IConnectionMultiplexer NoopRedis()
+    {
+        var db = Substitute.For<IDatabase>();
+        db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(RedisValue.Null);
+        return WrapMux(db);
+    }
+
+    /// <summary>
     /// A real <see cref="OrchestratorMetrics"/> for hermetic tests — built from a live
     /// <see cref="IMeterFactory"/> (Plan 30-02 added the metrics ctor param to StepDispatcher +
     /// ResultConsumer). No collector is wired, so the increments are no-ops in-test; this just

@@ -1,8 +1,10 @@
 using MassTransit;
+using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
 using Orchestrator.Dispatch;
 using Orchestrator.L1;
 using Orchestrator.Observability;
+using StackExchange.Redis;
 using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
 namespace Orchestrator.Consumers;
@@ -39,6 +41,7 @@ public sealed class ResultConsumer(
     IWorkflowL1Store store,
     StepAdvancement advancement,
     IStepDispatcher dispatcher,
+    IConnectionMultiplexer redis,
     OrchestratorMetrics metrics,
     ILogger<ResultConsumer> logger) : IConsumer<ExecutionResult>
 {
@@ -46,12 +49,23 @@ public sealed class ResultConsumer(
     {
         var m = context.Message;
 
-        // METRIC-04 (D-06): count EVERY consumed result at the TOP, BEFORE the L1 read, so the graceful
-        // L1-miss ack below is ALSO counted. ExecutionResult.ProcessorId is a non-nullable Guid (no guard
-        // needed). Tagged ProcessorId only — no workflowId (cardinality); service_instance_id is ambient.
+        // METRIC-04 (D-06): count EVERY consumed result at the TOP, BEFORE the dedup gate + L1 read, so
+        // the dropped-on-Ack path AND the graceful L1-miss ack below are ALSO counted. ProcessorId is a
+        // non-nullable Guid (no guard). Tagged ProcessorId only — no workflowId (cardinality); ambient sid.
         metrics.ResultConsumed.Add(1, new KeyValuePair<string, object?>("ProcessorId", m.ProcessorId.ToString("D")));
 
-        // L1-only read (D-08): TryGet then the step map — no Upsert/Remove/stripe TryAcquire, no L2.
+        // A Redis fault on GetDatabase / StringGetAsync / StringSetAsync is INFRA (no catch) -> propagates
+        // to the definition's bounded Immediate(3) retry -> _error. Only an L1 miss / dangling edge is a
+        // graceful business-ack (unchanged).
+        var db = redis.GetDatabase();
+
+        // ---- 0. Effect-first dedup gate (D-06, orchestrator hop) ----
+        // An inbound result whose H is already "Ack" means the fan-out effect completed on a prior delivery
+        // -> drop + broker-ack, produce NO further dispatch. H="" (Failed/Cancelled or legacy) never matches.
+        if ((string?)await db.StringGetAsync(L2ProjectionKeys.Flag(m.H)) == "Ack")
+            return;
+
+        // L1-only read (D-08): TryGet then the step map — no Upsert/Remove/stripe TryAcquire, no L2 read here.
         if (!store.TryGet(m.WorkflowId, out var wf) || !wf.Steps.TryGetValue(m.StepId, out var completed))
         {
             // BUSINESS ack — unknown (wf,step) / drained / corrupt-projection (it never entered wf.Steps).
@@ -61,12 +75,36 @@ public sealed class ResultConsumer(
             return;
         }
 
-        foreach (var (stepId, step) in advancement.SelectNext(m.Outcome, completed, wf.Steps))
-        {
-            await dispatcher.DispatchAsync(
-                m.WorkflowId, stepId, step.ProcessorId, step.Payload,
-                m.CorrelationId, m.ExecutionId, m.EntryId, context.CancellationToken);
-        }
-        // returns normally -> ACK. An infra fault from Send propagates -> Immediate(3) -> _error.
+        // ---- 1. Manifest unbundle (D-08) ----
+        // A Completed result carries a manifest at data[m.EntryId] (a JSON array of item content-addresses,
+        // "[]" when empty). A Failed/Cancelled result carries EntryId="" — short-circuit to zero items (no
+        // manifest read on an empty EntryId). A missing/garbled key degrades to zero items via the ?? guards
+        // (T-31-11: server-written manifest, deserialize as string[], never throw on the business path).
+        var items = string.IsNullOrEmpty(m.EntryId)
+            ? System.Array.Empty<string>()
+            : System.Text.Json.JsonSerializer.Deserialize<string[]>(
+                  (string?)await db.StringGetAsync(L2ProjectionKeys.ExecutionData(m.EntryId)) ?? "[]")
+              ?? System.Array.Empty<string>();
+
+        // ---- 2. N x M fan-out (D-08) ----
+        // For each manifest item x each matched successor (SelectNext = the M generator), dispatch one
+        // continuation carrying the ITEM EntryId + a freshly regenerated executionId (lineage). The child H
+        // is computed INSIDE DispatchAsync over (corr, wf, successorStep, successorProc, itemEntryId) — so an
+        // orchestrator redelivery reproduces the SAME child H per (item, successor) and is deduped at the next
+        // node (req-6 / Pitfall 5; executionId excluded). Merge falls out: different item EntryId -> different
+        // H (both execute, distinct output, no override); identical item -> same H -> collapse (req-5). The
+        // child H is independent of the PREDECESSOR step id (only the successor + item enter ComputeH).
+        foreach (var itemEntryId in items)
+            foreach (var (stepId, step) in advancement.SelectNext(m.Outcome, completed, wf.Steps))
+                await dispatcher.DispatchAsync(
+                    m.WorkflowId, stepId, step.ProcessorId, step.Payload,
+                    m.CorrelationId, NewId.NextGuid(), itemEntryId, context.CancellationToken);
+
+        // ---- 3. Effect-first flip, then ack (D-06/D-07) ----
+        // Flip the inbound result's flag Pending->Ack ONLY after the fan-out effect. When.Exists = SET XX: a
+        // false return means the Pending seed (the processor's outbound pre-write, Plan 03) was lost — NOT an
+        // error, do NOT throw (D-07/T-31-14); the next-hop child-H dedup absorbs the residual.
+        await db.StringSetAsync(L2ProjectionKeys.Flag(m.H), "Ack", when: When.Exists);
+        // returns normally -> ACK. An infra fault from Send / Redis propagates -> Immediate(3) -> _error.
     }
 }

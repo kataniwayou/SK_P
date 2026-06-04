@@ -4,9 +4,11 @@ using Messaging.Contracts;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using NSubstitute;
 using Orchestrator.Consumers;
 using Orchestrator.Dispatch;
 using Orchestrator.L1;
+using StackExchange.Redis;
 using Xunit;
 using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
@@ -71,12 +73,32 @@ public sealed class ResultConsumeTests
         store.Upsert(workflowId, entry);
     }
 
-    private static ResultConsumer Build(WorkflowL1Store store, ISendEndpointProvider sendProvider)
+    /// <summary>
+    /// Builds a <see cref="ResultConsumer"/> over the real harness-backed <see cref="StepDispatcher"/>.
+    /// Plan 31-04: ResultConsumer reads flag[m.H] (dedup gate) + data[m.EntryId] (manifest). The Redis mux
+    /// returns Null for the flag (never Ack -> pass the gate) and, for <c>data[manifestEntryId]</c>, a
+    /// JSON array of <paramref name="manifestItems"/> (the items fanned out). The StepDispatcher's own
+    /// flag[H]=Pending pre-write targets the same no-op mux.
+    /// </summary>
+    private static ResultConsumer Build(
+        WorkflowL1Store store, ISendEndpointProvider sendProvider, string manifestEntryId, params string[] manifestItems)
     {
-        // 24.1 / D-24.1-05: the boot gate is removed — ResultConsumer no longer takes an IStartupGate.
+        var manifestJson = System.Text.Json.JsonSerializer.Serialize(manifestItems);
+        var db = Substitute.For<IDatabase>();
+        db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(ci =>
+            {
+                var key = ((RedisKey)ci[0]).ToString();
+                return key == L2ProjectionKeys.ExecutionData(manifestEntryId)
+                    ? (RedisValue)manifestJson
+                    : RedisValue.Null;
+            });
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+
         return new ResultConsumer(
-            store, new StepAdvancement(), new StepDispatcher(sendProvider, OrchestratorTestStubs.Metrics()),
-            OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
+            store, new StepAdvancement(), new StepDispatcher(sendProvider, OrchestratorTestStubs.NoopRedis(), OrchestratorTestStubs.Metrics()),
+            mux, OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
     }
 
     // ----- ContinuationDispatch: one field-copied dispatch per matched next step -----------------
@@ -108,16 +130,19 @@ public sealed class ResultConsumeTests
         await harness.Start();
         try
         {
-            var consumer = Build(store, harness.Bus);
-
             var correlationId = Guid.NewGuid();
             var executionId = Guid.NewGuid();
-            var entryId = Guid.NewGuid().ToString("D");
+            var manifestEntryId = Guid.NewGuid().ToString("D");   // the result's manifest EntryId -> data[manifestEntryId]
+            var itemEntryId = "ab" + Guid.NewGuid().ToString("N"); // the ONE manifest item that gets fanned out
+
+            var consumer = Build(store, harness.Bus, manifestEntryId, itemEntryId);
+
             var result = new ExecutionResult(workflowId, completedStepId, completedProcessorId, StepOutcome.Completed)
             {
                 CorrelationId = correlationId,
                 ExecutionId = executionId,
-                EntryId = entryId,
+                EntryId = manifestEntryId,
+                H = "aaaa" + new string('0', 60),
             };
 
             await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
@@ -127,11 +152,11 @@ public sealed class ResultConsumeTests
                 .Select(c => c.Context.Message)
                 .ToList();
 
-            var msg = Assert.Single(dispatched);                 // exactly one dispatch per matched next step
+            var msg = Assert.Single(dispatched);                 // one manifest item x one matched next step
             Assert.Equal(workflowId, msg.WorkflowId);            // copied from the result
             Assert.Equal(correlationId, msg.CorrelationId);
-            Assert.Equal(executionId, msg.ExecutionId);
-            Assert.Equal(entryId, msg.EntryId);
+            Assert.NotEqual(Guid.Empty, msg.ExecutionId);        // regenerated lineage (NewId.NextGuid)
+            Assert.Equal(itemEntryId, msg.EntryId);              // the fanned-out manifest ITEM EntryId
             Assert.Equal(nextStepId, msg.StepId);                // taken from the next-step L1 projection
             Assert.Equal(nextProcessorId, msg.ProcessorId);
             Assert.Equal(nextPayload, msg.Payload);
@@ -168,16 +193,20 @@ public sealed class ResultConsumeTests
         await harness.Start();
         try
         {
-            var consumer = Build(store, harness.Bus);
+            var manifestEntryId = Guid.NewGuid().ToString("D");
+            var itemEntryId = "cd" + Guid.NewGuid().ToString("N");
+            var consumer = Build(store, harness.Bus, manifestEntryId, itemEntryId);
             var result = new ExecutionResult(workflowId, completedStepId, Guid.NewGuid(), StepOutcome.Completed)
             {
                 CorrelationId = Guid.NewGuid(),
+                EntryId = manifestEntryId,
+                H = "bbbb" + new string('0', 60),
             };
 
             await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
 
             var dispatched = harness.Consumed.Select<EntryStepDispatch>(ct).ToList();
-            Assert.Single(dispatched); // exactly one continuation — a single result yields a single match
+            Assert.Single(dispatched); // one manifest item x one match -> a single continuation, consumed once
         }
         finally
         {
