@@ -48,7 +48,7 @@ public sealed class CheckAndDropFacts
         IConnectionMultiplexer redis, IProcessorContext context,
         DispatchTestKit.FakeProcessor processor, ISendEndpointProvider send, ProcessorMetrics metrics) =>
         new(redis, context, processor, DispatchTestKit.Options(300), send, metrics,
-            NullLogger<EntryStepDispatchConsumer>.Instance);
+            DispatchTestKit.Retry(), NullLogger<EntryStepDispatchConsumer>.Instance);
 
     [Fact]
     public async Task FlagAck_Increments_DispatchDeduped_Once_And_Discards()
