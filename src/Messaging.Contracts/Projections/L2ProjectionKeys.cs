@@ -21,7 +21,8 @@ namespace Messaging.Contracts.Projections;
 ///   <item><description>Root: <c>{Prefix}{workflowId}</c></description></item>
 ///   <item><description>Step: <c>{Prefix}{workflowId}:{stepId}</c></description></item>
 ///   <item><description>Processor: <c>{Prefix}{processorId}</c></description></item>
-///   <item><description>ExecutionData: {Prefix}data:{entryId} — FIRST key with a data: discriminator segment, distinct from the flat Root/Processor keys (D-02 / CONTRACT-02)</description></item>
+///   <item><description>ExecutionData: {Prefix}data:{64hex} — content-addressed (was Guid; D-01). The string overload takes the 64-hex content address directly (no <c>:D</c>); the Guid overload is retained transitionally for the not-yet-migrated Phase-27 callers and is removed in Plan 02.</description></item>
+///   <item><description>Flag: {Prefix}flag:{64hex} — effect-first dedup state (D-05)</description></item>
 /// </list>
 /// </summary>
 public static class L2ProjectionKeys
@@ -36,5 +37,16 @@ public static class L2ProjectionKeys
 
     public static string Processor(Guid processorId) => $"{Prefix}{processorId}";
 
+    /// <summary>D-01: content-addressed data key over the 64-hex entryId string (the new canonical path).</summary>
+    public static string ExecutionData(string entryId) => $"{Prefix}data:{entryId}";
+
+    /// <summary>
+    /// Transitional Guid overload retained so the not-yet-migrated Phase-27 callers
+    /// (<c>EntryStepDispatchConsumer</c>) and their golden tests still compile/pass this plan; the
+    /// content address becomes the 64-hex <see cref="ExecutionData(string)"/> in Plan 02. Renders <c>:D</c>.
+    /// </summary>
     public static string ExecutionData(Guid entryId) => $"{Prefix}data:{entryId:D}";
+
+    /// <summary>D-05: effect-first dedup flag key — <c>skp:flag:{64hex}</c>.</summary>
+    public static string Flag(string h) => $"{Prefix}flag:{h}";
 }
