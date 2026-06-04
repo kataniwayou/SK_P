@@ -1,66 +1,58 @@
-# Phase 32 close gate — v3.6.0 (triple-SHA)
-# Cancelled circuit-breaker — two-level stop (in-flight marker + Fault-fanout unschedule) closeout
+# Phase 32.1 close gate — v3.6.0 (triple-SHA)
+# Dead-letter on exhaustion (breaker reverted) closeout
 # ---------------------------------------------------------------------------
-# Byte-faithful clone of scripts/phase-31-close.ps1 (the proven v3.6.0 triple-SHA gate), relabeled
-# 31 -> 32, with ONE substantive divergence (the no-TTL skp:cancelled:* scan-clean — see below).
-# It inherits the full Phase-31 protocol:
+# Identical protocol to scripts/phase-31-close.ps1 (the proven v3.6.0 triple-SHA gate),
+# for the content-addressed L2 key namespaces this milestone introduced:
 #   - Phase 3 D-15 byte-identical psql \l SHA-256 invariant (database LIST — a seeded
 #     Processor row is row-level, NOT db-level, so it does NOT move this SHA — RESEARCH A6).
 #   - TEST-REDIS-04: docker exec sk-redis redis-cli --scan | sort | SHA-256, BEFORE = AFTER.
-#     The scan is UNFILTERED (ALL keys), so the Phase 31 key families AND the new Phase 32
-#     skp:cancelled:* marker are captured automatically in the BEFORE/AFTER SHA — no prefix
-#     filter excludes them:
-#       * the content-addressed execution-data keys skp:data:{64hex} (Phase 31 D-01). Minted per
-#         round-trip; cleaned by the E2E net-zero teardown + the container's short ExecutionDataTtl.
-#       * the effect-first dedup flag keys skp:flag:{64hex} (Phase 31 D-05). TTL-bounded, scan-cleaned
-#         by the E2E net-zero teardown.
+#     The scan is UNFILTERED (ALL keys), so the milestone's content-addressed key families are
+#     captured automatically in the BEFORE/AFTER SHA — no prefix filter excludes them:
+#       * the content-addressed execution-data keys skp:data:{64hex} — a 64-hex content address
+#         (D-01). Minted per round-trip; cleaned by the E2E net-zero teardown + the container's
+#         short ExecutionDataTtl, NOT this script. A leaked skp:data:* surfaces here as a redis
+#         SHA mismatch (exit 1).
+#       * the effect-first dedup flag keys skp:flag:{64hex} — the symmetric Pending->Ack dedup
+#         state both hops write (D-05). Bounded by a TTL and scan-cleaned by the E2E net-zero
+#         teardown (D-12). A leaked skp:flag:* ALSO surfaces here as a redis SHA mismatch.
 #       * the steady-state processor-liveness key skp:{procId:D} — written by the LIVE
-#         processor-sample container; STEADY-STATE (in BOTH snapshots), stable as long as procId is.
-#       * NEW (Phase 32 D-07): the no-TTL in-flight cancellation marker skp:cancelled:{wf:D}. Set by
-#         the breaker on infra-exhaustion. UNLIKE skp:flag:*/skp:data:* it has NO TTL — it will NEVER
-#         self-expire and will NOT drain in the settle loop below. See the substantive divergence.
+#         processor-sample container; STEADY-STATE (in BOTH snapshots), so it does not break the
+#         SHA as long as the procId is stable.
 #   - TEST-RMQ-04/05 (D-09): docker exec sk-rabbitmq rabbitmqctl -q list_queues name | sort |
 #     SHA-256, BEFORE = AFTER. The steady-state dispatch queue {procId:D} bound by the live
 #     processor-sample container is steady-state (both snapshots) as long as procId is stable.
 #   - Phase 3 D-18 3-consecutive-GREEN cadence (full suite, no Category filter — RealStack E2E run live).
 #
-# SUBSTANTIVE DIVERGENCE FROM PHASE 31 (Phase 32 D-07 / MEMORY reference_close_gate_container_rebuild_and_flag_churn):
-#   The skp:cancelled:* marker has NO TTL. The Phase-31 settle-drain waits for the TTL-bounded
-#   skp:flag:*/skp:data:* keys to expire back to the BEFORE baseline — but a no-TTL marker NEVER
-#   drains, so the AFTER --scan would carry every skp:cancelled:{wf} the live E2E created and the
-#   redis triple-SHA would DRIFT every run (the exact NET-ZERO-31 failure mode). This gate therefore
-#   EXPLICITLY DELETES skp:cancelled:* AFTER the settle-drain and BEFORE the AFTER snapshot. The
-#   CancelledCircuitBreakerE2ETests teardown ALSO registers these into L2KeysToCleanup (belt-and-
-#   braces); this is the gate-side guard. There is still NO destructive whole-db flush and the
-#   BEFORE/AFTER scans stay UNFILTERED (the cancelled delete is a targeted del, not a snapshot filter).
+# NOTE (Phase 32.1 — breaker reverted): the Phase-32 runtime "cancelled circuit-breaker" is removed,
+# so NO no-TTL cancellation marker key is ever written anymore. There is therefore NO marker scan-clean
+# in this gate (the Phase-32 gate needed one because that no-TTL marker never self-expired; with the
+# breaker reverted there are no such keys, so the simpler proven triple-SHA protocol is the correct gate).
 #
 # The net-zero discipline for the skp:data:*/skp:flag:* namespaces is enforced by the E2E teardown
-# (CancelledCircuitBreakerE2ETests + IdempotentExactlyOnceE2ETests register them into L2KeysToCleanup);
-# this gate's job is to SNAPSHOT-and-COMPARE the full unfiltered keyspace and to scan-clean the one
-# no-TTL namespace that cannot self-drain. There is deliberately NO destructive whole-db flush and NO
-# prefix filter on the snapshot scans.
+# (IdempotentExactlyOnceE2ETests registers BOTH namespaces into L2KeysToCleanup, D-12); this gate's job is
+# to SNAPSHOT-and-COMPARE the full unfiltered keyspace. There is deliberately NO destructive whole-db
+# flush and NO prefix filter on the scan — widening to the full keyspace is what makes skp:flag:* part
+# of the SHA.
 #
-# Steady-state processor identity (DECISION: stable Processor row, NOT a pre-flight health exception).
-# The gate REQUIRES processor-sample healthy at pre-flight. processor-sample only goes Healthy once a
-# Processor DB row carrying its genuine embedded SourceHash exists (boot-before-register, unbounded
-# retry). So this gate SEEDS that row idempotently FIRST (GET-or-create against the unique
-# uq_processor_source_hash index — a fixed genuine hash means a stable procId across the whole 3-run
+# Steady-state processor identity (Open Q1/Q2 resolution — DECISION: stable Processor row, NOT a
+# pre-flight health exception). The gate REQUIRES processor-sample healthy at pre-flight. processor-sample
+# only goes Healthy once a Processor DB row carrying its genuine embedded SourceHash exists (boot-before-
+# register, unbounded retry). So this gate SEEDS that row idempotently FIRST (GET-or-create against the
+# unique uq_processor_source_hash index — a fixed genuine hash means a stable procId across the whole 3-run
 # gate, keeping its skp:{procId:D} liveness key + {procId:D} dispatch queue in both redis/rmq snapshots).
-# This is the SAME idempotent row the E2E (CancelledCircuitBreakerE2ETests / IdempotentExactlyOnceE2ETests
-# / SampleRoundTripE2ETests) reuses, so the id never churns. A health exception was REJECTED — it would
-# let the gate pass with a dead processor (defeats the liveness point).
+# This is the SAME idempotent row the E2E (IdempotentExactlyOnceE2ETests / SampleRoundTripE2ETests) reuses,
+# so the id never churns. A health exception was REJECTED — it would let the gate pass with a dead
+# processor (defeats the liveness point).
 #
-# CONTRACT-CHANGE NOTE (v3.6.0): the live stack MUST run REBUILT containers carrying the Phase-32 code
-# (the breaker catch + Fault consumer are new this phase). Run
-#   docker compose up -d --build processor-sample orchestrator baseapi-service
-# BEFORE this gate (the embedded SourceHash must match the host build, else liveness fails on a procId
-# mismatch).
+# CONTRACT-CHANGE NOTE (v3.6.0): the wire contract is NOT backward-compatible (EntryId Guid->string + new
+# H). The live stack MUST run a REBUILT processor-sample (docker compose up -d --build processor-sample
+# orchestrator baseapi-service) — a mixed-version deployment mis-deserializes the new contract.
 #
 # The full v3.6.0 stack MUST be up healthy (postgres, redis, rabbitmq, otel-collector,
 # elasticsearch, prometheus, orchestrator, processor-sample, baseapi-service).
 #
 # Usage:
-#   pwsh -File scripts/phase-32-close.ps1
+#   pwsh -File scripts/phase-32.1-close.ps1
 #
 # Exit codes:
 #   0  — both build configs zero-warning, all three runs GREEN, all three SHA-256 invariants held
@@ -74,13 +66,13 @@ Set-StrictMode -Version Latest
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $repoRoot
 try {
-    Write-Host "Phase 32 close gate (triple-SHA) starting from $repoRoot" -ForegroundColor Cyan
+    Write-Host "Phase 32.1 close gate (triple-SHA) starting from $repoRoot" -ForegroundColor Cyan
 
     # ---- Pre-flight seed: stable Processor row carrying the genuine embedded SourceHash ----
-    # processor-sample goes Healthy only once this row exists. Seed it idempotently (GET-or-create on
-    # the unique source-hash) BEFORE the health loop so processor-sample can be healthy at pre-flight, and
-    # so its procId — hence its skp:{procId:D} liveness key + {procId:D} queue — is stable across the whole
-    # gate run (steady-state in both BEFORE and AFTER snapshots).
+    # (Open Q2 resolution) processor-sample goes Healthy only once this row exists. Seed it idempotently
+    # (GET-or-create on the unique source-hash) BEFORE the health loop so processor-sample can be healthy at
+    # pre-flight, and so its procId — hence its skp:{procId:D} liveness key + {procId:D} queue — is stable
+    # across the whole gate run (steady-state in both BEFORE and AFTER snapshots).
     Write-Host "Pre-flight: seeding the stable Processor row (genuine embedded SourceHash)..." -ForegroundColor Cyan
 
     $sampleDll = Join-Path $repoRoot 'src/Processor.Sample/bin/Release/net8.0/Processor.Sample.dll'
@@ -127,7 +119,7 @@ try {
         $body = @{
             name           = 'processor-sample'
             version        = '3.6.0'
-            description    = 'Phase 32 close-gate steady-state Processor.Sample row (genuine embedded hash, schema-less).'
+            description    = 'Phase 32.1 close-gate steady-state Processor.Sample row (genuine embedded hash, schema-less).'
             sourceHash     = $sourceHash
             inputSchemaId  = $null
             outputSchemaId = $null
@@ -156,7 +148,7 @@ try {
     if (-not $procHealthy) {
         Write-Host "processor-sample never reported healthy within 120s after seeding the row. Aborting." -ForegroundColor Red
         Write-Host "  Check 'docker compose logs processor-sample' — identity may have failed to resolve" -ForegroundColor Red
-        Write-Host "  (or the container predates the v3.6.0 Phase-32 code — rebuild it: docker compose up -d --build processor-sample)." -ForegroundColor Red
+        Write-Host "  (or the container predates the v3.6.0 wire contract — rebuild it: docker compose up -d --build processor-sample)." -ForegroundColor Red
         exit 2
     }
     Write-Host "  processor-sample is healthy (steady-state liveness key skp:$($procId.ToString().ToLower()) live)." -ForegroundColor Green
@@ -245,16 +237,15 @@ try {
         exit 1
     }
     Write-Host "3-GREEN cadence passed — $($distinctPassed[0]) facts GREEN across 3 runs." -ForegroundColor Green
-    Write-Host "  Observed Phase 32 fact count: $($distinctPassed[0])." -ForegroundColor Gray
+    Write-Host "  Observed Phase 32.1 fact count: $($distinctPassed[0])." -ForegroundColor Gray
 
-    # ---- Settle-drain the transient TTL-bounded namespaces (NET-ZERO-31, Phase 31.1) ----
-    # The skp:flag:{64hex} / skp:data:{64hex} keys are per-fire-UNIQUE and TTL-bounded (keepTtl, 300s).
-    # Every RealStack E2E test STOPS its workflow in teardown, so no self-rescheduled cron fire keeps
-    # minting fresh names after the runs finish. Wait for the keyspace to drain back to the BEFORE set
-    # before snapshotting AFTER (timeout = TTL + slack). This does NOT weaken leak detection: a key that
-    # never drains (a permanent-key regression, or a workflow left firing) keeps the scan != BEFORE and
-    # still fails the redis invariant below. NOTE: the no-TTL skp:cancelled:* marker will NOT drain here —
-    # it is explicitly deleted in the next step.
+    # ---- Settle-drain the transient TTL-bounded namespaces (NET-ZERO-31) ----
+    # The skp:flag:{64hex} / skp:data:{64hex} keys are per-fire-UNIQUE (H embeds the per-fire
+    # correlationId) and TTL-bounded (keepTtl, 300s). Every RealStack E2E test now STOPS its workflow in
+    # teardown, so no self-rescheduled cron fire keeps minting fresh names after the runs finish. Wait for
+    # the keyspace to drain back to the BEFORE set before snapshotting AFTER (timeout = TTL + slack). This
+    # does NOT weaken leak detection: a key that never drains (a permanent-key regression, or a workflow
+    # left firing) keeps the scan != BEFORE and still fails the redis invariant below.
     Write-Host "Settle: draining transient skp:flag:*/skp:data:* keys to the BEFORE baseline (<=330s)..." -ForegroundColor Cyan
     $settleDeadline = (Get-Date).AddSeconds(330)
     $settled = $false
@@ -268,19 +259,7 @@ try {
     } else {
         $flagN = (docker exec sk-redis redis-cli --scan --pattern 'skp:flag:*' | Measure-Object).Count
         $dataN = (docker exec sk-redis redis-cli --scan --pattern 'skp:data:*' | Measure-Object).Count
-        $cancN = (docker exec sk-redis redis-cli --scan --pattern 'skp:cancelled:*' | Measure-Object).Count
-        Write-Host "  Settle timed out after 330s (skp:flag:*=$flagN, skp:data:*=$dataN, skp:cancelled:*=$cancN remain) — the no-TTL skp:cancelled:* keys are deleted next; the AFTER SHA will flag any other residual." -ForegroundColor Yellow
-    }
-
-    # ---- Phase 32 (D-07): explicit no-TTL skp:cancelled:* scan-clean BEFORE the AFTER snapshot ----
-    # The skp:cancelled:* marker has NO TTL — it will NOT drain in the settle loop above (unlike the
-    # TTL-bounded skp:flag:*/skp:data:*). Without an explicit delete the AFTER --scan would carry every
-    # skp:cancelled:{wf} the E2E created and the redis triple-SHA would drift every run (NET-ZERO-31).
-    # The E2E teardown also registers these into L2KeysToCleanup (belt-and-braces); this is the gate-side guard.
-    $cancelledKeys = docker exec sk-redis redis-cli --scan --pattern 'skp:cancelled:*'
-    if ($cancelledKeys) {
-        $cancelledKeys | ForEach-Object { docker exec sk-redis redis-cli del $_ | Out-Null }
-        Write-Host "  Deleted $($cancelledKeys.Count) no-TTL skp:cancelled:* marker(s) before AFTER snapshot." -ForegroundColor Gray
+        Write-Host "  Settle timed out after 330s (skp:flag:*=$flagN, skp:data:*=$dataN remain) — the AFTER SHA will flag the residual leak." -ForegroundColor Yellow
     }
 
     # ---- AFTER snapshots (triple) ----
@@ -321,9 +300,8 @@ try {
         Write-Host "  AFTER  = $afterRedisHash" -ForegroundColor Red
         Write-Host "  Investigate a leaked skp: key. Likely a leaked content-addressed execution-data key" -ForegroundColor Red
         Write-Host "  skp:data:{64hex} OR a leaked effect-first dedup flag skp:flag:{64hex} (the E2E net-zero" -ForegroundColor Red
-        Write-Host "  teardown should drain BOTH namespaces), a residual no-TTL skp:cancelled:{wf} marker (the" -ForegroundColor Red
-        Write-Host "  explicit scan-clean above should have deleted it — check it ran), or a churned" -ForegroundColor Red
-        Write-Host "  processor-liveness key skp:{procId} (the seeded row's id changed across the run):" -ForegroundColor Red
+        Write-Host "  teardown should drain BOTH namespaces — D-12), or a churned processor-liveness key" -ForegroundColor Red
+        Write-Host "  skp:{procId} (the seeded row's id changed across the run):" -ForegroundColor Red
         Write-Host "    'docker exec sk-redis redis-cli --scan'" -ForegroundColor Red
         $allGood = $false
     } else {
@@ -342,16 +320,16 @@ try {
     }
 
     if (-not $allGood) {
-        Write-Host "Phase 32 close gate FAILED. Resolve violations and re-run." -ForegroundColor Red
+        Write-Host "Phase 32.1 close gate FAILED. Resolve violations and re-run." -ForegroundColor Red
         exit 1
     }
 
-    Write-Host "Phase 32 close gate PASSED." -ForegroundColor Green
+    Write-Host "Phase 32.1 close gate PASSED." -ForegroundColor Green
     Write-Host "  Total facts GREEN: $($distinctPassed[0])" -ForegroundColor Green
     Write-Host "  psql \l SHA-256:              $afterPgHash" -ForegroundColor Green
     Write-Host "  redis-cli --scan SHA-256:     $afterRedisHash" -ForegroundColor Green
     Write-Host "  rabbitmqctl list_queues SHA-256: $afterRmqHash" -ForegroundColor Green
-    Write-Host "Operator: append these three SHA values + the Passed count to .planning/STATE.md Phase 32 close entry." -ForegroundColor Cyan
+    Write-Host "Operator: append these three SHA values + the Passed count to .planning/STATE.md Phase 32.1 close entry." -ForegroundColor Cyan
 
     exit 0
 } finally {
