@@ -13,7 +13,7 @@ public sealed class StepDispatcher(ISendEndpointProvider sendProvider, Orchestra
 {
     /// <inheritdoc />
     public async Task DispatchAsync(Guid workflowId, Guid stepId, Guid processorId, string payload,
-        Guid correlationId, Guid executionId, Guid entryId, CancellationToken ct)
+        Guid correlationId, Guid executionId, string entryId, CancellationToken ct)
     {
         var msg = new EntryStepDispatch(workflowId, stepId, processorId, payload)
         {

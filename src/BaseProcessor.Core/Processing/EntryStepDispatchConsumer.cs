@@ -71,7 +71,7 @@ public sealed class EntryStepDispatchConsumer(
         // ---- 1. Input resolution + validation (EXEC-02/03, D-07, no-input source decision) ----
         string inputData;
 
-        if (dispatch.EntryId == Guid.Empty)
+        if (string.IsNullOrEmpty(dispatch.EntryId))
         {
             // No entryId => source processor: do NOT read L2 (locked no-input decision).
             inputData = string.Empty;
@@ -145,7 +145,7 @@ public sealed class EntryStepDispatchConsumer(
         {
             if (!ProcessorJsonSchemaValidator.TryValidate(context.OutputDefinition, r.OutputData, out var outErrors))
             {
-                // Output failed its definition — Failed, EntryId stays Guid.Empty, nothing written (EXEC-05).
+                // Output failed its definition — Failed, EntryId stays the empty string, nothing written (EXEC-05).
                 built.Add(BuildFailed(dispatch, string.Join("; ", outErrors)));
                 continue;
             }
@@ -167,12 +167,15 @@ public sealed class EntryStepDispatchConsumer(
             {
                 // D-15: the OUTPUT WRITE is INFRA — NO catch. A transient Redis fault here throws so the
                 // whole dispatch retries rather than emitting a Completed with no L2 data behind it.
+                // Plan 02 shim: newEntryId is still a minted Guid LOCAL this plan; render it to a string
+                // content address via .ToString("D") to feed the now-string ExecutionData(string) +
+                // BuildCompleted. Plan 03 replaces the mint with MessageIdentity.HashBlob (a real 64-hex).
                 await db.StringSetAsync(
-                    L2ProjectionKeys.ExecutionData(newEntryId),
+                    L2ProjectionKeys.ExecutionData(newEntryId.ToString("D")),
                     r.OutputData,
                     expiry: TimeSpan.FromSeconds(opts.ExecutionDataTtlSeconds));
 
-                built.Add(BuildCompleted(dispatch, executionId, newEntryId));
+                built.Add(BuildCompleted(dispatch, executionId, newEntryId.ToString("D")));
 
                 // LOG-04/LOG-01: the Completed-path LogRecord. It is emitted INSIDE this nested scope so it
                 // carries the MINTED ExecutionId + output EntryId (this scope), AND — via the bus-wide
@@ -248,7 +251,7 @@ public sealed class EntryStepDispatchConsumer(
     // executionId is minted ONCE in the Completed-path loop and passed in (NOT minted here) so the
     // nested BeginScope value and this result's ExecutionId are the SAME value (LOG-04 — the scoped id
     // equals the sent ExecutionResult.ExecutionId the line reports).
-    private static ExecutionResult BuildCompleted(EntryStepDispatch d, Guid executionId, Guid newEntryId) =>
+    private static ExecutionResult BuildCompleted(EntryStepDispatch d, Guid executionId, string newEntryId) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId, StepOutcome.Completed)
         {
             CorrelationId = d.CorrelationId,
@@ -261,7 +264,7 @@ public sealed class EntryStepDispatchConsumer(
         {
             CorrelationId = d.CorrelationId,
             ExecutionId = NewId.NextGuid(),
-            EntryId = Guid.Empty,
+            EntryId = "",
             ErrorMessage = error,
         };
 
@@ -270,7 +273,7 @@ public sealed class EntryStepDispatchConsumer(
         {
             CorrelationId = d.CorrelationId,
             ExecutionId = NewId.NextGuid(),
-            EntryId = Guid.Empty,
+            EntryId = "",
             CancellationMessage = msg,
         };
 }

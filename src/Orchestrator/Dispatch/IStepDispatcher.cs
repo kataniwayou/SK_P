@@ -19,5 +19,5 @@ public interface IStepDispatcher
     /// parameterized (NOT forced empty) so the result-continuation path can carry the real values.
     /// </summary>
     Task DispatchAsync(Guid workflowId, Guid stepId, Guid processorId, string payload,
-        Guid correlationId, Guid executionId, Guid entryId, CancellationToken ct);
+        Guid correlationId, Guid executionId, string entryId, CancellationToken ct);
 }

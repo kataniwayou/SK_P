@@ -7,7 +7,7 @@ namespace BaseConsole.Core.Messaging;
 /// <summary>
 /// Bus-wide inbound consume filter (LOG-02). For an <see cref="IExecutionCorrelated"/> message it
 /// opens a MEL log scope carrying the five execution ids under the <see cref="ExecutionLogScope"/>
-/// keys (each Guid.Empty value skipped — D-03) so OTel IncludeScopes serializes them as
+/// keys (each Guid.Empty value skipped, and an empty-string EntryId skipped — D-03) so OTel IncludeScopes serializes them as
 /// <c>attributes.&lt;Key&gt;</c>. It does NOT touch CorrelationId — that stays owned by the unchanged
 /// <see cref="InboundCorrelationConsumeFilter{T}"/> (D-01). Any non-IExecutionCorrelated message
 /// passes through untouched (D-03). Open-generic for the same DI/registration reasons as the
@@ -30,7 +30,7 @@ public sealed class InboundExecutionScopeConsumeFilter<T>(
         if (ec.StepId      != Guid.Empty) state[ExecutionLogScope.StepId]      = ec.StepId.ToString();
         if (ec.ProcessorId != Guid.Empty) state[ExecutionLogScope.ProcessorId] = ec.ProcessorId.ToString();
         if (ec.ExecutionId != Guid.Empty) state[ExecutionLogScope.ExecutionId] = ec.ExecutionId.ToString();
-        if (ec.EntryId     != Guid.Empty) state[ExecutionLogScope.EntryId]     = ec.EntryId.ToString();
+        if (!string.IsNullOrEmpty(ec.EntryId)) state[ExecutionLogScope.EntryId] = ec.EntryId;
 
         using (logger.BeginScope(state))
             await next.Send(context);

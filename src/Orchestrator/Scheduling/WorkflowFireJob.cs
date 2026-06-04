@@ -78,10 +78,12 @@ public sealed class WorkflowFireJob(
                 }
 
                 // D-01: the build-and-Send shape now lives in IStepDispatcher (the single owner). The
-                // initial fire passes executionId = entryId = Guid.Empty; an infra fault on Send propagates.
+                // initial fire passes executionId = Guid.Empty and entryId = "" (placeholder; Plan 04
+                // replaces it with the real MessageIdentity.EntryEntryId hash + threads H). An infra
+                // fault on Send propagates.
                 await dispatcher.DispatchAsync(
                     workflowId, entryStepId, step.ProcessorId, step.Payload,
-                    correlationId, Guid.Empty, Guid.Empty, context.CancellationToken);
+                    correlationId, Guid.Empty, "", context.CancellationToken);
             }
 
             // L1 liveness refresh — in-memory only (NO L2 write). Replace the immutable LivenessProjection

@@ -12,7 +12,10 @@ public sealed record ExecutionResult(
 {
     public Guid CorrelationId { get; init; }
     public Guid ExecutionId { get; init; }
-    public Guid EntryId { get; init; }
+    public string EntryId { get; init; } = "";
+
+    /// <summary>Deterministic effect identity (Phase 31 D-02), empty until Plan 04 populates it.</summary>
+    public string H { get; init; } = "";
 
     /// <summary>Diagnostic message for a <see cref="StepOutcome.Failed"/> result; null otherwise.</summary>
     public string? ErrorMessage { get; init; }
