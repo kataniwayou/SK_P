@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Completed 31-04-PLAN.md
-last_updated: "2026-06-04T14:33:55.000Z"
-last_activity: 2026-06-04 -- Phase 31 Plan 04 complete
+stopped_at: 31-06 tasks 1-2 authored + verified; Task 3 live human-verify gate pending operator
+last_updated: "2026-06-04T14:49:26.000Z"
+last_activity: 2026-06-04 -- Phase 31 Plan 06 authored (real-stack E2E + close gate); live gate pending
 progress:
   total_phases: 8
   completed_phases: 6
@@ -27,9 +27,20 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 31 (idempotent-execution-exactly-once-effect) — EXECUTING
-Plan: 5 of 6 plans complete (01/02/03/04/05 done; 06 remains)
-Status: Executing Phase 31
-Last activity: 2026-06-04 -- Phase 31 Plan 04 complete
+Plan: 6 of 6 authored (01/02/03/04/05 done; 06 tasks 1-2 authored + verified, Task 3 live gate pending)
+Status: Executing Phase 31 — awaiting operator live-gate verification for 31-06
+Last activity: 2026-06-04 -- Phase 31 Plan 06 authored (real-stack E2E + close gate); live gate pending
+
+### Phase 31 Plan 06 — AUTHORED (real-stack exactly-once-effect E2E + phase-31 close gate; req-8 PENDING live gate; 2026-06-04)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `98bae9f` (test: IdempotentExactlyOnceE2ETests — merge topology + induced redelivery, zero downstream dup), `2b945f5` (feat: phase-31-close.ps1 — 3-GREEN + triple-SHA covering skp:flag:* + 64-hex skp:data:*).
+- **Wave note:** wave 4, depends_on [31-03, 31-04, 31-05]. The milestone's only end-to-end req-8 proof, exercising the full content-addressed round-trip the prior waves built (processor producer 31-03 + orchestrator consumer 31-04 + retry budget 31-05).
+- **Task 1 — IdempotentExactlyOnceE2ETests (req-8):** clones SampleRoundTripE2ETests (genuine embedded SourceHash reflection, GET-or-create Processor row, truthful skp:{procId:D} liveness poll, RealStackWebAppFactory, net-zero teardown) and diverges: (a) **merge topology** — seeds StepB then StepA1/StepA2 each with NextStepIds -> [StepB], workflow lists both A-steps as entry steps, `* * * * *` cron; (b) **induced duplicate (D-11)** — reconstructs the entry-step EntryStepDispatch (EntryId=EntryEntryId(corr,stepA1), H=ComputeH(...)), pre-writes flag[H]="Pending" (symmetric StepDispatcher analog), Sends it TWICE to queue:{procId:D} via a short-lived IBusControl — identical H -> the processor's effect-first flag[dispatch.H] gate drops the second; (c) **zero-dup assertion** — PollEsForLog confirms the "step output written content-addressed" effect for dupCorrelationId, then a track_total_hits count probe (8s ingest-settle window so a leak would be counted) asserts hit count == 1 (the StepB4-x2 inverse); (d) **net-zero teardown (D-12)** — generalized ScanKeys(discriminator) scans BOTH skp:data:* and skp:flag:* post-run, registers every key absent before Start.
+- **Task 2 — phase-31-close.ps1 (req-8 + D-12):** byte-faithful clone of phase-29-close.ps1; labels 29->31, version 3.5.0->3.6.0; processor-sample REQUIRED healthy at pre-flight (stable Processor row via idempotent GET-or-create on the unique source-hash); the existing UNFILTERED redis-cli --scan already captures the new skp:flag:{64hex} + content-addressed skp:data:{64hex} in the triple-SHA (no widening needed, only documented); NO FLUSHDB; 3-consecutive-GREEN + Release+Debug zero-warning build + triple-SHA (psql \l + redis --scan + rabbitmqctl list_queues) unchanged; header documents the v3.6.0 non-backward-compatible wire contract (rebuild processor-sample). The lone residual `phase-29` reference is the provenance comment (clone source), matching the phase-29 gate's own reference to phase-22.
+- **No deviations** — both autonomous tasks as-written (the single IBusControl-not-IAsyncDisposable build fix was mechanical, pre-first-green, not a plan deviation).
+- **Verification (authored tasks, all green):** `dotnet build tests/BaseApi.Tests -c Debug` 0/0; phase-31-close.ps1 ParseFile exit 0 (PARSE OK) + BOM-free; full hermetic suite `--filter-not-trait "Category=RealStack"` = **Passed 441 / Failed 0** (the new RealStack E2E correctly excluded — zero regression). LIVE run NOT observed here.
+- **Task 3 (BLOCKING human-verify gate, PENDING):** the live E2E + close gate require the full v3.6.0 compose stack up healthy with a REBUILT processor-sample (the wire contract is not backward-compatible). NOT runnable/observable in this environment. Operator steps: (1) `docker compose up -d --build processor-sample orchestrator baseapi-service`; (2) `dotnet test tests/BaseApi.Tests -- --filter-class "*IdempotentExactlyOnceE2ETests"` (expect GREEN); (3) `pwsh -NoProfile -File ./scripts/phase-31-close.ps1` (expect GATE_EXIT=0 — 3xGREEN + triple-SHA BEFORE==AFTER incl. skp:flag:*/skp:data:* in the redis SHA). Read GATE_*_EXIT from the gate output (not the bg-task wrapper exit). req-8 marked complete + plan-counter advanced only after the operator reports GATE_EXIT=0.
+- SUMMARY: 31-06-SUMMARY.md (Self-Check PASSED; Pending-Verification section documents the gate). Phase 31 = 5/6 plans complete + 31-06 authored; req-8 pending the live gate.
 
 ### Phase 31 Plan 04 — COMPLETE (orchestrator exactly-once-effect consumer half — inbound flag[H] dedup + manifest N×M fan-out + entry-step EntryId + deterministic child H sender pre-write; req-2, req-4, req-5, req-6; 2026-06-04)
 
