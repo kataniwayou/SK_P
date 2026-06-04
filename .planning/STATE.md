@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Phase 32 Plan 01 complete
-last_updated: "2026-06-04T18:58:00.000Z"
-last_activity: 2026-06-04 -- Phase 32 Plan 01 complete (Wave-0 MassTransit-reality probes; R1+R2 cleared)
+stopped_at: Phase 32 Plan 02 complete
+last_updated: "2026-06-04T19:05:00.000Z"
+last_activity: 2026-06-04 -- Phase 32 Plan 02 complete (cancellation marker key builder + sentinel const + 3 breaker/dedup counters; additive foundation)
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 34
-  completed_plans: 28
-  percent: 82
+  completed_plans: 29
+  percent: 85
 ---
 
 # Project State
@@ -27,9 +27,19 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 32 (cancelled-circuit-breaker) — EXECUTING
-Plan: 2 of 7
+Plan: 3 of 7
 Status: Executing Phase 32
-Last activity: 2026-06-04 -- Phase 32 Plan 01 complete (Wave-0 MassTransit-reality probes; R1+R2 cleared)
+Last activity: 2026-06-04 -- Phase 32 Plan 02 complete (cancellation marker key builder + sentinel const + 3 breaker/dedup counters; additive foundation)
+
+### Phase 32 Plan 02 — COMPLETE (cancellation marker key builder + sentinel const + 3 breaker/dedup counters; additive foundation; req-2/req-7; 2026-06-04)
+
+- **2 task commits (scoped paths only).** `0420e79` (feat: L2ProjectionKeys.Cancelled marker builder + CancelledMarkerValue sentinel const), `b5c7019` (feat: 3 breaker/dedup counters — processor_dispatch_deduped, workflow_cancelled, orchestrator_result_deduped).
+- **Wave 1, depends_on [].** Pure additive surface — the no-TTL cancellation marker KEY BUILDER + shared sentinel (the single source of truth the Plan-04 writer + Plan-03 readers wire to) and the THREE new observability counters (processor-side dedup + breaker-trip, orchestrator-side dedup) that Plan 04 increments. NO consumer/breaker logic here.
+- **Task 1 — L2ProjectionKeys (req-2 foundation, D-02/D-07):** added `Cancelled(Guid workflowId) => $"{Prefix}cancelled:{workflowId:D}"` (mirrors the `Root(Guid)` `:D` hyphenated precedent, NOT the 64-hex `data`/`flag` keys) + `const CancelledMarkerValue = "true"` (ONE literal, both the writer SET site in Plan 04 and both reader CHECK sites in Plan 03 — value desync impossible) + a doc-comment `<list>` item. NO Guid/string overload split (only the Guid shape is needed; both WorkflowId fields are Guid). `CancelledMarkerKeyFacts` (4 facts) pins the exact `skp:cancelled:{id:D}` string + the sentinel (so the Plan-05 close-gate teardown can scan `skp:cancelled:*` — no-TTL keys won't self-expire).
+- **Task 2 — three counters (req-7, D-10/D-11):** `ProcessorMetrics.DispatchDeduped` (`processor_dispatch_deduped`, D-10) + `ProcessorMetrics.WorkflowCancelled` (`workflow_cancelled`, D-11 — the trip is processor-side per D-01, so it lives here NOT on OrchestratorMetrics); `OrchestratorMetrics.ResultDeduped` (`orchestrator_result_deduped`, D-10). All snake_case, **NO `_total` suffix** (the collector's `add_metric_suffixes` appends it — the Phase-30 convention, Risk R3; grep `_total` across both holders = 0 matches). Additive-only — no registration change (meters already AddMeter-registered). `BreakerMetricsFacts` (4 facts, analog of OrchestratorMetricsFacts) proves construction non-null + meter-name consts unchanged + a MeterListener cardinality guard (each measurement carries `ProcessorId`, NO `workflowId`/`WorkflowId` — T-32-02). Plan 04 extends THIS class with the increment-once-per-trip / once-per-drop behavioral assertions.
+- **No deviations** — both autonomous tasks as-written; pure additive declarations, no production behavior wired (Plans 03/04/05 do the wiring); no auth gates; no architectural decisions.
+- **Verification (all green):** `dotnet build src/Messaging.Contracts -c Debug` 0/0; `dotnet build src/BaseProcessor.Core -c Debug` + `dotnet build src/Orchestrator -c Debug` 0/0; `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error; `--filter-class "*CancelledMarkerKeyFacts"` 4/4; `--filter-class "*BreakerMetricsFacts"` 4/4; grep `_total` in both metric holders = 0 matches; full hermetic suite `--filter-not-trait "Category=RealStack"` = **Passed 451 / Failed 0** (443 prior + 8 new, zero regression).
+- SUMMARY: 32-02-SUMMARY.md (Self-Check PASSED). Phase 32 = 2/7 plans; Plans 03 (enum cleanup, wave 1), 04 (breaker seam — wires the marker + counters), 05 (fault consumer) next.
 
 ### Phase 32 Plan 01 — COMPLETE (Wave-0 MassTransit-reality probes; R1+R2 cleared; 2026-06-04)
 
