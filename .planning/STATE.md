@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Completed 32-06-PLAN.md
-last_updated: "2026-06-04T22:14:44.603Z"
-last_activity: 2026-06-04 -- Phase 32 Plan 07 authored (capstone — CancelledCircuitBreakerE2ETests live breaker trip→halt→resume + phase-32-close.ps1 triple-SHA gate; both build/parse-verified + committed; the LIVE run is the operator gate, req-5/req-8-live/req-6-data PENDING GATE_EXIT=0)
+stopped_at: Completed 32.1-01-PLAN.md
+last_updated: "2026-06-05T00:00:00.000Z"
+last_activity: 2026-06-05 -- Phase 32.1 Plan 01 complete (breaker reverted)
 progress:
   total_phases: 9
   completed_phases: 8
   total_plans: 36
-  completed_plans: 34
-  percent: 94
+  completed_plans: 35
+  percent: 97
 ---
 
 # Project State
@@ -21,15 +21,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 32.1 — dead-letter-on-exhaustion (reverts Phase 32 breaker)
+**Current focus:** Phase 32.1 — dead-letter-on-exhaustion
 
 ## Current Position
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
-Phase: 32.1 (dead-letter-on-exhaustion) — SPEC LOCKED, awaiting plan. Supersedes Phase 32 (breaker reverted; live operator close gate no longer required).
-Plan: none yet — run /gsd-plan-phase 32.1
-Status: Executing Phase 32 — all 6 active plans authored; Plan 07's LIVE run is the operator gate
-Last activity: 2026-06-04 -- Phase 32 Plan 07 authored (capstone — CancelledCircuitBreakerE2ETests live breaker trip→halt→resume + phase-32-close.ps1 triple-SHA gate; both build/parse-verified + committed; the LIVE run is the operator gate, req-5/req-8-live/req-6-data PENDING GATE_EXIT=0)
+Phase: 32.1 (dead-letter-on-exhaustion) — EXECUTING
+Plan: 2 of 2
+Status: Executing Phase 32.1
+Last activity: 2026-06-05 -- Phase 32.1 Plan 01 complete (breaker reverted)
+
+### Phase 32.1 Plan 01 — COMPLETE (breaker reverted — plain dead-lettering on exhaustion; NET DELETION; req-1/req-2/req-3/req-4/req-6; 2026-06-05)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions + the untracked launchSettings.json/psql-*.txt/.claude/ files left untouched, NOT staged, NOT reverted).** `c046cc8` (refactor: remove breaker from 7 source files — 161 deletions / 0 insertions), `f325a5f` (test: delete 8 breaker test files + trim 3 partials + revert DispatchTestKit).
+- **Wave 1, depends_on [].** Surgical revert of the Phase-32 runtime "cancelled circuit-breaker", leaving plain `_error` dead-lettering on retry-budget exhaustion (pre-Phase-32 behavior). After 32-REVIEW WR-01 the breaker was judged not worth its surface area (best-effort future-fire stop, no-TTL marker + manual resume, degrades to plain `_error` under the very infra-down conditions that trip it); the user took "stop the job" off the table.
+- **Task 1 — source (req-1/req-2/req-3/req-4):** EntryStepDispatchConsumer — removed the final-attempt breaker catch (`GetRetryAttempt()==Limit` → no-TTL marker + `WorkflowCancelled` trip + WARN + re-throw), the cancelled check-and-drop gate (0b), the `IOptions<RetryOptions>` ctor dep + its using. ResultConsumer — removed the cancelled check-and-drop gate (0a). Program.cs — removed the `FaultUnscheduleConsumer` endpoint registration. Deleted `FaultUnscheduleConsumer` + `FaultUnscheduleConsumerDefinition`. L2ProjectionKeys — removed `Cancelled(Guid)` + `CancelledMarkerValue`. ProcessorMetrics — removed `WorkflowCancelled`. KEPT byte-intact (the dead-letter REPLACEMENT + retained idempotency layer): both `flag[H]=="Ack"` dedup gates + `DispatchDeduped`/`ResultDeduped`, `UseMessageRetry(Immediate(retryLimit))` at ProcessorStartupOrchestrator, both `Configure<RetryOptions>` binds, and `BuildCancelled` (EXEC-08).
+- **Task 2 — tests (req-4 dedup re-home):** deleted 8 wholly-breaker test files (`BreakerTriggerFacts`, `CancelledMarkerFacts`, `RetryAttemptNumberingFacts`, `CancelledMarkerKeyFacts`, `FaultUnscheduleFacts`, `FaultIdempotencyFacts`, `FaultConsumerBindingFacts`, `CancelledCircuitBreakerE2ETests`). DispatchTestKit — removed `Retry()`/`RetryContext()` helpers + the ctor arg. Threaded the removed `RetryOptions` arg out of the 2 direct-ctor scope tests + the runtime-scope DI harness. Trimmed CheckAndDropFacts/ResultCheckAndDropFacts to their kept dedup-counter coverage only (removed 3 + 2 cancelled facts + the unused RecordingDispatcher); BreakerMetricsFacts dropped `WorkflowCancelled` (count 3→2). KEPT all Dispatch/Result Deduped coverage.
+- **No deviations** — both autonomous tasks ran exactly as the plan's named-symbol edit list specified; snapshot line numbers verified against live files before each edit. No bugs, no missing-critical-functionality, no blocking issues, no architectural decisions, no auth gates.
+- **Verification (all green):** `dotnet build SK_P.sln -c Release` **0 Warning / 0 Error**; full hermetic suite `--filter-not-trait "Category=RealStack"` = **Passed 447 / Failed 0** (was 467; -20 net breaker-test removals, zero regression); every ZERO-match dangling-reference grep empty across `src/*.cs` + `tests/*.cs`; every KEEP grep ≥1; `git diff --name-only` excludes both enum files (req-6). No unexpected file deletions across the 2 commits (the 2 source + 8 test deletions are all intentional).
+- SUMMARY: 32.1-01-SUMMARY.md (Self-Check PASSED). req-1/req-2/req-3/req-4/req-6 land structurally. **Plan 02** (`phase-32.1-close.ps1` close gate clone of phase-31-close + live net-zero proof; req-5) remains — the operator gate.
 
 ### Phase 32 Plan 07 — AUTHORED, LIVE GATE PENDING (capstone — real-stack E2E + phase-32-close.ps1; req-5/req-8-live/req-6-data; 2026-06-04)
 
