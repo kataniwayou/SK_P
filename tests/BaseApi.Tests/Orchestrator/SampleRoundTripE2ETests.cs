@@ -188,6 +188,12 @@ public sealed class SampleRoundTripE2ETests
           """;
         var scopeProof = await es.PollEsForLog(scopeProofQuery, timeoutMs: EsPollTimeoutMs, ct: ct);
         Assert.NotNull(scopeProof);   // WorkflowId round-tripped to ES from the new scope on a processor log
+
+        // NET-ZERO-31 (Phase 31.1): stop the workflow so its self-rescheduling cron fire ceases — left
+        // running it mints a fresh per-fire skp:flag:{H} every minute, churning the close-gate redis
+        // --scan name-set. Best-effort: a stop hiccup must not fail an otherwise-green E2E assertion.
+        try { await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct); }
+        catch { /* best-effort net-zero teardown */ }
     }
 
     // ---- Liveness poll (Pitfall 3): wait for the REAL container's skp:{procId:D} Healthy heartbeat ----

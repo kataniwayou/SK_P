@@ -162,6 +162,12 @@ public sealed class MetricsRoundTripE2ETests
             TryGetNonEmpty(runtimeMetric, "service_instance_id", out _),
             "A process_runtime_dotnet_* series must carry a non-empty service_instance_id label (METRIC-01/02) "
             + "— presence/non-emptiness only; per-replica uniqueness is not asserted here.");
+
+        // NET-ZERO-31 (Phase 31.1): stop the workflow so its self-rescheduling cron fire ceases — left
+        // running it mints a fresh per-fire skp:flag:{H} every minute, churning the close-gate redis
+        // --scan name-set. Best-effort: a stop hiccup must not fail an otherwise-green E2E assertion.
+        try { await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct); }
+        catch { /* best-effort net-zero teardown */ }
     }
 
     // ── Label-shape helper (METRIC-04/05): ProcessorId + service_instance_id present & non-empty, ──

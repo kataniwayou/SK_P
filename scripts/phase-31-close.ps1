@@ -233,6 +233,29 @@ try {
     Write-Host "3-GREEN cadence passed — $($distinctPassed[0]) facts GREEN across 3 runs." -ForegroundColor Green
     Write-Host "  Observed Phase 31 fact count: $($distinctPassed[0])." -ForegroundColor Gray
 
+    # ---- Settle-drain the transient TTL-bounded namespaces (NET-ZERO-31, Phase 31.1) ----
+    # The Phase 31 skp:flag:{64hex} / skp:data:{64hex} keys are per-fire-UNIQUE (H embeds the per-fire
+    # correlationId) and TTL-bounded (keepTtl, 300s). Every RealStack E2E test now STOPS its workflow in
+    # teardown, so no self-rescheduled cron fire keeps minting fresh names after the runs finish. Wait for
+    # the keyspace to drain back to the BEFORE set before snapshotting AFTER (timeout = TTL + slack). This
+    # does NOT weaken leak detection: a key that never drains (a permanent-key regression, or a workflow
+    # left firing) keeps the scan != BEFORE and still fails the redis invariant below.
+    Write-Host "Settle: draining transient skp:flag:*/skp:data:* keys to the BEFORE baseline (<=330s)..." -ForegroundColor Cyan
+    $settleDeadline = (Get-Date).AddSeconds(330)
+    $settled = $false
+    while ((Get-Date) -lt $settleDeadline) {
+        $nowRedis = (docker exec sk-redis redis-cli --scan | Sort-Object -CaseSensitive | Out-String).Trim()
+        if ($nowRedis -ceq $beforeRedis) { $settled = $true; break }
+        Start-Sleep -Seconds 5
+    }
+    if ($settled) {
+        Write-Host "  Settled: redis keyspace returned to the BEFORE set." -ForegroundColor Green
+    } else {
+        $flagN = (docker exec sk-redis redis-cli --scan --pattern 'skp:flag:*' | Measure-Object).Count
+        $dataN = (docker exec sk-redis redis-cli --scan --pattern 'skp:data:*' | Measure-Object).Count
+        Write-Host "  Settle timed out after 330s (skp:flag:*=$flagN, skp:data:*=$dataN remain) — the AFTER SHA will flag the residual leak." -ForegroundColor Yellow
+    }
+
     # ---- AFTER snapshots (triple) ----
     Write-Host "Capturing AFTER snapshots..." -ForegroundColor Cyan
     $afterPg = (docker compose exec -T postgres psql -U postgres -lqt | Out-String).Trim()

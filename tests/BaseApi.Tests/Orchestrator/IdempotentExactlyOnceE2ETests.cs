@@ -200,6 +200,12 @@ public sealed class IdempotentExactlyOnceE2ETests
         var effectCount = await CountEsHitsAsync(effectQuery, ct);
         Assert.Equal(1, effectCount);
 
+        // NET-ZERO-31 (Phase 31.1): stop the workflow so its self-rescheduling cron fire ceases before the
+        // net-zero scan — left running it mints a fresh per-fire skp:flag:{H} every minute, churning the
+        // close-gate redis --scan name-set. Best-effort; the induced direct sends are one-shot (no recur).
+        try { await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct); }
+        catch { /* best-effort net-zero teardown */ }
+
         // ---- Net-zero teardown (D-12): register the run's new skp:data:* AND skp:flag:* keys ----
         // Scan BOTH namespaces post-run and register every key NOT present before Start. The processor's
         // content-addressed data writes, the manifest, and the flag[H] dedup state must all drain so the

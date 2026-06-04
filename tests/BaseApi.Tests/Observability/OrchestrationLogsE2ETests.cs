@@ -214,6 +214,11 @@ public sealed class OrchestrationLogsE2ETests : IClassFixture<OrchestrationLogsE
         }
         finally
         {
+            // NET-ZERO-31 (Phase 31.1): stop the workflow so its self-rescheduling cron fire ceases — left
+            // running it mints a fresh per-fire skp:flag:{H} every minute, churning the close-gate redis
+            // --scan name-set. Best-effort in the finally so it runs even if an assertion threw.
+            try { await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct); }
+            catch { /* best-effort net-zero teardown */ }
             await _factory.SremParentIndexAsync(wfId);
         }
     }
