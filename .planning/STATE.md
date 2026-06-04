@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Completed 31-02-PLAN.md
-last_updated: "2026-06-04T13:07:31.000Z"
-last_activity: 2026-06-04 -- Phase 31 Plan 02 complete
+stopped_at: Completed 31-05-PLAN.md
+last_updated: "2026-06-04T13:18:00.000Z"
+last_activity: 2026-06-04 -- Phase 31 Plan 05 complete
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 27
-  completed_plans: 23
-  percent: 85
+  completed_plans: 24
+  percent: 89
 ---
 
 # Project State
@@ -27,9 +27,19 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 31 (idempotent-execution-exactly-once-effect) — EXECUTING
-Plan: 3 of 6
+Plan: 5 of 6 (wave 2 — ran in parallel with 31-02; disjoint file set)
 Status: Executing Phase 31
-Last activity: 2026-06-04 -- Phase 31 Plan 02 complete
+Last activity: 2026-06-04 -- Phase 31 Plan 05 complete
+
+### Phase 31 Plan 05 — COMPLETE (config-bound retry budget — 4 Immediate(3) sites → IOptions<RetryOptions>.Limit; req-7; 2026-06-04)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `9a69e65` (feat: bind RetryOptions per process + thread Limit into all 4 retry sites), `c6d805e` (test: Retry appsettings sections + RetryOptionsBindFacts).
+- **Wave note:** wave 2, depends_on [31-01] only (needed only the shared `RetryOptions` shape). Ran in parallel with the 31-02 contract ripple — disjoint file set (retry bind/appsettings/IOptions injection, all independent of the EntryId Guid→string change). Zero file overlap, confirmed.
+- **D-10 single source of truth:** all 4 hard-coded `Immediate(3)` sites now read `Immediate(retryOptions.Value.Limit)` from a per-process `IOptions<RetryOptions>`. The 3 orchestrator ConsumerDefinitions (`Result`/`Start`/`Stop`) inject it (EndpointName moved into the ctor body; `Ignore<WorkflowRootNotFoundException>` kept on Start/Stop). The landmine site 4 — `ProcessorStartupOrchestrator` — takes `IOptions<RetryOptions>` on its primary ctor and reads `retryLimit` inside the inline `ConnectReceiveEndpoint` bind. `Orchestrator/Program.cs` + `BaseProcessor.Core/AddBaseProcessor` each `Configure<RetryOptions>(GetSection("Retry"))` (mirrors the ProcessorLivenessOptions bind). Only the Immediate branch is wired; Strategy binds but isn't honored.
+- **Appsettings:** Orchestrator + Processor.Sample each gained additive `"Retry": { "Limit": 3, "Strategy": "Immediate" }`. **`RetryOptionsBindFacts`** (3 hermetic facts): binds Limit=7 from the section, defaults to Immediate(3) when absent, binds RetryStrategy by name (Exponential).
+- **Deviation (1, Rule 3 mechanical):** threaded `Options.Create(new Messaging.Contracts.Configuration.RetryOptions())` (default Limit=3) through the 3 processor-startup tests that construct `ProcessorStartupOrchestrator` directly (the new ctor param broke positional construction) — fully-qualified to avoid `using` churn; default budget byte-equivalent to the prior `Immediate(3)`. Mirrors the 30-02/30-03 metrics-helper threading precedent.
+- **Verification (all green):** `dotnet build SK_P.sln -c Debug` 0 Warning / 0 Error; `--filter-class "*RetryOptionsBindFacts"` 3/3; hermetic suite `--filter-not-trait "Category=RealStack"` = **Passed 429 / Failed 0** (426 prior + 3 new, zero regression); grep `r.Immediate(3)` under src = 0 matches; both appsettings parse valid JSON.
+- SUMMARY: 31-05-SUMMARY.md (Self-Check PASSED). req-7 retry half has green unit coverage (req-7 hash half landed in 31-01); the live attempt-count proof is deferred to the req-8 E2E (Plan 06). Phase 31 = 4/6 plans complete (01/02/05 + … wave 1/2 done); the Plan 04 entry-step hash + Plan 03 receiver rework + Plan 06 E2E remain per the wave plan.
 
 ### Phase 31 Plan 02 — COMPLETE (EntryId Guid→string + H contract ripple, compile-green; req-1, req-2; 2026-06-04)
 
