@@ -23,7 +23,6 @@ namespace Messaging.Contracts.Projections;
 ///   <item><description>Processor: <c>{Prefix}{processorId}</c></description></item>
 ///   <item><description>ExecutionData: {Prefix}data:{64hex} — content-addressed (was Guid; D-01). The string overload takes the 64-hex content address directly (no <c>:D</c>); the Guid overload is retained transitionally for the not-yet-migrated Phase-27 callers and is removed in Plan 02.</description></item>
 ///   <item><description>Flag: {Prefix}flag:{64hex} — effect-first dedup state (D-05)</description></item>
-///   <item><description>Cancelled: {Prefix}cancelled:{workflowId:D} — the no-TTL in-flight cancellation marker (D-02/D-07)</description></item>
 /// </list>
 /// </summary>
 public static class L2ProjectionKeys
@@ -50,23 +49,4 @@ public static class L2ProjectionKeys
 
     /// <summary>D-05: effect-first dedup flag key — <c>skp:flag:{64hex}</c>.</summary>
     public static string Flag(string h) => $"{Prefix}flag:{h}";
-
-    /// <summary>
-    /// Phase 32 (D-02/D-07): the no-TTL in-flight cancellation marker — <c>skp:cancelled:{workflowId:D}</c>.
-    /// <para>
-    /// Renders <c>:D</c> (hyphenated) to match the <see cref="Root"/> workflow-id precedent — workflow ids
-    /// render hyphenated everywhere in this codebase. This is the single source of truth consumed by the
-    /// processor SET site (Plan 04) and both consumer CHECK sites (Plan 03), so a format change cannot
-    /// desync writer/reader. Only the <c>Guid workflowId</c> shape is needed — both
-    /// <c>EntryStepDispatch.WorkflowId</c> and <c>ExecutionResult.WorkflowId</c> are <c>Guid</c>.
-    /// </para>
-    /// </summary>
-    public static string Cancelled(Guid workflowId) => $"{Prefix}cancelled:{workflowId:D}";
-
-    /// <summary>
-    /// Phase 32 (D-02): the single sentinel value written to / checked at the cancelled marker — ONE literal,
-    /// both sites (the processor SET in Plan 04 and the consumer CHECKs in Plan 03), so writer and reader
-    /// cannot desync on the value either.
-    /// </summary>
-    public const string CancelledMarkerValue = "true";
 }

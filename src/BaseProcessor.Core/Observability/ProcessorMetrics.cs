@@ -39,18 +39,11 @@ public sealed class ProcessorMetrics
     /// </summary>
     public Counter<long> DispatchDeduped { get; }
 
-    /// <summary>
-    /// Phase 32 (D-11): <c>workflow_cancelled</c> — incremented when the breaker trips on
-    /// infra-fault retry-budget exhaustion (the trip is processor-side per D-01; Plan 04 wires it).
-    /// </summary>
-    public Counter<long> WorkflowCancelled { get; }
-
     public ProcessorMetrics(IMeterFactory meterFactory)
     {
         var meter = meterFactory.Create(MeterName);
         DispatchConsumed  = meter.CreateCounter<long>("processor_dispatch_consumed");   // D-03 — collector appends the suffix
         ResultSent        = meter.CreateCounter<long>("processor_result_sent");         // D-03 — collector appends the suffix
         DispatchDeduped   = meter.CreateCounter<long>("processor_dispatch_deduped");    // Phase 32 D-10 — collector appends the suffix
-        WorkflowCancelled = meter.CreateCounter<long>("workflow_cancelled");            // Phase 32 D-11 — collector appends the suffix
     }
 }
