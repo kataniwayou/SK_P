@@ -211,7 +211,7 @@
   - [x] 32-04-PLAN.md — processor breaker seam: final-attempt marker-set + trip counter/log + check-and-drop + dedup counter (req-1, req-2, req-3, req-7) [wave 2] — completed 2026-06-04
   - [x] 32-05-PLAN.md — orchestrator check-and-drop gate + dedup counter (req-3, req-7) [wave 2] — completed 2026-06-04
   - [x] 32-06-PLAN.md — Fault<EntryStepDispatch> fan-out consumer → Quartz unschedule, idempotent (req-4, req-8) [wave 2] — completed 2026-06-04
-  - [ ] 32-07-PLAN.md — real-stack breaker/halt/resume E2E + phase-32-close.ps1 (no-TTL skp:cancelled:* scan-clean) (req-5, req-6, req-8) [wave 3]
+  - [~] 32-07-PLAN.md — real-stack breaker/halt/resume E2E + phase-32-close.ps1 (no-TTL skp:cancelled:* scan-clean) (req-5, req-6, req-8) [wave 3] — AUTHORED + committed 2026-06-04 (CancelledCircuitBreakerE2ETests + phase-32-close.ps1 build/parse-verified, hermetic suite 467/0); the LIVE breaker-trip→halt→resume + GATE_EXIT=0 triple-SHA is the operator gate (req-5/req-8-live/req-6-data PENDING)
 
 ## Progress
 

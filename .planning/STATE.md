@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Completed 32-06-PLAN.md
-last_updated: "2026-06-04T20:20:59.043Z"
-last_activity: 2026-06-04 -- Phase 32 Plan 06 complete (future-fire stop — FaultUnscheduleConsumer on the per-replica fan-out endpoint unschedules the Quartz job on Fault<EntryStepDispatch>; req-4 future-fire half + req-8 idempotency half land)
+stopped_at: Completed 32-07-PLAN.md (authored artifacts; live close gate PENDING operator)
+last_updated: "2026-06-04T21:00:00.000Z"
+last_activity: 2026-06-04 -- Phase 32 Plan 07 authored (capstone — CancelledCircuitBreakerE2ETests live breaker trip→halt→resume + phase-32-close.ps1 triple-SHA gate; both build/parse-verified + committed; the LIVE run is the operator gate, req-5/req-8-live/req-6-data PENDING GATE_EXIT=0)
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 34
-  completed_plans: 33
-  percent: 97
+  completed_plans: 34
+  percent: 100
 ---
 
 # Project State
@@ -26,10 +26,20 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
-Phase: 32 (cancelled-circuit-breaker) — EXECUTING
-Plan: 7 of 7 (01/02/04/05/06 complete; 03 CANCELLED)
-Status: Executing Phase 32
-Last activity: 2026-06-04 -- Phase 32 Plan 06 complete (future-fire stop — FaultUnscheduleConsumer on the per-replica fan-out endpoint unschedules the Quartz job on Fault<EntryStepDispatch>; req-4 future-fire half + req-8 idempotency half land)
+Phase: 32 (cancelled-circuit-breaker) — EXECUTING (capstone authored; live close gate PENDING operator)
+Plan: 7 of 7 authored (01/02/04/05/06/07 complete; 03 CANCELLED)
+Status: Executing Phase 32 — all 6 active plans authored; Plan 07's LIVE run is the operator gate
+Last activity: 2026-06-04 -- Phase 32 Plan 07 authored (capstone — CancelledCircuitBreakerE2ETests live breaker trip→halt→resume + phase-32-close.ps1 triple-SHA gate; both build/parse-verified + committed; the LIVE run is the operator gate, req-5/req-8-live/req-6-data PENDING GATE_EXIT=0)
+
+### Phase 32 Plan 07 — AUTHORED, LIVE GATE PENDING (capstone — real-stack E2E + phase-32-close.ps1; req-5/req-8-live/req-6-data; 2026-06-04)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions + the unrelated CheckAndDropFacts.cs working-tree edit left untouched, NOT staged, NOT reverted).** `a6c6825` (test: CancelledCircuitBreakerE2ETests), `7ad6d19` (chore: phase-32-close.ps1).
+- **Wave 3, depends_on [32-02, 32-03(CANCELLED), 32-04, 32-05, 32-06]. autonomous:false** — Task 3 (the LIVE breaker-trip→halt→resume + close gate) needs the full v3.6.0 compose stack up healthy with REBUILT processor-sample/orchestrator/baseapi containers (embedded SourceHash must match the host build); not executable/observable in this non-interactive environment. Handled per the Phase-31/31-06 precedent: authored + committed the code artifacts, documented the live run as an operator runbook in the SUMMARY Pending-Verification section (do-not-block).
+- **Task 1 — CancelledCircuitBreakerE2ETests (req-5, req-8-live, req-6-data):** cloned from IdempotentExactlyOnceE2ETests. Deterministic live infra trip = pre-create the output content-address key `skp:data:{HashBlob("breaker-trip")}` as a Redis LIST (SampleProcessor echoes its payload, so the address is a-priori computable) → the processor's StringSetAsync output write throws WRONGTYPE every attempt → `Immediate(Limit)` exhausts → breaker catch fires. Asserts: no-TTL marker (`KeyTimeToLiveAsync == null`, TTL == -1, req-2); the orchestrator "Fault halt" WARN log via PollEsForLog on `attributes.WorkflowId`+`service.name=orchestrator` (the halt came via Fault fanout, NOT a Cancelled result — req-5/D-04); ZERO downstream-effect log for the poisoned correlationId (negative no-Cancelled-on-breaker-path proof); no NEW `skp:data:*` across a >1-cron-minute window (Quartz unscheduled, req-4 live); resume = `DEL skp:cancelled` + remove poison + re-`POST /orchestration/start` → fresh `skp:data:*` key (req-8); `SELECT COUNT(*) FROM "Steps" WHERE "EntryCondition"=3` == 0 over live Postgres (req-6 data, Npgsql). Net-zero: the no-TTL marker + poison key registered into L2KeysToCleanup; workflow stopped in teardown (NET-ZERO-31).
+- **Task 2 — phase-32-close.ps1:** byte-faithful phase-31-close.ps1 clone relabeled 31→32 (version stays v3.6.0). ONE substantive divergence (D-07/NET-ZERO-31): explicit `redis-cli --scan --pattern 'skp:cancelled:*'` + `del` between the settle-drain and the AFTER snapshot — the no-TTL marker never self-expires, so without it the redis triple-SHA drifts every run. Retains unfiltered BEFORE/AFTER `--scan`, the 3-GREEN loop, Release+Debug 0-warning build, psql/redis/rabbitmqctl triple-SHA; NO destructive whole-db flush. ParseFile-clean, BOM-free, FLUSHDB-grep == 0.
+- **Verification (authored):** `dotnet build tests/BaseApi.Tests -c Debug` 0/0; full hermetic suite `--filter-not-trait "Category=RealStack"` **Passed 467 / Failed 0** (new RealStack E2E correctly excluded; zero regression; no flaky failures this run); `phase-32-close.ps1` ParseFile exit 0, BOM-free, FLUSHDB == 0, contains the skp:cancelled:* scan-clean. No file deletions across the 2 commits.
+- **PENDING (Task 3, BLOCKING operator gate):** rebuild the v3.6.0 stack → run `*CancelledCircuitBreakerE2ETests` (expect GREEN) → run `pwsh ./scripts/phase-32-close.ps1` (expect GATE_EXIT=0 with the triple-SHA HELD; read GATE_*_EXIT from the gate output, NOT the bg-task wrapper exit). req-5/req-8-live/req-6-data flip to complete only on GATE_EXIT=0. Runbook + failure triage in 32-07-SUMMARY Pending-Verification.
+- SUMMARY: 32-07-SUMMARY.md (Self-Check PASSED for the authored artifacts; Pending-Verification section for the live gate). Phase 32 = 6/6 active plans authored (01/02/04/05/06/07; 03 CANCELLED); the phase closes on the operator gate.
 
 ### Phase 32 Plan 06 — COMPLETE (future-fire stop — FaultUnscheduleConsumer on the per-replica fan-out endpoint; req-4/req-8; D-06/D-13; 2026-06-04)
 
@@ -530,6 +540,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 30 P01 | 8min | 2 tasks | 4 files |
 | Phase 30 P03 | 21min | 2 tasks | 8 files |
 | Phase 32 P06 | ~25m | 2 tasks | 5 files |
+| Phase 32 P07 | ~30m | 2 tasks (3rd is operator live gate) | 2 files |
 
 ## Accumulated Context
 
