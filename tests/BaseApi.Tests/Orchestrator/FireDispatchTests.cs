@@ -1,6 +1,7 @@
 using MassTransit;
 using MassTransit.Testing;
 using Messaging.Contracts;
+using Messaging.Contracts.Hashing;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -157,7 +158,10 @@ public sealed class FireDispatchTests
                     Assert.Equal(processorId, msg.ProcessorId);
                     Assert.Equal(payload, msg.Payload);
                     Assert.Equal(Guid.Empty, msg.ExecutionId);
-                    Assert.Equal("", msg.EntryId);   // Plan 04 changes this to the non-empty hash (req-2)
+                    // req-2 (Plan 04): the entry step carries a NON-EMPTY deterministic
+                    // EntryId == hash(correlationId, stepId).
+                    Assert.False(string.IsNullOrEmpty(msg.EntryId));
+                    Assert.Equal(MessageIdentity.EntryEntryId(msg.CorrelationId, stepId), msg.EntryId);
                     Assert.NotEqual(Guid.Empty, msg.CorrelationId);
                 }
 
@@ -207,13 +211,18 @@ public sealed class FireDispatchTests
                 await job.Execute(FireContext(workflowId, ct));
                 await job.Execute(FireContext(workflowId, ct));
 
-                var correlationIds = harness.Consumed.Select<EntryStepDispatch>(ct)
-                    .Select(c => c.Context.Message.CorrelationId)
+                var msgs = harness.Consumed.Select<EntryStepDispatch>(ct)
+                    .Select(c => c.Context.Message)
                     .ToList();
 
-                Assert.Equal(2, correlationIds.Count);
-                Assert.All(correlationIds, id => Assert.NotEqual(Guid.Empty, id));
-                Assert.NotEqual(correlationIds[0], correlationIds[1]); // per-fire NewId.NextGuid()
+                Assert.Equal(2, msgs.Count);
+                Assert.All(msgs, m => Assert.NotEqual(Guid.Empty, m.CorrelationId));
+                Assert.NotEqual(msgs[0].CorrelationId, msgs[1].CorrelationId); // per-fire NewId.NextGuid()
+
+                // req-2: two fires -> different correlationId -> different deterministic entry EntryId.
+                Assert.All(msgs, m => Assert.False(string.IsNullOrEmpty(m.EntryId)));
+                Assert.All(msgs, m => Assert.Equal(MessageIdentity.EntryEntryId(m.CorrelationId, step.stepId), m.EntryId));
+                Assert.NotEqual(msgs[0].EntryId, msgs[1].EntryId);
             }
             finally
             {
