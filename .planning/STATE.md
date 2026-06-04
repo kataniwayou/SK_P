@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Phase 32 SUPERSEDED by 32.1 (breaker reverted to plain _error dead-lettering); 32.1 spec'd, awaiting /gsd-plan-phase 32.1
-last_updated: "2026-06-05T00:00:00.000Z"
-last_activity: 2026-06-05 -- Phase 32.1 created + SPEC locked (Dead-Letter on Exhaustion — reverts the Phase-32 breaker: full removal of marker/check-and-drop/Fault-unschedule, dedup counters retained, "stop the job" off the table; supersedes Phase 32). Awaiting /gsd-plan-phase 32.1.
+stopped_at: Completed 32-06-PLAN.md
+last_updated: "2026-06-04T22:14:44.603Z"
+last_activity: 2026-06-04 -- Phase 32 Plan 07 authored (capstone — CancelledCircuitBreakerE2ETests live breaker trip→halt→resume + phase-32-close.ps1 triple-SHA gate; both build/parse-verified + committed; the LIVE run is the operator gate, req-5/req-8-live/req-6-data PENDING GATE_EXIT=0)
 progress:
   total_phases: 9
-  completed_phases: 7
-  total_plans: 34
+  completed_phases: 8
+  total_plans: 36
   completed_plans: 34
-  percent: 100
+  percent: 94
 ---
 
 # Project State
@@ -958,4 +958,4 @@ Resume file: None
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 32 (cancelled-circuit-breaker) — 7 plans — 2026-06-04T18:40:57.683Z
+**Planned Phase:** 32.1 (dead-letter-on-exhaustion) — 2 plans — 2026-06-04T22:14:44.590Z
