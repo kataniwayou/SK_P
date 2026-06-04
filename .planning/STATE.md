@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Completed 32-07-PLAN.md (authored artifacts; live close gate PENDING operator)
-last_updated: "2026-06-04T21:00:00.000Z"
-last_activity: 2026-06-04 -- Phase 32 Plan 07 authored (capstone — CancelledCircuitBreakerE2ETests live breaker trip→halt→resume + phase-32-close.ps1 triple-SHA gate; both build/parse-verified + committed; the LIVE run is the operator gate, req-5/req-8-live/req-6-data PENDING GATE_EXIT=0)
+stopped_at: Phase 32 SUPERSEDED by 32.1 (breaker reverted to plain _error dead-lettering); 32.1 spec'd, awaiting /gsd-plan-phase 32.1
+last_updated: "2026-06-05T00:00:00.000Z"
+last_activity: 2026-06-05 -- Phase 32.1 created + SPEC locked (Dead-Letter on Exhaustion — reverts the Phase-32 breaker: full removal of marker/check-and-drop/Fault-unschedule, dedup counters retained, "stop the job" off the table; supersedes Phase 32). Awaiting /gsd-plan-phase 32.1.
 progress:
-  total_phases: 8
+  total_phases: 9
   completed_phases: 7
   total_plans: 34
   completed_plans: 34
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 32 — cancelled-circuit-breaker
+**Current focus:** Phase 32.1 — dead-letter-on-exhaustion (reverts Phase 32 breaker)
 
 ## Current Position
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
-Phase: 32 (cancelled-circuit-breaker) — EXECUTING (capstone authored; live close gate PENDING operator)
-Plan: 7 of 7 authored (01/02/04/05/06/07 complete; 03 CANCELLED)
+Phase: 32.1 (dead-letter-on-exhaustion) — SPEC LOCKED, awaiting plan. Supersedes Phase 32 (breaker reverted; live operator close gate no longer required).
+Plan: none yet — run /gsd-plan-phase 32.1
 Status: Executing Phase 32 — all 6 active plans authored; Plan 07's LIVE run is the operator gate
 Last activity: 2026-06-04 -- Phase 32 Plan 07 authored (capstone — CancelledCircuitBreakerE2ETests live breaker trip→halt→resume + phase-32-close.ps1 triple-SHA gate; both build/parse-verified + committed; the LIVE run is the operator gate, req-5/req-8-live/req-6-data PENDING GATE_EXIT=0)
 

@@ -194,7 +194,8 @@
   - [x] 31-05-PLAN.md — configurable retry: 4 sites bound from RetryOptions per process (req-7) [wave 2]
   - [x] 31-06-PLAN.md — live exactly-once E2E (merge topology + induced retry) + phase-31-close.ps1 (req-8) [wave 4]
 
-### Phase 32: Cancelled Circuit-Breaker
+### Phase 32: Cancelled Circuit-Breaker — SUPERSEDED BY 32.1
+**Status note (2026-06-05)**: SUPERSEDED by Phase 32.1. After review the two-level breaker was judged not worth its surface area (best-effort future-fire stop / WR-01, no-TTL marker + manual resume, degrades to plain `_error` under infra-down). The user took "stop the job" off the table; Phase 32.1 reverts the runtime breaker to plain dead-lettering on exhaustion. Phase 32's artifacts are retained as the record of the attempt; the live operator close gate is no longer required.
 **Goal**: On infra-fault retry-budget exhaustion (`GetRetryAttempt() == RetryOptions.Limit`), a workflow is cleanly and completely stopped — the in-flight fire drains to a halt and future cron fires are unscheduled — via a two-level stop (an L2 `cancelled[workflowId]` marker plus a fanned-out `Fault<EntryStepDispatch>` that unschedules the Quartz job), instead of silently dead-lettering to `_error`. NOTE: criteria #1/#3 below are SUPERSEDED by the Fault-fanout design (CONTEXT D-03/D-04/D-06) — the breaker fans out via MassTransit `Fault<EntryStepDispatch>`, NOT a point-to-point `Cancelled` send; SPEC + CONTEXT are the source of truth.
 **Depends on**: Phase 31 (deterministic `H` dedup + configurable retry must exist; `Cancelled` is deduped via `H`, and the final-attempt handler reads the configured retry limit)
 **Requirements**: req-1..req-8 (formalized in 32-SPEC.md, ambiguity 0.11)
@@ -211,7 +212,20 @@
   - [x] 32-04-PLAN.md — processor breaker seam: final-attempt marker-set + trip counter/log + check-and-drop + dedup counter (req-1, req-2, req-3, req-7) [wave 2] — completed 2026-06-04
   - [x] 32-05-PLAN.md — orchestrator check-and-drop gate + dedup counter (req-3, req-7) [wave 2] — completed 2026-06-04
   - [x] 32-06-PLAN.md — Fault<EntryStepDispatch> fan-out consumer → Quartz unschedule, idempotent (req-4, req-8) [wave 2] — completed 2026-06-04
-  - [~] 32-07-PLAN.md — real-stack breaker/halt/resume E2E + phase-32-close.ps1 (no-TTL skp:cancelled:* scan-clean) (req-5, req-6, req-8) [wave 3] — AUTHORED + committed 2026-06-04 (CancelledCircuitBreakerE2ETests + phase-32-close.ps1 build/parse-verified, hermetic suite 467/0); the LIVE breaker-trip→halt→resume + GATE_EXIT=0 triple-SHA is the operator gate (req-5/req-8-live/req-6-data PENDING)
+  - [~] 32-07-PLAN.md — real-stack breaker/halt/resume E2E + phase-32-close.ps1 (no-TTL skp:cancelled:* scan-clean) (req-5, req-6, req-8) [wave 3] — AUTHORED + committed 2026-06-04 (CancelledCircuitBreakerE2ETests + phase-32-close.ps1 build/parse-verified, hermetic suite 467/0); SUPERSEDED by 32.1 — the live operator gate is no longer required (breaker being reverted)
+
+### Phase 32.1: Dead-Letter on Exhaustion (Breaker Reverted)
+**Goal**: On retry-budget exhaustion (processor `EntryStepDispatchConsumer` or orchestrator `ResultConsumer`/Start/Stop), the message dead-letters to `_error` via the existing `UseMessageRetry(Immediate(RetryOptions.Limit))` — NO breaker (no L2 marker, no in-flight check-and-drop, no Fault-driven Quartz unschedule). Stopping the scheduled job on exhaustion is explicitly out of scope. The Phase-31 `flag[H]` idempotency gates and their dedup counters are retained unchanged. Supersedes Phase 32.
+**Depends on**: Phase 32 (reverts its runtime additions); Phase 31 (`flag[H]` dedup + configurable retry `Limit` retained)
+**Requirements**: req-1..req-6 (formalized in 32.1-SPEC.md, ambiguity 0.05)
+**Success Criteria**:
+  1. On exhaustion (either process) the message dead-letters to `_error` with no marker write, no trip metric, no unschedule.
+  2. No `L2ProjectionKeys.Cancelled` / `CancelledMarkerValue` / `WorkflowCancelled` / `FaultUnscheduleConsumer` remain in `src/`.
+  3. `processor_dispatch_deduped` + `orchestrator_result_deduped` counters and their `flag[H]` gates are intact and tested.
+  4. Phase-32 breaker tests + E2E + `phase-32-close.ps1` removed; hermetic suite green, zero dangling references.
+  5. `scripts/phase-32.1-close.ps1` authored (3×GREEN + triple-SHA); live `GATE_EXIT=0` is the operator gate.
+  6. `StepEntryCondition` / `StepOutcome` untouched.
+**Plans**: TBD — **SPEC locked** 2026-06-05 (see 32.1-SPEC.md, 6 requirements, ambiguity 0.05). Awaiting `/gsd-plan-phase 32.1`.
 
 ## Progress
 
@@ -239,7 +253,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31
 | 30. Runtime & Business Metrics | v3.5.0 | 4/4 | Complete    | 2026-06-02 |
 | 31. Idempotent Execution Round-Trip (Exactly-Once-Effect) | v3.6.0 | 6/6 | Complete    | 2026-06-04 |
 | 31.1 Close-Gate Redis Net-Zero (gap closure) | v3.6.0 | 1/1 | Complete | 2026-06-04 |
-| 32. Cancelled Circuit-Breaker | v3.6.0 | 5/6 | Executing | — |
+| 32. Cancelled Circuit-Breaker | v3.6.0 | 5/6 | Superseded by 32.1 | — |
+| 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 0/TBD | Spec'd | — |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 STARTED 2026-06-01 (4 phases 25-28, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip; build order 25→26→27→28). 38/38 requirements mapped.*
