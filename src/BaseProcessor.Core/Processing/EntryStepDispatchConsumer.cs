@@ -4,6 +4,7 @@ using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Validation;
 using MassTransit;
 using Messaging.Contracts;
+using Messaging.Contracts.Hashing;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -68,46 +69,39 @@ public sealed class EntryStepDispatchConsumer(
         // (no catch) -> Immediate(3) retry. Only ProcessAsync exceptions are caught (business).
         var db = redis.GetDatabase();
 
-        // ---- 1. Input resolution + validation (EXEC-02/03, D-07, no-input source decision) ----
+        // ---- 0. Effect-first dedup gate (D-06) ----
+        // An inbound H already Ack means the effect (write + send + outbound Pending seed) completed on a
+        // prior delivery -> drop + broker-ack, produce NO effect. The flag read is INFRA (no catch) ->
+        // propagates to the Immediate(3) retry (Pattern 2). H="" (legacy/unset) never matches "Ack".
+        if ((string?)await db.StringGetAsync(L2ProjectionKeys.Flag(dispatch.H)) == "Ack")
+            return;
+
+        // ---- 1. Input resolution + validation (EXEC-02/03, D-07, source-step keyed on InputDefinition) ----
+        // Source-step input-skip keys on InputDefinition == null (req-2 / D-01), NOT on an empty EntryId:
+        // an empty EntryId only short-circuits the L2 READ (a source step has no input key), and an absent
+        // L2 value for a required-input step is a business Failed (unchanged outcome).
         string inputData;
-
-        if (string.IsNullOrEmpty(dispatch.EntryId))
+        var raw = string.IsNullOrEmpty(dispatch.EntryId)
+            ? RedisValue.Null
+            : await db.StringGetAsync(L2ProjectionKeys.ExecutionData(dispatch.EntryId));
+        if (raw.IsNullOrEmpty)
         {
-            // No entryId => source processor: do NOT read L2 (locked no-input decision).
-            inputData = string.Empty;
-
             if (!string.IsNullOrWhiteSpace(context.InputDefinition))
             {
-                // A required-input step arrived with no entryId — Failed BEFORE ProcessAsync (EXEC-03).
+                // Required-input step, but no input present in L2 — Failed BEFORE ProcessAsync (D-07).
                 logger.LogInformation(
-                    "Dispatch {CorrelationId}: required input but no entryId — Failed (business)",
-                    dispatch.CorrelationId);
-                await SendResult(BuildFailed(dispatch, "Input data not found: no entryId provided for a step requiring input."));
+                    "Dispatch {CorrelationId}: input absent from L2 for entryId {EntryId} — Failed (business)",
+                    dispatch.CorrelationId, dispatch.EntryId);
+                await SendResult(BuildFailed(dispatch, "Input data not found in L2 for entryId."));
                 return;
             }
+
+            // Source step (InputDefinition null) -> empty input is fine.
+            inputData = string.Empty;
         }
         else
         {
-            var raw = await db.StringGetAsync(L2ProjectionKeys.ExecutionData(dispatch.EntryId));
-            if (raw.IsNullOrEmpty)
-            {
-                if (!string.IsNullOrWhiteSpace(context.InputDefinition))
-                {
-                    // Required input absent from L2 — Failed BEFORE ProcessAsync (D-07).
-                    logger.LogInformation(
-                        "Dispatch {CorrelationId}: input absent from L2 for entryId {EntryId} — Failed (business)",
-                        dispatch.CorrelationId, dispatch.EntryId);
-                    await SendResult(BuildFailed(dispatch, "Input data not found in L2 for entryId."));
-                    return;
-                }
-
-                // No input definition — absent data is fine (no-input def): pass "".
-                inputData = string.Empty;
-            }
-            else
-            {
-                inputData = raw.ToString();
-            }
+            inputData = raw.ToString();
         }
 
         if (!string.IsNullOrEmpty(inputData)
@@ -139,69 +133,86 @@ public sealed class EntryStepDispatchConsumer(
             return;
         }
 
-        // ---- 3. Per-result output-validate -> mint -> write-L2(TTL) -> build (EXEC-05/06) ----
-        var built = new List<ExecutionResult>(results.Count);
+        // ---- 3. Per-result output-validate -> content-address -> write-L2(TTL) -> collect (EXEC-05/06, D-03/D-09) ----
+        var manifestHashes = new List<string>(results.Count);
         foreach (var r in results)
         {
             if (!ProcessorJsonSchemaValidator.TryValidate(context.OutputDefinition, r.OutputData, out var outErrors))
             {
-                // Output failed its definition — Failed, EntryId stays the empty string, nothing written (EXEC-05).
-                built.Add(BuildFailed(dispatch, string.Join("; ", outErrors)));
-                continue;
+                // D-09: schema validation runs on each result DATA blob, never the manifest. A blob that
+                // fails its definition is a whole-dispatch business Failed: send Failed (EntryId="", H="")
+                // and return. Nothing is written, no blob is added to the manifest, and no outbound Pending
+                // is pre-written (a Failed result short-circuits before the manifest read — Open Q1).
+                await SendResult(BuildFailed(dispatch, string.Join("; ", outErrors)));
+                return;
             }
 
-            var newEntryId  = NewId.NextGuid();
+            // D-03/D-09: content-address the blob. Writing the same blob twice targets the SAME key
+            // (idempotent overwrite — a retry reproduces identical keys). executionId stays a freely
+            // regenerated lineage id (excluded from H by construction, D-02).
+            var blobHash    = MessageIdentity.HashBlob(r.OutputData);
             var executionId = NewId.NextGuid();   // mint once — scoped value == sent ExecutionResult.ExecutionId
 
-            // LOG-04/LOG-01: a nested BeginScope carrying the MINTED ExecutionId + output EntryId. MEL
-            // inner-overrides-outer, so the write/send LogRecord on this Completed path reports these
-            // minted ids rather than the inbound Guid.Empty the outer execution-scope filter skipped
-            // (D-05). MINIMAL: wraps ONLY the L2 write + this result's build — the early Failed/Cancelled
-            // SendResult paths stay outside (Pitfall 2). Values are .ToString() under the fixed
-            // ExecutionLogScope keys — never interpolated into a template (T-18-04).
+            // LOG-04/LOG-01: a nested BeginScope carrying the MINTED ExecutionId + content-addressed blob
+            // hash. MEL inner-overrides-outer, so the write LogRecord on this Completed path reports these
+            // ids rather than the inbound ones the outer execution-scope filter carried (D-05). MINIMAL:
+            // wraps ONLY the L2 write + log line. Values are .ToString() under the fixed ExecutionLogScope
+            // keys — never interpolated into a template (T-18-04).
             using (logger.BeginScope(new Dictionary<string, object>
             {
                 [ExecutionLogScope.ExecutionId] = executionId.ToString(),
-                [ExecutionLogScope.EntryId]     = newEntryId.ToString(),
+                [ExecutionLogScope.EntryId]     = blobHash,
             }))
             {
                 // D-15: the OUTPUT WRITE is INFRA — NO catch. A transient Redis fault here throws so the
                 // whole dispatch retries rather than emitting a Completed with no L2 data behind it.
-                // Plan 02 shim: newEntryId is still a minted Guid LOCAL this plan; render it to a string
-                // content address via .ToString("D") to feed the now-string ExecutionData(string) +
-                // BuildCompleted. Plan 03 replaces the mint with MessageIdentity.HashBlob (a real 64-hex).
                 await db.StringSetAsync(
-                    L2ProjectionKeys.ExecutionData(newEntryId.ToString("D")),
+                    L2ProjectionKeys.ExecutionData(blobHash),
                     r.OutputData,
                     expiry: TimeSpan.FromSeconds(opts.ExecutionDataTtlSeconds));
 
-                built.Add(BuildCompleted(dispatch, executionId, newEntryId.ToString("D")));
+                manifestHashes.Add(blobHash);
 
-                // LOG-04/LOG-01: the Completed-path LogRecord. It is emitted INSIDE this nested scope so it
-                // carries the MINTED ExecutionId + output EntryId (this scope), AND — via the bus-wide
-                // InboundExecutionScopeConsumeFilter that wraps this runtime-connected consume (its outer
-                // scope is open here) — the inbound WorkflowId/StepId/ProcessorId. The five execution ids
-                // are reported ONLY as scope VALUES under the fixed ExecutionLogScope keys; the message text
-                // references CorrelationId via template like the sibling business-Failed lines and NEVER
-                // interpolates an execution id (T-18-04).
                 logger.LogInformation(
-                    "Dispatch {CorrelationId}: step Completed — output written, result built (scoped execution ids)",
+                    "Dispatch {CorrelationId}: step output written content-addressed (scoped execution ids)",
                     dispatch.CorrelationId);
             }
         }
 
-        // ---- 4. One-by-one Send, then ack (EXEC-07/08/09, D-14/D-15) ----
-        // An empty list sends nothing — ack only (EXEC-08). Otherwise resolve the endpoint once and
-        // Send each result individually (never a batched list). A Send fault is INFRA — it propagates.
-        if (built.Count == 0)
-            return;
+        // ---- 4. Manifest assembly + outbound Pending pre-write + ONE send (D-06/D-08, Pitfall 4) ----
+        // Collapse N result blobs into ONE deterministic result identity: serialize the manifest (a JSON
+        // array of the blob hashes — "[]" when empty), content-address + write it, then send ONE
+        // ExecutionResult carrying the manifest EntryId. An EMPTY result still sends a terminal "[]"
+        // manifest result so the orchestrator observes-and-terminates and acks (req-3, Pitfall 4).
+        var manifestJson    = System.Text.Json.JsonSerializer.Serialize(manifestHashes);   // ["<64hex>", ...] or "[]"
+        var manifestEntryId = MessageIdentity.HashManifest(manifestJson);
+        await db.StringSetAsync(
+            L2ProjectionKeys.ExecutionData(manifestEntryId),
+            manifestJson,
+            expiry: TimeSpan.FromSeconds(opts.ExecutionDataTtlSeconds));
 
-        foreach (var er in built)
-            // Every result flows through the single SendResult owner (D-08) so processor_result_sent is
-            // incremented after each confirmed Send. SendResult resolves the endpoint per result; this is
-            // acceptable. An infra Send fault still PROPAGATES (D-15).
-            await SendResult(er);
-        // returns normally -> ACK only after ALL sends (D-15).
+        // SENDER pre-write (D-06): the processor IS the sender of ExecutionResult, so it seeds the OUTBOUND
+        // result's flag[resultH]="Pending" so the orchestrator's effect-first When.Exists flip (Plan 04)
+        // has a key to flip Pending->Ack. Without this seed that flip is a no-op on an absent key and the
+        // orchestrator-hop drop-on-Ack gate can NEVER fire. Unconditional set (idempotent on re-send);
+        // Redis fault is INFRA -> propagates. Mirrors StepDispatcher's outbound flag pre-write (Plan 04).
+        var resultH = MessageIdentity.ComputeH(
+            dispatch.CorrelationId, dispatch.WorkflowId, dispatch.StepId, dispatch.ProcessorId, manifestEntryId);
+        await db.StringSetAsync(
+            L2ProjectionKeys.Flag(resultH), "Pending",
+            expiry: TimeSpan.FromSeconds(opts.ExecutionDataTtlSeconds));
+
+        // The caller passes the already-computed resultH so the pre-write and the message carry the
+        // IDENTICAL H — one ComputeH call, no drift. An infra Send fault still PROPAGATES (D-15).
+        await SendResult(BuildCompleted(dispatch, NewId.NextGuid(), manifestEntryId, resultH));
+
+        // ---- 5. Effect-first CAS flip, then ack (D-06/D-07) ----
+        // Flip the INBOUND dispatch's flag Pending->Ack ONLY after the effect (write + outbound Pending
+        // seed + send) is produced. When.Exists = SET XX: a false return means Pending was lost (crash
+        // residual) — NOT an error, do NOT throw (Pitfall 3); downstream H dedup absorbs the residual. Do
+        // NOT flip the outbound resultH to Ack — the orchestrator owns that flip on its hop (Plan 04).
+        await db.StringSetAsync(L2ProjectionKeys.Flag(dispatch.H), "Ack", when: When.Exists);
+        // returns normally -> ACK only after the send + flip (D-15).
     }
 
     /// <summary>
@@ -251,12 +262,16 @@ public sealed class EntryStepDispatchConsumer(
     // executionId is minted ONCE in the Completed-path loop and passed in (NOT minted here) so the
     // nested BeginScope value and this result's ExecutionId are the SAME value (LOG-04 — the scoped id
     // equals the sent ExecutionResult.ExecutionId the line reports).
-    private static ExecutionResult BuildCompleted(EntryStepDispatch d, Guid executionId, string newEntryId) =>
+    // The caller passes the already-computed resultH (= ComputeH over the manifest EntryId) so the
+    // OUTBOUND flag[resultH]="Pending" pre-write and this message carry the IDENTICAL H — one ComputeH
+    // call, no drift. EntryId = the content-addressed manifest entryId; H = resultH.
+    private static ExecutionResult BuildCompleted(EntryStepDispatch d, Guid executionId, string manifestEntryId, string resultH) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId, StepOutcome.Completed)
         {
             CorrelationId = d.CorrelationId,
             ExecutionId = executionId,
-            EntryId = newEntryId,
+            EntryId = manifestEntryId,
+            H = resultH,
         };
 
     private static ExecutionResult BuildFailed(EntryStepDispatch d, string error) =>
@@ -265,6 +280,7 @@ public sealed class EntryStepDispatchConsumer(
             CorrelationId = d.CorrelationId,
             ExecutionId = NewId.NextGuid(),
             EntryId = "",
+            H = "",
             ErrorMessage = error,
         };
 
@@ -274,6 +290,7 @@ public sealed class EntryStepDispatchConsumer(
             CorrelationId = d.CorrelationId,
             ExecutionId = NewId.NextGuid(),
             EntryId = "",
+            H = "",
             CancellationMessage = msg,
         };
 }
