@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: planning
-stopped_at: Phase 32 context gathered
+stopped_at: Phase 32 SPEC locked + wired into context
 last_updated: "2026-06-04T17:40:30.075Z"
 last_activity: 2026-06-04
 progress:
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 32
 Plan: Not started
-Status: Ready to plan
+Status: SPEC locked (8 reqs, ambiguity 0.11) + wired into CONTEXT — ready to plan
 Last activity: 2026-06-04
 
 ### Phase 31.1 — COMPLETE (close-gate redis net-zero / NET-ZERO-31 resolved; 2026-06-04)
