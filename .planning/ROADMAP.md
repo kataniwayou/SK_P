@@ -208,7 +208,7 @@
   - [x] 32-01-PLAN.md — Wave-0 MassTransit-reality probes: RetryAttemptNumberingFacts (R1) + FaultConsumerBindingFacts (R2) (req-1, req-4) [wave 0]
   - [x] 32-02-PLAN.md — additive foundation: L2ProjectionKeys.Cancelled marker builder + 3 observability counters (req-2, req-7) [wave 1]
   - [~] 32-03-PLAN.md — enum cleanup: CANCELLED BY USER (D-12 reversed — PreviousCancelled (3) kept; StepOutcome.Cancelled (3) unchanged) (req-6) [wave 1]
-  - [ ] 32-04-PLAN.md — processor breaker seam: final-attempt marker-set + trip counter/log + check-and-drop + dedup counter (req-1, req-2, req-3, req-7) [wave 2]
+  - [x] 32-04-PLAN.md — processor breaker seam: final-attempt marker-set + trip counter/log + check-and-drop + dedup counter (req-1, req-2, req-3, req-7) [wave 2] — completed 2026-06-04
   - [ ] 32-05-PLAN.md — orchestrator check-and-drop gate + dedup counter (req-3, req-7) [wave 2]
   - [ ] 32-06-PLAN.md — Fault<EntryStepDispatch> fan-out consumer → Quartz unschedule, idempotent (req-4, req-8) [wave 2]
   - [ ] 32-07-PLAN.md — real-stack breaker/halt/resume E2E + phase-32-close.ps1 (no-TTL skp:cancelled:* scan-clean) (req-5, req-6, req-8) [wave 3]

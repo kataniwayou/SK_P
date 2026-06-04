@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: executing
-stopped_at: Phase 32 Plan 02 complete
-last_updated: "2026-06-04T19:05:00.000Z"
-last_activity: 2026-06-04 -- Phase 32 Plan 02 complete (cancellation marker key builder + sentinel const + 3 breaker/dedup counters; additive foundation)
+stopped_at: Phase 32 Plan 04 complete
+last_updated: "2026-06-04T19:27:00.000Z"
+last_activity: 2026-06-04 -- Phase 32 Plan 04 complete (breaker processor half — check-and-drop gate + flag[H] dedup counter + final-attempt breaker catch; the only genuinely new logic this phase)
 progress:
   total_phases: 8
   completed_phases: 7
   total_plans: 34
-  completed_plans: 29
-  percent: 85
+  completed_plans: 30
+  percent: 88
 ---
 
 # Project State
@@ -27,9 +27,21 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 32 (cancelled-circuit-breaker) — EXECUTING
-Plan: 3 of 7
+Plan: 5 of 7 (01/02/04 complete; 03 CANCELLED)
 Status: Executing Phase 32
-Last activity: 2026-06-04 -- Phase 32 Plan 02 complete (cancellation marker key builder + sentinel const + 3 breaker/dedup counters; additive foundation)
+Last activity: 2026-06-04 -- Phase 32 Plan 04 complete (breaker processor half — check-and-drop gate + flag[H] dedup counter + final-attempt breaker catch; the only genuinely new logic this phase)
+
+### Phase 32 Plan 04 — COMPLETE (breaker processor half — check-and-drop gate + flag[H] dedup counter + final-attempt breaker catch; req-1/req-2/req-3/req-7; 2026-06-04)
+
+- **2 task commits (scoped paths only).** `6cb20d5` (feat: check-and-drop gate + flag[H] dedup counter in EntryStepDispatchConsumer), `69b06fa` (feat: final-attempt breaker catch — no-TTL marker, trip counter, WARN log, re-throw).
+- **Wave 2, depends_on [32-01, 32-02].** The only genuinely new logic in this phase — three behavioral edits to `EntryStepDispatchConsumer` wiring the Plan-02 marker builder + counters into the consume path. Wave-0 dependency cleared: Plan 01 `RetryAttemptNumberingFacts` CONFIRMED `GetRetryAttempt()==Limit` (no escalation), so the catch was built against `== Limit` as the SPEC locks.
+- **Task 1 — check-and-drop + dedup counter (req-3/req-7; D-05/D-10/D-13):** Edit 1 increments `processor_dispatch_deduped` (ProcessorId-tagged) at the existing `flag[H]=="Ack"` gate before return. Edit 2 adds the cancelled check-and-drop gate AFTER the flag[H] gate, BEFORE input resolution — `if ((string?)StringGetAsync(Cancelled(WorkflowId)) == CancelledMarkerValue) return;` — reads the marker ONLY (never flag[H], D-13); ack-and-discard with no advancement/rollback/dead-letter/counter. `CheckAndDropFacts` (4): dedup +1 on flag-Ack; cancelled-set ack-and-discard (no send/counter/write across all overloads); other-workflow unaffected (workflowId-keyed); cancelled path writes no flag key.
+- **Task 2 — breaker catch (req-1/req-2/req-7-trip; D-01/D-02/D-07/D-11):** Edit 3 adds `IOptions<RetryOptions>` ctor dep (DI-bound at BaseProcessorServiceCollectionExtensions:88). Edit 4 wraps the infra body in an OUTER `try` with a single `catch (Exception) when (ctx.GetRetryAttempt() == retryOptions.Value.Limit)`: effect-first marker SET (`Expiration.Persist`, NO TTL) -> `workflow_cancelled` +1 -> four-field WARN log -> `throw` (MT publishes Fault + dead-letters). The two business catches stay INNER, so anything reaching the outer catch is INFRA by construction (no IsInfra — RESEARCH A3). `BreakerTriggerFacts` (3): attempt==Limit trips (marker+counter+log+rethrow); attempt<Limit no-trip+rethrow; ProcessAsync throw stays Failed, trips nothing. `CancelledMarkerFacts` (1): marker write binds the no-TTL `Expiration.Persist` overload (renders PERSIST, never EX).
+- **GetRetryAttempt() reality (IL-verified):** decompiled to read `ConsumeRetryContext.RetryAttempt` via `TryGetPayload` — NOT the MT-Redelivery-Count header. `DispatchTestKit.RetryContext` stubs that payload so the hermetic breaker facts drive the boundary without a real bus.
+- **Deviations (2):** (1) Rule 3 — the new required `IOptions<RetryOptions>` ctor param broke 2 `EntryStepDispatchScopeTests` direct ctors + the runtime-scope DI harness; threaded `DispatchTestKit.Retry()` / registered the option (mirrors 31-05 ProcessorStartupOrchestrator precedent, anticipated by the plan's verification note). (2) Rule 1 — the plan's literal `expiry: null` marker snippet does not bind the modern Expiration overload (struct) and `(TimeSpan?)null` would bind the obsolete legacy overload; used `Expiration.Persist` (no-TTL, renders PERSIST; finite TTL renders EX 300). Semantically identical (NO TTL, D-07); CancelledMarkerFacts pins PERSIST/no EX.
+- **No auth gates. No architectural decisions (Rule 4 not triggered).**
+- **Verification (all green):** `dotnet build src/BaseProcessor.Core -c Debug` 0/0; `dotnet build tests/BaseApi.Tests -c Debug` 0/0; `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error; `--filter-class "*CheckAndDropFacts"` 4/4; `--filter-class "*BreakerTriggerFacts"` 3/3; `--filter-class "*CancelledMarkerFacts"` 1/1; full hermetic suite `--filter-not-trait "Category=RealStack"` = **Passed 459 / Failed 0** (451 prior + 8 new, zero regression).
+- SUMMARY: 32-04-SUMMARY.md (Self-Check PASSED). Phase 32 = 3/7 plans complete (01/02/04; 03 CANCELLED); Plan 05 (Fault<EntryStepDispatch> fanout consumer — orchestrator side, wave 3) + Plan 06 (real-stack E2E + close gate) + Plan 07 remain.
 
 ### Phase 32 Plan 02 — COMPLETE (cancellation marker key builder + sentinel const + 3 breaker/dedup counters; additive foundation; req-2/req-7; 2026-06-04)
 
