@@ -7,6 +7,7 @@ using BaseProcessor.Core.Processing;
 using BaseProcessor.Core.Startup;
 using MassTransit;
 using Messaging.Contracts;
+using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -79,6 +80,12 @@ public static class BaseProcessorServiceCollectionExtensions
 
         // 3. Liveness/heartbeat knobs (CONFIG-01) — four independent seconds-ints from the "Processor" section.
         services.Configure<ProcessorLivenessOptions>(cfg.GetSection("Processor"));
+
+        // 3b. D-10: the retry budget, bound per process from the "Retry" section (single source of truth
+        //     for the retry Limit consumed by ProcessorStartupOrchestrator's dispatch-endpoint bind, so
+        //     Phase 32's final-attempt check cannot desync from UseMessageRetry). Absent section →
+        //     RetryOptions defaults (Immediate(3)). Mirrors the ProcessorLivenessOptions bind above.
+        services.Configure<RetryOptions>(cfg.GetSection("Retry"));
 
         // 4. TimeProvider for the backoff/retry clock (idempotent — the base library may not register it;
         //    verbatim Orchestrator/Program.cs:59).

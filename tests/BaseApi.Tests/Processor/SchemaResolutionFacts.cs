@@ -104,7 +104,8 @@ public sealed class SchemaResolutionFacts
 
         var orchestrator = new ProcessorStartupOrchestrator(
             identityClient, schemaClient, sourceHash, context, gate,
-            IdentityResolutionFacts.StubConnector(), options, clock,
+            IdentityResolutionFacts.StubConnector(), options,
+            Options.Create(new Messaging.Contracts.Configuration.RetryOptions()), clock,
             NullLogger<ProcessorStartupOrchestrator>.Instance);
 
         await orchestrator.StartAsync(ct);

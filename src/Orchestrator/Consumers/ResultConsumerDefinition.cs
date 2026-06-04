@@ -1,5 +1,7 @@
 using MassTransit;
 using Messaging.Contracts;
+using Messaging.Contracts.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Orchestrator.Consumers;
 
@@ -19,7 +21,13 @@ namespace Orchestrator.Consumers;
 /// </summary>
 public sealed class ResultConsumerDefinition : ConsumerDefinition<ResultConsumer>
 {
-    public ResultConsumerDefinition() => EndpointName = OrchestratorQueues.Result;   // "orchestrator-result" — shared competing-consumer
+    private readonly IOptions<RetryOptions> _retryOptions;
+
+    public ResultConsumerDefinition(IOptions<RetryOptions> retryOptions)
+    {
+        _retryOptions = retryOptions;
+        EndpointName = OrchestratorQueues.Result;   // "orchestrator-result" — shared competing-consumer
+    }
 
     protected override void ConfigureConsumer(
         IReceiveEndpointConfigurator endpointConfigurator,
@@ -27,7 +35,9 @@ public sealed class ResultConsumerDefinition : ConsumerDefinition<ResultConsumer
         IRegistrationContext context)
     {
         // Bounded immediate retry of genuine infra faults (Send failures) → _error. No scheduled
-        // redelivery (gate removed, 24.1 / D-24.1-05) → no plugin dependency.
-        endpointConfigurator.UseMessageRetry(r => r.Immediate(3));
+        // redelivery (gate removed, 24.1 / D-24.1-05) → no plugin dependency. D-10: the retry Limit is
+        // bound per process from the "Retry" config section (default Immediate(3)) — the single source
+        // both this UseMessageRetry and Phase 32's final-attempt check read.
+        endpointConfigurator.UseMessageRetry(r => r.Immediate(_retryOptions.Value.Limit));
     }
 }

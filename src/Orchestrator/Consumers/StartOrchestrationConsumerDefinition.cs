@@ -1,4 +1,6 @@
 using MassTransit;
+using Messaging.Contracts.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Orchestrator.Consumers;
 
@@ -17,7 +19,13 @@ namespace Orchestrator.Consumers;
 /// </summary>
 public sealed class StartOrchestrationConsumerDefinition : ConsumerDefinition<StartOrchestrationConsumer>
 {
-    public StartOrchestrationConsumerDefinition() => EndpointName = "orchestrator";   // SHARED base name (both defs)
+    private readonly IOptions<RetryOptions> _retryOptions;
+
+    public StartOrchestrationConsumerDefinition(IOptions<RetryOptions> retryOptions)
+    {
+        _retryOptions = retryOptions;
+        EndpointName = "orchestrator";   // SHARED base name (both defs)
+    }
 
     protected override void ConfigureConsumer(
         IReceiveEndpointConfigurator endpointConfigurator,
@@ -25,10 +33,11 @@ public sealed class StartOrchestrationConsumerDefinition : ConsumerDefinition<St
         IRegistrationContext context)
     {
         // Bounded immediate retry of infra faults → _error. No scheduled redelivery (gate removed,
-        // 24.1 / D-24.1-05) → no plugin dependency.
+        // 24.1 / D-24.1-05) → no plugin dependency. D-10: the retry Limit is bound per process from the
+        // "Retry" config section (default Immediate(3)).
         endpointConfigurator.UseMessageRetry(r =>
         {
-            r.Immediate(3);
+            r.Immediate(_retryOptions.Value.Limit);
             r.Ignore<WorkflowRootNotFoundException>();   // business failure never retries (D-07/D-08, MSG-ACK-03)
         });
     }

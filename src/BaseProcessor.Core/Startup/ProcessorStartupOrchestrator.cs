@@ -4,6 +4,7 @@ using BaseProcessor.Core.Identity;
 using BaseProcessor.Core.Processing;
 using MassTransit;
 using Messaging.Contracts;
+using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -54,6 +55,7 @@ public sealed class ProcessorStartupOrchestrator(
     IStartupGate gate,
     IReceiveEndpointConnector endpointConnector,
     IOptions<ProcessorLivenessOptions> options,
+    IOptions<RetryOptions> retryOptions,
     TimeProvider clock,
     ILogger<ProcessorStartupOrchestrator> logger) : BackgroundService
 {
@@ -146,9 +148,10 @@ public sealed class ProcessorStartupOrchestrator(
         // the queue is declared + the consumer attached, so the orchestrator (admits only Healthy) never
         // Sends to a non-existent queue.
         var queueName = $"{context.Id!.Value:D}";   // BARE name (queue: scheme is sender-only) -> competing-consumer
+        var retryLimit = retryOptions.Value.Limit;   // D-10: per-process retry budget from the "Retry" section (default Immediate(3))
         var handle = endpointConnector.ConnectReceiveEndpoint(queueName, (ctx, cfg) =>
         {
-            cfg.UseMessageRetry(r => r.Immediate(3));                 // mirror ResultConsumerDefinition (D-02/D-15)
+            cfg.UseMessageRetry(r => r.Immediate(retryLimit));        // mirror ResultConsumerDefinition (D-02/D-15); D-10 config-bound Limit
             cfg.ConfigureConsumer<EntryStepDispatchConsumer>(ctx);    // DI-resolved consumer attached
         });
         await handle.Ready;                                          // queue declared + consumer attached BEFORE Healthy (D-03)

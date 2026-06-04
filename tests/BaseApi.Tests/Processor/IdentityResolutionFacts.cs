@@ -66,7 +66,8 @@ public sealed class IdentityResolutionFacts
             });
 
             var orchestrator = new ProcessorStartupOrchestrator(
-                identityClient, schemaClient, sourceHash, context, gate, StubConnector(), options, fakeClock,
+                identityClient, schemaClient, sourceHash, context, gate, StubConnector(), options,
+                Options.Create(new Messaging.Contracts.Configuration.RetryOptions()), fakeClock,
                 NullLogger<ProcessorStartupOrchestrator>.Instance);
 
             // Drive the orchestrator. The two leading NotFound replies trigger two backoff delays
