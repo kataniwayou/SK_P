@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: planning
-stopped_at: Phase 32 SPEC locked + wired into context
-last_updated: "2026-06-04T17:40:30.075Z"
+stopped_at: Phase 32 planned (7 plans, 4 waves) — ready to execute
+last_updated: "2026-06-04T18:40:57.693Z"
 last_activity: 2026-06-04
 progress:
   total_phases: 8
   completed_phases: 7
-  total_plans: 27
+  total_plans: 34
   completed_plans: 27
-  percent: 100
+  percent: 79
 ---
 
 # Project State
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 32
-Plan: Not started
-Status: SPEC locked (8 reqs, ambiguity 0.11) + wired into CONTEXT — ready to plan
+Plan: 7 plans across 4 waves (checker PASSED — all 12 dimensions, 0 issues)
+Status: Planned — ready to execute
 Last activity: 2026-06-04
 
 ### Phase 31.1 — COMPLETE (close-gate redis net-zero / NET-ZERO-31 resolved; 2026-06-04)
@@ -893,4 +893,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 31 (idempotent-execution-exactly-once-effect) — 6 plans — 2026-06-04T12:38:15.093Z
+**Planned Phase:** 32 (cancelled-circuit-breaker) — 7 plans — 2026-06-04T18:40:57.683Z
