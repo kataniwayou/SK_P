@@ -1,9 +1,10 @@
 namespace Messaging.Contracts.Configuration;
 
 /// <summary>D-10: the retry budget knob, bound per process from the "Retry" config section via IOptions.
-/// Single source of truth for the retry Limit so Phase 32's final-attempt check (GetRetryAttempt()==Limit)
-/// cannot desync from UseMessageRetry. Only the Immediate branch is implemented this phase (back-off is
-/// structured-for, deferred per SPEC out-of-scope-as-default).</summary>
+/// Single source of truth for the retry Limit so UseMessageRetry(Immediate(Limit)) — the dead-letter
+/// mechanism that fires on retry-budget exhaustion — uses a consistent budget across all endpoints.
+/// Only the Immediate branch is implemented this phase (back-off is structured-for, deferred per SPEC
+/// out-of-scope-as-default).</summary>
 public sealed class RetryOptions
 {
     public int Limit { get; set; } = 3;                                  // default Immediate(3)
