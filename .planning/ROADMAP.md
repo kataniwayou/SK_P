@@ -195,16 +195,23 @@
   - [x] 31-06-PLAN.md — live exactly-once E2E (merge topology + induced retry) + phase-31-close.ps1 (req-8) [wave 4]
 
 ### Phase 32: Cancelled Circuit-Breaker
-**Goal**: On retry-budget exhaustion, a workflow is cleanly and completely stopped — current in-flight fire halted and future cron fires unscheduled — via an explicit `Cancelled` terminal outcome, instead of silently dead-lettering to `_error`.
+**Goal**: On infra-fault retry-budget exhaustion (`GetRetryAttempt() == RetryOptions.Limit`), a workflow is cleanly and completely stopped — the in-flight fire drains to a halt and future cron fires are unscheduled — via a two-level stop (an L2 `cancelled[workflowId]` marker plus a fanned-out `Fault<EntryStepDispatch>` that unschedules the Quartz job), instead of silently dead-lettering to `_error`. NOTE: criteria #1/#3 below are SUPERSEDED by the Fault-fanout design (CONTEXT D-03/D-04/D-06) — the breaker fans out via MassTransit `Fault<EntryStepDispatch>`, NOT a point-to-point `Cancelled` send; SPEC + CONTEXT are the source of truth.
 **Depends on**: Phase 31 (deterministic `H` dedup + configurable retry must exist; `Cancelled` is deduped via `H`, and the final-attempt handler reads the configured retry limit)
-**Requirements**: CANCEL-* (formalized at spec)
+**Requirements**: req-1..req-8 (formalized in 32-SPEC.md, ambiguity 0.11)
 **Success Criteria** (what must be TRUE — to be sharpened at spec):
   1. On `GetRetryAttempt() == configured Limit`, the processor sends the consumed message back as `Cancelled` (not dead-lettered) and sets `cancelled[workflowId] = true` in L2 (effect-first: marker → send → ack).
   2. Every receiver (processor `EntryStepDispatchConsumer`, orchestrator `ResultConsumer`) checks `cancelled[workflowId]` before processing and drops in-flight messages → the current fire drains to a halt (stops advancing, no rollback).
   3. The orchestrator, on `Cancelled`, resolves `jobId` from **L1** (`store.TryGet → wf.JobId`, no L2 read) and unschedules the Quartz job; `Cancelled` is intercepted **before** `SelectNext` (advances no successor, regardless of entry condition).
   4. `StepEntryCondition.PreviousCancelled (3)` is removed (left as a numeric gap; `IsInEnum` validator auto-rejects 3); no live step uses `EntryCondition == 3`.
   5. Open decisions resolved at spec: trip-on-first-exhaustion (chosen) blast radius (whole-workflow); the resume path (clear marker + re-Start); `_error` retained as the backstop for bus-down exhaustion.
-**Plans**: TBD (spec → discuss → plan)
+**Plans**: 7 plans (4 waves) — planned 2026-06-04. **SPEC locked** — see 32-SPEC.md (8 requirements, ambiguity 0.11).
+  - [ ] 32-01-PLAN.md — Wave-0 MassTransit-reality probes: RetryAttemptNumberingFacts (R1) + FaultConsumerBindingFacts (R2) (req-1, req-4) [wave 0]
+  - [ ] 32-02-PLAN.md — additive foundation: L2ProjectionKeys.Cancelled marker builder + 3 observability counters (req-2, req-7) [wave 1]
+  - [ ] 32-03-PLAN.md — enum cleanup: remove StepEntryCondition.PreviousCancelled (3); keep StepOutcome.Cancelled (3) (req-6) [wave 1]
+  - [ ] 32-04-PLAN.md — processor breaker seam: final-attempt marker-set + trip counter/log + check-and-drop + dedup counter (req-1, req-2, req-3, req-7) [wave 2]
+  - [ ] 32-05-PLAN.md — orchestrator check-and-drop gate + dedup counter (req-3, req-7) [wave 2]
+  - [ ] 32-06-PLAN.md — Fault<EntryStepDispatch> fan-out consumer → Quartz unschedule, idempotent (req-4, req-8) [wave 2]
+  - [ ] 32-07-PLAN.md — real-stack breaker/halt/resume E2E + phase-32-close.ps1 (no-TTL skp:cancelled:* scan-clean) (req-5, req-6, req-8) [wave 3]
 
 ## Progress
 
