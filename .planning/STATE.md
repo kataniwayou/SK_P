@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
-status: executing
+status: milestone_complete
 stopped_at: Authored 32.1-02-PLAN.md (live GATE_EXIT=0 operator gate PENDING)
 last_updated: "2026-06-05T00:00:00.000Z"
 last_activity: 2026-06-05 -- Phase 32.1 Plan 02 authored (phase-32.1-close.ps1; live close gate = operator gate, do-not-block)
 progress:
   total_phases: 9
-  completed_phases: 8
+  completed_phases: 9
   total_plans: 36
   completed_plans: 35
-  percent: 97
+  percent: 100
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
-Phase: 32.1 (dead-letter-on-exhaustion) — EXECUTING (Plan 02 authored; live close gate PENDING operator)
-Plan: 2 of 2
-Status: Executing Phase 32.1 — close gate authored, live GATE_EXIT=0 is the operator gate
-Last activity: 2026-06-05 -- Phase 32.1 Plan 02 authored (phase-32.1-close.ps1 close gate; live net-zero proof = operator gate)
+Phase: 32.1
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-06-04
 
 ### Phase 32.1 Plan 02 — AUTHORED, LIVE GATE PENDING (phase-32.1-close.ps1 — clone phase-31-close, NO skp:cancelled:* scan-clean; req-5; 2026-06-05)
 
@@ -404,7 +404,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 117
+- Total plans completed: 119
 - Average duration: —
 - Total execution time: —
 
@@ -441,6 +441,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 29 | 5 | - | - |
 | 30 | 4 | - | - |
 | 31 | 6 | - | - |
+| 32.1 | 2 | - | - |
 
 **Recent Trend:**
 
