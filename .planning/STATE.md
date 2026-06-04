@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
-status: Phase planned
-stopped_at: Phase 31 context gathered
-last_updated: "2026-06-04T12:38:15.102Z"
-last_activity: 2026-06-04
+status: executing
+stopped_at: Completed 31-01-PLAN.md
+last_updated: "2026-06-04T12:49:02.000Z"
+last_activity: 2026-06-04 -- Phase 31 Plan 01 complete
 progress:
   total_phases: 8
   completed_phases: 6
   total_plans: 27
-  completed_plans: 21
-  percent: 78
+  completed_plans: 22
+  percent: 81
 ---
 
 # Project State
@@ -21,15 +21,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 31 — idempotent execution round-trip (exactly-once-effect)
+**Current focus:** Phase 31 — idempotent-execution-exactly-once-effect
 
 ## Current Position
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
-Phase: 31
-Plan: Not started (CONTEXT written 2026-06-04; next: /gsd-spec-phase 31)
-Status: Phase planned
-Last activity: 2026-06-04
+Phase: 31 (idempotent-execution-exactly-once-effect) — EXECUTING
+Plan: 2 of 6
+Status: Executing Phase 31
+Last activity: 2026-06-04 -- Phase 31 Plan 01 complete
+
+### Phase 31 Plan 01 — COMPLETE (deterministic-identity foundation: MessageIdentity + L2 key builders + RetryOptions + golden tests; req-1, req-7; 2026-06-04)
+
+- **3 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched, NOT staged, NOT reverted).** `5b916e3` (feat: MessageIdentity — the single canonical hash path), `e0e644a` (feat: string-content-addressed L2 data key + Flag builder + shared RetryOptions), `a7a58d3` (test: HashHelperGoldenFacts).
+- **MessageIdentity (D-04, the ONE canonical path):** `src/Messaging.Contracts/Hashing/MessageIdentity.cs` — private `Hex` core mirrors `SourceHash.targets` byte-for-byte (UTF-8 → SHA-256 → lowercase `b.ToString("x2")`); public `ComputeH(corr,wf,step,proc,entryId)` (executionId structurally absent — 5-arg signature, D-02), `HashBlob`, `HashManifest` (caller-serialized JSON, no JSON dep), `EntryEntryId(corr,stepId)`. Reserved U+001F field separator (D-03, T-31-01). No `X2`/`Convert.ToHexString`/`executionId` token anywhere.
+- **L2 keys + RetryOptions:** added `L2ProjectionKeys.ExecutionData(string) => skp:data:{64hex}` (D-01, no `:D`) + `Flag(string) => skp:flag:{64hex}` (D-05); `Root`/`Step`/`Processor`/`ParentIndex` unchanged. New `Messaging.Contracts.Configuration.RetryOptions` (`Limit=3`, `Strategy=Immediate`) + `RetryStrategy` enum (D-10).
+- **Golden tests:** `tests/BaseApi.Tests/Contracts/HashHelperGoldenFacts.cs` (12 facts) pins `GoldenH=5fc25824…43985f`, byte-identical recompute, per-field sensitivity (5), structural executionId-exclusion (reflection guard, D-02), `skp:data:`/`skp:flag:` 64-hex format, empty-manifest golden `4f53cda1…02b945`, and HashBlob == independent UTF-8/SHA-256/x2 reference. The goldens were cross-validated against an independent PowerShell SHA-256 computation (helper agrees → cross-process convention proven).
+- **Deviations (2, both Rule 3 — blocking, no scope creep):** (1) RETAINED `ExecutionData(Guid)` alongside the new `ExecutionData(string)` so the not-yet-migrated Phase-27 `EntryStepDispatchConsumer` + `L2ProjectionKeysTests` (7/7) + 6 `Processor/Dispatch*Facts` stay green — honoring the plan's own "additive / compiles + tests green on its own" objective; the Guid overload is removed in Plan 02. (2) XML-doc hygiene — the raw U+001F char broke XML doc (CS1570) and the forbidden grep tokens (`X2`/`Convert.ToHexString`/`executionId`) appeared in comments; reworded prose (code always correct).
+- **Verification (all green):** `dotnet build src/Messaging.Contracts -c Debug` 0/0; `HashHelperGoldenFacts` 12/12; `L2ProjectionKeysTests` 7/7; `DispatchOutputWriteFacts` 3/3; `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error; forbidden-token greps = 0.
+- SUMMARY: 31-01-SUMMARY.md (Self-Check PASSED). req-1 + req-7 unit core landed. Phase 31 = 1/6 plans; Plan 02 (EntryId Guid→string + H contract ripple, wave 2) next — it routes consumers through `MessageIdentity.ComputeH`, migrates the L2 data key to `ExecutionData(string)`, and removes the transitional Guid overload.
 
 ### Phase 31 — Idempotent Execution Round-Trip (Exactly-Once-Effect) — PLANNED (2026-06-04)
 
