@@ -74,6 +74,23 @@ public sealed class EntryStepDispatchConsumer(
         // prior delivery -> drop + broker-ack, produce NO effect. The flag read is INFRA (no catch) ->
         // propagates to the Immediate(3) retry (Pattern 2). H="" (legacy/unset) never matches "Ack".
         if ((string?)await db.StringGetAsync(L2ProjectionKeys.Flag(dispatch.H)) == "Ack")
+        {
+            // D-10 (req-7): count the redelivery-collapse drop (how often a duplicate is dropped at the
+            // flag[H] gate), tagged ProcessorId (same idiom as DispatchConsumed at :62-63). The bang is
+            // justified post-MarkHealthy (Landmine 2). NO workflowId (T-30-04 cardinality).
+            metrics.DispatchDeduped.Add(1,
+                new KeyValuePair<string, object?>("ProcessorId", context.Id!.Value.ToString("D")));
+            return;
+        }
+
+        // ---- 0b. Check-and-drop gate for a cancelled workflow (req-3 / D-05) ----
+        // Placed AFTER the flag[H] gate (RESEARCH Unknown-3: cheaper for the common dedup case; keeps the
+        // Phase-31 gate visually first). Reads the cancelled marker ONLY — NEVER flag[H] (D-13). A set
+        // marker means the breaker tripped for this workflow -> ack-and-discard the in-flight dispatch: no
+        // advancement, no rollback, no dead-letter, NO dedup counter (this is the cancelled drop, not a
+        // flag[H]==Ack drop). The read is INFRA (no catch) -> propagates to the Immediate(Limit) retry.
+        if ((string?)await db.StringGetAsync(L2ProjectionKeys.Cancelled(dispatch.WorkflowId))
+                == L2ProjectionKeys.CancelledMarkerValue)
             return;
 
         // ---- 1. Input resolution + validation (EXEC-02/03, D-07, source-step keyed on InputDefinition) ----
