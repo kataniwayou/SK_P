@@ -1,7 +1,85 @@
 # Phase 31 — Idempotent Execution Round-Trip (Exactly-Once-Effect) — CONTEXT
 
-**Status:** PLANNED (design agreed in discussion 2026-06-04; awaiting spec/plan).
+**Status:** Ready for planning — `31-SPEC.md` locks 8 requirements (2026-06-04); implementation decisions captured below (discuss-phase 2026-06-04).
 **Supersedes the relevant parts of:** Phase 27 (Execution Round-Trip) — which mints `NewId` entry/execution ids, sends results one-by-one, and relies on `Immediate(3)` with no receiver dedup.
+
+---
+
+## Implementation Decisions (discuss-phase 2026-06-04)
+
+> Requirements (WHAT/WHY) are locked in `31-SPEC.md` — 8 reqs. This section locks the HOW that the SPEC footer hands to discuss-phase: hash canonicalization, CAS mechanism, contract field shape, L2 wiring, retry config, test harness. The design narrative below (Problem → Agreed design → …) is the rationale of record; it is NOT re-litigated here. All decisions grounded in a codebase scout (file paths in Canonical References).
+
+### Identity & contract field shape (GA1)
+- **D-01:** `EntryId` changes type `Guid` → `string` (lowercase 64-hex) across `IExecutionCorrelated`, `EntryStepDispatch`, `ExecutionResult`, and `L2ProjectionKeys.ExecutionData`. A SHA-256 content address cannot be honestly held in a 16-byte `Guid` (truncation reintroduces the collision the phase exists to kill). The `EntryId == Guid.Empty` entry-step sentinel is removed; "skip input read" moves to `InputDefinition == null` (SPEC req-2).
+- **D-02:** Add a deterministic-identity field `H` (string, 64-hex) to both `EntryStepDispatch` and `ExecutionResult`. `executionId` stays a `Guid` — lineage only, excluded from `H` (may be regenerated freely).
+
+### Hash canonicalization (GA2)
+- **D-03:** `H = SHA-256(canonical(correlationId, workflowId, stepId, processorId, EntryId))`, where `canonical` = delimited UTF-8 text: each `Guid` as lowercase `"D"`, `EntryId` as its 64-hex string, joined by a reserved unit-separator (``, which never appears in Guid/hex text) → SHA-256 → lowercase `x2` hex. Mirrors the existing `SourceHash.targets` convention exactly (UTF-8 text → SHA-256 → `b.ToString("x2")`, `^[a-f0-9]{64}$`).
+- **D-04:** The hash helper lives in `Messaging.Contracts` (the shared leaf both processes reference), co-located with `L2ProjectionKeys`. The SAME helper produces `EntryId = hash(blob)`, `hash(manifest)`, and `H` — one canonical path so cross-process determinism cannot drift.
+
+### CAS / dedup mechanism (GA3)
+- **D-05:** Dedup flag `flag[H] = Pending | Ack` is flipped via `StringSet(flag[H], "Ack", When.Exists)` — **NOT a Lua script.** StackExchange.Redis `When` has no value-conditional set, the codebase has zero Lua, and there is an existing "keep it simple, no `When.NotExists` tricks" posture (`OrchestrationService` rationale). Since the only non-Ack existing value is `Pending`, `When.Exists` IS the Pending→Ack transition.
+- **D-06:** The **sender** pre-writes `flag[H_child] = "Pending"` when it sends each child message (child arrives with its flag present). The **receiver** is effect-first: `if flag[H]==Ack → drop`; else produce effect → `StringSet(flag[H],"Ack",When.Exists)` → broker-ack. Concurrent duplicates (both see not-Ack) are collapsed downstream by deterministic `H` — the flag op need not serialize them.
+- **D-07 (SPEC req-4 AC-wording amendment):** "the Pending→Ack flip is an atomic CAS" is delivered as **"Ack is observably set exactly once; concurrent duplicates collapse downstream by `H`."** There is no Lua value-CAS primitive. The planner/verifier tests this softened-but-equivalent property, not a literal compare-and-swap.
+
+### Manifest format & schema boundary (GA4)
+- **D-08:** Manifest serialized as a **JSON array of lowercase-hex strings** (`["<64hex>", …]`), consistent with existing string/JSON L2 payloads; `hash(manifest)` = SHA-256 over the serialized UTF-8 bytes; empty result → `[]` → `EntryId = hash("[]")` → terminal (zero successors). Orchestrator `JsonSerializer.Deserialize<string[]>` → fan-out `N items × M successors`.
+- **D-09 (user clarification 2026-06-04):** output-schema validation runs on each **result DATA blob** pre-write (`ProcessResult.OutputData`), per-result. The manifest is an **unvalidated pointer list** — the output-schema definition never describes the manifest's shape, and the list-of-hashes is never schema-validated. Flow: `ProcessAsync` → validate blob → write `data[hash(blob)]` → collect hash → assemble manifest → write `data[hash(manifest)]`. (Consistent with SPEC req-3 "validation runs on the result DATA, not the manifest.")
+
+### Retry config (GA5)
+- **D-10:** Introduce `RetryOptions { int Limit = 3; RetryStrategy Strategy = Immediate; }` bound from appsettings (section `Retry`) via `IOptions`, **per process** (Orchestrator and BaseProcessor.Core each bind their own — separate processes/appsettings). Phase 31 threads `Limit` into all 4 current `Immediate(3)` sites: `ResultConsumerDefinition`, `StartOrchestrationConsumerDefinition`, `StopOrchestrationConsumerDefinition` (Orchestrator/Consumers/), and `ProcessorStartupOrchestrator` (BaseProcessor.Core/Startup/). `Strategy` enum is structured-for but only the `Immediate` branch is implemented (back-off deferred per SPEC out-of-scope-as-default). Single source of truth so Phase 32's final-attempt check (`GetRetryAttempt()==Limit`) cannot desync.
+
+### Live-proof test harness (GA6)
+- **D-11:** The req-8 real-stack proof induces a duplicate via a **test-only mechanism**: re-publish the same `EntryStepDispatch` (simulated broker redelivery) and/or a test processor that throws once then succeeds (forces `Immediate(N)` re-run). Reuses the existing dual-pipeline **merge** fixture (the `StepB4 ×2` topology) + the `SampleRoundTripE2ETests` `PollEsForLog` + net-zero-teardown precedent. Assert: per `CorrelationId`, the ES downstream-effect set equals the expected per-fire set with **zero duplicates**, even with the induced retry. Broker-level fault injection (kill-the-ack) rejected — heavier/flakier.
+- **D-12:** Close-gate teardown scan-cleans the new `skp:data:{64hex}` and `skp:flag:{64hex}` namespaces; the triple-SHA BEFORE==AFTER discipline extends to them (SPEC req-8 + accumulation constraint).
+
+### Claude's Discretion
+Exact member names (`H` vs `DeterministicId`; `RetryStrategy` enum value names); the precise separator byte; whether `RetryOptions` is one shared record or two per-process copies — planner's call within the semantics above.
+
+## Canonical References
+
+**Downstream agents MUST read these before planning or implementing.**
+
+### Locked requirements
+- `.planning/phases/31-idempotent-execution-exactly-once-effect/31-SPEC.md` — 8 locked requirements, boundaries, acceptance criteria. **MUST read before planning.**
+
+### Wire contracts to extend (GA1/GA2)
+- `src/Messaging.Contracts/EntryStepDispatch.cs`, `src/Messaging.Contracts/ExecutionResult.cs`, `src/Messaging.Contracts/IExecutionCorrelated.cs` — `EntryId` Guid→string + add `H` (D-01/D-02).
+- `src/Messaging.Contracts/Projections/L2ProjectionKeys.cs` — `Prefix="skp:"`; `ExecutionData(Guid)` → string-keyed; add `Flag(H)` builder (`skp:flag:{64hex}`) (D-04/D-05).
+
+### Hashing precedent (GA2)
+- `src/BaseProcessor.Core/SourceHash.targets` + `src/BaseProcessor.Core/Identity/AssemblyMetadataSourceHashProvider.cs` — UTF-8 text → SHA-256 → lowercase `x2` hex convention.
+- `tests/BaseApi.Tests/TestHelpers/HashHelpers.cs` — `b.ToString("x2")` test-side hex precedent.
+
+### Receiver rework (GA3/GA4)
+- `src/BaseProcessor.Core/Processing/EntryStepDispatchConsumer.cs` — mints `NewId` per result + writes L2 + sends one-by-one today; gains content-addressed two-level write, manifest, effect-first flag.
+- `src/Orchestrator/Consumers/ResultConsumer.cs` + `src/Orchestrator/Dispatch/StepAdvancement.cs` — inbound-result dedup on `H`, manifest unbundle + fan-out.
+- `src/Orchestrator/Scheduling/WorkflowFireJob.cs` — per-fire `correlationId` (line 54) + entry-step `EntryId` (currently `Guid.Empty`, SPEC req-2).
+
+### Retry config sites (GA5)
+- `src/Orchestrator/Consumers/{ResultConsumerDefinition,StartOrchestrationConsumerDefinition,StopOrchestrationConsumerDefinition}.cs` + `src/BaseProcessor.Core/Startup/ProcessorStartupOrchestrator.cs` — the 4 hard-coded `Immediate(3)` sites.
+
+### Live proof (GA6)
+- `tests/BaseApi.Tests/Orchestrator/SampleRoundTripE2ETests.cs` — round-trip + `PollEsForLog` + net-zero-teardown precedent for the induced-retry E2E.
+
+## Existing Code Insights
+
+### Reusable assets
+- **`L2ProjectionKeys`** — single source of truth (shared via `OrchestratorL2Keys` shim); new `flag`/string-`data` builders slot in here.
+- **SourceHash hashing convention** — reuse the exact UTF-8→SHA-256→`x2` canonicalization for `H`/`EntryId` (no new hashing style).
+- **`StringSet(..., When.Exists/NotExists)`, `IBatch`** — StackExchange.Redis primitives already in `RedisProjectionWriter`; CAS uses these, no Lua.
+- **`SampleRoundTripE2ETests`** harness (genuine SourceHash row, liveness poll, `PollEsForLog`, net-zero teardown) — clone for the induced-retry merge proof.
+
+### Established patterns / constraints
+- No L2 store abstraction — consumers touch `IDatabase` directly (acceptable; flag I/O follows suit).
+- `ResultConsumer` is already L1-idempotent (graceful ack on L1 miss); `SelectNext` is a pure function — fan-out loop is the insertion point.
+- `Immediate(3)` is hard-coded in 4 places with no appsettings binding — D-10 introduces the binding.
+
+### Integration points
+- Both contracts implement `IExecutionCorrelated` — the `EntryId` type change ripples through every correlated consumer + the `Guid.Empty` sentinel.
+- Sender (`StepDispatcher`/processor send loop) pre-writes `flag[H_child]=Pending`; receivers (`EntryStepDispatchConsumer`, `ResultConsumer`) read/flip it.
+
+---
 
 ## Problem (why this phase exists)
 
