@@ -63,6 +63,22 @@ public sealed class ResultConsumer(
         // An inbound result whose H is already "Ack" means the fan-out effect completed on a prior delivery
         // -> drop + broker-ack, produce NO further dispatch. H="" (Failed/Cancelled or legacy) never matches.
         if ((string?)await db.StringGetAsync(L2ProjectionKeys.Flag(m.H)) == "Ack")
+        {
+            // Phase 32 D-10: surface the orchestrator-side redelivery-collapse rate. Tagged ProcessorId only
+            // (non-nullable Guid -> no bang); NO workflowId (cardinality, T-32-02). Counts how often a
+            // duplicate is dropped at the existing flag[H]=="Ack" gate (no new gate — instrument the drop).
+            metrics.ResultDeduped.Add(1, new KeyValuePair<string, object?>("ProcessorId", m.ProcessorId.ToString("D")));
+            return;
+        }
+
+        // ---- 0a. Check-and-drop for a cancelled workflow (req-3 / D-05) ----
+        // Drop an in-flight result already queued when the breaker tripped so it does NOT advance the halted
+        // DAG. INFRA read (no catch) -> propagates to the definition's bounded retry on a Redis fault. Reads
+        // the cancelled marker ONLY — never flag[H] (D-13). ack-and-discard: no dispatch, no advancement, no
+        // dedup counter, no marker write (the orchestrator never WRITES the marker — the trip is processor-
+        // side per D-01). workflowId-keyed so a result for another (un-cancelled) workflow is unaffected.
+        if ((string?)await db.StringGetAsync(L2ProjectionKeys.Cancelled(m.WorkflowId))
+                == L2ProjectionKeys.CancelledMarkerValue)
             return;
 
         // L1-only read (D-08): TryGet then the step map — no Upsert/Remove/stripe TryAcquire, no L2 read here.

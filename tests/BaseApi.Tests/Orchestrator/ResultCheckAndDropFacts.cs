@@ -54,31 +54,55 @@ public sealed class ResultCheckAndDropFacts
         WorkflowL1Store store, IStepDispatcher dispatcher, IConnectionMultiplexer redis, OrchestratorMetrics metrics)
         => new(store, new StepAdvancement(), dispatcher, redis, metrics, NullLogger<ResultConsumer>.Instance);
 
-    /// <summary>A real metrics holder whose <c>orchestrator_result_deduped</c> increments we can observe via a MeterListener.</summary>
-    private static (OrchestratorMetrics Metrics, Func<long> DedupCount, Func<List<string>> DedupTagKeys) DedupObserved()
+    /// <summary>
+    /// A disposable scope holding a real <see cref="OrchestratorMetrics"/> whose
+    /// <c>orchestrator_result_deduped</c> increments are observed via a scoped <see cref="MeterListener"/>.
+    /// Both the listener and the meter-factory provider are bound to THIS instance's lifetime (the
+    /// .NET 8 blessed pattern — mirrors <see cref="BreakerMetricsFacts"/>) so nothing leaks across the
+    /// parallel-by-default xUnit test runs (a leaked listener would cross-count the shared instrument).
+    /// Filters measurements to THIS holder's Meter instance, not just the instrument name, so a sibling
+    /// test's "Orchestrator" meter cannot bleed into this count.
+    /// </summary>
+    private sealed class DedupScope : IDisposable
     {
-        var meterFactory = new ServiceCollection()
-            .AddMetrics().BuildServiceProvider()
-            .GetRequiredService<IMeterFactory>();
-        var metrics = new OrchestratorMetrics(meterFactory);
+        private readonly ServiceProvider _provider;
+        private readonly MeterListener _listener;
+        private long _count;
+        private readonly List<string> _tagKeys = [];
 
-        long count = 0;
-        var tagKeys = new List<string>();
-        var listener = new MeterListener();
-        listener.InstrumentPublished = (instrument, l) =>
-        {
-            if (instrument.Name == "orchestrator_result_deduped")
-                l.EnableMeasurementEvents(instrument);
-        };
-        listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
-        {
-            Interlocked.Add(ref count, measurement);
-            foreach (var t in tags)
-                tagKeys.Add(t.Key);
-        });
-        listener.Start();
+        public OrchestratorMetrics Metrics { get; }
+        public long DedupCount => Interlocked.Read(ref _count);
+        public IReadOnlyList<string> DedupTagKeys => _tagKeys;
 
-        return (metrics, () => Interlocked.Read(ref count), () => tagKeys);
+        public DedupScope()
+        {
+            _provider = new ServiceCollection().AddMetrics().BuildServiceProvider();
+            Metrics = new OrchestratorMetrics(_provider.GetRequiredService<IMeterFactory>());
+
+            var instrument = Metrics.ResultDeduped;
+            _listener = new MeterListener
+            {
+                InstrumentPublished = (i, l) =>
+                {
+                    if (ReferenceEquals(i, instrument))
+                        l.EnableMeasurementEvents(i);
+                },
+            };
+            _listener.SetMeasurementEventCallback<long>((i, measurement, tags, state) =>
+            {
+                Interlocked.Add(ref _count, measurement);
+                lock (_tagKeys)
+                    foreach (var t in tags)
+                        _tagKeys.Add(t.Key);
+            });
+            _listener.Start();
+        }
+
+        public void Dispose()
+        {
+            _listener.Dispose();
+            _provider.Dispose();
+        }
     }
 
     // ----- 1. flag[m.H]=="Ack" -> ONE dedup increment, dropped (no dispatch) ----------------------
@@ -108,8 +132,8 @@ public sealed class ResultCheckAndDropFacts
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
 
-        var (metrics, dedupCount, dedupTagKeys) = DedupObserved();
-        var consumer = Build(store, dispatcher, mux, metrics);
+        using var scope = new DedupScope();
+        var consumer = Build(store, dispatcher, mux, scope.Metrics);
         var result = new ExecutionResult(workflowId, completedStepId, Guid.NewGuid(), StepOutcome.Completed)
         {
             CorrelationId = Guid.NewGuid(),
@@ -120,8 +144,8 @@ public sealed class ResultCheckAndDropFacts
         await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
 
         // Exactly ONE orchestrator_result_deduped increment at the flag-Ack gate, tagged ProcessorId.
-        Assert.Equal(1, dedupCount());
-        Assert.Contains("ProcessorId", dedupTagKeys());
+        Assert.Equal(1, scope.DedupCount);
+        Assert.Contains("ProcessorId", scope.DedupTagKeys);
 
         // Dropped — no dispatch.
         await dispatcher.DidNotReceive().DispatchAsync(
@@ -164,8 +188,8 @@ public sealed class ResultCheckAndDropFacts
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
 
-        var (metrics, dedupCount, _) = DedupObserved();
-        var consumer = Build(store, dispatcher, mux, metrics);
+        using var scope = new DedupScope();
+        var consumer = Build(store, dispatcher, mux, scope.Metrics);
         var result = new ExecutionResult(workflowId, completedStepId, Guid.NewGuid(), StepOutcome.Completed)
         {
             CorrelationId = Guid.NewGuid(),
@@ -182,7 +206,7 @@ public sealed class ResultCheckAndDropFacts
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
 
         // NO dedup counter (this is the cancelled drop, NOT a flag[H]==Ack drop).
-        Assert.Equal(0, dedupCount());
+        Assert.Equal(0, scope.DedupCount);
 
         // NO StringSetAsync to ANY key across all overloads (the orchestrator never WRITES the marker — D-13).
         Assert.DoesNotContain(db.ReceivedCalls(), c => c.GetMethodInfo().Name == nameof(IDatabase.StringSetAsync));
@@ -236,8 +260,8 @@ public sealed class ResultCheckAndDropFacts
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
 
-        var (metrics, _, _) = DedupObserved();
-        var consumer = Build(store, dispatcher, mux, metrics);
+        using var scope = new DedupScope();
+        var consumer = Build(store, dispatcher, mux, scope.Metrics);
         var result = new ExecutionResult(workflowId, completedStepId, Guid.NewGuid(), StepOutcome.Completed)
         {
             CorrelationId = Guid.NewGuid(),
