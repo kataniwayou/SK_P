@@ -4,6 +4,7 @@ using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Validation;
 using MassTransit;
 using Messaging.Contracts;
+using Messaging.Contracts.Configuration;
 using Messaging.Contracts.Hashing;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
@@ -46,6 +47,7 @@ public sealed class EntryStepDispatchConsumer(
     IOptions<ProcessorLivenessOptions> options,
     ISendEndpointProvider sendProvider,
     ProcessorMetrics metrics,
+    IOptions<RetryOptions> retryOptions,
     ILogger<EntryStepDispatchConsumer> logger) : IConsumer<EntryStepDispatch>
 {
     public async Task Consume(ConsumeContext<EntryStepDispatch> ctx)
@@ -93,6 +95,14 @@ public sealed class EntryStepDispatchConsumer(
                 == L2ProjectionKeys.CancelledMarkerValue)
             return;
 
+        // ---- BREAKER SEAM (req-1/req-2/req-7-trip; D-01/D-02/D-11) ----
+        // Wrap the INFRA body (input read, output writes, manifest, outbound Pending seed, the Send, and
+        // the inbound CAS flip). The two business catches (:OperationCanceled / generic) live INSIDE this
+        // try, around the ProcessAsync invoke, and convert ALL business outcomes to acked sends BEFORE
+        // anything escapes — so by construction anything reaching this OUTER catch is INFRA (RESEARCH A3 /
+        // Pitfall 2). No IsInfra predicate is needed; gate ONLY on the exhausted-attempt boundary.
+        try
+        {
         // ---- 1. Input resolution + validation (EXEC-02/03, D-07, source-step keyed on InputDefinition) ----
         // Source-step input-skip keys on InputDefinition == null (req-2 / D-01), NOT on an empty EntryId:
         // an empty EntryId only short-circuits the L2 READ (a source step has no input key), and an absent
@@ -232,6 +242,30 @@ public sealed class EntryStepDispatchConsumer(
         // permanent skp:flag:* key (unbounded Redis growth). KEEPTTL preserves the bound so Ack flags drain.
         await db.StringSetAsync(L2ProjectionKeys.Flag(dispatch.H), "Ack", expiry: null, keepTtl: true, when: When.Exists);
         // returns normally -> ACK only after the send + flip (D-15).
+        }
+        catch (Exception) when (ctx.GetRetryAttempt() == retryOptions.Value.Limit)   // ONLY the final exhausted attempt (req-1)
+        {
+            // EFFECT-FIRST (D-02): set the no-TTL cancelled marker BEFORE re-throwing, so the marker is
+            // observable before MassTransit publishes Fault<EntryStepDispatch> + dead-letters to _error
+            // (D-03). expiry: null = NO TTL (D-07) — diverge from the :172/:192/:203 TTL'd writes; a TTL'd
+            // marker would self-expire the breaker (Pitfall 3). Single sentinel const (Plan 02) on BOTH
+            // the SET here and the check-and-drop compare above — value desync impossible. The marker SET
+            // is itself INFRA; if it faults (Redis down) the marker isn't set and this lands in the same
+            // bus/redis-down _error backstop the design already accepts (Risk R4).
+            await db.StringSetAsync(
+                L2ProjectionKeys.Cancelled(dispatch.WorkflowId),
+                L2ProjectionKeys.CancelledMarkerValue,
+                Expiration.Persist);   // NO TTL (D-07) — diverge from the EX-TTL'd writes; binds the modern Expiration overload
+
+            metrics.WorkflowCancelled.Add(1,                                          // req-7 / D-11
+                new KeyValuePair<string, object?>("ProcessorId", context.Id!.Value.ToString("D")));
+
+            logger.LogWarning(                                                        // structured trip log (D-11)
+                "Breaker tripped — workflow {WorkflowId} cancelled on infra-exhaustion (step {StepId}, processor {ProcessorId}, H {H})",
+                dispatch.WorkflowId, dispatch.StepId, dispatch.ProcessorId, dispatch.H);
+
+            throw;   // re-throw -> MassTransit publishes Fault<EntryStepDispatch> + dead-letters to _error (D-03)
+        }
     }
 
     /// <summary>

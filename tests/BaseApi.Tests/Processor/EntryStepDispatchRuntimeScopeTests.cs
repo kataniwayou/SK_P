@@ -121,6 +121,9 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             .AddSingleton<IOptions<ProcessorLivenessOptions>>(DispatchTestKit.Options(300))
             // METRIC-05: the consumer now depends on ProcessorMetrics (real IMeterFactory; no-op in-test).
             .AddSingleton(DispatchTestKit.Metrics())
+            // Phase 32: the breaker check reads IOptions<RetryOptions>.Value.Limit (the same source feeding
+            // UseMessageRetry). Default Limit=3 — not exercised on this Completed path.
+            .AddSingleton(DispatchTestKit.Retry())
             // The bus-wide InboundCorrelationConsumeFilter needs the accessor (as AddBaseConsoleMessaging registers it).
             .AddSingleton<ICorrelationAccessor, AsyncLocalCorrelationAccessor>()
             .AddSingleton(new RecordingResultConsumer(received))

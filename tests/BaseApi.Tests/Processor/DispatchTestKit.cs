@@ -130,6 +130,14 @@ internal static class DispatchTestKit
         return new ProcessorMetrics(meterFactory);
     }
 
+    /// <summary>
+    /// The retry budget the breaker check reads (<c>GetRetryAttempt() == Limit</c>). Default
+    /// <c>RetryOptions.Limit = 3</c> (mirrors the production <c>Immediate(3)</c> bind).
+    /// </summary>
+    public static IOptions<Messaging.Contracts.Configuration.RetryOptions> Retry(int limit = 3) =>
+        Microsoft.Extensions.Options.Options.Create(
+            new Messaging.Contracts.Configuration.RetryOptions { Limit = limit });
+
     /// <summary>Builds the consumer over the supplied collaborators (NullLogger + given send provider).</summary>
     public static EntryStepDispatchConsumer Build(
         IConnectionMultiplexer redis,
@@ -138,7 +146,7 @@ internal static class DispatchTestKit
         ISendEndpointProvider sendProvider,
         int executionDataTtlSeconds = 300) =>
         new(redis, context, processor, Options(executionDataTtlSeconds), sendProvider,
-            Metrics(), NullLogger<EntryStepDispatchConsumer>.Instance);
+            Metrics(), Retry(), NullLogger<EntryStepDispatchConsumer>.Instance);
 
     /// <summary>
     /// An <see cref="EntryStepDispatch"/> with the given correlation + entry id. <paramref name="entryId"/>
@@ -151,6 +159,36 @@ internal static class DispatchTestKit
             CorrelationId = correlationId,
             EntryId = entryId,
         };
+
+    /// <summary>
+    /// A <see cref="ConsumeContext{T}"/> substitute whose <c>GetRetryAttempt()</c> returns
+    /// <paramref name="retryAttempt"/>. <c>GetRetryAttempt()</c> reads the <c>ConsumeRetryContext</c>
+    /// payload's <c>RetryAttempt</c> (verified via IL reflection against MassTransit 8.5.5 —
+    /// it is NOT a header read), so we stub <c>TryGetPayload&lt;ConsumeRetryContext&gt;()</c> to yield a
+    /// substitute carrying the controlled attempt. Plan 32-01's <c>RetryAttemptNumberingFacts</c> pinned
+    /// the real-bus boundary at <c>== Limit</c> on the exhausting delivery; this lets the hermetic breaker
+    /// facts drive that boundary without a full bus.
+    /// </summary>
+    public static ConsumeContext<T> RetryContext<T>(T message, int retryAttempt, CancellationToken ct)
+        where T : class
+    {
+        var context = Substitute.For<ConsumeContext<T>>();
+        context.Message.Returns(message);
+        context.CancellationToken.Returns(ct);
+        var retry = Substitute.For<ConsumeRetryContext>();
+        retry.RetryAttempt.Returns(retryAttempt);
+        // The out-arg matcher + the CallInfo object? indexer write-back both surface CS8601 false
+        // positives (the analyzer can't see `retry` is non-null); suppress across the stub setup.
+#pragma warning disable CS8601
+        context.TryGetPayload(out Arg.Any<ConsumeRetryContext>())
+            .Returns(ci =>
+            {
+                ci[0] = retry;
+                return true;
+            });
+#pragma warning restore CS8601
+        return context;
+    }
 
     /// <summary>
     /// An <see cref="ISendEndpointProvider"/> whose every resolved endpoint records each

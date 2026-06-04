@@ -72,7 +72,7 @@ public sealed class EntryStepDispatchScopeTests
 
         var consumer = new EntryStepDispatchConsumer(
             WritableRedis(), context, processor, DispatchTestKit.Options(300), send,
-            DispatchTestKit.Metrics(), logger);
+            DispatchTestKit.Metrics(), DispatchTestKit.Retry(), logger);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
             DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
@@ -119,7 +119,7 @@ public sealed class EntryStepDispatchScopeTests
 
         var consumer = new EntryStepDispatchConsumer(
             WritableRedis(), context, processor, DispatchTestKit.Options(300), send,
-            DispatchTestKit.Metrics(), logger);
+            DispatchTestKit.Metrics(), DispatchTestKit.Retry(), logger);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
             DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
