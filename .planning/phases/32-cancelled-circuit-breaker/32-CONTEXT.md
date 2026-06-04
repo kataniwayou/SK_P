@@ -1,23 +1,117 @@
-# Phase 32 — Cancelled Circuit-Breaker — CONTEXT (stub)
+# Phase 32: Cancelled Circuit-Breaker — Context
 
-**Status:** PLANNED (split out of Phase 31 on 2026-06-04). Depends on Phase 31 (deterministic `H`, configurable retry).
+**Gathered:** 2026-06-04
+**Status:** Ready for planning
+**Supersedes:** the prior 32-CONTEXT stub. The signalling mechanism changed during discussion — the processor no longer sends a point-to-point `Cancelled` message to the orchestrator; budget exhaustion now fans out via MassTransit `Fault<EntryStepDispatch>`. The Phase-31 deferred Failure-policy design record (`31-CONTEXT.md` §"Failure-policy hook") and ROADMAP Phase-32 success criteria are partially overridden by the decisions below (see D-03/D-04/D-06).
 
-**Design record:** the full design lives in the **deferred Failure-policy section of [`../31-idempotent-execution-exactly-once-effect/31-CONTEXT.md`](../31-idempotent-execution-exactly-once-effect/31-CONTEXT.md)**. Summary below; `/gsd-spec-phase 32` will formalize `CANCEL-*` and resolve the open decisions.
+<domain>
+## Phase Boundary
 
-## What it delivers
+On retry-budget exhaustion, a workflow is cleanly and completely stopped — the **current in-flight fire halted** and **future cron fires unscheduled** — instead of silently dead-lettering to `_error`. Stop is two-level: a shared L2 `cancelled[workflowId]` marker (in-flight) plus a fanned-out fault that unschedules the Quartz job (future fires). The design is **multi-replica-correct** even though only one orchestrator replica runs today.
 
-On retry-budget exhaustion (`GetRetryAttempt() == configured Limit`, the limit from Phase 31's config), the processor:
-1. Sends the **consumed message back as `Cancelled`** (not dead-lettered). `Cancelled` is deduped via the Phase-31 deterministic `H`.
-2. **Two-level stop:**
-   - **In-flight (current fire):** processor sets `cancelled[workflowId] = true` in L2; **every receiver checks it before processing and drops** → the fire drains to a halt (stops advancing, no rollback; `workflowId`-keyed so concurrent fires stop too).
-   - **Future fires:** the orchestrator, on `Cancelled`, resolves `jobId` from **L1** (`store.TryGet → wf.JobId` — no L2 read) and unschedules the Quartz job (reuses Stop/Teardown machinery; idempotent).
-3. Effect-first order: set marker → send `Cancelled` → ack (idempotent on re-exhaustion).
+This phase clarifies HOW to implement that stop. New capabilities belong in other phases.
+</domain>
 
-`Cancelled` is a **terminal stop intercepted before `SelectNext`** — it advances no successor regardless of entry condition.
+<decisions>
+## Implementation Decisions
 
-## Enum change
-**Remove `StepEntryCondition.PreviousCancelled (3)`** — meaningless now (`Cancelled` halts the whole job, never advances). Leave `3` as a numeric gap (do NOT renumber 0/1/2/4/5). `StepDtoValidator` uses `.IsInEnum()` → 3 auto-rejected. Verify no live step has `EntryCondition == 3` (dual-pipeline steps use `Always`/4). `StepOutcome.Cancelled (3)` stays (processor reports it); update the "ints mirror `Previous*`" note (Cancelled is special-cased, not matched).
+### Trigger — what trips the breaker
+- **D-01 (B1):** The breaker trips on **infra-fault retry-budget exhaustion only** — `GetRetryAttempt() == configured Limit`, where `Limit` is the Phase-31 `RetryOptions.Limit` (single source of truth, already bound from the `"Retry"` config section and fed to `UseMessageRetry`). Business failures (a `ProcessAsync` throw) remain **immediate-`Failed`-and-acked** per the established D-15 contract — they do NOT retry and do NOT trip the breaker. Rationale: matches ROADMAP criterion #1 as written (`GetRetryAttempt()` only counts infra retries today); minimal, surgical change. Trip on **first exhaustion**; blast radius = **whole workflow** (carried forward, locked).
 
-## Decided / open at spec
-- **Decided:** trip on **first exhaustion** (Phase 31's configurable retry count is the transient-tolerance knob); blast radius = **whole workflow**.
-- **Open (spec):** the **resume** procedure (clear `cancelled[workflowId]` + re-Start — manual vs auto-cooldown); keep `_error` as the backstop for **bus-down** exhaustion (the `Cancelled` send itself can't be delivered then).
+### Signal mechanism — Fault fanout, not a Cancelled send
+- **D-02:** On the final attempt the processor sets `cancelled[workflowId] = true` in L2, then lets the infra fault propagate. **Effect-first: marker-set precedes fault publication.**
+- **D-03 (A1, mod 2):** The future-fire signal is **MassTransit's automatic `Fault<EntryStepDispatch>`**, published (fanout) when `UseMessageRetry` exhausts. No custom event, no explicit publish. The SAME exhaustion also dead-letters the message to `_error` — so the **bus-down `_error` backstop falls out of the same mechanism** (retained, no separate path).
+- **D-04 (mod 4):** **No `Cancelled` ExecutionResult is sent to `orchestrator-result` for the breaker path.** That queue is a shared competing-consumer queue (one replica consumes), which is the wrong channel for a broadcast halt. The prior design's "processor sends consumed message back as `Cancelled` → orchestrator unschedules on `Cancelled`" is **removed**.
+
+### Two-level stop
+- **D-05:** **In-flight stop** = the shared L2 `cancelled[workflowId]` marker. Every receiver (processor `EntryStepDispatchConsumer`, orchestrator `ResultConsumer`) checks it before processing and **ack-and-discards** any in-flight message for a cancelled workflow → the fire drains to a halt (stops advancing, no rollback, no dead-lettering of dropped messages). Multi-replica-safe by construction (shared L2, `workflowId`-keyed so concurrent fires stop too).
+- **D-06 (mod 3):** **Future-fire stop** = every orchestrator replica runs `IConsumer<Fault<EntryStepDispatch>>` on a **per-replica temporary fan-out endpoint** (mirrors the existing Start/Stop `InstanceId` + `Temporary` wiring in `Orchestrator/Program.cs`, NOT the shared `orchestrator-result` endpoint). Each replica extracts `WorkflowId` from `Fault.Message`, resolves `jobId` from **L1** (`store.TryGet(workflowId) → wf.JobId`; in-memory, no L2 read; absent-from-L1 ⇒ no-op), and unschedules the Quartz job — **reusing the existing Stop/Teardown machinery** (idempotent). Only the schedule-owning replica acts; others no-op.
+
+### Marker lifecycle & resume
+- **D-07:** The `cancelled[workflowId]` marker has **no TTL** — it persists until resume explicitly clears it. A self-expiring breaker defeats the purpose. Stop/Teardown does NOT clear it.
+- **D-08:** **Resume is manual** — operator clears the marker + re-`POST /orchestration/start` (reuses the existing endpoint; no new API surface). Circuit-breaker semantics want a human to confirm the underlying fault is fixed before re-arming.
+
+### Idempotency & ordering
+- **D-09:** Effect-first and idempotent on re-exhaustion: a redelivery (from `_error` reprocessing or a re-fire) re-exhausts → re-sets the marker (idempotent) → re-publishes `Fault` (idempotent halt — unschedule is idempotent, marker already set).
+
+### Observability
+- **D-10 (mod 1):** **Redelivery/dedup business counters, both sides.** Increment a dedicated counter at each consumer's effect-first dedup gate (`flag[H] == "Ack" → return`): `processor_dispatch_deduped_total` (`EntryStepDispatchConsumer.cs:76`) and `orchestrator_result_deduped_total` (`ResultConsumer.cs:65`), tagged `ProcessorId`, on the existing Phase-30 `ProcessorMetrics`/`OrchestratorMetrics` meters. Surfaces redelivery-collapse frequency (how often a duplicate is dropped). NOTE: this instruments the Phase-31 dedup gates — adjacent scope, deliberately folded here as part of the failure/redelivery observability story.
+- **D-11:** **Breaker-trip counter** `workflow_cancelled_total` incremented when the breaker trips, plus a structured WARN/ERROR log carrying `workflowId` / `stepId` / `processorId` / `H`. Reuses Phase-29 logging + Phase-30 metrics. Both D-10 and D-11 are kept — they answer different questions (redelivery rate vs. trip count).
+
+### Enum change
+- **D-12:** **Remove `StepEntryCondition.PreviousCancelled (3)`** — leave `3` as a numeric gap (do NOT renumber 0/1/2/4/5, or existing step data reinterprets). `StepDtoValidator`'s `.IsInEnum()` auto-rejects `3`. Verify no live step has `EntryCondition == 3` (dual-pipeline steps use `Always`/4 — likely clean). **Keep `StepOutcome.Cancelled (3)`** — the processor still reports it for the existing token-cancellation business outcome (`EntryStepDispatchConsumer.cs:123-128`, EXEC-08), which is unchanged by this phase and advances no successor via its empty manifest. Update the "ints mirror `Previous*`" note: `Cancelled` is special-cased, not matched by `SelectNext`.
+
+### Claude's Discretion
+- Marker key shape: a new `L2ProjectionKeys.Cancelled(Guid workflowId) => $"{Prefix}cancelled:{workflowId:D}"` builder added to the single-source-of-truth `L2ProjectionKeys` (follows the existing `skp:` flat convention).
+- Exact metric names / tag-key literals (follow the Phase-30 pinned-lowercase-label convention, decoupled from C# enum member names).
+- Fault-consumer endpoint registration/naming details (per-instance `Temporary` fan-out, mirroring `StartOrchestrationConsumerDefinition`/`StopOrchestrationConsumerDefinition`).
+- The per-message marker read adds one Redis `GET` per received message — accepted (the same Redis is already hit for the dedup flag).
+</decisions>
+
+<canonical_refs>
+## Canonical References
+
+**Downstream agents MUST read these before planning or implementing.**
+
+### Design record (the source of this phase, partially overridden by D-03/D-04/D-06)
+- `.planning/phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md` §"Failure-policy hook (Cancelled = unconditional, two-level stop) — DEFERRED TO PHASE 32" — the original two-level-stop design; note the Cancelled-message → Fault-fanout change made in this discussion.
+- `.planning/phases/31-idempotent-execution-exactly-once-effect/31-SPEC.md` — Phase-31 requirements this builds on: deterministic `H` (Cancelled/Fault correlation), configurable retry `Limit`.
+- `.planning/ROADMAP.md` §"Phase 32: Cancelled Circuit-Breaker" (success criteria — criteria 1 & 3 reworded by D-03/D-04/D-06).
+
+### Processor side
+- `src/BaseProcessor.Core/Processing/EntryStepDispatchConsumer.cs` — the consumer to extend: dedup gate (line 76 → D-10 counter), infra-fault propagation path (lines 68-70, the breaker trigger D-01/D-02), existing token-`Cancelled` outcome (lines 123-128, kept per D-12).
+- `src/BaseProcessor.Core/Observability/` (`ProcessorMetrics`) — Phase-30 meter to extend (D-10).
+
+### Orchestrator side
+- `src/Orchestrator/Consumers/ResultConsumer.cs` — dedup gate (line 65 → D-10 counter); the `Cancelled`-ExecutionResult path is NOT used by the breaker (D-04).
+- `src/Orchestrator/Program.cs` (lines 31-46) — the per-replica `InstanceId`+`Temporary` fan-out endpoint pattern (Start/Stop) the new `Fault<EntryStepDispatch>` consumer mirrors (D-06).
+- `src/Orchestrator/Consumers/ResultConsumerDefinition.cs` — `UseMessageRetry(Immediate(Limit))` wiring + the `RetryOptions.Limit` single source (D-01).
+- `src/Orchestrator/Consumers/StopOrchestrationConsumer.cs` + `src/Orchestrator/Hydration/WorkflowLifecycle.cs` + `src/Orchestrator/Scheduling/WorkflowScheduler.cs` — the Stop/Teardown unschedule machinery reused by the fault halt (D-06).
+- `src/Orchestrator/Observability/OrchestratorMetrics.cs` — Phase-30 meter to extend (D-10/D-11).
+
+### Shared contracts
+- `src/Messaging.Contracts/Projections/L2ProjectionKeys.cs` — single source of truth for L2 keys; add the `Cancelled(workflowId)` marker builder here.
+- `src/Messaging.Contracts/OrchestratorQueues.cs` — `orchestrator-result` is the shared competing-consumer queue (why D-04 holds).
+- `src/Messaging.Contracts/Configuration/` (`RetryOptions`) — the `Limit` (D-01).
+- `src/BaseApi.Service/Features/Orchestration/OrchestrationController.cs` — `POST /orchestration/start` reused for resume (D-08).
+</canonical_refs>
+
+<code_context>
+## Existing Code Insights
+
+### Reusable Assets
+- **Per-replica fan-out endpoint pattern** (`Program.cs:31-46`): Start/Stop already bind `.Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; })` → `orchestrator-{instanceId}` broadcast. The `Fault<EntryStepDispatch>` consumer drops straight into this pattern (D-06). The composition-root comment already anticipates "the per-replica fan-out endpoint."
+- **Stop/Teardown machinery** is idempotent and already fanned out — the fault halt reuses it rather than re-implementing unschedule (D-06).
+- **`RetryOptions.Limit`** is already the single source feeding `UseMessageRetry` — the breaker's `GetRetryAttempt() == Limit` check reads the same value, no desync (D-01).
+- **Effect-first dedup gates** already exist at both consumers — D-10 only adds a counter at the existing `return` points.
+
+### Established Patterns
+- L2 keys flow through `L2ProjectionKeys` (flat `skp:` prefix, no type discriminator). New marker key follows suit.
+- Metrics use pinned lowercase Prometheus label literals decoupled from enum names (`OutcomeLabel` pattern); `ProcessorId` tag only, NO `workflowId` (cardinality, T-30-04).
+- `_error` is reached only via infra-fault exhaustion of `UseMessageRetry` — the same exhaustion that now also publishes `Fault<T>`.
+
+### Integration Points / Open Implementation Question (for researcher/planner)
+- **Final-attempt marker-set mechanism:** infra faults currently propagate uncaught (no `try/catch` at the Redis/Send sites). To set the marker "on the final attempt" before the fault publishes, the consumer must detect `GetRetryAttempt() == Limit` and set the marker before the throw (e.g. a catch-on-final-attempt around the infra op, or a consume filter). The researcher should determine the cleanest MassTransit-idiomatic placement (consume filter vs. in-consumer guard) — this is the main implementation unknown.
+- **Marker-write-fault edge:** if the marker `SET` itself faults (Redis/bus down) the in-flight marker isn't set; this lands in the same bus/redis-down `_error` backstop bucket the design already accepts.
+- **Fault consumer type binding:** `Fault<EntryStepDispatch>` — `Fault.Message` is the original `EntryStepDispatch`, which carries `WorkflowId` (enough to resolve `jobId` from L1 and halt). Confirm at plan time.
+</code_context>
+
+<specifics>
+## Specific Ideas
+
+- Use MassTransit's **built-in** `Fault<T>` rather than a hand-rolled cancel event — the user specifically wants the fanout + `_error` backstop to come from one mechanism.
+- The dedup counter is explicitly "how many times the consumer checked the flag and it was `Ack`" — i.e. instrument the existing drop, do not add a new gate.
+</specifics>
+
+<deferred>
+## Deferred Ideas
+
+- **Persistent business-failure circuit-breaking (B2):** making `ProcessAsync` exceptions retry-to-exhaustion and trip the breaker (instead of immediate-`Failed`). Rejected for this phase — would rework the D-15 catch-and-`Failed` contract. Revisit if business-level circuit-breaking is wanted.
+- **Dedicated `POST /orchestration/resume` endpoint / auto-cooldown resume:** rejected in favour of manual clear-marker + re-Start (D-08). Note for a future ops-ergonomics phase if manual resume proves painful.
+
+</deferred>
+
+---
+
+*Phase: 32-cancelled-circuit-breaker*
+*Context gathered: 2026-06-04*
