@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
-status: executing
+status: ready_to_plan
 stopped_at: 31-06 tasks 1-2 authored + verified; Task 3 live human-verify gate pending operator
 last_updated: "2026-06-04T14:49:26.000Z"
 last_activity: 2026-06-04 -- Phase 31 Plan 06 authored (real-stack E2E + close gate); live gate pending
 progress:
   total_phases: 8
-  completed_phases: 6
+  completed_phases: 7
   total_plans: 27
   completed_plans: 26
-  percent: 96
+  percent: 88
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 ## Current Position
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
-Phase: 31 (idempotent-execution-exactly-once-effect) — EXECUTING
-Plan: 6 of 6 authored (01/02/03/04/05 done; 06 tasks 1-2 authored + verified, Task 3 live gate pending)
-Status: Executing Phase 31 — awaiting operator live-gate verification for 31-06
-Last activity: 2026-06-04 -- Phase 31 Plan 06 authored (real-stack E2E + close gate); live gate pending
+Phase: 32
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-06-04
 
 ### Phase 31 Plan 06 — AUTHORED (real-stack exactly-once-effect E2E + phase-31 close gate; req-8 PENDING live gate; 2026-06-04)
 
@@ -314,7 +314,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 111
+- Total plans completed: 117
 - Average duration: —
 - Total execution time: —
 
@@ -350,6 +350,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 28 | 4 | - | - |
 | 29 | 5 | - | - |
 | 30 | 4 | - | - |
+| 31 | 6 | - | - |
 
 **Recent Trend:**
 

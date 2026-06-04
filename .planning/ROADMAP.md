@@ -172,7 +172,7 @@
 
 **Milestone Goal:** Make the orchestrator↔processor execution round-trip **exactly-once-effect** under at-least-once delivery — so `Immediate(3)` retries, broker redeliveries, publish-confirm ambiguity, the orchestrator's own re-dispatch, and fan-in/merge all stop producing duplicate downstream execution, with zero lost branches. Achieved by **deterministic content-addressed identity + effect-first receiver dedup**, not producer-side detection (which is provably impossible — confirmation is lossy in one direction).
 
-- [ ] **Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)** — Deterministic per-fire identity `H = hash(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded, lineage only); content-addressed two-level L2 data (`data[hash(result)]` blobs + `data[hash(manifest)]` manifest); symmetric effect-first `flag[H] = Pending|Ack` dedup via atomic CAS on every send/receive (processor inbound dispatch + orchestrator inbound result); merge correctness + no-override via input `EntryId` (identical-input collapse); manifest fan-out (successor stepId/processorId, regenerated executionId); configurable retry count (default `Immediate(N)`). Reworks `EntryStepDispatchConsumer` + orchestrator `ResultConsumer`/advancement; extends the wire contracts + `L2ProjectionKeys`. **SPEC locked (8 requirements)** — see [31-SPEC.md](phases/31-idempotent-execution-exactly-once-effect/31-SPEC.md) / [31-CONTEXT.md](phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md). (spec'd 2026-06-04)
+- [x] **Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)** — Deterministic per-fire identity `H = hash(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded, lineage only); content-addressed two-level L2 data (`data[hash(result)]` blobs + `data[hash(manifest)]` manifest); symmetric effect-first `flag[H] = Pending|Ack` dedup via atomic CAS on every send/receive (processor inbound dispatch + orchestrator inbound result); merge correctness + no-override via input `EntryId` (identical-input collapse); manifest fan-out (successor stepId/processorId, regenerated executionId); configurable retry count (default `Immediate(N)`). Reworks `EntryStepDispatchConsumer` + orchestrator `ResultConsumer`/advancement; extends the wire contracts + `L2ProjectionKeys`. **SPEC locked (8 requirements)** — see [31-SPEC.md](phases/31-idempotent-execution-exactly-once-effect/31-SPEC.md) / [31-CONTEXT.md](phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md). (spec'd 2026-06-04) (completed 2026-06-04)
 - [ ] **Phase 32: Cancelled Circuit-Breaker** — On retry-budget exhaustion the processor emits `Cancelled` (sends the consumed message back) and performs a **two-level stop**: sets a `cancelled[workflowId]` marker in L2 (every receiver checks-and-drops in-flight messages → current fire drains to a halt) and signals the orchestrator, which resolves `jobId` from **L1** and unschedules the Quartz job (future fires). `Cancelled` is a terminal stop intercepted before `SelectNext` (advances no successor); **remove `StepEntryCondition.PreviousCancelled` (3)** (leave as gap; validator `IsInEnum` auto-rejects). Trip on first exhaustion (the configurable retry count is the transient-tolerance knob). Design record: the deferred Failure-policy section of [31-CONTEXT.md](phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md). (planned 2026-06-04)
 
 ### Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)
@@ -191,7 +191,7 @@
   - [x] 31-03-PLAN.md — processor receiver rework: content-addressed two-level write + manifest + effect-first dedup (req-3, req-4) [wave 3]
   - [x] 31-04-PLAN.md — orchestrator inbound dedup + manifest fan-out + entry-step EntryId + sender pre-write (req-2, req-4, req-5, req-6) [wave 3]
   - [x] 31-05-PLAN.md — configurable retry: 4 sites bound from RetryOptions per process (req-7) [wave 2]
-  - [ ] 31-06-PLAN.md — live exactly-once E2E (merge topology + induced retry) + phase-31-close.ps1 (req-8) [wave 4]
+  - [x] 31-06-PLAN.md — live exactly-once E2E (merge topology + induced retry) + phase-31-close.ps1 (req-8) [wave 4]
 
 ### Phase 32: Cancelled Circuit-Breaker
 **Goal**: On retry-budget exhaustion, a workflow is cleanly and completely stopped — current in-flight fire halted and future cron fires unscheduled — via an explicit `Cancelled` terminal outcome, instead of silently dead-lettering to `_error`.
@@ -229,7 +229,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31
 | 28. SourceHash Identity + Processor.Sample + E2E Closeout | v3.5.0 | 4/4 | Complete    | 2026-06-02 |
 | 29. Structured Execution-Scope Logging | v3.5.0 | 5/5 | Complete    | 2026-06-02 |
 | 30. Runtime & Business Metrics | v3.5.0 | 4/4 | Complete    | 2026-06-02 |
-| 31. Idempotent Execution Round-Trip (Exactly-Once-Effect) | v3.6.0 | 0/TBD | Spec'd | — |
+| 31. Idempotent Execution Round-Trip (Exactly-Once-Effect) | v3.6.0 | 6/6 | Complete    | 2026-06-04 |
 | 32. Cancelled Circuit-Breaker | v3.6.0 | 0/TBD | Planning | — |
 
 ---
