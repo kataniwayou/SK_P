@@ -70,7 +70,7 @@ public sealed class ResultAckTests
 
         await dispatcher.DidNotReceive().DispatchAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // ----- unknown (workflowId, stepId) -> ack (no throw, no dispatch) ---------------------------
@@ -93,7 +93,7 @@ public sealed class ResultAckTests
 
         await dispatcher.DidNotReceive().DispatchAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // ----- completed step with NO matching next step -> ack (no throw, no dispatch) --------------
@@ -127,7 +127,7 @@ public sealed class ResultAckTests
 
         await dispatcher.DidNotReceive().DispatchAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     // ----- result path reads L1 only — NO L2/Redis read -----------------------------------------
@@ -165,7 +165,7 @@ public sealed class ResultAckTests
         // The continuation WAS dispatched (match found) yet ZERO Redis reads occurred.
         await dispatcher.Received(1).DispatchAsync(
             workflowId, nextStepId, nextProcessorId, Arg.Any<string>(),
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
         await db.DidNotReceive().StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
     }
 
@@ -178,7 +178,7 @@ public sealed class ResultAckTests
         var dispatcher = Substitute.For<IStepDispatcher>();
         dispatcher.DispatchAsync(
                 Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
-                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
+                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns<Task>(_ => throw new MassTransitException("stub: broker Send fault"));
 
         var workflowId = Guid.NewGuid();

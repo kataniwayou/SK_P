@@ -112,7 +112,7 @@ public sealed class ResultConsumeTests
 
             var correlationId = Guid.NewGuid();
             var executionId = Guid.NewGuid();
-            var entryId = Guid.NewGuid();
+            var entryId = Guid.NewGuid().ToString("D");
             var result = new ExecutionResult(workflowId, completedStepId, completedProcessorId, StepOutcome.Completed)
             {
                 CorrelationId = correlationId,

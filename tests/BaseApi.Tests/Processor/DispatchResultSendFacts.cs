@@ -18,7 +18,7 @@ namespace BaseApi.Tests.Processor;
 /// </summary>
 public sealed class DispatchResultSendFacts
 {
-    private static IConnectionMultiplexer PresentInput(Guid entryId, out IDatabase db) =>
+    private static IConnectionMultiplexer PresentInput(string entryId, out IDatabase db) =>
         OrchestratorTestStubs.PresentL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = "{}" }, out db);
 
@@ -26,7 +26,7 @@ public sealed class DispatchResultSendFacts
     public async Task EmptyList_AcksWithNoMessage()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid();
+        var entryId = Guid.NewGuid().ToString("D");
         var redis = PresentInput(entryId, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results()); // empty list
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
@@ -49,7 +49,7 @@ public sealed class DispatchResultSendFacts
     public async Task Sends_One_By_One()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid();
+        var entryId = Guid.NewGuid().ToString("D");
         var redis = PresentInput(entryId, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results("a", "b", "c"));
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
@@ -74,7 +74,7 @@ public sealed class DispatchResultSendFacts
     [Fact]
     public async Task Cancelled_Always_Sent()
     {
-        var entryId = Guid.NewGuid();
+        var entryId = Guid.NewGuid().ToString("D");
         var redis = PresentInput(entryId, out _);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -101,7 +101,7 @@ public sealed class DispatchResultSendFacts
     public async Task CaughtException_Sends_Failed_With_Message()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid();
+        var entryId = Guid.NewGuid().ToString("D");
         var redis = PresentInput(entryId, out _);
         var processor = new DispatchTestKit.FakeProcessor(new InvalidOperationException("boom"));
         var context = new FakeProcessorContext { InputDefinition = null };

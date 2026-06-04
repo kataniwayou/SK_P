@@ -15,7 +15,7 @@ public sealed class DispatchInvokeFacts
     public async Task Invokes_With_InputData_And_ConfigPayload()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid();
+        var entryId = Guid.NewGuid().ToString("D");
         const string inputJson = "{\"v\":42}";
         var redis = OrchestratorTestStubs.PresentL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = inputJson }, out _);
@@ -35,7 +35,7 @@ public sealed class DispatchInvokeFacts
     public async Task Mints_Distinct_ExecutionIds_Per_Result()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid();
+        var entryId = Guid.NewGuid().ToString("D");
         var redis = OrchestratorTestStubs.PresentL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = "{}" }, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results("a", "b"));

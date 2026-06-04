@@ -63,7 +63,7 @@ public sealed class EntryStepDispatchScopeTests
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // No-input source processor (InputDefinition null + entryId Guid.Empty) → skip the L2 READ and
+        // No-input source processor (InputDefinition null + entryId "") → skip the L2 READ and
         // exercise the Completed write/send path. One result passes a null OutputDefinition (skip validate).
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results("out"));
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
@@ -75,13 +75,13 @@ public sealed class EntryStepDispatchScopeTests
             DispatchTestKit.Metrics(), logger);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
-            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), ct));
+            DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
 
         // The sent result carries the minted ids — the scope must report the SAME values (inner-overrides-outer).
         var sent = Assert.Single(send.Sent);
         Assert.Equal(StepOutcome.Completed, sent.Outcome);
         Assert.NotEqual(Guid.Empty, sent.ExecutionId);
-        Assert.NotEqual(Guid.Empty, sent.EntryId);
+        Assert.False(string.IsNullOrEmpty(sent.EntryId));
 
         var scope = NestedScope(logger);
 
@@ -103,7 +103,7 @@ public sealed class EntryStepDispatchScopeTests
     {
         var ct = TestContext.Current.CancellationToken;
 
-        // Output "{}" fails a definition requiring "x" → Failed: EntryId stays Guid.Empty, nothing
+        // Output "{}" fails a definition requiring "x" → Failed: EntryId stays "", nothing
         // written, and the nested ExecutionId/EntryId scope must NOT open on this path (Pitfall 2).
         const string requiresX = "{\"type\":\"object\",\"required\":[\"x\"]}";
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results("{}"));
@@ -116,7 +116,7 @@ public sealed class EntryStepDispatchScopeTests
             DispatchTestKit.Metrics(), logger);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
-            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), ct));
+            DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
 
         var sent = Assert.Single(send.Sent);
         Assert.Equal(StepOutcome.Failed, sent.Outcome);

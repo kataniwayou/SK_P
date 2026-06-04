@@ -163,11 +163,11 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             });
             await handle.Ready;
 
-            // Send a dispatch carrying the three inbound ids (ExecutionId/EntryId Guid.Empty — minted by consumer).
+            // Send a dispatch carrying the three inbound ids (ExecutionId Guid.Empty / EntryId "" — minted by consumer).
             var dispatch = new EntryStepDispatch(workflowId, stepId, processorId, "{\"cfg\":1}")
             {
                 CorrelationId = Guid.NewGuid(),
-                EntryId = Guid.Empty,
+                EntryId = "",
             };
             var endpoint = await bus.GetSendEndpoint(new Uri($"queue:{queueName}"));
             await endpoint.Send(dispatch, ct);

@@ -24,7 +24,7 @@ public sealed class ExecutionResultContractTests
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
-            EntryId = Guid.NewGuid(),
+            EntryId = Guid.NewGuid().ToString("D"),
             ErrorMessage = "err",
             CancellationMessage = "cancel",
         };
@@ -50,7 +50,7 @@ public sealed class ExecutionResultContractTests
     {
         // The processor copies real execution ids forward — they are NOT forced Guid.Empty.
         var executionId = Guid.NewGuid();
-        var entryId = Guid.NewGuid();
+        var entryId = Guid.NewGuid().ToString("D");
         var original = new ExecutionResult(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), StepOutcome.Processing)
         {
             ExecutionId = executionId,
@@ -60,7 +60,7 @@ public sealed class ExecutionResultContractTests
         var roundTripped = JsonSerializer.Deserialize<ExecutionResult>(JsonSerializer.Serialize(original));
 
         Assert.NotEqual(Guid.Empty, roundTripped!.ExecutionId);
-        Assert.NotEqual(Guid.Empty, roundTripped.EntryId);
+        Assert.False(string.IsNullOrEmpty(roundTripped.EntryId));
         Assert.Equal(executionId, roundTripped.ExecutionId);
         Assert.Equal(entryId, roundTripped.EntryId);
     }

@@ -17,7 +17,7 @@ public sealed class DispatchCorrelationFacts
     public async Task Body_CorrelationId_Flows_To_Every_Result()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid();
+        var entryId = Guid.NewGuid().ToString("D");
         var correlationId = Guid.NewGuid();
         var redis = OrchestratorTestStubs.PresentL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = "{}" }, out _);

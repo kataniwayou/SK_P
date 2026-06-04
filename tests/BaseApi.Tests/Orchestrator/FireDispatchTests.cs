@@ -23,7 +23,7 @@ namespace BaseApi.Tests.Orchestrator;
 /// lands on — RESEARCH assumption A2). Asserts, from the USER's perspective:
 /// <list type="bullet">
 ///   <item>one <see cref="EntryStepDispatch"/> per entry step, with correct StepId/ProcessorId/Payload
-///   and <c>ExecutionId == EntryId == Guid.Empty</c>;</item>
+///   and <c>ExecutionId == Guid.Empty</c> + <c>EntryId == ""</c>;</item>
 ///   <item>two consecutive fires produce non-empty, DIFFERING correlationIds (per-fire NewId);</item>
 ///   <item>the L1 liveness timestamp advances to the FakeTimeProvider's now on fire, with ZERO L2
 ///   writes (transport was Send to the in-memory queue, never an L2 mutation).</item>
@@ -157,7 +157,7 @@ public sealed class FireDispatchTests
                     Assert.Equal(processorId, msg.ProcessorId);
                     Assert.Equal(payload, msg.Payload);
                     Assert.Equal(Guid.Empty, msg.ExecutionId);
-                    Assert.Equal(Guid.Empty, msg.EntryId);
+                    Assert.Equal("", msg.EntryId);   // Plan 04 changes this to the non-empty hash (req-2)
                     Assert.NotEqual(Guid.Empty, msg.CorrelationId);
                 }
 

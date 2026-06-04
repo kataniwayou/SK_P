@@ -140,8 +140,12 @@ internal static class DispatchTestKit
         new(redis, context, processor, Options(executionDataTtlSeconds), sendProvider,
             Metrics(), NullLogger<EntryStepDispatchConsumer>.Instance);
 
-    /// <summary>An <see cref="EntryStepDispatch"/> with the given correlation + entry id.</summary>
-    public static EntryStepDispatch Dispatch(Guid entryId, Guid correlationId, string payload = "{\"cfg\":1}") =>
+    /// <summary>
+    /// An <see cref="EntryStepDispatch"/> with the given correlation + entry id. <paramref name="entryId"/>
+    /// is now a string content address (Plan 02 Guid->string ripple); default <c>""</c> is the no-input
+    /// source-step sentinel (was <c>Guid.Empty</c>).
+    /// </summary>
+    public static EntryStepDispatch Dispatch(string entryId, Guid correlationId, string payload = "{\"cfg\":1}") =>
         new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), payload)
         {
             CorrelationId = correlationId,

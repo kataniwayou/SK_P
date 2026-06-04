@@ -22,7 +22,7 @@ public sealed class DispatchAckSemanticsFacts
     public async Task OutputWriteFault_Propagates()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid();
+        var entryId = Guid.NewGuid().ToString("D");
         // Input read succeeds; the StringSetAsync (output write) throws RedisConnectionException.
         var redis = DispatchTestKit.PresentReadWriteFaultL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = "{}" }, out _);
@@ -48,7 +48,7 @@ public sealed class DispatchAckSemanticsFacts
 
         await Assert.ThrowsAsync<RedisConnectionException>(() => consumer.Consume(
             OrchestratorTestStubs.Context(
-                DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), ct)));
+                DispatchTestKit.Dispatch(entryId: Guid.NewGuid().ToString("D"), correlationId: Guid.NewGuid()), ct)));
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class DispatchAckSemanticsFacts
 
         // Business: does NOT throw — sends a Failed and returns (ack).
         await consumer.Consume(OrchestratorTestStubs.Context(
-            DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), ct));
+            DispatchTestKit.Dispatch(entryId: Guid.NewGuid().ToString("D"), correlationId: Guid.NewGuid()), ct));
 
         var sent = Assert.Single(send.Sent);
         Assert.Equal(StepOutcome.Failed, sent.Outcome);
