@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Phase 36 Plan 04 authored (RealStack recover/give-up E2E; live half operator-pending)
+status: ready_to_plan
+stopped_at: Phase 36 complete (hermetic 5/5 SC verified; live recover/give-up + kill-mid-loop operator-pending) — ready to plan Phase 37
 last_updated: "2026-06-06T00:38:00.000Z"
 last_activity: 2026-06-06 -- Phase 36 Plan 04 authored (KeeperRecoveryE2ETests RealStack recover-both-paths + give-up; live operator-gated)
 progress:
   total_phases: 24
-  completed_phases: 22
+  completed_phases: 23
   total_plans: 80
   completed_plans: 80
-  percent: 100
+  percent: 96
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 36 — l2-health-probe-recovery-loop-dlqs
+**Current focus:** Phase 37 — Orchestrator Pause/Resume Coordination (Phase 36 complete — hermetic 5/5, live operator-pending)
 
 ## Current Position
 
-Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 3/6 complete — Phase 35 authored, SC3 live operator-pending)
-Phase: 36 (l2-health-probe-recovery-loop-dlqs) — 4/4 PLANS AUTHORED (live half operator-pending)
-Plan: 4 of 4 complete
-Status: Phase 36 complete (hermetic-green + authored RealStack recover/give-up; live operator-gated, Phase-39 authoritative). Milestone v3.7.0 continues — Phases 37/38 remain.
-Last activity: 2026-06-06 -- Phase 36 Plan 04 authored (KeeperRecoveryE2ETests RealStack recover-both-paths + give-up; live operator-gated)
+Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
+Phase: 37
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-06-06
 
 ### Phase 36 Plan 04 — AUTHORED, LIVE recover/give-up OPERATOR-PENDING (KeeperRecoveryE2ETests RealStack recover-both-paths + give-up; PROBE-03/04/05 live-gated; 2026-06-06)
 
@@ -521,7 +521,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 127
+- Total plans completed: 131
 - Average duration: —
 - Total execution time: —
 
@@ -562,6 +562,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 33 | 2 | - | - |
 | 34 | 3 | - | - |
 | 35 | 3 | - | - |
+| 36 | 4 | - | - |
 
 **Recent Trend:**
 
