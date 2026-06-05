@@ -104,9 +104,15 @@ No bugs in the gate logic, no blocking issues, no architectural decisions (Rule 
 - `git ls-files scripts/ | grep -c phase-32.1-close` == **1** — the 32.1 gate STAYS (this is an ADD, not a rename).
 - `git diff --name-only` (Task 1 commit) shows ONLY `scripts/phase-33-close.ps1` — no `src/`, no test changes. No file deletions in the commit.
 
-## Pending Verification (operator-gated — Task 2, autonomous:false; do-not-block)
+## Live Verification — RESOLVED (operator gate PASSED 2026-06-05)
 
-The LIVE trip → recover → re-inject → collapse proof + the close gate require the full v3.7.0 compose stack up healthy with **REBUILT** `processor-sample`/`orchestrator`/`baseapi-service` containers (embedded SourceHash must match the host build — Pitfall 5). This is NOT runnable or observable in a non-interactive executor. **INTAKE-01 / INTAKE-02 / INTAKE-04 / PROBE-06's LIVE half flips to complete, and the plan/phase counter advances, ONLY when the operator reports `GATE_EXIT=0`** (the authored artifact is treated as auto-approved for completing THIS plan).
+**GATE_EXIT=0.** Ran live against the rebuilt v3.7.0 compose stack (processor-sample rebuilt — only `BaseProcessor.Core` changed via d1eb585; `src/` unchanged since, so SourceHash matched). Live `FaultRecoverySpikeE2ETests` GREEN (1/1, 33s); `phase-33-close.ps1` → **GATE_EXIT=0**: 453 facts GREEN ×3 (Run 1/2/3 Exit=0, ~6 min each), Release+Debug 0-warning, triple-SHA **BEFORE==AFTER HELD** — psql `\l`=`34ac23852ac61a2fa704e7a1a30b7f85821490b0c4d0924c28b3c0dd530ca911`, redis `--scan`=`4c4187d8db6de714c337930288ef4fcf9bfa2266864a73607880320fa3e09420`, rabbitmqctl `list_queues`=`e77637a22ea726c2c9dd5a8463b999347e8809a24ab0d55291eac6fc8f089b06`. Net-zero held. INTAKE-01/02/04 + PROBE-06 LIVE half COMPLETE; 33-HUMAN-UAT.md → passed.
+
+**Result-trip path used: D-06 synthetic fallback.** Two trip recipes in the Plan-01 spike were corrected first (commit `c2d6ea6`, test-only, D-03 held): (1) the **dispatch** trip poisoned the processor OUTPUT key expecting `StringSetAsync` to WRONGTYPE — but Redis `SET` overwrites any type with a string (no WRONGTYPE; proven live), so the poison was re-pointed to the effect-first dedup-gate `flag[dispatch.H]` GET (which DOES WRONGTYPE on a list); (2) the **result** trip can't be tripped live because the spike never starts orchestration (the orchestrator owns no L1 entry → `ResultConsumer` takes its L1-miss business-ack before flipping `flag[resultH]`), so it uses the plan's pre-committed `PublishSyntheticResultFaultAsync` to prove second-type bind + double-`.Message` unwrap; re-inject-by-type retained; PROBE-06 collapse proven live on the dispatch hop. The product behavior (orchestrator publishes `Fault<ExecutionResult>` on a real L2 outage) is confirmed sound in src — `ResultConsumer`'s first op IS `StringGetAsync(Flag(m.H))`.
+
+---
+
+_Historical (now resolved) — original do-not-block operator runbook:_ The LIVE trip → recover → re-inject → collapse proof + the close gate require the full v3.7.0 compose stack up healthy with **REBUILT** `processor-sample`/`orchestrator`/`baseapi-service` containers (embedded SourceHash must match the host build — Pitfall 5). This is NOT runnable or observable in a non-interactive executor. **INTAKE-01 / INTAKE-02 / INTAKE-04 / PROBE-06's LIVE half flips to complete, and the plan/phase counter advances, ONLY when the operator reports `GATE_EXIT=0`** (the authored artifact is treated as auto-approved for completing THIS plan).
 
 ### Runbook
 
