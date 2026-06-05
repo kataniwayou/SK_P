@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Phase 34 context gathered
-last_updated: "2026-06-05T14:22:38.171Z"
-last_activity: 2026-06-05 -- Phase 34 execution started
+stopped_at: Completed 34-01-PLAN.md
+last_updated: "2026-06-05T14:26:34Z"
+last_activity: 2026-06-05 -- Phase 34 Plan 01 complete (Keeper skeleton)
 progress:
   total_phases: 21
   completed_phases: 20
   total_plans: 73
-  completed_plans: 70
-  percent: 96
+  completed_plans: 71
+  percent: 97
 ---
 
 # Project State
@@ -27,9 +27,20 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 1/6 complete)
 Phase: 34 (Keeper Console Foundation) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 34
-Last activity: 2026-06-05 -- Phase 34 execution started
+Plan: 2 of 3
+Status: Executing Phase 34 (Plan 01 complete)
+Last activity: 2026-06-05 -- Phase 34 Plan 01 complete (Keeper skeleton)
+
+### Phase 34 Plan 01 — COMPLETE (Keeper skeleton — KeeperQueues const + Keeper.csproj + SK_P.sln registration; KEEP-01 foundation; 2026-06-05)
+
+- **3 task commits (scoped paths only — the in-progress `.planning/` archive deletions + untracked `launchSettings.json`/`psql-*.txt` left untouched, NOT staged, NOT reverted).** `2de461e` (feat: KeeperQueues.FaultRecovery const), `9838b04` (feat: Keeper.csproj leaner reference closure), `8dd36a9` (feat: SK_P.sln 3-block Keeper registration). Each touches ONLY its scoped path; no deletions in any commit.
+- **Wave 1, depends_on []. autonomous:true** — interface-first foundation: the contract surface (durable queue const) + buildable project shell that Plan 02 (console body) and Plan 03 (compose + tests) build against. NO Program.cs / consumers yet (Plan 02).
+- **Task 1 — KeeperQueues.cs:** static class mirroring `OrchestratorQueues`, single member `public const string FaultRecovery = "keeper-fault-recovery"` (DURABLE, Phase-35-enduring; the placeholder message TYPE stays LOCAL to Keeper in Plan 02 — only the const goes to Contracts, D-08). `dotnet build src/Messaging.Contracts -c Debug` 0/0.
+- **Task 2 — Keeper.csproj:** cloned from `Orchestrator.csproj`, `OutputType=Exe`, RootNamespace/AssemblyName=Keeper, `NoWarn $(NoWarn);CS1591`, MassTransit + MassTransit.RabbitMQ only (DROPS the scheduler + cron-math packages, D-07), Content appsettings copy, ProjectReferences ONLY `BaseConsole.Core` + `Messaging.Contracts` (reference firewall T-34-01). CPM-clean (no version attribute); common props inherited from Directory.Build.props. `dotnet restore` succeeds (full build deferred to Plan 02 — no Program.cs/appsettings yet, expected).
+- **Task 3 — SK_P.sln:** 3-block edit (Project decl with console-type GUID + fresh project GUID `{D4E5F6A7-8B9C-4D0E-A1F2-3456789ABCDE}`; 4 ProjectConfigurationPlatforms lines; 1 NestedProjects line under the `src` folder `{EAC83310-...}`). GUID consistent ×6; `dotnet sln SK_P.sln list` shows `src\Keeper\Keeper.csproj`; no existing project entries disturbed.
+- **Deviation (1, Rule 2 — firewall/acceptance-grep compliance):** reworded the Keeper.csproj explanatory comments to drop the literal forbidden tokens (Quartz/Cronos/BaseApi/BaseProcessor/`Version=`) the Orchestrator analog mentions in prose, so the plan's csproj acceptance greps + the Plan-03 `KeeperDependencyFirewallTests` literal-grep both hold. Comment-only; zero behavioral/reference change. No auth gates, no architectural decisions.
+- **Verification (all green):** V1 `dotnet build src/Messaging.Contracts -c Debug` 0/0; V2 `dotnet restore src/Keeper/Keeper.csproj` succeeds; V3 `dotnet sln SK_P.sln list` includes Keeper; csproj forbidden-string greps all 0, required-string greps all ≥1; GUID ×6 in sln. No file deletions across the 3 commits.
+- SUMMARY: 34-01-SUMMARY.md (Self-Check PASSED). KEEP-01 foundation slice lands; full KEEP-01 (runnable Keeper) completes across Plan 02/03. Phase 34 = 1/3 plans complete; **Plan 02** (console body: Program.cs + appsettings + Dockerfile + placeholder consumer/definition/message) next.
 
 ### Phase 33 Plan 02 — COMPLETE, LIVE GATE PASSED (phase-33-close.ps1 GATE_EXIT=0; INTAKE-01/02/04 + PROBE-06 live half PROVEN; 2026-06-05)
 
