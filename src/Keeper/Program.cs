@@ -18,14 +18,20 @@ builder.AddBaseConsoleObservability(builder.Configuration);   // metrics-only OT
 builder.Services.AddBaseConsole(builder.Configuration);       // Redis soft-dep + embedded health + default readiness service (KEPT — D-06)
 
 // DLQ-04 / D-09 — bind the shared Immediate(N) retry budget from the "Retry" section (the single
-// source of truth PlaceholderConsumerDefinition.UseMessageRetry reads). Phase 35/36 consumers inherit this pattern.
+// source of truth the fault consumer definition's UseMessageRetry reads). Phase 36 consumers inherit this pattern.
 builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
 
-// D-02 — plain AddConsumer + stable EndpointName = competing-consumer (round-robin), NOT the
-// Start/Stop per-replica fan-out. NO per-replica auto-delete endpoint override anywhere — the
-// stable durable shared queue is the whole point (KEEP-02 + net-zero close-gate SHA, Pitfall 1).
-builder.Services.AddBaseConsoleMessaging(builder.Configuration,
-    x => x.AddConsumer<PlaceholderConsumer, PlaceholderConsumerDefinition>());
+// D-02/D-03 — the two REAL fault consumers colocate on the ONE stable shared durable queue
+// keeper-fault-recovery (competing-consumer round-robin, NOT the Start/Stop per-replica fan-out).
+// Plain AddConsumer + the same stable EndpointName on both definitions => one durable queue binding
+// both Fault<T> message-type exchanges, present in BOTH close-gate rabbitmq snapshots (net-zero
+// triple-SHA, Pitfall 1). NO per-replica auto-delete endpoint override anywhere (KEEP-02). The
+// endpoint-level retry is owned solely by FaultEntryStepDispatchConsumerDefinition (Pitfall 3).
+builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
+{
+    x.AddConsumer<FaultEntryStepDispatchConsumer, FaultEntryStepDispatchConsumerDefinition>();
+    x.AddConsumer<FaultExecutionResultConsumer,   FaultExecutionResultConsumerDefinition>();
+});
 
 var host = builder.Build();
 await host.RunAsync();

@@ -13,7 +13,7 @@ namespace BaseApi.Tests.Keeper;
 /// KEEP-01 boot fixture — subclasses <see cref="ConsoleTestHostFixture"/> (reusing its free-port pick,
 /// DEAD-Redis/unreachable-RabbitMQ in-memory config, and <c>IAsyncLifetime</c> Start/Stop) and OVERRIDES
 /// <c>ConfigureBuilder</c> to compose Keeper's exact runtime seam: the three AddBaseConsole* calls PLUS
-/// the placeholder consumer registration + the <c>RetryOptions</c> binding (mirrors Keeper's Program.cs).
+/// the two fault consumer registrations + the <c>RetryOptions</c> binding (mirrors Keeper's Program.cs).
 /// <para>
 /// Boots against dead Redis + unreachable RabbitMQ; the kept default readiness service flips readiness on
 /// <c>Host.StartAsync</c> (D-06, Keeper has no hydration). <c>IBusControl</c> stays resolvable.
@@ -34,9 +34,12 @@ public sealed class KeeperHostBootFixture : ConsoleTestHostFixture
             ["Retry:Limit"]    = "3",
             ["Retry:Strategy"] = "Immediate",
         });
-        // Bind RetryOptions so PlaceholderConsumerDefinition's IOptions<RetryOptions> ctor resolves.
+        // Bind RetryOptions so FaultEntryStepDispatchConsumerDefinition's IOptions<RetryOptions> ctor resolves.
         builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
-        builder.Services.AddBaseConsoleMessaging(builder.Configuration,
-            x => x.AddConsumer<PlaceholderConsumer, PlaceholderConsumerDefinition>());
+        builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
+        {
+            x.AddConsumer<FaultEntryStepDispatchConsumer, FaultEntryStepDispatchConsumerDefinition>();
+            x.AddConsumer<FaultExecutionResultConsumer,   FaultExecutionResultConsumerDefinition>();
+        });
     }
 }

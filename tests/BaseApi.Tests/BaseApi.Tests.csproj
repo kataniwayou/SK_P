@@ -125,10 +125,11 @@
          StartStopConsumerAckTests registers the real consumers + definitions on an in-memory
          bus to prove the business-ack / infra-throw split + no-Redis-writes + seam log. -->
     <ProjectReference Include="..\..\src\Orchestrator\Orchestrator.csproj" />
-    <!-- Phase 34 addition (Plan 34-03): the Keeper console under hermetic harness validation.
-         KeeperRoundRobinTests / KeeperHostBoot* / KeeperDependencyFirewallTests reference
-         Keeper.Consumers.{PlaceholderConsumer,PlaceholderConsumerDefinition,KeeperPlaceholder}
-         and the firewall test reflects the Keeper assembly's GetReferencedAssemblies(). -->
+    <!-- Phase 34 addition (Plan 34-03), Phase 35 rewire (Plan 35-02): the Keeper console under
+         hermetic harness validation. KeeperRoundRobinTests / KeeperHostBoot* /
+         KeeperDependencyFirewallTests / KeeperFaultConsumerScopeTests reference the two real fault
+         consumers Keeper.Consumers.{FaultEntryStepDispatchConsumer,FaultExecutionResultConsumer} +
+         their definitions, and the firewall test reflects the Keeper assembly's GetReferencedAssemblies(). -->
     <ProjectReference Include="..\..\src\Keeper\Keeper.csproj" />
     <!-- Phase 26 addition (Plan 26-01): the BaseProcessor.Core library under standalone
          validation. The Processor/* test slice asserts the SourceHash seam, the IProcessorContext

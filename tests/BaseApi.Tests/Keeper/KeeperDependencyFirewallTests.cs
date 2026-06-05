@@ -25,7 +25,7 @@ public sealed class KeeperDependencyFirewallTests
 {
     // Anchor on a Keeper type so the firewall reflects the actual Keeper.dll reference closure.
     private static readonly Assembly KeeperAssembly =
-        typeof(global::Keeper.Consumers.PlaceholderConsumer).Assembly;
+        typeof(global::Keeper.Consumers.FaultEntryStepDispatchConsumer).Assembly;
 
     private static readonly string[] ForbiddenPrefixes =
     [
