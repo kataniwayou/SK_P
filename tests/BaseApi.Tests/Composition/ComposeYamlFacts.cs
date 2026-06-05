@@ -158,6 +158,57 @@ public sealed class ComposeYamlFacts
         Assert.Matches(new Regex(@"(?ms)processor-sample:[\s\S]*?Processor__ExecutionDataTtl:\s*""5"""), content);
     }
 
+    // ---- Phase 34 (KEEP-03) — keeper service block guards (block-scoped) ----
+
+    [Fact]
+    public void ComposeYaml_Has_Keeper_Service_Block()
+    {
+        var content = ComposeYamlContent();
+        // KEEP-03 — the keeper tier builds from the Keeper Dockerfile and probes 8083.
+        Assert.Matches(new Regex(@"dockerfile:\s*src/Keeper/Dockerfile"), content);
+        Assert.Matches(new Regex(@"http://localhost:8083/health/ready"), content);
+    }
+
+    [Fact]
+    public void ComposeYaml_Keeper_Declares_Two_Replicas()
+    {
+        var content = ComposeYamlContent();
+        // D-04 — deploy.replicas: 2, scoped to the keeper block via a TEMPERED-greedy window
+        // `(?:(?!^  \S).)*?` that refuses to cross a `^  \S` top-level service header, so a
+        // neighbouring tier's deploy: block could never false-pass.
+        Assert.Matches(new Regex(@"(?ms)^  keeper:(?:(?!^  \S).)*?deploy:\s*\n\s*replicas:\s*2"), content);
+    }
+
+    [Fact]
+    public void ComposeYaml_Keeper_Has_No_ContainerName()
+    {
+        var content = ComposeYamlContent();
+        // D-04 — a named container cannot scale. The file's OTHER tiers (orchestrator,
+        // processor-sample, redis...) legitimately set container_name, so a plain block-prefix
+        // `[\s\S]*?` would walk PAST the keeper block into a neighbour and FALSE-PASS (verified —
+        // it returns a match against the real file). The TEMPERED-greedy token
+        // `(?:(?!^  \S).)*?` matches only chars that do NOT begin a new `^  \S` service header,
+        // bounding the window to the keeper block. Empirically confirmed: NO match on the real
+        // keeper block (assertion passes) AND a match if a container_name line is planted inside
+        // the keeper block (regression caught).
+        Assert.DoesNotMatch(
+            new Regex(@"(?ms)^  keeper:(?:(?!^  \S).)*?container_name:"),
+            content);
+    }
+
+    [Fact]
+    public void ComposeYaml_Keeper_Has_No_BaseApi_Dependency()
+    {
+        var content = ComposeYamlContent();
+        // D-05 — Keeper resolves no identity over the WebApi; the keeper block must NOT depend on
+        // baseapi-service (which IS a real depends_on / service of other tiers). Same tempered-greedy
+        // block-scoping as the container_name fact above (a plain prefix-glob would cross into the
+        // processor-sample / baseapi-service tiers and false-pass).
+        Assert.DoesNotMatch(
+            new Regex(@"(?ms)^  keeper:(?:(?!^  \S).)*?baseapi-service:"),
+            content);
+    }
+
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

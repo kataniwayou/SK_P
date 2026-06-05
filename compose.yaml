@@ -213,6 +213,44 @@ services:
       retries: 5
       start_period: 30s
 
+  # Phase 34 (KEEP-03 / D-04/D-05) — the Keeper fault-recovery console tier. Mirrors the
+  # orchestrator tier with the scaling divergences:
+  #   (1) NO container_name (D-04 — a named container cannot be scaled; Compose Spec).
+  #   (2) deploy.replicas: 2 (D-04 — `docker compose up` brings up 2 replicas that round-robin the
+  #       single durable shared queue keeper-fault-recovery; KEEP-02 live half).
+  #   (3) NO baseapi-service dependency (D-05 — Keeper resolves no identity over the WebApi; it only
+  #       needs the broker + redis soft-dep). depends_on rabbitmq + redis service_healthy.
+  #   (4) NO Orchestrator__InstanceId env (Keeper has no instance-id concept).
+  #   (5) NO ports: block — 8083 is container-internal only (nothing published; two replicas share
+  #       the same internal port harmlessly). Health probe on 8083 (BaseConsole embedded Kestrel,
+  #       HARD-on-broker /health/ready). Build target src/Keeper/Dockerfile (aspnet:8.0, wget).
+  # Compose-DNS hosts rabbitmq/redis/otel-collector; guest/guest dev creds from the env block,
+  # never the image (T-34-07).
+  keeper:
+    build:
+      context: .
+      dockerfile: src/Keeper/Dockerfile
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: guest
+      RabbitMq__Password: guest
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=5000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8083/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
   # Phase 28 (SAMPLE-02) — first runnable Processor.Sample container. Builds from the new
   # multi-stage net8.0 Dockerfile (aspnet:8.0 runtime — BaseConsole.Core's embedded Kestrel health
   # listener needs the ASP.NET shared framework). Port 8082 matches ConsoleHealth:Port. Mirrors the
