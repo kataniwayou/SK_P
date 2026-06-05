@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: milestone_complete
-stopped_at: Authored 32.1-02-PLAN.md (live GATE_EXIT=0 operator gate PENDING)
+stopped_at: Phase 32.1 close gate PASSED (GATE_EXIT=0) — milestone v3.6.0 fully verified
 last_updated: "2026-06-05T00:00:00.000Z"
-last_activity: 2026-06-05 -- Phase 32.1 Plan 02 authored (phase-32.1-close.ps1; live close gate = operator gate, do-not-block)
+last_activity: 2026-06-05 -- Phase 32.1 live close gate PASSED (phase-32.1-close.ps1 GATE_EXIT=0): 3xGREEN=452 facts, Release+Debug 0-warning, triple-SHA BEFORE==AFTER all HELD (psql 34ac2385…, redis 666b99bc…, rmq 2c9b0868…), redis net-zero settle, ZERO skp:cancelled:* keys. Behavioral half also proven live via smoke tests (Prometheus processor_dispatch_consumed +4=Immediate(3)+1; {procId}_error 0→1; ES infra-fault log)
 progress:
   total_phases: 9
   completed_phases: 9
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
 
 Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
 Phase: 32.1
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-04
+Plan: Complete (2/2) — live close gate PASSED (GATE_EXIT=0)
+Status: Milestone complete — Phase 32.1 fully verified (hermetic + live close gate)
+Last activity: 2026-06-05
 
 ### Phase 32.1 Plan 02 — AUTHORED, LIVE GATE PENDING (phase-32.1-close.ps1 — clone phase-31-close, NO skp:cancelled:* scan-clean; req-5; 2026-06-05)
 
