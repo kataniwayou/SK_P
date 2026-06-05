@@ -208,7 +208,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   3. The extracted message is re-injected directly to its origin endpoint by type (`queue:{processorId:D}` for dispatch, `queue:orchestrator-result` for result) — no orchestrator round-trip — and the downstream effect happens exactly once.
   4. A deliberately duplicated re-inject collapses at the receiver via its existing `flag[H]` gate with no second downstream effect (Keeper needs no dedup of its own). The `_error`-retention decision (TTL'd-forensic vs suppress) is recorded.
 **Plans**: 2 plans
-- [ ] 33-01-PLAN.md — Author FaultRecoverySpikeE2ETests (clone rig + 6 grafts: dual Fault<T> capture, double-.Message unwrap, WRONGTYPE dispatch+result trips, a-priori H, verbatim re-inject x2, negative command-fault proof); hermetic compile + zero-regression gate [autonomous]
+- [x] 33-01-PLAN.md — Author FaultRecoverySpikeE2ETests (clone rig + 6 grafts: dual Fault<T> capture, double-.Message unwrap, WRONGTYPE dispatch+result trips, a-priori H, verbatim re-inject x2, negative command-fault proof); hermetic compile + zero-regression gate [autonomous] ✓ Release 0/0, hermetic 447/0 RealStack-excluded
 - [ ] 33-02-PLAN.md — phase-33-close.ps1 (clone phase-32.1-close) + record D-10 _error decision + operator runbook for the live trip/recover/re-inject/collapse + close gate [autonomous:false]
 
 ### Phase 34: Keeper Console Foundation

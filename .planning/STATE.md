@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: ready_to_execute
-stopped_at: Phase 33 planned (2 plans, 2 waves) — VERIFICATION PASSED. Next: /gsd-execute-phase 33
-last_updated: "2026-06-05T08:42:59.346Z"
-last_activity: "2026-06-05 — Milestone v3.7.0 roadmap created. Design forks locked: Keeper console on BaseConsole.Core; recover off Fault<EntryStepDispatch>/Fault<ExecutionResult> pub/sub (Start/Stop out of scope); bounded L2 probe loop, ack-after-loop crash survival; Keeper-direct re-inject riding the receiver's flag[H]; per-workflow pause/resume state in the single-replica orchestrator L1; two DLQs split by mechanism (Immediate(N) → DLQ-1 forensic; probe give-up → keeper-dlq alert). Phases 33→38. Prior milestone v3.6.0 SHIPPED + ARCHIVED (tagged v3.6.0). v3.5.0 formal archival deferred (requirements snapshot at milestones/v3.5.0-REQUIREMENTS.md)."
+status: executing
+stopped_at: Completed 33-01-PLAN.md (Plan 02 = operator-gated live run + close gate)
+last_updated: "2026-06-05T09:00:19Z"
+last_activity: 2026-06-05 -- Phase 33 Plan 01 complete (FaultRecoverySpikeE2ETests authored)
 progress:
   total_phases: 20
   completed_phases: 19
   total_plans: 70
-  completed_plans: 68
-  percent: 97
+  completed_plans: 69
+  percent: 98
 ---
 
 # Project State
@@ -21,15 +21,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** No milestone active — next milestone planning begins with `/gsd-new-milestone`.
+**Current focus:** Phase 33 — fault-recovery-spike-de-risk
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05
-Phase: 33 (Fault-Recovery Spike) — planned, ready to execute
-Plan: 33-01 (author spike, autonomous) + 33-02 (close gate + operator live-run gate, autonomous:false)
-Status: Phase 33 planned — 2 plans / 2 waves, plan-checker VERIFICATION PASSED (12/12 dimensions, 4/4 REQ-IDs covered). CONTEXT + RESEARCH + PATTERNS + VALIDATION committed. Next: /gsd-execute-phase 33.
-Last activity: 2026-06-05 — Phase 33 discuss + plan complete. Spike de-risks the milestone: one RealStack E2E test (clone of IdempotentExactlyOnceE2ETests) proves Fault<EntryStepDispatch>/Fault<ExecutionResult> pub/sub capture → 6-id+H unwrap via context.Message.Message → verbatim re-inject by type (queue:{procId:D} / orchestrator-result) → Phase-31 flag[H] duplicate-collapse, plus the Fault<Start/Stop> negative proof. Both faults tripped live via the WRONGTYPE recipe (dispatch unambiguous; result has the Pitfall-1 pre-write window + D-06 synthetic fallback). Live trip + phase-33-close.ps1 are an autonomous:false operator gate (rebuilt containers). _error = TTL'd forensic → source-agnostic DLQ-1 (recorded, D-10); no metric work (D-11). Wave 1 autonomous; Wave 2 operator-gated.
+Phase: 33 (fault-recovery-spike-de-risk) — EXECUTING
+Plan: 2 of 2 (Plan 01 complete; Plan 02 is the operator-gated live run + close gate)
+Status: Executing Phase 33 — Plan 01 authored + committed (Release 0/0, hermetic 447/0, RealStack-excluded)
+Last activity: 2026-06-05 -- Phase 33 Plan 01 complete (FaultRecoverySpikeE2ETests authored)
+
+### Phase 33 Plan 01 — COMPLETE (FaultRecoverySpikeE2ETests authored; bind -> unwrap -> re-inject-by-type -> flag[H]-collapse + negative proof; INTAKE-01/02/04 + PROBE-06; 2026-06-05)
+
+- **3 task commits (scoped paths only — the in-progress `.planning/` archive deletions + untracked psql-*.txt/launchSettings.json/.claude/27-PATTERNS.md left untouched, NOT staged, NOT reverted).** `b21d3a6` (test: clone rig + dual Fault<T> capture probes), `9d9bfd4` (test: WRONGTYPE dispatch+result trips + a-priori H), `a56e655` (test: re-inject x2 + duplicate-collapse + negative proof). All three touch ONLY `tests/BaseApi.Tests/Orchestrator/FaultRecoverySpikeE2ETests.cs` (D-03 held — no `src/` changes).
+- **Wave 1, depends_on []. autonomous:true** — PROOF spike (D-03/D-04): one kept RealStack xUnit E2E cloned from `IdempotentExactlyOnceE2ETests` (~80% verbatim rig). Authored against the proven precedents + git-recovered Phase-32 recipes (`3aca386` double-`.Message` probe shape; `a6c6825` WRONGTYPE recipe). NO production code, NO Keeper code, NO metric work.
+- **Task 1 (GRAFT 1+2):** clone rig verbatim (RealStackWebAppFactory, seed helpers, embedded SourceHash reflection, liveness/scan/flag pollers, ES effect query, net-zero teardown), renamed `FaultRecoverySpikeE2ETests`, three traits kept (E2E + RealStack + Observability). Two nested probes `FaultDispatchProbe : IConsumer<Fault<EntryStepDispatch>>` + `FaultResultProbe : IConsumer<Fault<ExecutionResult>>`, each `context.Message.Message` (double `.Message`) into a shared 6-id + H `ConcurrentBag` (INTAKE-01 bind half, INTAKE-02 unwrap).
+- **Task 2 (GRAFT 3+4):** `ArmWrongTypePoisonAsync` (LIST -> WRONGTYPE). Dispatch trip poisons `ExecutionData(HashBlob(payload))` -> processor `:178` output write throws -> `Immediate(N)` exhausts -> `Fault<EntryStepDispatch>` captured (H == `ComputeH(corr,wf,step,proc,EntryEntryId)`). Result trip: a-priori `resultH` via blob -> manifest -> `HashManifest` -> `ComputeH`; Pitfall-1 window arm (poll `flag[resultH]` Pending pre-write, THEN poison the same key) so `ResultConsumer:65` first `StringGetAsync` throws -> `Fault<ExecutionResult>` captured. `PublishSyntheticResultFaultAsync` D-06 fallback kept (result type only). Short-lived in-test `IBusControl` registers both probes (D-02).
+- **Task 3 (GRAFT 5+6):** re-inject the EXTRACTED `Fault<T>.Message` verbatim (same H) to origin BY TYPE — dispatch -> `queue:{inner.ProcessorId:D}`, result -> `queue:orchestrator-result` — via `GetSendEndpoint`+`Send` (NOT `Publish`). One `flag[H]=Pending` seed + Ack-wait + second Send -> receiver Phase-31 `flag[H]` gate drops delivery 2; `CountEsHits==1` (the live StepB4-x2 inverse; INTAKE-04 + PROBE-06). D-09 negative: `Publish<Fault<Start/Stop>Orchestration>` via message initializer + assert ZERO captures over an 8s settle window. Net-zero teardown (orchestration/stop + register fresh data:*/flag:*; every poison key already registered).
+- **Deviations (3, all mechanical/within-scope, pre-first-green):** (1) Rule 3 — `using ExecutionResult = Messaging.Contracts.ExecutionResult;` alias for the MassTransit CS0104 ambiguity (same alias the production consumers use). (2) Rule 1 — negative-proof `Fault<T>` published via a MassTransit message INITIALIZER (anonymous `new { Message = inner }`) rather than a hand-rolled envelope (a custom type does not satisfy the `Fault<T>` framework interface). (3) Rule 1 — provenance comment reworded (`circuit-breaker E2E` not the file name) so the zero-reverted-symbols grep stays 0. No architectural changes, no auth gates, no scope creep.
+- **Verification (autonomously-verifiable signal, all green):** `dotnet build SK_P.sln -c Release` **0 Warning / 0 Error**; `dotnet test tests/BaseApi.Tests -c Debug -- --filter-not-trait "Category=RealStack"` = **Passed 447 / Failed 0** (the prior baseline; the new RealStack file adds 0 hermetic tests, `--list-tests` shows 0 matches — correctly excluded, zero regression); `grep -c "Cancelled\|WorkflowCancelled\|CancelledMarkerValue"` == 0; `git diff --name-only` across all 3 commits shows ONLY the spike test (D-03). No file deletions across the 3 commits.
+- **PENDING (Plan 02, operator gate):** the LIVE run of `FaultRecoverySpikeE2ETests` (rebuild `processor-sample orchestrator baseapi-service` first — embedded SourceHash must match) + the optional `phase-33-close.ps1`. If the result-trip Pitfall-1 window proves fragile live, switch `TripResultFaultAsync` to the kept `PublishSyntheticResultFaultAsync` D-06 fallback (the dispatch trip carries the novel risk independently). Runbook in 33-01-SUMMARY Pending-Verification.
+- SUMMARY: 33-01-SUMMARY.md (Self-Check PASSED). Phase 33 = 1/2 plans complete; Plan 02 (live run + close gate, autonomous:false) remains.
 
 ### Phase 32.1 Plan 02 — AUTHORED, LIVE GATE PENDING (phase-32.1-close.ps1 — clone phase-31-close, NO skp:cancelled:* scan-clean; req-5; 2026-06-05)
 
@@ -442,6 +454,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 30 | 4 | - | - |
 | 31 | 6 | - | - |
 | 32.1 | 2 | - | - |
+| 33 | 1 | ~10min | ~10min |
 
 **Recent Trend:**
 
@@ -929,6 +942,9 @@ Key decisions:
 - Plan 11-08b discovered multi-log-record-per-request pattern — a single sk_p HTTP request emits MULTIPLE log records sharing the same X-Correlation-Id scope (controller + framework Hosting.Diagnostics). Fix: bool/must ES query (corrId term + body.text match_phrase). Reusable for any future ES-polling fact targeting a specific log message within a scope-shared cluster.
 - Plan 11-06 Wave 0 probe empirically resolved RESEARCH Open Q1 — live ES uses `otel` shape (lowercase keys + nested attributes) DESPITE collector config `mapping.mode: none` (elasticsearchexporter@v0.152.0 emits deprecation warning + falls back to current default).
 - Plan 11-08c closing-cadence ran 3/3 on FIRST attempt — structural improvement over Plans 08-08 / 09-03 / 10-05 which all needed retry cycles; attributed to the migrated polling-based test surface no longer racing a per-test file-exporter handle.
+- Plan 33-01: re-inject forwards the EXTRACTED `Fault<T>.Message` instance VERBATIM (same H) via `GetSendEndpoint`+`Send` (NOT `Publish`, no orchestrator round-trip) — the duplicate-collapse proof rides the receiver's identical H reaching the surviving Phase-31 `flag[H]` gate.
+- Plan 33-01: the dispatch WRONGTYPE trip is the standalone novel-risk carrier; the result trip is the second endpoint/type proof, window-armed against Pitfall-1 (poll the processor `flag[resultH]=Pending` pre-write THEN poison the same key) with a `PublishSyntheticResultFaultAsync` D-06 fallback kept available.
+- Plan 33-01: `Fault<T>` is a MassTransit framework INTERFACE — publish it for the D-09 type-scope negative proof via a message initializer (anonymous `new { Message = inner }`), never a hand-rolled envelope. (Reusable for any future Keeper test that must synthesize a fault.)
 
 Forward-looking notes:
 

@@ -80,10 +80,10 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| INTAKE-01 | 33 — Fault-Recovery Spike | Not started |
-| INTAKE-02 | 33 — Fault-Recovery Spike | Not started |
-| INTAKE-04 | 33 — Fault-Recovery Spike | Not started |
-| PROBE-06 | 33 — Fault-Recovery Spike | Not started |
+| INTAKE-01 | 33 — Fault-Recovery Spike | Authored (33-01) — live gate 33-02 |
+| INTAKE-02 | 33 — Fault-Recovery Spike | Authored (33-01) — live gate 33-02 |
+| INTAKE-04 | 33 — Fault-Recovery Spike | Authored (33-01) — live gate 33-02 |
+| PROBE-06 | 33 — Fault-Recovery Spike | Authored (33-01) — live gate 33-02 |
 | KEEP-01 | 34 — Keeper Console Foundation | Not started |
 | KEEP-02 | 34 — Keeper Console Foundation | Not started |
 | KEEP-03 | 34 — Keeper Console Foundation | Not started |
