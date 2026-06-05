@@ -1,0 +1,731 @@
+using System.Collections.Concurrent;
+using System.Net;
+using System.Net.Http.Json;
+using System.Reflection;
+using System.Text;
+using System.Text.Json;
+using BaseApi.Service.Features.Processor;
+using BaseApi.Service.Features.Step;
+using BaseApi.Service.Features.Workflow;
+using BaseApi.Tests.Observability.Helpers;
+using Keeper.Recovery;                                          // ProbeOutcome — referenced only in doc-comments / parity asserts
+using MassTransit;
+using Messaging.Contracts;
+using Messaging.Contracts.Hashing;
+using Messaging.Contracts.Projections;
+using StackExchange.Redis;
+using Xunit;
+using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
+
+namespace BaseApi.Tests.Keeper;
+
+/// <summary>
+/// PHASE-36 LIVE recovery proof (PROBE-03/04/05 live half) — the standing RealStack guard that the deployed
+/// Keeper container's bounded probe loop (Plan 02) drives the WHOLE recovery engine end-to-end against the real
+/// compose stack: (a) RECOVER-BOTH-PATHS — on L2 return the running container re-injects the VERBATIM inner
+/// (<see cref="EntryStepDispatch"/> → <c>queue:{ProcessorId:D}</c>, <see cref="ExecutionResult"/> →
+/// <c>queue:orchestrator-result</c>) with EXACTLY-ONCE downstream effect (the receiver's surviving Phase-31
+/// <c>flag[H]</c> gate collapses any duplicate — PROBE-06, <c>CountEsHitsAsync == 1</c>); and (b) GIVE-UP — when
+/// L2 stays down past <c>MaxAttempts</c> the loop exhausts and the ORIGINAL <c>Fault&lt;T&gt;</c> envelope (carries
+/// <c>Exceptions[]</c> for triage) is parked to <see cref="KeeperQueues.DeadLetter"/> (<c>keeper-dlq</c>). The new
+/// probe scratch-key family <c>skp:keeper:probe:*</c> (<see cref="L2ProjectionKeys.KeeperProbe(string)"/>) is
+/// net-zero (its 30s TTL self-cleans).
+/// </summary>
+/// <remarks>
+/// <para>
+/// SIBLING CLONE of <see cref="global::BaseApi.Tests.Orchestrator.FaultRecoverySpikeE2ETests"/> (the Phase-33
+/// spike is left UNTOUCHED) and the Phase-35
+/// <see cref="global::BaseApi.Tests.Orchestrator.KeeperFaultIntakeE2ETests"/> (the running-Keeper-container
+/// observe pattern, D-09). It REUSES verbatim the genuine embedded-SourceHash reflection, the truthful
+/// <c>PollForHealthyLivenessAsync</c> liveness gate, the <c>RealStackWebAppFactory</c> host-stack overrides
+/// (incl. <c>OTEL_EXPORTER_OTLP_ENDPOINT</c>), the proven WRONGTYPE live-trip (<c>ArmWrongTypePoisonAsync</c> —
+/// a LIST poison on a GET key), <c>PollEsForLog</c> / <c>CountEsHitsAsync</c> (ES body is <c>body.text</c>), and
+/// the net-zero <c>skp:*</c> teardown.
+/// </para>
+/// <para>
+/// THE PHASE-36 DELTA vs the Phase-35 intake test: there is NO in-test probe loop. The RUNNING Keeper container
+/// (D-09, like <see cref="global::BaseApi.Tests.Orchestrator.KeeperFaultIntakeE2ETests"/>) consumes the published
+/// <c>Fault&lt;T&gt;</c>, runs its OWN deployed probe loop, and re-injects | parks. This test merely INDUCES the
+/// fault, controls L2 health (clear poison to simulate L2 return; leave it to force give-up), and OBSERVES the
+/// container's effect — exactly-once downstream effect (ES) on recover; <c>keeper-dlq</c> depth on give-up. In-test
+/// probes bind <c>queue:orchestrator-result</c> (catch the re-injected result) and <c>queue:keeper-dlq</c> (catch
+/// the parked envelope, then ack-drain it → net-zero terminal queue for the Phase-39 gate).
+/// </para>
+/// <para>
+/// OPERATOR GATE (auto-approve-human-verify precedent, Phases 33–35): the authored test is the deliverable. The
+/// live GREEN run requires the rebuilt compose stack — ALL of keeper + processor-sample + orchestrator +
+/// baseapi-service must be rebuilt (the Plan-03 BaseConsole.Core consolidated-error-transport change is embedded
+/// in every console image, and the keeper SourceHash must match this phase's code; a stale keeper runs the
+/// Phase-34 placeholder and never probes, Pitfall 5). The VALIDATION.md Manual-Only kill-mid-loop run (PROBE-05
+/// at-least-once) and Phase-39's 3×GREEN triple-SHA close gate are the authoritative live signals — see the
+/// 36-04-SUMMARY Pending-Verification runbook. Tagged <c>Category=RealStack</c> so the hermetic filter excludes it
+/// (this file adds ZERO hermetic tests); placed in the <c>Observability</c> collection so its env-var-in-ctor host
+/// overrides are serialized with the other observability E2E fixtures.
+/// </para>
+/// </remarks>
+[Trait("Category", "E2E")]
+[Trait("Category", "RealStack")]
+[Collection("Observability")]
+public sealed class KeeperRecoveryE2ETests
+{
+    // The processor-side content-addressed-write log line (EntryStepDispatchConsumer step 3) — the downstream
+    // EFFECT marker. One per distinct dispatch identity; the deduped duplicate adds none (PROBE-06).
+    private const string DownstreamEffectMessage = "step output written content-addressed";
+
+    // The dispatch payload the recovered step carries; SampleProcessor echoes it as the single output blob.
+    private const string DispatchTripPayload = "keeper-recover-dispatch-trip";
+
+    // The result-path payload; the a-priori resultH chain (HashBlob -> manifest -> HashManifest -> ComputeH)
+    // is computed from this so the orchestrator-result re-inject can be addressed before the round-trip runs.
+    private const string ResultTripPayload = "keeper-recover-result-trip";
+
+    // The live processor-sample container resolves identity + binds + MarkHealthy after the DB row is seeded
+    // (compose start_period + identity-resolve latency); allow a generous budget.
+    private const int LivenessPollTimeoutMs = 90_000;
+
+    // The deployed Keeper container must consume the Fault<T>, probe (recover within the loop window), and the
+    // re-injected dispatch must round-trip + write output via otel -> ES; tolerate flush + ingest latency.
+    private const int OutputPollTimeoutMs = 120_000;
+
+    // otel/log export is async; tolerate flush + ingest latency on the downstream-effect ES proof.
+    private const int EsPollTimeoutMs = 120_000;
+
+    // GIVE-UP: with the deployed default Probe (DelaySeconds=5 × MaxAttempts=12 = 60s), the loop exhausts ~60s
+    // after the Fault<T> is consumed; allow the full window + Immediate(N) exhaustion + park latency + slack.
+    // (Operators MAY set a small Probe__MaxAttempts on the keeper container to shorten this — see the runbook.)
+    private const int DlqParkPollTimeoutMs = 180_000;
+
+    // Capture bag for the in-test probe bound to queue:orchestrator-result — the re-injected verbatim
+    // ExecutionResult the running Keeper container forwards on Recovered (PROBE-03, second type).
+    private readonly ConcurrentBag<(string h, Guid corr, Guid step)> _reinjectedResults = new();
+
+    // Capture bag for the in-test probe bound to queue:keeper-dlq — the parked ORIGINAL Fault<T> envelope the
+    // running Keeper container forwards on GaveUp (PROBE-04). Drained (acked) on capture → net-zero terminal queue.
+    private readonly ConcurrentBag<string> _parkedDlqHashes = new();
+
+    // ====================================================================================================
+    // FACT 1 — RECOVER-BOTH-PATHS (PROBE-03 live). Trip a live Fault<EntryStepDispatch>, let the deployed
+    // Keeper container probe-recover + re-inject verbatim to the processor with EXACTLY-ONCE effect; then prove
+    // the second type (Fault<ExecutionResult>) re-injects verbatim to queue:orchestrator-result.
+    // ====================================================================================================
+    [Fact]
+    public async Task KeeperRecovery_RecoversBothPaths()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        await using var factory = new RealStackWebAppFactory();
+        await factory.InitializeAsync();
+        using var client = factory.CreateClient();
+
+        // Read the GENUINE embedded SourceHash off the BUILT Processor.Sample assembly — the same way
+        // AssemblyMetadataSourceHashProvider does at runtime. NOT synthetic, NOT recomputed.
+        // NOTE (operator gate): rebuild keeper + processor-sample + orchestrator + baseapi-service before the run
+        // — the keeper SourceHash must match this phase's code AND the Plan-03 BaseConsole.Core error-transport
+        // change is embedded in all three console images (a stale keeper runs the Phase-34 placeholder, Pitfall 5).
+        var hash = typeof(global::Processor.Sample.SampleProcessor).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .First(a => a.Key == "SourceHash").Value!;
+
+        var procId = await SeedProcessorAsync(client, hash, ct);
+        var stepId = await SeedStepAsync(client, procId, name: "KeeperRecoverStep", nextStepIds: null, ct);
+        var wfId = await SeedWorkflowAsync(client, new List<Guid> { stepId }, cron: "* * * * *", ct);
+
+        // Pitfall 3 / D-07: only proceed once the REAL processor-sample container's skp:{procId:D} Healthy
+        // heartbeat is fresh (the live container resolved identity + bound + MarkHealthy).
+        await PollForHealthyLivenessAsync(procId, ct);
+
+        factory.ParentIndexMembersToSrem.Add(wfId.ToString("D"));
+        factory.L2KeysToCleanup.Add($"skp:{wfId}");
+        factory.L2KeysToCleanup.Add($"skp:{wfId}:{stepId}");
+
+        var dataKeysBefore = ScanKeys("data:*");
+        var flagKeysBefore = ScanKeys("flag:*");
+        // The new Phase-36 scratch-key family snapshot — assert net-zero (the 30s TTL self-cleans).
+        var probeKeysBefore = ScanKeys("keeper:probe:*");
+
+        // ---- Build the entry-step dispatch (mirrors what WorkflowFireJob sends for the entry step). ----
+        var dCorr = NewId.NextGuid();
+        var dEntryId = MessageIdentity.EntryEntryId(dCorr, stepId);
+        var dispatchH = MessageIdentity.ComputeH(dCorr, wfId, stepId, procId, dEntryId);
+        var trippedDispatch = new EntryStepDispatch(wfId, stepId, procId, Payload: JsonSerializer.Serialize(DispatchTripPayload))
+        {
+            CorrelationId = dCorr,
+            ExecutionId = Guid.Empty,
+            EntryId = dEntryId,
+            H = dispatchH,
+        };
+
+        // Poison the inbound dedup-gate flag[dispatch.H] (the processor's FIRST L2 op, a StringGetAsync/GET) as a
+        // LIST -> WRONGTYPE on every delivery -> Immediate(N) exhausts -> Fault<EntryStepDispatch> published ->
+        // the RUNNING Keeper container consumes it off keeper-fault-recovery and starts its probe loop.
+        //
+        // PROBE-03 RECOVER timing: the Keeper probe loop READS skp:data:{entryId} + WRITES/deletes
+        // skp:keeper:probe:{h} — NEITHER of which is the poisoned flag[dispatch.H]. So the deployed probe's FIRST
+        // iteration completes cleanly => Recovered (almost immediately) and the container re-injects the verbatim
+        // dispatch to queue:{procId:D}. We CLEAR the poison right after the trip (simulate L2 return) so the
+        // re-injected delivery's dedup-gate GET succeeds and produces its real downstream effect — the receiver's
+        // surviving Phase-31 flag[H] gate then collapses any redelivery to EXACTLY-ONCE (PROBE-06).
+        var dispatchPoisonKey = L2ProjectionKeys.Flag(dispatchH);
+        await ArmWrongTypePoisonAsync(dispatchPoisonKey, ct);
+        factory.L2KeysToCleanup.Add(dispatchPoisonKey);
+
+        // ---- A-priori resultH for the second-type proof. SampleProcessor echoes its payload, so the full
+        //      result-path hash chain is computable up front: blob -> manifest JSON -> manifest entryId -> resultH.
+        var rCorr = NewId.NextGuid();
+        var rBlobHash = MessageIdentity.HashBlob(ResultTripPayload);
+        var rManifestJson = JsonSerializer.Serialize(new[] { rBlobHash });   // ["<64hex>"]
+        var rManifestEntryId = MessageIdentity.HashManifest(rManifestJson);
+        var resultH = MessageIdentity.ComputeH(rCorr, wfId, stepId, procId, rManifestEntryId);
+
+        // The short-lived in-test IBusControl (D-02) connected to live sk-rabbitmq SENDS the trip dispatch and
+        // PUBLISHES the synthetic Fault<ExecutionResult>; it also binds a probe on queue:orchestrator-result to
+        // CATCH the verbatim result the running Keeper container re-injects on Recovered. IBusControl is NOT
+        // IAsyncDisposable, so Start/Stop are bracketed explicitly in try/finally.
+        var bus = Bus.Factory.CreateUsingRabbitMq(cfg =>
+        {
+            cfg.Host("localhost", 5673, "/", h => { h.Username("guest"); h.Password("guest"); });
+            // Bind the orchestrator-result endpoint to observe the Keeper container's re-injected ExecutionResult.
+            cfg.ReceiveEndpoint(OrchestratorQueues.Result, e =>
+                e.Consumer(() => new ReinjectedResultProbe(_reinjectedResults)));
+        });
+        await bus.StartAsync(ct);
+        try
+        {
+            // ---- DISPATCH trip: Send to queue:{procId:D}; the dedup-gate GET hits the WRONGTYPE poison on every
+            //      delivery -> Immediate(N) exhausts -> Fault<EntryStepDispatch> -> the Keeper container probes
+            //      (recovers on first clean iteration) + re-injects verbatim to queue:{procId:D}. ----
+            var dispatchEndpoint = await bus.GetSendEndpoint(new Uri($"queue:{procId:D}"));
+            await dispatchEndpoint.Send(trippedDispatch, ct);
+
+            // Simulate L2 RETURN: clear the dedup-gate poison so the container's re-injected delivery's GET
+            // succeeds and produces its real effect (the collapse rides the receiver flag[H] gate, not the fault).
+            // The deployed probe recovers on its first clean iteration well within the 60s loop window, and the
+            // re-injected delivery then races the cleared poison — give the trip a brief head-start so the fault
+            // fans out + the container picks it up before we clear (the container's loop is the deciding latency).
+            await Task.Delay(2_000, ct);
+            await ClearPoisonAsync(dispatchPoisonKey, ct);
+
+            // PROBE-06 / exactly-once: the receiver's surviving Phase-31 flag[H] gate collapses any duplicate
+            // re-inject. Assert EXACTLY ONE downstream effect for the re-injected dispatch identity (the live
+            // inverse of the historical StepB4 x2 over-execution bug). Scope to (corr, stepId); 8s+ ingest settle.
+            using var es = new ElasticsearchTestClient();
+            var dispatchEffectQuery = BuildEffectQuery(dCorr, stepId);
+            var firstEffect = await es.PollEsForLog(dispatchEffectQuery, timeoutMs: EsPollTimeoutMs, ct: ct);
+            Assert.NotNull(firstEffect);
+            Assert.Contains(DownstreamEffectMessage, firstEffect!.Value.GetRawText());
+            Assert.Equal(1, await CountEsHitsAsync(dispatchEffectQuery, ct));
+
+            // ---- RESULT re-inject (second-type proof, PROBE-03). The live orchestrator result-hop trip is NOT
+            //      reachable here (no orchestration started — the spike documents the Pitfall-1 window is fragile),
+            //      so publish a synthetic Fault<ExecutionResult> (real inner ExecutionResult, H=resultH) with a
+            //      CLEAN entryId so the Keeper container's probe RECOVERS on its first clean iteration and
+            //      re-injects the VERBATIM result to queue:orchestrator-result, where our in-test probe catches it.
+            await PublishSyntheticResultFaultAsync(bus, procId, stepId, wfId, rCorr, resultH, rManifestEntryId, ct);
+
+            // Register the synthetic result's data + probe scratch keys for net-zero (clean — never poisoned).
+            factory.L2KeysToCleanup.Add(L2ProjectionKeys.ExecutionData(rManifestEntryId));
+            factory.L2KeysToCleanup.Add(L2ProjectionKeys.KeeperProbe(resultH));
+
+            var resultCap = await PollForResultReinjectAsync(resultH, ct);
+            Assert.Equal(resultH, resultCap.h);
+            Assert.Equal(rCorr, resultCap.corr);   // verbatim inner — same CorrelationId round-tripped
+        }
+        finally
+        {
+            await bus.StopAsync(ct);
+        }
+
+        // ---- Net-zero teardown. Stop the workflow so its self-rescheduling cron fire ceases, register every
+        //      run-minted skp:data:*/skp:flag:* key for deletion, and ASSERT the new skp:keeper:probe:* family is
+        //      net-zero (its 30s TTL self-cleans; the deployed probe write-then-deletes it inside the loop). ----
+        try { await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct); }
+        catch { /* best-effort net-zero teardown */ }
+
+        foreach (var key in ScanKeys("data:*"))
+            if (!dataKeysBefore.Contains(key))
+                factory.L2KeysToCleanup.Add(key);
+        foreach (var key in ScanKeys("flag:*"))
+            if (!flagKeysBefore.Contains(key))
+                factory.L2KeysToCleanup.Add(key);
+
+        // PROBE scratch family net-zero: the deployed probe write-then-deletes skp:keeper:probe:{h} inside the
+        // loop and the 30s TTL self-cleans any crash-orphan, so the family must be back to its BEFORE snapshot.
+        // Register any straggler (a probe key still inside its 30s TTL window) for deletion so the close-gate scan holds.
+        foreach (var key in ScanKeys("keeper:probe:*"))
+            if (!probeKeysBefore.Contains(key))
+                factory.L2KeysToCleanup.Add(key);
+    }
+
+    // ====================================================================================================
+    // FACT 2 — GIVE-UP (PROBE-04 live). Force the deployed Keeper probe loop to EXHAUST by poisoning the key the
+    // PROBE ITSELF reads (skp:data:{entryId}, a GET) as a LIST -> WRONGTYPE on EVERY probe iteration -> after
+    // MaxAttempts the container parks the ORIGINAL Fault<T> envelope to keeper-dlq. An in-test probe bound to
+    // queue:keeper-dlq catches the parked envelope (proving the park), then ACK-drains it -> net-zero terminal queue.
+    // ====================================================================================================
+    [Fact]
+    public async Task KeeperRecovery_GivesUp_ParksToDlq()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        await using var factory = new RealStackWebAppFactory();
+        await factory.InitializeAsync();
+        using var client = factory.CreateClient();
+
+        var hash = typeof(global::Processor.Sample.SampleProcessor).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .First(a => a.Key == "SourceHash").Value!;
+        var procId = await SeedProcessorAsync(client, hash, ct);
+        var stepId = await SeedStepAsync(client, procId, name: "KeeperGiveUpStep", nextStepIds: null, ct);
+        var wfId = await SeedWorkflowAsync(client, new List<Guid> { stepId }, cron: "* * * * *", ct);
+        await PollForHealthyLivenessAsync(procId, ct);
+
+        factory.ParentIndexMembersToSrem.Add(wfId.ToString("D"));
+        factory.L2KeysToCleanup.Add($"skp:{wfId}");
+        factory.L2KeysToCleanup.Add($"skp:{wfId}:{stepId}");
+
+        var probeKeysBefore = ScanKeys("keeper:probe:*");
+
+        // Build a synthetic Fault<ExecutionResult> whose inner carries a KNOWN entryId. The deployed Keeper probe
+        // loop reads skp:data:{entryId} as its FIRST op each iteration — poison THAT key as a LIST so the probe's
+        // StringGetAsync throws WRONGTYPE on EVERY attempt -> the loop exhausts MaxAttempts -> GaveUp -> the
+        // container parks the ORIGINAL Fault<ExecutionResult> envelope to keeper-dlq (D-09/D-10).
+        var gCorr = NewId.NextGuid();
+        var gBlobHash = MessageIdentity.HashBlob("keeper-giveup-result-trip");
+        var gManifestJson = JsonSerializer.Serialize(new[] { gBlobHash });
+        var gEntryId = MessageIdentity.HashManifest(gManifestJson);
+        var giveUpH = MessageIdentity.ComputeH(gCorr, wfId, stepId, procId, gEntryId);
+
+        var probeDataPoisonKey = L2ProjectionKeys.ExecutionData(gEntryId);   // skp:data:{entryId} — the probe's READ
+        await ArmWrongTypePoisonAsync(probeDataPoisonKey, ct);
+        factory.L2KeysToCleanup.Add(probeDataPoisonKey);
+
+        // The short-lived in-test IBusControl PUBLISHES the synthetic Fault<ExecutionResult> and binds a probe on
+        // queue:keeper-dlq to CATCH the parked envelope, then ACK-drains it (net-zero terminal queue for Phase 39).
+        var bus = Bus.Factory.CreateUsingRabbitMq(cfg =>
+        {
+            cfg.Host("localhost", 5673, "/", h => { h.Username("guest"); h.Password("guest"); });
+            cfg.ReceiveEndpoint(KeeperQueues.DeadLetter, e =>
+                e.Consumer(() => new KeeperDlqProbe(_parkedDlqHashes)));
+        });
+        await bus.StartAsync(ct);
+        try
+        {
+            await PublishSyntheticResultFaultAsync(bus, procId, stepId, wfId, gCorr, giveUpH, gEntryId, ct);
+
+            // Poll the keeper-dlq probe until the parked envelope's inner H is seen. With the deployed default
+            // Probe (5s × 12 = 60s) the loop exhausts ~60s after intake; allow the full window + park latency.
+            var parked = await PollForDlqParkAsync(giveUpH, ct);
+            Assert.Equal(giveUpH, parked);
+        }
+        finally
+        {
+            await bus.StopAsync(ct);
+        }
+
+        // Net-zero teardown: stop the workflow; the keeper-dlq parked message was ACK-drained by the in-test probe
+        // (the terminal queue is purged so the Phase-39 close-gate snapshot stays net-zero); the poisoned
+        // skp:data:{entryId} key is registered for deletion; assert the skp:keeper:probe:* family is net-zero.
+        try { await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct); }
+        catch { /* best-effort net-zero teardown */ }
+
+        foreach (var key in ScanKeys("keeper:probe:*"))
+            if (!probeKeysBefore.Contains(key))
+                factory.L2KeysToCleanup.Add(key);
+    }
+
+    // ====================================================================================================
+    // In-test capture probes (the running Keeper container is the producer; these are the observers).
+    // ====================================================================================================
+
+    /// <summary>
+    /// Binds <c>queue:orchestrator-result</c> to CATCH the verbatim <see cref="ExecutionResult"/> the running
+    /// Keeper container re-injects on <see cref="ProbeOutcome.Recovered"/> (PROBE-03, second type). Records the
+    /// inner H + CorrelationId + StepId so the test asserts the re-inject reached the correct origin endpoint by
+    /// type, verbatim (same H). No re-deserialize — the bare inner instance is delivered.
+    /// </summary>
+    private sealed class ReinjectedResultProbe(ConcurrentBag<(string h, Guid corr, Guid step)> captured)
+        : IConsumer<ExecutionResult>
+    {
+        public Task Consume(ConsumeContext<ExecutionResult> context)
+        {
+            var m = context.Message;
+            captured.Add((m.H, m.CorrelationId, m.StepId));
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Binds <c>queue:keeper-dlq</c> to CATCH the ORIGINAL <c>Fault&lt;ExecutionResult&gt;</c> envelope the running
+    /// Keeper container parks on <see cref="ProbeOutcome.GaveUp"/> (PROBE-04). The double-<c>.Message</c> unwrap
+    /// reads the inner H (proving the envelope — not the bare inner — was parked: <c>context.Message</c> is a
+    /// <c>Fault&lt;T&gt;</c> carrying <c>Exceptions[]</c>). Capturing == acking, so this DRAINS the terminal queue
+    /// (net-zero for the Phase-39 close gate — keeper-dlq must be empty in both snapshots).
+    /// </summary>
+    private sealed class KeeperDlqProbe(ConcurrentBag<string> capturedHashes)
+        : IConsumer<Fault<ExecutionResult>>
+    {
+        public Task Consume(ConsumeContext<Fault<ExecutionResult>> context)
+        {
+            capturedHashes.Add(context.Message.Message.H);   // double .Message — the parked envelope's verbatim inner
+            return Task.CompletedTask;
+        }
+    }
+
+    // ---- WRONGTYPE poison arm (git a6c6825 circuit-breaker E2E recipe, verbatim — same as the spike) ----
+
+    // A LIST key makes any subsequent String op (StringSetAsync / StringGetAsync) throw WRONGTYPE on EVERY
+    // attempt — a genuine, deterministic infra fault. Poison ONLY the named INFRA op (Pitfall 3): the dispatch
+    // dedup-gate flag[dispatch.H] read (recover fact) or the probe's skp:data:{entryId} read (give-up fact).
+    private static async Task ArmWrongTypePoisonAsync(string key, CancellationToken ct)
+    {
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        var db = mux.GetDatabase();
+        await db.KeyDeleteAsync(key);                 // start clean (a leftover string would not throw)
+        await db.ListRightPushAsync(key, "poison");   // LIST type -> a subsequent String op throws WRONGTYPE
+    }
+
+    // Clear an armed WRONGTYPE LIST poison so the receiver's real String op can succeed (the duplicate-collapse
+    // proof rides the receiver flag[H] gate, NOT the lingering infra fault) — simulates L2 return.
+    private static async Task ClearPoisonAsync(string key, CancellationToken ct)
+    {
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        await mux.GetDatabase().KeyDeleteAsync(key);
+    }
+
+    // ---- Synthetic Fault<ExecutionResult> publish (the second-type carrier; the live orchestrator result-hop
+    //      trip is not reachable without orchestration started — the spike documents this and uses the same
+    //      synthetic). Publishing the BARE inner would route to the real orchestrator (business-ack, no fault). ----
+    private static async Task PublishSyntheticResultFaultAsync(
+        IBusControl bus, Guid procId, Guid stepId, Guid wfId, Guid corr, string h, string entryId, CancellationToken ct)
+    {
+        var synthetic = new ExecutionResult(wfId, stepId, procId, StepOutcome.Completed)
+        {
+            CorrelationId = corr,
+            ExecutionId = NewId.NextGuid(),
+            EntryId = entryId,
+            H = h,
+        };
+        // Fault<T> is a MassTransit framework interface — publish it via a message INITIALIZER (anonymous object);
+        // MassTransit's dynamic-proxy initializer fills FaultId/Timestamp/Exceptions with defaults and binds the
+        // inner Message verbatim. The running Keeper container's FaultExecutionResultConsumer consumes it (D-09).
+        await bus.Publish<Fault<ExecutionResult>>(new { Message = synthetic }, ct);
+    }
+
+    // ---- Poll the in-test orchestrator-result probe until the re-injected result H is seen (Recovered). ----
+    private async Task<(string h, Guid corr, Guid step)> PollForResultReinjectAsync(string expectedH, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(OutputPollTimeoutMs);
+        var delay = 500;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            foreach (var cap in _reinjectedResults)
+                if (cap.h == expectedH)
+                    return cap;   // the Keeper container probe-recovered + re-injected the verbatim result.
+
+            await Task.Delay(Math.Min(delay, 2_000), ct);
+            delay = Math.Min(delay * 2, 2_000);
+        }
+
+        Assert.Fail(
+            $"No re-injected ExecutionResult with inner H={expectedH} arrived on queue:{OrchestratorQueues.Result} " +
+            $"within {OutputPollTimeoutMs}ms — the deployed Keeper container did not probe-recover + re-inject the " +
+            "verbatim result. Confirm the full compose stack incl. a REBUILT keeper is up healthy.");
+        throw new InvalidOperationException("unreachable"); // Assert.Fail throws — keeps the compiler happy.
+    }
+
+    // ---- Poll the in-test keeper-dlq probe until the parked envelope's inner H is seen (GaveUp). ----
+    private async Task<string> PollForDlqParkAsync(string expectedH, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(DlqParkPollTimeoutMs);
+        var delay = 1_000;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            foreach (var h in _parkedDlqHashes)
+                if (h == expectedH)
+                    return h;   // the Keeper container gave up + parked the ORIGINAL Fault<T> envelope to keeper-dlq.
+
+            await Task.Delay(Math.Min(delay, 3_000), ct);
+            delay = Math.Min(delay * 2, 3_000);
+        }
+
+        Assert.Fail(
+            $"No parked Fault<T> with inner H={expectedH} arrived on queue:{KeeperQueues.DeadLetter} within " +
+            $"{DlqParkPollTimeoutMs}ms — the deployed Keeper probe loop did not exhaust MaxAttempts + park. " +
+            "Confirm the keeper container is rebuilt + healthy (operators may set a small Probe__MaxAttempts to " +
+            "shorten the give-up window — see the 36-04-SUMMARY runbook).");
+        throw new InvalidOperationException("unreachable"); // Assert.Fail throws — keeps the compiler happy.
+    }
+
+    // ---- ES downstream-effect query + hit count (the zero-duplicate / exactly-once assertion) ----
+
+    private static string BuildEffectQuery(Guid correlationId, Guid stepId) => $$"""
+      {
+        "size": 20,
+        "track_total_hits": true,
+        "sort": [ { "@timestamp": { "order": "desc" } } ],
+        "query": {
+          "bool": {
+            "must": [
+              { "term": { "{{EsIndexNames.CorrelationIdFieldPath}}": "{{correlationId:D}}" } },
+              { "term": { "attributes.StepId": "{{stepId:D}}" } },
+              { "term": { "resource.attributes.service.name": "processor-sample" } },
+              { "wildcard": { "body.text": "*{{DownstreamEffectMessage}}*" } }
+            ]
+          }
+        }
+      }
+      """;
+
+    /// <summary>
+    /// Counts the downstream-effect hits for the query (hits.total.value). Polls briefly past the first hit so a
+    /// (hypothetical) duplicate effect — if the dedup gate ever failed — would also be ingested before the count
+    /// is read, keeping the exactly-once assertion honest rather than racy.
+    /// </summary>
+    private static async Task<int> CountEsHitsAsync(string query, CancellationToken ct)
+    {
+        using var http = new HttpClient { BaseAddress = new Uri("http://localhost:9200/") };
+
+        await Task.Delay(8_000, ct);   // settle window so a leaked duplicate would have been ingested.
+
+        var total = 0;
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            using var req = new HttpRequestMessage(
+                HttpMethod.Post, $"{EsIndexNames.LogsDataStream}/_search")
+            {
+                Content = new StringContent(query, Encoding.UTF8, "application/json"),
+            };
+            using var resp = await http.SendAsync(req, ct);
+            if (resp.IsSuccessStatusCode)
+            {
+                var json = await resp.Content.ReadAsStringAsync(ct);
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("hits", out var outer)
+                    && outer.TryGetProperty("total", out var totalEl)
+                    && totalEl.TryGetProperty("value", out var valueEl))
+                {
+                    total = valueEl.GetInt32();
+                    if (total > 0) return total;
+                }
+            }
+
+            await Task.Delay(1_500, ct);
+        }
+
+        return total;
+    }
+
+    // ---- Liveness poll (Pitfall 3): wait for the REAL container's skp:{procId:D} Healthy heartbeat ----
+
+    private static async Task PollForHealthyLivenessAsync(Guid procId, CancellationToken ct)
+    {
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        var db = mux.GetDatabase();
+        var key = L2ProjectionKeys.Processor(procId);
+
+        var deadline = DateTime.UtcNow.AddMilliseconds(LivenessPollTimeoutMs);
+        var delay = 500;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            var raw = await db.StringGetAsync(key);
+            if (!raw.IsNullOrEmpty)
+            {
+                var projection = JsonSerializer.Deserialize<ProcessorProjection>(raw!);
+                if (projection?.Liveness is { } live)
+                {
+                    var age = DateTime.UtcNow - live.Timestamp.ToUniversalTime();
+                    var staleAfter = TimeSpan.FromSeconds(Math.Max(live.Interval, 1) * 3);
+                    if (age <= staleAfter)
+                    {
+                        return; // the REAL container is Healthy — the dispatch will be processed truthfully.
+                    }
+                }
+            }
+
+            await Task.Delay(Math.Min(delay, 2_000), ct);
+            delay = Math.Min(delay * 2, 2_000);
+        }
+
+        Assert.Fail(
+            $"The processor-sample container never wrote a fresh Healthy liveness key {key} within " +
+            $"{LivenessPollTimeoutMs}ms. Either the container is down, or its embedded SourceHash diverges " +
+            $"from the host-built hash registered as the DB row. Ensure the full compose stack incl. " +
+            $"a REBUILT processor-sample is up healthy.");
+    }
+
+    /// <summary>
+    /// SCAN host Redis for all keys under a <c>skp:{discriminator}</c> family (e.g. <c>data:*</c> =
+    /// <see cref="L2ProjectionKeys.ExecutionData(string)"/>; <c>flag:*</c> = <see cref="L2ProjectionKeys.Flag"/>;
+    /// <c>keeper:probe:*</c> = <see cref="L2ProjectionKeys.KeeperProbe(string)"/>). Content addresses are
+    /// server-derived, so the keys cannot be addressed a priori — enumerate the family.
+    /// </summary>
+    private static HashSet<string> ScanKeys(string discriminator)
+    {
+        using var mux = ConnectionMultiplexer.Connect(HostRedis);
+        var endpoints = mux.GetEndPoints();
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var ep in endpoints)
+        {
+            var server = mux.GetServer(ep);
+            if (!server.IsConnected || server.IsReplica)
+            {
+                continue;
+            }
+
+            foreach (var key in server.Keys(pattern: $"{L2ProjectionKeys.Prefix}{discriminator}"))
+            {
+                keys.Add(key.ToString());
+            }
+        }
+
+        return keys;
+    }
+
+    // ---- HTTP seeding helpers (Processor -> Steps -> Workflow) — mirrors the clone source ----
+
+    private static async Task<Guid> SeedProcessorAsync(HttpClient client, string sourceHash, CancellationToken ct)
+    {
+        var lookup = await client.GetAsync($"/api/v1/processors/by-source-hash/{sourceHash}", ct);
+        if (lookup.StatusCode == HttpStatusCode.OK)
+        {
+            var existing = await lookup.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+            return existing!.Id;
+        }
+
+        var dto = new ProcessorCreateDto(
+            Name: $"sample-proc-{Guid.NewGuid():N}",
+            Version: "1.0.0",
+            Description: null,
+            SourceHash: sourceHash,
+            InputSchemaId: null,
+            OutputSchemaId: null,
+            ConfigSchemaId: null);
+        var resp = await client.PostAsJsonAsync("/api/v1/processors", dto, ct);
+        resp.EnsureSuccessStatusCode();
+        var proc = await resp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+        return proc!.Id;
+    }
+
+    private static async Task<Guid> SeedStepAsync(
+        HttpClient client, Guid processorId, string name, List<Guid>? nextStepIds, CancellationToken ct)
+    {
+        var dto = new StepCreateDto(
+            Name: $"{name}-{Guid.NewGuid():N}",
+            Version: "1.0.0",
+            Description: null,
+            ProcessorId: processorId,
+            NextStepIds: nextStepIds,
+            EntryCondition: StepEntryCondition.Always);
+        var resp = await client.PostAsJsonAsync("/api/v1/steps", dto, ct);
+        resp.EnsureSuccessStatusCode();
+        var step = await resp.Content.ReadFromJsonAsync<StepReadDto>(cancellationToken: ct);
+        return step!.Id;
+    }
+
+    private static async Task<Guid> SeedWorkflowAsync(
+        HttpClient client, List<Guid> entryStepIds, string cron, CancellationToken ct)
+    {
+        var dto = new WorkflowCreateDto(
+            Name: $"keeper-recover-wf-{Guid.NewGuid():N}",
+            Version: "1.0.0",
+            Description: null,
+            EntryStepIds: entryStepIds,
+            AssignmentIds: null,
+            CronExpression: cron);
+        var resp = await client.PostAsJsonAsync("/api/v1/workflows", dto, ct);
+        resp.EnsureSuccessStatusCode();
+        var wf = await resp.Content.ReadFromJsonAsync<WorkflowReadDto>(cancellationToken: ct);
+        return wf!.Id;
+    }
+
+    private const string HostRedis = "localhost:6380,abortConnect=false,connectTimeout=5000";
+
+    /// <summary>
+    /// Points the in-process WebApi at the REAL host stack (RMQ localhost:5673, Redis localhost:6380,
+    /// Postgres localhost:5433, otel localhost:4317) and drains net-zero teardown in
+    /// <see cref="DisposeAsync"/>. REUSED VERBATIM from
+    /// <see cref="global::BaseApi.Tests.Orchestrator.FaultRecoverySpikeE2ETests"/> — the env-var-in-ctor host
+    /// overrides + L2KeysToCleanup / ParentIndexMembersToSrem discipline are identical.
+    /// </summary>
+    private sealed class RealStackWebAppFactory : Composition.Phase8WebAppFactory
+    {
+        private readonly Dictionary<string, string?> _prior = new();
+
+        public RealStackWebAppFactory()
+            : base(
+                skipPostgresFixture: true,
+                connectionStringOverride: HostPostgres,
+                skipRedisFixture: true,
+                redisConnectionStringOverride: HostRedisFull)
+        {
+            try
+            {
+                Set("RabbitMq__Host", "localhost");
+                Set("RabbitMq__Port", "5673");
+                Set("RabbitMq__Username", "guest");
+                Set("RabbitMq__Password", "guest");
+
+                Set("ConnectionStrings__Redis", HostRedisFull);
+                Set("ConnectionStrings__Postgres", HostPostgres);
+
+                Set("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
+            }
+            catch
+            {
+                Restore();
+                throw;
+            }
+        }
+
+        private const string HostRedisFull = "localhost:6380,abortConnect=false,connectTimeout=5000";
+        private const string HostPostgres =
+            "Host=localhost;Port=5433;Database=stepsdb;Username=postgres;Password=postgres;Maximum Pool Size=20;Timeout=15";
+
+        private void Set(string key, string value)
+        {
+            _prior[key] = Environment.GetEnvironmentVariable(key);
+            Environment.SetEnvironmentVariable(key, value);
+        }
+
+        private void Restore()
+        {
+            foreach (var kv in _prior)
+            {
+                Environment.SetEnvironmentVariable(kv.Key, kv.Value);
+            }
+        }
+
+        /// <summary>
+        /// L2 keys (production "skp:" prefix) the test registers for deletion on teardown — every armed
+        /// WRONGTYPE poison key + every run-minted skp:data:{64hex} / skp:flag:{64hex} / skp:keeper:probe:{64hex}
+        /// key so the close-gate <c>redis-cli --scan</c> net-zero invariant holds. The steady-state
+        /// <c>skp:{procId:D}</c> liveness key is NOT registered (the live container keeps it fresh).
+        /// </summary>
+        public List<RedisKey> L2KeysToCleanup { get; } = new();
+
+        /// <summary>Shared <c>skp:</c> parent-index members this test SADDed (via Start) to SREM on teardown.</summary>
+        public List<RedisValue> ParentIndexMembersToSrem { get; } = new();
+
+        public override async ValueTask DisposeAsync()
+        {
+            if (L2KeysToCleanup.Count > 0 || ParentIndexMembersToSrem.Count > 0)
+            {
+                await using var cleanupMux = await ConnectionMultiplexer.ConnectAsync(HostRedisFull);
+                var db = cleanupMux.GetDatabase();
+                if (L2KeysToCleanup.Count > 0)
+                {
+                    await db.KeyDeleteAsync(L2KeysToCleanup.ToArray());
+                }
+                if (ParentIndexMembersToSrem.Count > 0)
+                {
+                    await db.SetRemoveAsync(L2ProjectionKeys.ParentIndex(), ParentIndexMembersToSrem.ToArray());
+                }
+            }
+            Restore();
+            await base.DisposeAsync();
+        }
+    }
+}
