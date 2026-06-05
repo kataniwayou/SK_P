@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Keeper — the L2-outage dead-letter recovery console (Phase 34, v3.7.0).
+    A thin Generic-Host shell on BaseConsole.Core, mirroring Orchestrator but LEANER:
+    Keeper does NOT schedule, so it omits the scheduler + cron-math packages (D-07).
+
+    Sdk="Microsoft.NET.Sdk" (NOT .Web) — this is a worker/Generic-Host console, not an MVC web
+    app. The ASP.NET Core surface (minimal Kestrel + health checks) needed at runtime for the
+    embedded health listener flows TRANSITIVELY via BaseConsole.Core's FrameworkReference
+    Microsoft.AspNetCore.App — no FrameworkReference is declared here.
+
+    Reference firewall (T-34-01): the ONLY ProjectReferences are BaseConsole.Core (infra base)
+    + the leaf Messaging.Contracts assembly — no coupling to the API or processor projects.
+    Enforced by the Plan-03 KeeperDependencyFirewallTests reflection guard.
+
+    Common build props inherit from Directory.Build.props at the repo root — DO NOT redeclare
+    them here (that defeats the single-source-of-truth purpose).
+
+    CPM: NuGet versions are pinned in Directory.Packages.props — no version attribute on any
+    PackageReference here.
+  -->
+
+  <PropertyGroup>
+    <!-- A runnable console host: top-level statements in Program.cs (Plan 02) require an
+         executable output (CS8805) and the Generic Host RunAsync entry-point produces an .exe. -->
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Keeper</RootNamespace>
+    <AssemblyName>Keeper</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit" />
+    <PackageReference Include="MassTransit.RabbitMQ" />
+    <!-- Keeper omits the scheduler + cron-math packages the Orchestrator carries (D-07):
+         Keeper does not schedule. -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Microsoft.NET.Sdk (worker) does NOT copy appsettings.json by default (unlike .Web).
+         The runnable console reads Service/RabbitMq/Redis/ConsoleHealth keys from it at boot
+         (appsettings.json lands in Plan 02), so it must land next to the assembly. -->
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BaseConsole.Core\BaseConsole.Core.csproj" />
+    <ProjectReference Include="..\Messaging.Contracts\Messaging.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
