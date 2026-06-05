@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: planning
-stopped_at: Phase 37 context gathered
-last_updated: "2026-06-05T22:57:03.393Z"
+stopped_at: Phase 37 planned (4 plans, 3 waves)
+last_updated: "2026-06-05T23:31:37.671Z"
 last_activity: 2026-06-06
 progress:
-  total_phases: 25
-  completed_phases: 23
-  total_plans: 80
-  completed_plans: 80
+  total_phases: 41
+  completed_phases: 38
+  total_plans: 137
+  completed_plans: 147
   percent: 100
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
 Phase: 37
-Plan: Not started
-Status: Ready to plan
+Plan: Planned — 4 plans in 3 waves (Wave 0: 37-01 tests; Wave 1: 37-02 contracts+scheduler; Wave 2: 37-03 orch consumers, 37-04 Keeper publish)
+Status: Ready to execute
 Last activity: 2026-06-06
 
 ### Phase 36 Plan 04 — AUTHORED, LIVE recover/give-up OPERATOR-PENDING (KeeperRecoveryE2ETests RealStack recover-both-paths + give-up; PROBE-03/04/05 live-gated; 2026-06-06)
@@ -1112,4 +1112,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 36 (l2-health-probe-recovery-loop-dlqs) — 4 plans — 2026-06-05T20:08:37.157Z
+**Planned Phase:** 37 (orchestrator-pause-resume-coordination) — 4 plans — 2026-06-05T23:31:37.657Z
