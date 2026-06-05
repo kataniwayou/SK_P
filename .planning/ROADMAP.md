@@ -222,7 +222,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   4. Keeper joins the compose stack as a new healthy tier alongside `orchestrator` / `processor-sample` (health probes report ready live).
 **Plans**: 3 plans
   - [x] 34-01-PLAN.md — KeeperQueues const + Keeper.csproj + SK_P.sln registration (KEEP-01 foundation)
-  - [ ] 34-02-PLAN.md — Keeper console body: placeholder message/consumer/definition + Program.cs + appsettings + Dockerfile (KEEP-01/02)
+  - [x] 34-02-PLAN.md — Keeper console body: placeholder message/consumer/definition + Program.cs + appsettings + Dockerfile (KEEP-01/02)
   - [ ] 34-03-PLAN.md — compose keeper tier + ComposeYamlFacts + 4 hermetic Keeper tests + live operator smoke (KEEP-01/02/03)
 
 ### Phase 35: Fault Intake & Correlation
@@ -300,7 +300,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 32. Cancelled Circuit-Breaker | v3.6.0 | 5/6 | Superseded by 32.1 | — |
 | 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 2/2 | Complete    | 2026-06-05 |
 | 33. Fault-Recovery Spike (De-Risk) | v3.7.0 | 2/2 | Complete    | 2026-06-05 |
-| 34. Keeper Console Foundation | v3.7.0 | 0/? | Not started | — |
+| 34. Keeper Console Foundation | v3.7.0 | 2/3 | In progress | — |
 | 35. Fault Intake & Correlation | v3.7.0 | 0/? | Not started | — |
 | 36. L2 Health-Probe Recovery Loop & DLQs | v3.7.0 | 0/? | Not started | — |
 | 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 0/? | Not started | — |

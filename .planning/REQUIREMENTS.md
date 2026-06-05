@@ -12,7 +12,8 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 
 ### Keeper Console Foundation (KEEP)
 
-- [ ] **KEEP-01**: A `Keeper` console exists on `BaseConsole.Core` (Generic-Host, metrics-only OTel, soft-dep Redis, embedded health probes, MassTransit/RabbitMQ, inherited correlation filters) with a minimal `Program.cs` mirroring `Orchestrator` — no infrastructure, identity, or bus boilerplate in the concrete beyond its recovery logic.
+- [x] **KEEP-01
+**: A `Keeper` console exists on `BaseConsole.Core` (Generic-Host, metrics-only OTel, soft-dep Redis, embedded health probes, MassTransit/RabbitMQ, inherited correlation filters) with a minimal `Program.cs` mirroring `Orchestrator` — no infrastructure, identity, or bus boilerplate in the concrete beyond its recovery logic.
 - [ ] **KEEP-02**: Keeper runs **multi-replica** with work load-balanced across replicas — a shared competing-consumer endpoint (not instance-unique fan-out), so RabbitMQ round-robins fault events across Keeper replicas.
 - [ ] **KEEP-03**: Keeper builds, containerizes (multi-stage Dockerfile), and joins the compose stack as a new healthy tier alongside `orchestrator` / `processor-sample`.
 
@@ -84,8 +85,8 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 | INTAKE-02 | 33 — Fault-Recovery Spike | Spike-proven LIVE (Phase 33, GATE_EXIT=0) — Keeper impl in 34–38 |
 | INTAKE-04 | 33 — Fault-Recovery Spike | Spike-proven LIVE (Phase 33, GATE_EXIT=0; result re-inject via D-06 synthetic) — Keeper impl in 34–38 |
 | PROBE-06 | 33 — Fault-Recovery Spike | Spike-proven LIVE (Phase 33, GATE_EXIT=0; collapse proven on dispatch hop) — Keeper impl in 34–38 |
-| KEEP-01 | 34 — Keeper Console Foundation | Not started |
-| KEEP-02 | 34 — Keeper Console Foundation | Not started |
+| KEEP-01 | 34 — Keeper Console Foundation | Complete (Plan 02 — runnable Keeper console: thin-shell Program.cs + appsettings(8083) + Dockerfile; builds 0-warning, docker image green) |
+| KEEP-02 | 34 — Keeper Console Foundation | Binding landed (Plan 02 — stable durable shared competing-consumer endpoint, zero fan-out); live multi-replica round-robin proof in Plan 03 (compose replicas:2 + RoundRobin test) |
 | KEEP-03 | 34 — Keeper Console Foundation | Not started |
 | INTAKE-03 | 35 — Fault Intake & Correlation | Not started |
 | KMET-04 | 35 — Fault Intake & Correlation | Not started |

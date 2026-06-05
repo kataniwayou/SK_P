@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 34-01-PLAN.md
-last_updated: "2026-06-05T14:26:34Z"
-last_activity: 2026-06-05 -- Phase 34 Plan 01 complete (Keeper skeleton)
+stopped_at: Phase 34 context gathered
+last_updated: "2026-06-05T14:38:15.308Z"
+last_activity: 2026-06-05 -- Phase 34 Plan 02 complete (Keeper console body)
 progress:
   total_phases: 21
   completed_phases: 20
   total_plans: 73
-  completed_plans: 71
-  percent: 97
+  completed_plans: 72
+  percent: 99
 ---
 
 # Project State
@@ -27,9 +27,20 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 1/6 complete)
 Phase: 34 (Keeper Console Foundation) — EXECUTING
-Plan: 2 of 3
-Status: Executing Phase 34 (Plan 01 complete)
-Last activity: 2026-06-05 -- Phase 34 Plan 01 complete (Keeper skeleton)
+Plan: 3 of 3
+Status: Executing Phase 34 (Plan 02 complete)
+Last activity: 2026-06-05 -- Phase 34 Plan 02 complete (Keeper console body)
+
+### Phase 34 Plan 02 — COMPLETE (Keeper console body — Program.cs thin-shell + placeholder consumer/definition/message + appsettings(8083) + Dockerfile; KEEP-01/KEEP-02; 2026-06-05)
+
+- **3 task commits (scoped paths only — the in-progress `.planning/` archive deletions + untracked `launchSettings.json`/`psql-*.txt` left untouched, NOT staged, NOT reverted).** `d9b9c56` (feat: placeholder consumer surface — KeeperPlaceholder + PlaceholderConsumer + PlaceholderConsumerDefinition), `b40457b` (feat: thin-shell Program.cs + appsettings port 8083), `54f8427` (feat: multi-stage aspnet:8.0 Dockerfile port 8083). No deletions in any commit.
+- **Wave 2, depends_on [34-01]. autonomous:true** — the production-code core: a runnable, buildable, containerizable Keeper console whose placeholder binds the stable durable shared queue (KEEP-02 round-robin live-verifiable + close-gate net-zero SHA).
+- **Task 1 — Consumers/:** `KeeperPlaceholder` (local throwaway `record : ICorrelated`, deleted Phase 35), `PlaceholderConsumer` (no-op log-only `IConsumer<KeeperPlaceholder>`, D-03), `PlaceholderConsumerDefinition` (the D-02/D-09 load-bearing shape: `EndpointName = KeeperQueues.FaultRecovery` + `UseMessageRetry(r => r.Immediate(_retryOptions.Value.Limit))`). ZERO per-replica auto-delete fan-out shape anywhere (Pitfall 1).
+- **Task 2 — Program.cs + appsettings.json:** thin-shell composition root = Orchestrator seam (`Host.CreateApplicationBuilder` → `AddBaseConsoleObservability` → `AddBaseConsole` → `Configure<RetryOptions>` → `AddBaseConsoleMessaging(plain AddConsumer)` → `RunAsync`) MINUS the scheduler/L1/hydration/metrics runtime block AND MINUS the default-readiness-service removal — Keeper KEEPS readiness-on-bus-start (D-06). appsettings: Service.Name=keeper, ConsoleHealth.Port=8083, Retry Immediate(3), no instance-id key.
+- **Task 3 — Dockerfile:** multi-stage `sdk:8.0-bookworm-slim` → `aspnet:8.0-bookworm-slim` (aspnet NOT runtime — embedded Kestrel health needs the ASP.NET shared framework, Pitfall 3); COPY closure = Messaging.Contracts + BaseConsole.Core + Keeper csproj only; wget as root before `USER app` (Pitfall 2); `ASPNETCORE_URLS`/`EXPOSE` 8083; `ENTRYPOINT ["dotnet", "Keeper.dll"]`.
+- **Deviation (1, Rule 2 — firewall/acceptance-grep compliance):** reworded explanatory comments in Program.cs / PlaceholderConsumerDefinition.cs / Dockerfile to drop the forbidden literal tokens (readiness-service class name / per-replica-endpoint terms / BaseProcessor.Core / BaseApi) the analogs mention in prose, so the plan's acceptance greps + the Plan-03 `KeeperDependencyFirewallTests` literal-grep hold. Comment-only; zero behavioral/reference change. Same precedent as 34-01. No auth gates, no architectural decisions.
+- **Verification (all green):** `dotnet build src/Keeper -c Debug` 0/0; `-c Release` 0/0; `dotnet build SK_P.sln -c Release` 0/0 (Keeper joins cleanly); `docker build -f src/Keeper/Dockerfile .` succeeded end-to-end (334MB image on aspnet:8.0, cleaned up). Grep guards: Program.cs/definition/3-consumers 0 forbidden tokens; Dockerfile 0 `8081`/`Orchestrator.dll`/`BaseProcessor.Core`/`BaseApi`; wget before `USER app`. No file deletions across the 3 commits.
+- SUMMARY: 34-02-SUMMARY.md (Self-Check PASSED). KEEP-01 (runnable Keeper) + KEEP-02 (round-robin topology) land. Phase 34 = 2/3 plans complete; **Plan 03** (compose `keeper:` tier replicas:2 + Keeper test suite: RoundRobin/HostBoot/DependencyFirewall + ComposeYamlFacts) next.
 
 ### Phase 34 Plan 01 — COMPLETE (Keeper skeleton — KeeperQueues const + Keeper.csproj + SK_P.sln registration; KEEP-01 foundation; 2026-06-05)
 
@@ -598,6 +609,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 30 P03 | 21min | 2 tasks | 8 files |
 | Phase 32 P06 | ~25m | 2 tasks | 5 files |
 | Phase 32 P07 | ~30m | 2 tasks (3rd is operator live gate) | 2 files |
+| Phase 34 P02 | 5min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
