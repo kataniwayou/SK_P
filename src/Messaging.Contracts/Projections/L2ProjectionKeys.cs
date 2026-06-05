@@ -49,4 +49,7 @@ public static class L2ProjectionKeys
 
     /// <summary>D-05: effect-first dedup flag key — <c>skp:flag:{64hex}</c>.</summary>
     public static string Flag(string h) => $"{Prefix}flag:{h}";
+
+    /// <summary>D-03: probe scratch key — short-TTL write-then-delete; the TTL is the crash net-zero net.</summary>
+    public static string KeeperProbe(string h) => $"{Prefix}keeper:probe:{h}";   // "skp:keeper:probe:{h}"
 }

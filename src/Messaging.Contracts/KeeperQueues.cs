@@ -13,4 +13,10 @@ public static class KeeperQueues
     /// SAME endpoint name, so the const survives the placeholder swap.
     /// </summary>
     public const string FaultRecovery = "keeper-fault-recovery";
+
+    /// <summary>
+    /// DLQ-2 (D-08): terminal probe give-up queue. Plain durable, NO x-message-ttl — its depth is the
+    /// PRIMARY operator alert (Phase 39), so it MUST persist until an operator drains it (contrast DLQ-1's TTL).
+    /// </summary>
+    public const string DeadLetter = "keeper-dlq";
 }
