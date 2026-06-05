@@ -249,7 +249,11 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   3. The fault message is acked only after the loop exits (success or give-up); killing Keeper mid-loop leaves it un-acked → redelivered → loop restarts, with no lost message (at-least-once recovery observable).
   4. Two DLQs exist split by mechanism: DLQ-1 (all `Immediate(N)` transport exhaustions, consolidated across processor/orchestrator/Keeper, TTL'd forensic) and DLQ-2 `keeper-dlq` (probe give-ups); `keeper-dlq` depth is the primary Prometheus alert; on give-up the workflow stays paused (no auto-resume).
   5. All consumers (processor dispatch, orchestrator result/start/stop, Keeper) use the same `Immediate(N)` bound from the shared `RetryOptions` appsettings, routed uniformly to DLQ-1 (same pattern across consoles).
-**Plans**: TBD
+**Plans**: 4 plans
+- [ ] 36-01-PLAN.md — Contracts (keeper-dlq const + KeeperProbe key) + ProbeOptions + Wave-0 FakeRedis/bound test
+- [ ] 36-02-PLAN.md — L2ProbeRecovery loop helper + consumer re-inject/park bodies (PROBE-01..05)
+- [ ] 36-03-PLAN.md — Consolidated DLQ-1 error transport in BaseConsole.Core (DLQ-01/02/04, all 3 consoles)
+- [ ] 36-04-PLAN.md — RealStack recover-both-paths + give-up E2E (operator-gated live half)
 
 ### Phase 37: Orchestrator Pause/Resume Coordination
 **Goal**: Add the `PauseWorkflow`/`ResumeWorkflow` contracts and the orchestrator-side consumers that halt and reschedule a workflow's cron off an in-memory L1 pending-recovery set keyed by `H` — keeping the workflow paused while any recovery is in flight (or any message is given up), idempotent under duplicate/concurrent signals.
