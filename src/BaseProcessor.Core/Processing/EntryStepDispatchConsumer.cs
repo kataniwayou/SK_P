@@ -96,9 +96,11 @@ public sealed class EntryStepDispatchConsumer(
             if (!string.IsNullOrWhiteSpace(context.InputDefinition))
             {
                 // Required-input step, but no input present in L2 — Failed BEFORE ProcessAsync (D-07).
+                // EntryId is emitted as a scope VALUE under the fixed ExecutionLogScope.EntryId key by the
+                // inbound execution-scope filter — never interpolated into the message template (T-31-08).
                 logger.LogInformation(
-                    "Dispatch {CorrelationId}: input absent from L2 for entryId {EntryId} — Failed (business)",
-                    dispatch.CorrelationId, dispatch.EntryId);
+                    "Dispatch {CorrelationId}: input absent from L2 — Failed (business)",
+                    dispatch.CorrelationId);
                 await SendResult(BuildFailed(dispatch, "Input data not found in L2 for entryId."));
                 return;
             }
