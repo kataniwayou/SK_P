@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: planning
-stopped_at: Phase 37 planned (4 plans, 3 waves)
-last_updated: "2026-06-05T23:31:37.671Z"
-last_activity: 2026-06-06
+status: executing
+stopped_at: Phase 37 Plan 01 complete (Wave 0 RED tests)
+last_updated: "2026-06-05T23:55:19Z"
+last_activity: 2026-06-05 -- Phase 37 Plan 01 complete (Wave 0 RED tests authored)
 progress:
   total_phases: 41
   completed_phases: 38
@@ -21,15 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 37 — Orchestrator Pause/Resume Coordination (Phase 36 complete — hermetic 5/5, live operator-pending)
+**Current focus:** Phase 37 — orchestrator-pause-resume-coordination
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
-Phase: 37
-Plan: Planned — 4 plans in 3 waves (Wave 0: 37-01 tests; Wave 1: 37-02 contracts+scheduler; Wave 2: 37-03 orch consumers, 37-04 Keeper publish)
-Status: Ready to execute
-Last activity: 2026-06-06
+Phase: 37 (orchestrator-pause-resume-coordination) — EXECUTING
+Plan: 2 of 4 (Wave 0 Plan 01 complete; Wave 1 Plan 02 next)
+Status: Executing Phase 37
+Last activity: 2026-06-05 -- Phase 37 Plan 01 complete (Wave 0 RED tests authored)
+
+### Phase 37 Plan 01 — COMPLETE (Wave 0 RED tests for PAUSE-01..05; build fails ONLY on missing production symbols; 2026-06-06)
+
+- **2 task commits (scoped test paths only — the pre-existing `.planning/` archive deletions + untracked files left UNtouched).** `8622788` (test: PAUSE-01 contract + Keeper publish-site RED), `8a87407` (test: PAUSE-02/03/04/05 scheduler + consumer RED). Wave 0, depends_on [], autonomous:true, type:execute (TDD RED test-authoring). NO file deletions, NO src/ changes.
+- **Four RED test files authored** (one per VALIDATION.md Wave 0 row): `PauseResumeContractTests` (ICorrelated + WorkflowId/H/CorrelationId, ns `BaseApi.Tests.MessagingContracts` to avoid shadowing top-level Messaging), `KeeperPausePublishTests` (drives FaultEntryStepDispatchConsumer over a substituted ConsumeContext + real L2ProbeRecovery over FakeRedis Up/Down → Recovered publishes Pause+Resume, GaveUp publishes Pause only, D-09), `PauseResumeSchedulingTests` (real RAM scheduler: PauseSuppressesFire/ResumeReschedulesFresh/ResumeIgnoresStoppedAndRunning, deterministic TriggerKey(jobId.ToString("D")), D-08/D-09), `PauseResumeConsumerTests` (PauseResumeIdempotent — Pause×2 + Resume×2 serial → one Normal trigger, one job, D-07).
+- **RED is deliberate + correct:** build fails ONLY with missing-symbol errors (CS0246/CS1061) naming the six downstream production symbols — `PauseWorkflow`/`ResumeWorkflow` (Plan 02 contracts), `PauseAsync`/`GetTriggerStateAsync` (Plan 02 scheduler), `PauseWorkflowConsumer`/`ResumeWorkflowConsumer` (Plan 03). After filtering CS0246/CS1061 there are ZERO remaining compile errors (no harness/syntax/wiring errors). xUnit1051 honored (TestContext.Current.CancellationToken on every Quartz/Consume call); each RAM scheduler uses a unique `quartz.scheduler.instanceName = test-{Guid:N}`.
+- **Deviations (2, both harness-error fixes that would have masked the deliberate RED):** (Rule 3) added `using Keeper;` for `ProbeOptions` (lives in ns `Keeper`, not `Keeper.Recovery`); (Rule 1) `GetTriggersOfJob` returns `IReadOnlyCollection<ITrigger>` (can't index `[0]`) → use the element from `Assert.Single`. No src/ touched, no scope creep.
+- SUMMARY: 37-01-SUMMARY.md (Self-Check PASSED — deliberate RED is a PASS for a TDD test-authoring plan). Plan 02 (contracts + scheduler methods) is the next Wave 1 GREEN target; the RED tests pin the exact names/shapes it must create.
 
 ### Phase 36 Plan 04 — AUTHORED, LIVE recover/give-up OPERATOR-PENDING (KeeperRecoveryE2ETests RealStack recover-both-paths + give-up; PROBE-03/04/05 live-gated; 2026-06-06)
 
