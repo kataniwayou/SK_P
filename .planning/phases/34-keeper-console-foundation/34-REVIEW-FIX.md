@@ -2,96 +2,107 @@
 phase: 34-keeper-console-foundation
 fixed_at: 2026-06-05T00:00:00Z
 review_path: .planning/phases/34-keeper-console-foundation/34-REVIEW.md
-iteration: 1
-findings_in_scope: 2
-fixed: 2
-skipped: 0
-status: all_fixed
+iteration: 2
+findings_in_scope: 4
+fixed: 3
+skipped: 1
+status: partial
 ---
 
 # Phase 34: Code Review Fix Report
 
 **Fixed at:** 2026-06-05T00:00:00Z
 **Source review:** .planning/phases/34-keeper-console-foundation/34-REVIEW.md
-**Iteration:** 1
+**Iteration:** 2
 
 **Summary:**
-- Findings in scope (Critical + Warning): 2
-- Fixed: 2
-- Skipped: 0
-- Out of scope (Info, intentionally not touched): IN-01, IN-02
+- Findings in scope: 4 (fix_scope = all: Critical + Warning + Info)
+- Fixed: 3 (WR-01 + WR-02 in iteration 1; IN-01 this iteration)
+- Skipped: 1 (IN-02 — sound rationale, accepted cross-console dev posture, no action required)
 
-Both in-scope warnings describe patterns that exist IDENTICALLY in the shipped
-`src/Orchestrator/` and `src/Processor.Sample/` consoles and their analogous tests.
-The prime directive for this phase was to improve Keeper WITHOUT diverging it from the
-established cross-console conventions or breaking the green build/tests. Both fixes are
-therefore documentation/clarifying-comment changes (zero behavioral change), chosen over
-the reviewer's heavier code-rewrite alternatives precisely to avoid divergence.
+This is the cumulative iteration-2 report. The two Warnings (WR-01, WR-02) were fixed in
+iteration 1 and are verified still-present below (not re-touched). The new work this iteration
+is the two Info findings: IN-01 fixed, IN-02 skipped-with-rationale. Prime directive honored —
+every change improves Keeper WITHOUT diverging from the established cross-console conventions or
+breaking the green build/tests.
 
 ## Fixed Issues
 
+### IN-01: Test Fixture Does Not Inject a `Retry` Config Section — `RetryOptions` Resolves to Defaults Silently
+
+**Files modified:** `tests/BaseApi.Tests/Keeper/KeeperHostBootFixture.cs`
+**Commit:** 808b750
+**Applied fix:** Added an explicit in-memory `Retry` section (`Retry:Limit = 3`,
+`Retry:Strategy = Immediate`) to `ConfigureBuilder`, immediately before the existing
+`Configure<RetryOptions>(builder.Configuration.GetSection("Retry"))` bind. The bind is now
+exercised against a real config value mirroring the live `src/Keeper/appsettings.json`, instead
+of silently resolving to `RetryOptions`' property-initializer defaults when the section is absent.
+If `RetryOptions` later gains a required or range-validated key, the boot fixture now carries the
+section rather than masking the gap.
+
+**Rationale for fix choice (non-divergent):** Per the per-finding guidance, I first checked the
+sibling host-boot precedent. The base `ConsoleTestHostFixture.BuildConfig()` does NOT register
+`RetryOptions` at all — so there is nothing in the base fixture to mirror, and adding Retry to the
+base config would itself be the divergent move. The Keeper sibling test `KeeperRoundRobinTests`
+already sets a real value via `.Configure<RetryOptions>(o => o.Limit = 3)`, establishing that the
+Keeper suite expects the binding to resolve to `Limit = 3`, not silent defaults. This fix aligns the
+Keeper boot fixture with that established Keeper-local intent and with the live appsettings.json,
+without diverging from any sibling console.
+
 ### WR-01: `RetryOptions.Strategy` Is Bound From Config But Always Silently Ignored
 
-**Files modified:** `src/Keeper/Consumers/PlaceholderConsumerDefinition.cs`
-**Commit:** 7c920e6
-**Applied fix:** Added a clarifying code-comment at the `UseMessageRetry` call site documenting
-that `Immediate` is intentionally the ONLY supported retry strategy at this milestone, that
-`RetryOptions.Strategy` (Interval/Exponential) is structured-for but deliberately NOT wired, and
-that this is a shared deferral across ALL consoles — so the config key binding is intentional, not
-misleading. The comment explicitly warns that wiring `Strategy` must be done uniformly across every
-console (Orchestrator/Processor too), not piecemeal in Keeper.
-
-**Rationale for fix choice (not a code-behavior change):** The reviewer offered two alternatives —
-(a) add a `Strategy switch` branch at the point of use, or (b) clarify the deferral with a comment.
-Option (a) was rejected: the `RetryOptions` type is shared (`src/Messaging.Contracts/Configuration/RetryOptions.cs`)
-and its own doc-comment states "Only the Immediate branch is implemented this phase ... back-off is
-structured-for, deferred." The Orchestrator and Processor consumer definitions hard-wire `Immediate`
-the exact same way. Adding Strategy-switching to Keeper alone would diverge it from every other console
-and introduce behavioral inconsistency. The minimal non-diverging fix is the clarifying comment, which
-removes the "silently misleading config key" hazard the reviewer flagged without changing runtime behavior.
-The underlying Strategy-wiring remains an accepted cross-console deferral that must be resolved uniformly
-across all consoles (a future-phase, project-wide task), not in Keeper in isolation.
+**Files modified:** `src/Keeper/Consumers/PlaceholderConsumerDefinition.cs` (iteration 1)
+**Commit:** 7c920e6 (iteration 1)
+**Applied fix:** Already addressed in iteration 1 via a clarifying code-comment at the
+`UseMessageRetry` call site, documenting that `Immediate` is intentionally the ONLY supported
+strategy at this milestone, that `RetryOptions.Strategy` (Interval/Exponential) is structured-for
+but deliberately NOT wired (a shared deferral across ALL consoles), and that wiring it must be done
+uniformly across every console — not piecemeal in Keeper. Verified still present this iteration
+(lines 32-36). Carried as already-fixed; not re-touched (per scoped-commit + no-double-touch rule).
 
 ### WR-02: `KeeperDependencyFirewallTests` Reflects Only Direct References
 
-**Files modified:** `tests/BaseApi.Tests/Keeper/KeeperDependencyFirewallTests.cs`
-**Commit:** 8d26729
-**Applied fix:** Added a `NOTE — DIRECT references only` paragraph to the test's `<summary>`
-doc-comment, clarifying that `GetReferencedAssemblies()` returns only the references in `Keeper.dll`'s
-own manifest and does NOT walk the transitive closure; that a forbidden assembly pulled in indirectly
-via `BaseConsole.Core` or `Messaging.Contracts` would not trip the guard; that a transitive scan is
-deferred; and that "closure" in this test means Keeper's own manifest, not the recursive dependency graph.
-
-**Rationale for fix choice (documentation disclaimer, not a recursive walk):** The reviewer offered
-two alternatives — (a) replace `GetReferencedAssemblies()` with a recursive transitive walk, or
-(b) document the known gap. Option (a) was rejected: the analogous `ConsoleDependencyFirewallTests`
-(the Orchestrator/Processor firewall guard) is also direct-reference-only by design and uses the same
-shallow reflection. Converting Keeper's test to a recursive `Assembly.Load` walk would diverge it from
-that established sibling test and risks flakiness (assemblies not in the load context). The disclaimer
-keeps the test consistent with its sibling, green, and honest about the depth it actually enforces.
+**Files modified:** `tests/BaseApi.Tests/Keeper/KeeperDependencyFirewallTests.cs` (iteration 1)
+**Commit:** 8d26729 (iteration 1)
+**Applied fix:** Already addressed in iteration 1 via a `NOTE — DIRECT references only` paragraph
+in the test's `<summary>` doc-comment, clarifying that `GetReferencedAssemblies()` returns only the
+references in `Keeper.dll`'s own manifest (not the transitive closure), that a forbidden assembly
+pulled in indirectly via `BaseConsole.Core` or `Messaging.Contracts` would not trip the guard, that
+a transitive scan is deferred (and would diverge from the analogous direct-reference-only
+`ConsoleDependencyFirewallTests`), and that "closure" here means Keeper's own manifest. Verified
+still present this iteration (lines 14-22). Carried as already-fixed; not re-touched.
 
 ## Verification
 
-Per-fix verification (3-tier) and pre-commit gate:
-- **Tier 1:** Re-read both modified files; clarifying comments present, surrounding code intact.
-- **Tier 2 (build):** `dotnet build SK_P.sln -c Release` → 0 Warnings / 0 Errors (TreatWarningsAsErrors honored);
-  `dotnet build SK_P.sln -c Debug` → 0 Warnings / 0 Errors.
+Per-fix verification (3-tier) and pre-commit gate for IN-01:
+- **Tier 1:** Re-read the modified `KeeperHostBootFixture.cs`; the injected `Retry` section is present,
+  the existing `Configure<RetryOptions>` bind and surrounding seam intact.
+- **Tier 2 (build):** `dotnet build SK_P.sln -c Release` → 0 Warnings / 0 Errors (TreatWarningsAsErrors
+  honored); `dotnet build SK_P.sln -c Debug` → 0 Warnings / 0 Errors.
 - **Tests:** `dotnet test tests/BaseApi.Tests --filter "FullyQualifiedName~Keeper" -c Release` →
-  Passed! Failed: 0, Passed: 460, Skipped: 0 (full hermetic suite green, including the firewall test
-  whose comment was changed).
-
-Both changes are comment-only with no behavioral or structural divergence from the established
-cross-console conventions.
+  Passed! Failed: 0, Passed: 460, Skipped: 0 (the MTP/VSTest filter quirk runs the full hermetic
+  suite — all 460 green, including the Keeper boot + round-robin + firewall tests).
 
 ## Skipped Issues
 
-None — both in-scope findings were fixed.
+### IN-02: Hardcoded `guest/guest` RabbitMQ Credentials in `appsettings.json`
 
-(Note: IN-01 and IN-02 are Info-severity and out of the critical_warning fix scope; they were
-intentionally not addressed in this iteration.)
+**File:** `src/Keeper/appsettings.json:22-24`
+**Reason:** Skipped with rationale — accepted cross-console dev posture, no action required. The
+reviewer's own Fix note states "No immediate action" and frames the optional self-documenting comment
+as purely cosmetic. I verified the sibling consoles' config files (`src/Orchestrator/appsettings.json`,
+`src/Processor.Sample/appsettings.json`) are plain JSON with NO `//` comments and carry the identical
+`guest/guest` values. Introducing a `//` comment in Keeper's appsettings.json alone would diverge from
+the established cross-console convention — and the prime directive for this phase is to mirror the
+sibling consoles, not diverge. Prod deployments already override these via environment variables
+(`RabbitMq__Username` / `RabbitMq__Password`) or a secrets provider; the dev-only intent is documented
+in the compose comment (T-34-07). No source change made.
+**Original issue:** `RabbitMq.Username` / `RabbitMq.Password` are `guest/guest` in the committed
+`appsettings.json` — the established dev posture matching Orchestrator and Processor.Sample; prod
+overrides via env/secrets.
 
 ---
 
 _Fixed: 2026-06-05T00:00:00Z_
 _Fixer: Claude (gsd-code-fixer)_
-_Iteration: 1_
+_Iteration: 2_
