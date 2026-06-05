@@ -235,7 +235,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   3. A faulted message processed by Keeper produces an Elasticsearch log correlated to the original execution by correlationId + ids (observable end-to-end).
 **Plans**: 3 plans
 - [x] 35-01-PLAN.md — Shared ExecutionLogScope.BuildState refactor (D-07), byte-identical + regression-guarded
-- [ ] 35-02-PLAN.md — Two real Fault<T> consumers + definitions + Program.cs swap + placeholder deletion + hermetic scope proof
+- [x] 35-02-PLAN.md — Two real Fault<T> consumers + definitions + Program.cs swap + placeholder deletion + hermetic scope proof (completed 2026-06-05 — KeeperFaultConsumerScopeTests 3/3 GREEN proving CorrelationId + 5 exec ids; both defs on keeper-fault-recovery, single retry owner; 3 placeholders deleted; SK_P.sln 0/0 Release; hermetic suite 457/0; b71233c, 418bc3f)
 - [ ] 35-03-PLAN.md — RealStack SC3: running-Keeper-container correlated-ES-log proof (operator-gated)
 
 ### Phase 36: L2 Health-Probe Recovery Loop & DLQs

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 35-01-PLAN.md
-last_updated: "2026-06-05T16:32:40.481Z"
+stopped_at: Completed 35-02-PLAN.md
+last_updated: "2026-06-05T16:49:54.000Z"
 last_activity: 2026-06-05
 progress:
   total_phases: 22
   completed_phases: 21
   total_plans: 76
-  completed_plans: 74
-  percent: 97
+  completed_plans: 75
+  percent: 99
 ---
 
 # Project State
@@ -27,9 +27,19 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 2/6 complete)
 Phase: 35 (Fault Intake & Correlation) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-05
+
+### Phase 35 Plan 02 — COMPLETE (two real Fault<T> consumers on keeper-fault-recovery + manual CorrelationId scope + placeholder deletion; KMET-04/INTAKE-03 hermetic; 2026-06-05)
+
+- **2 task commits (scoped paths only — the ~242 pre-existing `.planning/` archive deletions left UNtouched, NOT staged, NOT reverted; verified 242 still uncommitted after both commits).** `b71233c` (feat: two fault consumers + hermetic SC2 scope proof), `418bc3f` (feat: two definitions + Program.cs swap + 3-placeholder deletion + 3-test rewire). Wave 2, depends_on [35-01], autonomous:true.
+- **Task 1 — FaultEntryStepDispatchConsumer + FaultExecutionResultConsumer + KeeperFaultConsumerScopeTests:** both observe-and-ack (D-06) consumers double-unwrap `context.Message.Message`, open a MANUAL `[CorrelationKeys.LogScope] = inner.CorrelationId` scope (the load-bearing SC2/T-35-06 fix — a `Fault<T>` envelope is neither IExecutionCorrelated nor ICorrelated, so the bus-wide filter falls back to a fresh Guid), nest `ExecutionLogScope.BuildState(inner)` for the 5 exec ids, emit ONE structured Information log (ids/H/ExceptionType/Message as template params, NO StackTrace — T-35-05), and ack. Result consumer aliases `ExecutionResult = Messaging.Contracts.ExecutionResult`. 3 hermetic tests GREEN: dispatch + result each assert CorrelationId (== inner) + the 5 exec keys; the third proves the Guid.Empty/empty-string BuildState skips flow through (those 2 absent, CorrelationId + 3 Guids present). `Fault<T>` published via the framework initializer `new { Message = inner }`.
+- **Task 2 — definitions + Program.cs + deletion + test rewire:** FaultEntryStepDispatchConsumerDefinition OWNS the endpoint retry (`UseMessageRetry(Immediate(Limit))` + Strategy-not-wired block); FaultExecutionResultConsumerDefinition colocates on the SAME `EndpointName = KeeperQueues.FaultRecovery` with an INTENTIONALLY EMPTY ConfigureConsumer (single endpoint-retry owner — Pitfall 3, retry middleware is per-endpoint). Program.cs registers both. The 3 placeholder files deleted via `git rm`. `grep -rc UseMessageRetry Fault*Definition.cs` total == 1; Program.cs `Placeholder` == 0; zero dangling refs in src/.
+- **Deviations (2, both in-scope):** (Rule 3) the 3 Phase-34 Keeper tests (RoundRobin/HostBootFixture/DependencyFirewall) + a csproj comment referenced the deleted placeholder symbols — rewired onto the real fault consumers (firewall now anchors on FaultEntryStepDispatchConsumer; RoundRobin publishes a Fault<EntryStepDispatch> and still proves count==1; HostBootFixture registers both) so the suite stays GREEN. (Rule 2) comment-only rewordings dropped the literal grep tokens (`context.Message.Message`/`StackTrace`/`UseMessageRetry`/`Placeholder` in prose) so the threat-model + acceptance greps hold exactly — same firewall-grep-compliance precedent as 34-01/34-02/35-01. No auth gates, no architectural decisions, no scope creep.
+- **Verification (all green):** `dotnet build SK_P.sln -c Release` 0/0; `*KeeperFaultConsumerScopeTests` 3/3; all 4 Keeper classes 6/6 in isolation; full hermetic suite **457 passed / 0 failed** (the first run's 1 failure was the documented run-to-run cross-namespace in-memory-MassTransit harness flake — cleared on `--no-build` re-run; not in any touched file). `KeeperQueues.FaultRecovery` const unchanged (net-zero close-gate SHA preserved).
+- **TDD note:** Task 1 was tdd=true; consumers + test landed in one GREEN commit (the SUT types must compile for the test to reference them — no compiling RED state possible). Behavior driven by the `<behavior>` block, verified 3/3 before commit.
+- SUMMARY: 35-02-SUMMARY.md (Self-Check PASSED). KMET-04 (scope carries CorrelationId + 5 exec ids, hermetic-proven) + the INTAKE-03 binding slice land. Phase 35 = 2/3 plans complete; **Plan 03** (RealStack SC3 — running-Keeper-container correlated-ES-log proof, operator-gated) remains.
 
 ### Phase 34 Plan 03 — COMPLETE (compose keeper tier replicas:2 + ComposeYamlFacts + 3 hermetic Keeper tests; KEEP-01/02/03 hermetic; live smoke operator-pending; 2026-06-05)
 
