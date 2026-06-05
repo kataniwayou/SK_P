@@ -193,15 +193,95 @@ public sealed class FaultRecoverySpikeE2ETests
                 bus, procId, stepId, wfId, rCorr, resultH, resultPoisonKey, ct);
             Assert.Equal(resultH, resultCap.h);
 
-            // TODO Task 3: re-inject verbatim x2 (collapse proof), publish the negative command-faults.
+            // ================================================================================================
+            // GRAFT 5 — DISPATCH re-inject verbatim x2 + duplicate-collapse (the STANDALONE NOVEL-RISK proof:
+            // INTAKE-04 re-inject-by-type + PROBE-06 collapse). Before re-injecting, REMOVE the dispatch poison
+            // so delivery 1 can produce its real effect (the collapse rides the receiver gate, not the fault).
+            // ================================================================================================
+            await ClearPoisonAsync(dispatchPoisonKey, ct);
+
+            var dispatchInner = (EntryStepDispatch)dispatchCap.inner;   // the VERBATIM extracted instance (same H)
+            var dispatchOrigin = await bus.GetSendEndpoint(new Uri($"queue:{dispatchInner.ProcessorId:D}"));
+
+            // PROBE-06 / D-08: ONE flag[H]="Pending" seed (re-arming Ack->Pending leaks the dup — Anti-Pattern),
+            // Send delivery 1 (effect, flips flag Pending->Ack), wait for Ack, Send delivery 2 (flag==Ack ->
+            // dropped by the receiver's surviving Phase-31 flag[H] gate, EntryStepDispatchConsumer:76-84).
+            await PrewriteFlagPendingAsync(dispatchInner.H);
+            await dispatchOrigin.Send(dispatchInner, ct);     // delivery 1 — produces the effect, flips flag->Ack
+            await PollForFlagAckAsync(dispatchInner.H, ct);
+            await dispatchOrigin.Send(dispatchInner, ct);     // delivery 2 — SAME H, flag==Ack -> dropped
+
+            // Assert EXACTLY ONE downstream effect for the re-injected dispatch identity (the live inverse of
+            // the historical StepB4 x2 over-execution bug). Scope to (corr, stepId); 8s+ ingest-settle window.
+            using var es = new ElasticsearchTestClient();
+            var dispatchEffectQuery = BuildEffectQuery(dispatchInner.CorrelationId, dispatchInner.StepId);
+            var firstEffect = await es.PollEsForLog(dispatchEffectQuery, timeoutMs: EsPollTimeoutMs, ct: ct);
+            Assert.NotNull(firstEffect);
+            Assert.Contains(DownstreamEffectMessage, firstEffect!.Value.GetRawText());
+            Assert.Equal(1, await CountEsHitsAsync(dispatchEffectQuery, ct));
+
+            // ================================================================================================
+            // GRAFT 5 — RESULT re-inject verbatim by type (the SECOND endpoint/type proof). Clear the result
+            // poison first so the orchestrator hop can run; forward the extracted ExecutionResult VERBATIM to
+            // queue:orchestrator-result (NOT Publish). flag[resultH] was pre-written Pending by the processor;
+            // delivery 1 flips it Pending->Ack, delivery 2 (same H) is dropped by ResultConsumer:65-72.
+            // ================================================================================================
+            await ClearPoisonAsync(resultPoisonKey, ct);
+
+            var resultInner = (ExecutionResult)resultCap.inner;
+            var resultOrigin = await bus.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
+            await resultOrigin.Send(resultInner, ct);         // delivery 1 — orchestrator hop, flips flag->Ack
+            await PollForFlagAckAsync(resultInner.H, ct);
+            await resultOrigin.Send(resultInner, ct);         // delivery 2 — SAME H, flag==Ack -> dropped
+
+            // ================================================================================================
+            // GRAFT 6 — Negative command-fault proof (D-09 / INTAKE-01 negative). Publish Fault<Start/Stop>
+            // Orchestration; assert the spike's two execution-fault consumers record ZERO captures over a
+            // settle window. StartOrchestration/StopOrchestration are ICorrelated (NOT IExecutionCorrelated)
+            // and the spike binds only Fault--EntryStepDispatch / Fault--ExecutionResult exchanges, so RabbitMQ
+            // topology routes these command-faults AWAY from the spike (type-scoped bindings).
+            // ================================================================================================
+            var dispatchCountBefore = _capturedDispatch.Count;
+            var resultCountBefore = _capturedResult.Count;
+
+            // Fault<T> is a MassTransit framework interface — publish it via a message INITIALIZER
+            // (anonymous object); MassTransit's dynamic-proxy initializer fills FaultId/Timestamp/Exceptions
+            // with defaults and binds the inner Message verbatim. The inner command is the only field we set.
+            await bus.Publish<Fault<StartOrchestration>>(new
+            {
+                Message = new StartOrchestration(new[] { wfId }) { CorrelationId = NewId.NextGuid() },
+            }, ct);
+            await bus.Publish<Fault<StopOrchestration>>(new
+            {
+                Message = new StopOrchestration(new[] { wfId }) { CorrelationId = NewId.NextGuid() },
+            }, ct);
+
+            // Settle window (mirror the CountEsHitsAsync 8s idiom) so a mis-routed command-fault would have
+            // arrived before we assert zero — the two execution-fault bags did NOT grow.
+            await Task.Delay(8_000, ct);
+            Assert.Equal(dispatchCountBefore, _capturedDispatch.Count);
+            Assert.Equal(resultCountBefore, _capturedResult.Count);
         }
         finally
         {
             await bus.StopAsync(ct);
         }
 
-        // TODO Task 3: net-zero teardown — stop the workflow + register fresh data:*/flag:* keys.
-        _ = (dataKeysBefore, flagKeysBefore);
+        // ====================================================================================================
+        // Net-zero teardown (Shared Patterns, clone :203-218). Stop the workflow so its self-rescheduling cron
+        // fire ceases (NET-ZERO-31), then register every run-minted skp:data:*/skp:flag:* key for deletion so
+        // the close-gate triple-SHA redis --scan BEFORE==AFTER holds. Every armed poison key was already
+        // registered (dispatch data + result flag). The IBusControl was bracketed Start/try/finally Stop above.
+        // ====================================================================================================
+        try { await client.PostAsJsonAsync("/api/v1/orchestration/stop", new List<Guid> { wfId }, ct); }
+        catch { /* best-effort net-zero teardown */ }
+
+        foreach (var key in ScanKeys("data:*"))
+            if (!dataKeysBefore.Contains(key))
+                factory.L2KeysToCleanup.Add(key);
+        foreach (var key in ScanKeys("flag:*"))
+            if (!flagKeysBefore.Contains(key))
+                factory.L2KeysToCleanup.Add(key);
     }
 
     // ====================================================================================================
@@ -296,6 +376,14 @@ public sealed class FaultRecoverySpikeE2ETests
         var db = mux.GetDatabase();
         await db.KeyDeleteAsync(key);                 // start clean (a leftover string would not throw)
         await db.ListRightPushAsync(key, "poison");   // LIST type -> a subsequent String op throws WRONGTYPE
+    }
+
+    // Clear an armed WRONGTYPE LIST poison so the receiver's real String op can succeed on re-inject
+    // (the duplicate-collapse proof rides the receiver flag[H] gate, NOT the lingering infra fault).
+    private static async Task ClearPoisonAsync(string key, CancellationToken ct)
+    {
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        await mux.GetDatabase().KeyDeleteAsync(key);
     }
 
     // ---- Fault capture poll: wait until a probe records the inner H we expect (the trip fanned out) ----
