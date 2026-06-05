@@ -4,6 +4,7 @@ using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Keeper;
 using Keeper.Consumers;
 
 // Thin-shell composition root (KEEP-01). Generic Host — Host.CreateApplicationBuilder, NOT
@@ -20,6 +21,10 @@ builder.Services.AddBaseConsole(builder.Configuration);       // Redis soft-dep 
 // DLQ-04 / D-09 — bind the shared Immediate(N) retry budget from the "Retry" section (the single
 // source of truth the fault consumer definition's UseMessageRetry reads). Phase 36 consumers inherit this pattern.
 builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
+
+// PROBE-01 (D-04) — bind the bounded probe-loop knobs. Redis (IConnectionMultiplexer) is ALREADY a
+// registered singleton via AddBaseConsole (line above chains the Redis registration) — do NOT add it again.
+builder.Services.Configure<ProbeOptions>(builder.Configuration.GetSection("Probe"));
 
 // D-02/D-03 — the two REAL fault consumers colocate on the ONE stable shared durable queue
 // keeper-fault-recovery (competing-consumer round-robin, NOT the Start/Stop per-replica fan-out).
