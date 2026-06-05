@@ -256,16 +256,20 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
 - [x] 36-04-PLAN.md — RealStack recover-both-paths + give-up E2E (operator-gated live half) (authored 2026-06-06 — KeeperRecoveryE2ETests sibling of FaultRecoverySpikeE2ETests: KeeperRecovery_RecoversBothPaths dispatch+result re-inject exactly-once CountEsHitsAsync==1 / KeeperRecovery_GivesUp_ParksToDlq probe-data poison → keeper-dlq park caught+ack-drained; skp:keeper:probe:* net-zero scan; SK_P.sln 0/0 Release, hermetic 467/0 unchanged, RealStack adds 0 hermetic tests; 1b0d7d9; live GREEN operator-gated, PROBE-03/04/05 unticked, Phase-39 authoritative)
 
 ### Phase 37: Orchestrator Pause/Resume Coordination
-**Goal**: Add the `PauseWorkflow`/`ResumeWorkflow` contracts and the orchestrator-side consumers that halt and reschedule a workflow's cron off an in-memory L1 pending-recovery set keyed by `H` — keeping the workflow paused while any recovery is in flight (or any message is given up), idempotent under duplicate/concurrent signals.
+**Goal**: Add the `PauseWorkflow`/`ResumeWorkflow` contracts and the orchestrator-side consumers that halt a workflow's cron via Quartz `PauseJob` (D-08) and reschedule it from L1 on any successful recovery (D-09), with **Quartz `GetTriggerState` as the single source of truth** for the Running/Paused/Stopped state (no L1 state field, no pending-recovery set); idempotent under duplicate/concurrent signals via `ConcurrentMessageLimit = 1` + idempotent transitions + redelivery (D-07).
 **Depends on**: Phase 36 (re-inject lives in Keeper per INTAKE-04; this is the cron-scheduling half)
 **Requirements**: PAUSE-01, PAUSE-02, PAUSE-03, PAUSE-04, PAUSE-05
 **Success Criteria** (what must be TRUE):
   1. New `PauseWorkflow` and `ResumeWorkflow` contracts exist in `Messaging.Contracts`, fanned from Keeper to the orchestrator (cron scheduling only; re-injection stays in Keeper).
-  2. On the first in-flight recovery for a workflow the orchestrator halts its future cron fires (`UnscheduleOnlyAsync`, L1 preserved), tracking pause-state as a per-workflow pending-recovery set keyed by `H` in its single-replica in-memory L1 — never in L2.
+  2. (Revised by **D-08**) On Keeper's pause signal the orchestrator halts the workflow's future cron fires via Quartz **`PauseJob`** (L1 preserved); the Paused state is owned by Quartz and read via `GetTriggerState(TriggerKey(jobId))` — **no separate L1 state field and no in-memory pending-recovery set**. (The original criterion's `UnscheduleOnlyAsync` + pending-recovery-set wording is superseded.)
   3. When no recoveries remain pending for a workflow, the orchestrator reschedules it from L1 (`ScheduleAsync` with the L1 root's `jobId` + `cron`) and future cron fires resume.
-  4. Duplicate/concurrent pause/resume signals (Keeper crash/redelivery, multiple replicas) are serialized by the orchestrator's per-`workflowId` semaphore, keyed idempotently by `H`, and do not double-count.
-  5. A workflow with ≥1 given-up (unrecovered) message remains paused until an operator intervenes; the orchestrator does not auto-resume it.
-**Plans**: TBD
+  4. (Revised by **D-07**) Duplicate/concurrent pause/resume signals (Keeper crash/redelivery) are absorbed by `ConcurrentMessageLimit = 1` serial consume + idempotent Quartz transitions + redelivery-on-crash — **no dedicated lock, no per-`workflowId` semaphore, no reference-counting set**. `H` is correlation/observability only (D-02), so PAUSE-04's do-not-double-count holds trivially.
+  5. (Revised by **D-09**) The orchestrator resumes a workflow on **any** successful recovery regardless of sibling outcomes; a given-up message is parked to `keeper-dlq` and publishes nothing (does NOT re-pin paused). A workflow stays paused only if **no** recovery ever succeeds. Resume acts only when `GetTriggerState == Paused` (None=operator-Stopped and Normal=already-Running are ignored).
+**Plans**: 4 plans
+  - [ ] 37-01-PLAN.md — Wave 0: four RED test files (contracts, Keeper publish, scheduling Pause/Resume/ignore, consumer idempotency)
+  - [ ] 37-02-PLAN.md — Contracts + load-bearing deterministic TriggerKey stamping + PauseAsync/GetTriggerStateAsync
+  - [ ] 37-03-PLAN.md — Orchestrator Pause/Resume consumers + lifecycle seams + ConcurrentMessageLimit=1 definitions + Program wiring
+  - [ ] 37-04-PLAN.md — Keeper publish sites: PauseWorkflow at intake + ResumeWorkflow on Recovered (GaveUp unchanged)
 
 ### Phase 38: Uniform `service_name` + Instance Labels Across All Metrics
 **Goal**: Every Prometheus metric series (runtime, HTTP, and business instruments) for all four consoles carries a human-distinguishable `service_name = {name}_{version}` label plus a non-empty `service_instance_id` label — where the processor's `{name}_{version}` is sourced from the **database** (the single source of truth), not appsettings. No live operator verification required (hermetic + scrape-assertion provable).
@@ -323,7 +327,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 34. Keeper Console Foundation | v3.7.0 | 3/3 | Complete    | 2026-06-05 |
 | 35. Fault Intake & Correlation | v3.7.0 | 3/3 | Complete    | 2026-06-05 |
 | 36. L2 Health-Probe Recovery Loop & DLQs | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
-| 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 0/? | Not started | — |
+| 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 0/4 | Not started | — |
 | 38. Uniform `service_name` + Instance Labels Across All Metrics | v3.7.0 | 0/? | Not started | — |
 | 39. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 0/? | Not started | — |
 
