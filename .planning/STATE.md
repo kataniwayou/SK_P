@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: completed
-stopped_at: Phase 36 context gathered
-last_updated: "2026-06-05T19:20:43.033Z"
+status: planned
+stopped_at: Phase 36 planned (4 plans)
+last_updated: "2026-06-05T20:08:37.169Z"
 last_activity: 2026-06-05
 progress:
   total_phases: 24
   completed_phases: 22
-  total_plans: 76
+  total_plans: 80
   completed_plans: 76
-  percent: 100
+  percent: 95
 ---
 
 # Project State
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 3/6 complete — Phase 35 authored, SC3 live operator-pending)
 Phase: 36
-Plan: Not started
-Status: Milestone complete
+Plan: 4 plans ready (3 waves) — not started
+Status: Phase 36 planned — 4 plans verified (PASSED, 0 blockers / 2 advisory warnings), 9/9 REQ-IDs covered, ready for `/gsd-execute-phase 36`. NOT milestone-complete (36/37/38/39 remain).
 Last activity: 2026-06-05
 
 ### Phase 35 Plan 03 — AUTHORED, LIVE SC3 OPERATOR-PENDING (KeeperFaultIntakeE2ETests — running-Keeper-container correlated-ES-log proof; INTAKE-03/KMET-04 live-gated; 2026-06-05)
@@ -1068,4 +1068,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 35 (Fault Intake & Correlation) — 3 plans — 2026-06-05T16:17:56.150Z
+**Planned Phase:** 36 (l2-health-probe-recovery-loop-dlqs) — 4 plans — 2026-06-05T20:08:37.157Z
