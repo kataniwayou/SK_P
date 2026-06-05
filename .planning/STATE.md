@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: ready_to_plan
-stopped_at: v3.7.0 roadmap created (6 phases 33-38, 29/29 requirements mapped, approved). Next: /gsd-plan-phase 33 (Fault-Recovery Spike). v3.6.0 ARCHIVED + tagged.
-last_updated: "2026-06-05T00:00:00.000Z"
-last_activity: 2026-06-05 -- v3.6.0 milestone CLOSE: archived ROADMAP+REQUIREMENTS+AUDIT to milestones/v3.6.0-*, added MILESTONES.md entry, evolved PROJECT.md, updated RETROSPECTIVE.md, tagged v3.6.0, removed stale REQUIREMENTS.md (its v3.5.0 content archived to milestones/v3.5.0-REQUIREMENTS.md under the correct name); v3.5.0 formal archival (ROADMAP/MILESTONES/tag) deferred per user scope. Prior: Phase 32.1 live close gate PASSED (phase-32.1-close.ps1 GATE_EXIT=0): 3xGREEN=452 facts, Release+Debug 0-warning, triple-SHA BEFORE==AFTER all HELD (psql 34ac2385…, redis 666b99bc…, rmq 2c9b0868…), redis net-zero settle, ZERO skp:cancelled:* keys. Behavioral half also proven live via smoke tests (Prometheus processor_dispatch_consumed +4=Immediate(3)+1; {procId}_error 0→1; ES infra-fault log)
+status: planning
+stopped_at: Phase 33 context gathered
+last_updated: "2026-06-05T08:17:40.003Z"
+last_activity: "2026-06-05 — Milestone v3.7.0 roadmap created. Design forks locked: Keeper console on BaseConsole.Core; recover off Fault<EntryStepDispatch>/Fault<ExecutionResult> pub/sub (Start/Stop out of scope); bounded L2 probe loop, ack-after-loop crash survival; Keeper-direct re-inject riding the receiver's flag[H]; per-workflow pause/resume state in the single-replica orchestrator L1; two DLQs split by mechanism (Immediate(N) → DLQ-1 forensic; probe give-up → keeper-dlq alert). Phases 33→38. Prior milestone v3.6.0 SHIPPED + ARCHIVED (tagged v3.6.0). v3.5.0 formal archival deferred (requirements snapshot at milestones/v3.5.0-REQUIREMENTS.md)."
 progress:
-  total_phases: 6
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 20
+  completed_phases: 19
+  total_plans: 68
+  completed_plans: 68
+  percent: 100
 ---
 
 # Project State
@@ -970,9 +970,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-04T20:20:58.450Z
-Stopped at: Completed 32-06-PLAN.md
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 33 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
