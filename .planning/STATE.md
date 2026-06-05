@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: planned
-stopped_at: Phase 36 planned (4 plans)
-last_updated: "2026-06-05T20:08:37.169Z"
-last_activity: 2026-06-05
+status: executing
+stopped_at: Completed 36-01-PLAN.md
+last_updated: "2026-06-05T21:00:00.000Z"
+last_activity: 2026-06-05 -- Phase 36 Plan 01 complete (contract surface + Wave-0 test scaffolding)
 progress:
   total_phases: 24
   completed_phases: 22
   total_plans: 80
-  completed_plans: 76
-  percent: 95
+  completed_plans: 77
+  percent: 96
 ---
 
 # Project State
@@ -21,15 +21,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 36 — L2 Health-Probe Recovery Loop & DLQs (Phase 35 complete; SC3 live operator-pending)
+**Current focus:** Phase 36 — l2-health-probe-recovery-loop-dlqs
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 3/6 complete — Phase 35 authored, SC3 live operator-pending)
-Phase: 36
-Plan: 4 plans ready (3 waves) — not started
-Status: Phase 36 planned — 4 plans verified (PASSED, 0 blockers / 2 advisory warnings), 9/9 REQ-IDs covered, ready for `/gsd-execute-phase 36`. NOT milestone-complete (36/37/38/39 remain).
-Last activity: 2026-06-05
+Phase: 36 (l2-health-probe-recovery-loop-dlqs) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 36
+Last activity: 2026-06-05 -- Phase 36 Plan 01 complete (contract surface + Wave-0 test scaffolding)
+
+### Phase 36 Plan 01 — COMPLETE (contract surface + Wave-0 test scaffolding — keeper-dlq const + KeeperProbe key + ProbeOptions + FakeRedis/bound test; PROBE-01/02/04 + DLQ-03 foundations; 2026-06-05)
+
+- **3 task commits (scoped paths only — the ~242 pre-existing `.planning/` archive deletions left UNtouched, NOT staged, NOT reverted; verified 242 still uncommitted after all 3 commits).** `52d2b67` (feat: keeper-dlq const + KeeperProbe key builder), `85c526a` (feat: ProbeOptions + Program.cs bind + appsettings Probe section), `8f386c6` (test: Wave-0 FakeRedis double + ProbeOptions_Bound constraint test). Wave 1, depends_on [], autonomous:true. NO file deletions in any of the 3 commits.
+- **Task 1 — contracts (DLQ-2 + probe scratch key):** `KeeperQueues.DeadLetter = "keeper-dlq"` (D-08; plain durable, NO x-message-ttl — its depth is the Phase-39 primary operator alert, contrast DLQ-1's TTL); `L2ProjectionKeys.KeeperProbe(string h) => "skp:keeper:probe:{h}"` (D-03; short-TTL write-then-delete scratch key off the existing `Prefix="skp:"` const). Transitional `ExecutionData(Guid)` overload left untouched (string overload is Plan-02's probe-read path). `dotnet build src/Messaging.Contracts -c Debug` 0/0.
+- **Task 2 — ProbeOptions (Keeper-local) + bind + appsettings:** `src/Keeper/ProbeOptions.cs` (namespace `Keeper`, sealed, `DelaySeconds=5`/`MaxAttempts=12`; LOAD-BEARING D-04 constraint — 5×12=60s, 30× under RabbitMQ's 30-min consumer_timeout since the loop is awaited inside Consume holding the delivery un-acked). Program.cs: `Configure<ProbeOptions>(GetSection("Probe"))` after the RetryOptions bind. NO second `AddBaseConsoleRedis` (IConnectionMultiplexer already a singleton via AddBaseConsole, PATTERNS correction 1 — grep==0 preserved). appsettings: `"Probe": { DelaySeconds:5, MaxAttempts:12 }` before ConsoleHealth. `dotnet build src/Keeper -c Release` 0 Warning / 0 Error.
+- **Task 3 — Wave-0 test scaffolding (tdd=true):** `FakeRedis.cs` — stateful `IConnectionMultiplexer`/`IDatabase` double with `RedisHealth{Down,HalfOpen,Up}` + flip API (`BringUp`/`BringDown`/`HalfOpen`/`SetFailuresBeforeUp(n)`); Down → every probe op throws `RedisConnectionException` (RedisException-derived superset, RESEARCH A2), HalfOpen → read OK / write+delete throw (PROBE-02), Up → read Null / write+delete true; NSubstitute-backed (no new package; the repo's `OrchestratorTestStubs` precedent). Consumed by Plan 02's KeeperProbeLoopTests. `ProbeOptionsBoundTests.cs` — asserts DelaySeconds×MaxAttempts (60s) >0 and <30*60 (PROBE-01); xUnit-v3/MTP `--filter-method "*ProbeOptions_Bound*"` 1 passed / 0 failed.
+- **Deviations (2, both in-scope, no substance):** (Rule 3) added `using Keeper;` to Program.cs — `ProbeOptions` is in namespace `Keeper`, Program.cs top-level statements are global and only imported `Keeper.Consumers`. (PATTERNS-driven) FakeRedis NSubstitute-backed wrapped in a hand-rolled stateful flip API rather than a full hand-implemented 100+-member interface (impractical/unmaintainable) — minimal-surface intent preserved (only the 3 probe ops + GetDatabase configured). No bugs, no architectural decisions, no auth gates, no scope creep.
+- **TDD note:** Task 3 was tdd=true; no compiling RED state possible — `ProbeOptions` (the SUT) shipped in Task 2, so the bind-time constraint test was GREEN on first run (same RED-collapse precedent as Phase 35 Plan 02). Test lands in the `test(...)` GREEN commit `8f386c6`.
+- **Verification (all green):** `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error; full hermetic suite (`--filter-not-trait "Category=RealStack"`) **458 passed / 0 failed** (was 457 in Phase 35; +1 = the new ProbeOptions_Bound test, zero regression); all Task 1/2/3 acceptance greps met (DeadLetter==1, KeeperProbe==1, Configure<ProbeOptions>==1, AddBaseConsoleRedis==0, Probe section + 5/12 values present, FakeRedis RedisException==4, bound fact==1).
+- SUMMARY: 36-01-SUMMARY.md (Self-Check PASSED — 5 source/test files + SUMMARY exist; 3 commits in history). PROBE-01/02/04 + DLQ-03 foundations (interface-first); full runtime behavior is Plan 02. Phase 36 = 1/4 plans complete; **Plan 02** (L2ProbeRecovery loop helper + consumer re-inject/park bodies) next.
 
 ### Phase 35 Plan 03 — AUTHORED, LIVE SC3 OPERATOR-PENDING (KeeperFaultIntakeE2ETests — running-Keeper-container correlated-ES-log proof; INTAKE-03/KMET-04 live-gated; 2026-06-05)
 
