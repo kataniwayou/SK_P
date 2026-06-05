@@ -1,6 +1,7 @@
 using BaseConsole.Core.Configuration;
 using BaseConsole.Core.Messaging;
 using MassTransit;
+using MassTransit.Middleware;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -45,6 +46,22 @@ public static class MessagingServiceCollectionExtensions
         services.AddMassTransit(x =>
         {
             configureConsumers(x);   // concrete seam — EMPTY this phase (Phase 19 adds consumers)
+
+            // DLQ-04 (D-06): consolidate the post-exhaustion _error MOVE to ONE shared skp-dlq-1 across ALL
+            // consoles (processor + orchestrator + Keeper). Lives in the once-per-endpoint, framework-deduped
+            // AddConfigureEndpointsCallback (Pitfall 3 — error middleware is PER-ENDPOINT; it does NOT
+            // double-register with the existing per-consumer UseMessageRetry). KEEP the fault-generation
+            // filter upstream — Keeper's whole recovery model rides the Fault<T> pub/sub stream (removing it
+            // would break Phases 33-35). Only the default move TARGET is replaced with the consolidated dest.
+            x.AddConfigureEndpointsCallback((context, name, e) =>
+            {
+                e.ConfigureError(ep =>
+                {
+                    ep.UseFilter(new GenerateFaultFilter());                  // keep Fault<T> publication (Keeper rides it)
+                    ep.UseFilter(new ConsolidatedErrorTransportFilter());     // move exhausted msg → skp-dlq-1 (replaces {queue}_error)
+                });
+            });
+
             x.UsingRabbitMq((ctx, c) =>
             {
                 c.Host(rabbitHost, h => { h.Username(rabbitUser); h.Password(rabbitPass); });
@@ -52,6 +69,18 @@ public static class MessagingServiceCollectionExtensions
                 c.UseConsumeFilter(typeof(InboundExecutionScopeConsumeFilter<>), ctx);  // LOG-02 (INNER) execution-id scope (D-02)
                 c.UseSendFilter(typeof(OutboundCorrelationSendFilter<>), ctx);        // CORR-02
                 c.UsePublishFilter(typeof(OutboundCorrelationPublishFilter<>), ctx);  // CORR-02
+
+                // DLQ-1 (D-05/07): declare the ONE consolidated dead-letter queue ONCE, with a 7-day message
+                // TTL (604800000 ms — RabbitMQ ms-as-int semantics, RESEARCH A4). No consumer — it is an
+                // operator/forensic sink, present in BOTH close-gate snapshots so it does not drift the
+                // net-zero triple-SHA (Pitfall 1). The TTL arg applies only at queue-create time; if a
+                // skp-dlq-1 ever existed without it, an operator must delete it once on the dev broker before
+                // this declaration takes effect (Pitfall 2 — operator action for Plan 04 / Phase 39, NOT code).
+                c.ReceiveEndpoint(ConsolidatedErrorTransportFilter.Dlq1, e =>
+                {
+                    e.SetQueueArgument("x-message-ttl", (int)TimeSpan.FromDays(7).TotalMilliseconds);
+                });
+
                 configureBus?.Invoke(ctx, c);   // OPTIONAL bus-factory seam (Phase 24 D-06) — scheduler/redelivery
                                                 // wiring (e.g. c.UseDelayedMessageScheduler()) goes here, BEFORE
                                                 // endpoints bind. Default null preserves all existing call sites;
