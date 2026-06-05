@@ -20,7 +20,7 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 
 - [ ] **INTAKE-01**: Keeper recovers off the **published `Fault<T>` events** of the autonomous execution-path consumers — one `IConsumer<Fault<EntryStepDispatch>>` (processor) and one `IConsumer<Fault<ExecutionResult>>` (orchestrator) — each binding covers all producing replicas via pub/sub (no per-`{procId}_error`-queue binding). `Fault<StartOrchestration>` / `Fault<StopOrchestration>` are NOT consumed (operator-retried commands).
 - [ ] **INTAKE-02**: Keeper extracts the original message and its full 6-id `IExecutionCorrelated` tuple (correlationId, workflowId, stepId, processorId, entryId, executionId) + `H` from `Fault<T>.Message`, and opens the execution log-scope from that inner message (since `Fault<T>` is not itself `IExecutionCorrelated`), so OTel logs carry the propagated correlation + execution ids.
-- [ ] **INTAKE-03**: The MassTransit `_error` queues (`{procId}_error`, `orchestrator-result_error`) are retained only as a **self-expiring (TTL'd) forensic copy** — never Keeper's worklist; recovered work is never double-processed from `_error`.
+- [ ] **INTAKE-03**: The MassTransit transport-exhaustion record consolidates into **DLQ-1** (the `Immediate(N)` exhaustion queue) as a **self-expiring (TTL'd) forensic copy** — never Keeper's worklist. Keeper recovers off the `Fault<T>` events, so recovered work is never re-processed from the error / DLQ-1 queue.
 - [ ] **INTAKE-04**: On recovery, Keeper **re-injects the original message directly to its origin endpoint by type** — `queue:{processorId:D}` for `EntryStepDispatch`, `queue:orchestrator-result` for `ExecutionResult` — riding the receiver's existing dedup gate (processor `flag[H]`; orchestrator `flag[m.H]`); no orchestrator round-trip for re-injection.
 
 ### L2 Health-Probe Recovery Loop (PROBE)
@@ -34,9 +34,10 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 
 ### Give-Up / Dead-Letter (DLQ)
 
-- [ ] **DLQ-01**: Keeper's own infra faults (e.g., a failed re-inject send or pause/resume publish) retry under the same configurable `Immediate(N)` policy bound from config.
-- [ ] **DLQ-02**: Both give-up paths land in a **single shared `keeper-dlq`**: (a) L2-probe attempts exhausted (explicit Send-to-`keeper-dlq` then ack); (b) Keeper's own `Immediate(N)` exhausted (error transport redirected to `keeper-dlq`).
-- [ ] **DLQ-03**: `keeper-dlq` depth is exposed as a metric for Prometheus alerting; on give-up the affected workflow **stays paused** and resume is an operator action (no auto-resume into a still-broken L2).
+- [ ] **DLQ-01**: Keeper's own infra faults (e.g., a failed re-inject send or pause/resume publish) retry under the same configurable `Immediate(N)` policy bound from config; on exhaustion they land in DLQ-1 (transport-exhaustion), like any other consumer.
+- [ ] **DLQ-02**: Two dead-letter queues, split by exhaustion mechanism — **DLQ-1** (`Immediate(N)` transport exhaustion, consolidated across all consumers; the exact consolidation mechanism is confirmed in the Phase-33 spike) and **DLQ-2 `keeper-dlq`** (Keeper's L2-probe-loop give-ups, explicit Send-then-ack).
+- [ ] **DLQ-03**: `keeper-dlq` (DLQ-2) depth is the **primary** Prometheus alert (terminal "L2 recovery gave up — needs an operator"); DLQ-1 is a TTL'd transport-exhaustion forensic record (secondary — it also contains transient faults Keeper already recovered, plus Start/Stop exhaustions). On give-up the affected workflow **stays paused** and resume is an operator action (no auto-resume into a still-broken L2).
+- [ ] **DLQ-04**: All consumers (processor dispatch, orchestrator result/start/stop, **and Keeper**) use the same `Immediate(N)` policy bound from the shared `RetryOptions` appsettings, with transport exhaustions routed uniformly to DLQ-1 via a shared error-transport configuration (same design pattern across consoles).
 
 ### Workflow Pause/Resume Coordination (PAUSE)
 
@@ -57,7 +58,7 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 
 - [ ] **TEST-01**: A real-stack E2E induces an L2 (Redis) outage that dead-letters **both** an `EntryStepDispatch` (processor) and an `ExecutionResult` (orchestrator), then proves Keeper pauses the workflow, recovers when L2 returns, resumes, and re-injects each to its origin with exactly-once downstream effect (no duplicate) — validating the uniform loop + per-type re-inject.
 - [ ] **TEST-02**: A real-stack E2E proves the give-up path: L2 stays down past max-attempts → the message lands in `keeper-dlq`, the workflow stays paused, and `keeper_dlq_pushed` increments.
-- [ ] **TEST-03**: A phase-close gate runs 3× consecutive GREEN with the triple-SHA (psql `\l` / redis `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER, including `keeper-dlq` + probe scratch-key scan-clean (net-zero), Release+Debug 0-warning.
+- [ ] **TEST-03**: A phase-close gate runs 3× consecutive GREEN with the triple-SHA (psql `\l` / redis `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER, including **both DLQ-1 and DLQ-2 (`keeper-dlq`)** + probe scratch-key scan-clean (net-zero), Release+Debug 0-warning.
 
 ## Future Requirements (deferred)
 
@@ -75,8 +76,38 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 
 ## Traceability
 
-_(filled by the roadmapper — every REQ-ID maps to exactly one phase)_
+Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38).
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| _pending roadmap_ | | |
+| INTAKE-01 | 33 — Fault-Recovery Spike | Not started |
+| INTAKE-02 | 33 — Fault-Recovery Spike | Not started |
+| INTAKE-04 | 33 — Fault-Recovery Spike | Not started |
+| PROBE-06 | 33 — Fault-Recovery Spike | Not started |
+| KEEP-01 | 34 — Keeper Console Foundation | Not started |
+| KEEP-02 | 34 — Keeper Console Foundation | Not started |
+| KEEP-03 | 34 — Keeper Console Foundation | Not started |
+| INTAKE-03 | 35 — Fault Intake & Correlation | Not started |
+| KMET-04 | 35 — Fault Intake & Correlation | Not started |
+| PROBE-01 | 36 — L2 Probe Loop & DLQs | Not started |
+| PROBE-02 | 36 — L2 Probe Loop & DLQs | Not started |
+| PROBE-03 | 36 — L2 Probe Loop & DLQs | Not started |
+| PROBE-04 | 36 — L2 Probe Loop & DLQs | Not started |
+| PROBE-05 | 36 — L2 Probe Loop & DLQs | Not started |
+| DLQ-01 | 36 — L2 Probe Loop & DLQs | Not started |
+| DLQ-02 | 36 — L2 Probe Loop & DLQs | Not started |
+| DLQ-03 | 36 — L2 Probe Loop & DLQs | Not started |
+| DLQ-04 | 36 — L2 Probe Loop & DLQs | Not started |
+| PAUSE-01 | 37 — Orchestrator Pause/Resume | Not started |
+| PAUSE-02 | 37 — Orchestrator Pause/Resume | Not started |
+| PAUSE-03 | 37 — Orchestrator Pause/Resume | Not started |
+| PAUSE-04 | 37 — Orchestrator Pause/Resume | Not started |
+| PAUSE-05 | 37 — Orchestrator Pause/Resume | Not started |
+| KMET-01 | 38 — Metrics + E2E + Close Gate | Not started |
+| KMET-02 | 38 — Metrics + E2E + Close Gate | Not started |
+| KMET-03 | 38 — Metrics + E2E + Close Gate | Not started |
+| TEST-01 | 38 — Metrics + E2E + Close Gate | Not started |
+| TEST-02 | 38 — Metrics + E2E + Close Gate | Not started |
+| TEST-03 | 38 — Metrics + E2E + Close Gate | Not started |
+
+**Coverage:** 29/29 requirements mapped (PROBE-06 → Phase 33 with the spike; DLQ-04 added → Phase 36). Per-phase counts: 33=4 · 34=3 · 35=2 · 36=9 · 37=5 · 38=6.

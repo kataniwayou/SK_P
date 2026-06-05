@@ -7,6 +7,20 @@
 - ✅ **v3.4.0 BaseConsole + Orchestrator Messaging** — Phases 17-24 + 24.1 (shipped 2026-06-01) — see [milestones/v3.4.0-ROADMAP.md](milestones/v3.4.0-ROADMAP.md)
 - ✅ **v3.5.0 Processor Console — Self-Registration, Liveness & Execution Round-Trip** — Phases 25-30 (shipped 2026-06-02)
 - ✅ **v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip** — Phases 31-32.1 (shipped 2026-06-05) — see [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md)
+- 🚧 **v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume** — Phases 33-38 (in progress)
+
+## 🚧 v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume (In Progress)
+
+**Milestone Goal:** Make the autonomous execution loop (cron fire → dispatch → process → result → fan-out) **self-heal through transient L2 (Redis) outages without operator intervention.** A new multi-replica `Keeper` console reacts to the `Fault<EntryStepDispatch>` / `Fault<ExecutionResult>` events that the execution-path consumers publish on retry-budget exhaustion, probes L2 health on a bounded loop, pauses the affected workflow's cron (via the single-replica orchestrator's in-memory L1) so the outage stops spreading, re-injects recovered work to its origin (riding the receiver's existing `flag[H]` idempotency), resumes when no recoveries remain pending, and parks the genuinely unrecoverable in `keeper-dlq` for operator triage. Keeper is the automated operator for v3.6.0's accepted "an infra-faulting workflow keeps dead-lettering until an operator intervenes" gap. Operator commands (Start/Stop) are out of scope — a failed Start/Stop is simply re-issued.
+
+**Build order (locked):** 33 (spike — de-risk the `Fault<T>`→reinject→`flag[H]`-collapse round-trip) → 34 (Keeper console foundation) → 35 (fault intake + correlation) → 36 (L2 probe loop + two DLQs) → 37 (orchestrator pause/resume) → 38 (metrics + real-stack E2E + close gate).
+
+- [ ] **Phase 33: Fault-Recovery Spike (de-risk)** — Prove `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` consumption via pub/sub, inner-message + 6-id correlation extraction, re-inject to origin, and receiver `flag[H]` collapse — before building anything. (INTAKE-01, INTAKE-02, INTAKE-04, PROBE-06)
+- [ ] **Phase 34: Keeper Console Foundation** — Runnable multi-replica `Keeper` on `BaseConsole.Core`; builds, containerizes, joins compose healthy; competing-consumer load-balancing. (KEEP-01, KEEP-02, KEEP-03)
+- [ ] **Phase 35: Fault Intake & Correlation** — Production intake of the two `Fault<T>` events; extract 6-id tuple + `H`; open execution log-scope; `_error` → TTL'd forensic DLQ-1 only. (INTAKE-03, KMET-04)
+- [ ] **Phase 36: L2 Health-Probe Recovery Loop & DLQs** — Bounded crash-survivable L2 read+write probe loop; re-inject on success, give-up to `keeper-dlq` (DLQ-2); ack-after-loop; two DLQs split by exhaustion mechanism (Immediate(N) → DLQ-1, probe → DLQ-2); shared `Immediate(N)` from appsettings across all consumers. (PROBE-01..05, DLQ-01..04)
+- [ ] **Phase 37: Orchestrator Pause/Resume Coordination** — New `PauseWorkflow`/`ResumeWorkflow` contracts + orchestrator consumers; per-workflow pending-recovery set keyed by `H` in single-replica L1; idempotent; stays paused on give-up. *(Only phase touching the Orchestrator project.)* (PAUSE-01..05)
+- [ ] **Phase 38: Keeper Observability + Real-Stack E2E + Close Gate** — `Keeper` meter + counters/histograms; E2E proving recover-both-paths + give-up; 3×GREEN triple-SHA net-zero close gate (both DLQs + scratch-key scan-clean). (KMET-01/02/03, TEST-01/02/03)
 
 ## Phases (shipped milestones)
 
@@ -184,10 +198,78 @@
 
 Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, and the cancelled-circuit-breaker revert rationale are archived to [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md). Requirements: [milestones/v3.6.0-REQUIREMENTS.md](milestones/v3.6.0-REQUIREMENTS.md). Audit: [milestones/v3.6.0-MILESTONE-AUDIT.md](milestones/v3.6.0-MILESTONE-AUDIT.md).
 
+### Phase 33: Fault-Recovery Spike (De-Risk)
+**Goal**: Prove the load-bearing assumption of the whole milestone — that a published `Fault<EntryStepDispatch>` and `Fault<ExecutionResult>` event can be consumed by an external subscriber, the original message + correlation extracted from `Fault<T>.Message`, re-injected to its origin endpoint by type, and silently collapsed by the receiver's surviving Phase-31 `flag[H]` dedup — before committing to the full Keeper build.
+**Depends on**: — (first phase of the milestone)
+**Requirements**: INTAKE-01, INTAKE-02, INTAKE-04, PROBE-06
+**Success Criteria** (what must be TRUE):
+  1. A spike consumer binding `IConsumer<Fault<EntryStepDispatch>>` and `IConsumer<Fault<ExecutionResult>>` receives the fault events the processor/orchestrator publish on retry-budget exhaustion — via pub/sub, no per-`{procId}_error`-queue binding — while `Fault<StartOrchestration>`/`Fault<StopOrchestration>` are demonstrably NOT delivered.
+  2. From `Fault<T>.Message` the spike extracts the original message + full 6-id `IExecutionCorrelated` tuple (correlationId, workflowId, stepId, processorId, entryId, executionId) + `H`, proving the inner-message shape is reachable even though `Fault<T>` is not itself `IExecutionCorrelated`.
+  3. The extracted message is re-injected directly to its origin endpoint by type (`queue:{processorId:D}` for dispatch, `queue:orchestrator-result` for result) — no orchestrator round-trip — and the downstream effect happens exactly once.
+  4. A deliberately duplicated re-inject collapses at the receiver via its existing `flag[H]` gate with no second downstream effect (Keeper needs no dedup of its own). The `_error`-retention decision (TTL'd-forensic vs suppress) is recorded.
+**Plans**: TBD
+
+### Phase 34: Keeper Console Foundation
+**Goal**: Stand up a runnable, multi-replica `Keeper` console on `BaseConsole.Core` (mirroring `Orchestrator`) that builds, containerizes, and joins the compose stack as a healthy tier with work load-balanced across replicas.
+**Depends on**: Phase 33
+**Requirements**: KEEP-01, KEEP-02, KEEP-03
+**Success Criteria** (what must be TRUE):
+  1. A `Keeper` console exists on `BaseConsole.Core` (Generic-Host, metrics-only OTel, soft-dep Redis, embedded health probes, MassTransit/RabbitMQ, inherited correlation filters) with a minimal `Program.cs` mirroring `Orchestrator`.
+  2. Keeper runs multi-replica with fault work bound to a shared competing-consumer endpoint (not instance-unique fan-out); RabbitMQ round-robins fault events across replicas.
+  3. Keeper builds clean (Release+Debug, 0 warnings) and containerizes via a multi-stage Dockerfile.
+  4. Keeper joins the compose stack as a new healthy tier alongside `orchestrator` / `processor-sample` (health probes report ready live).
+**Plans**: TBD
+
+### Phase 35: Fault Intake & Correlation
+**Goal**: Wire the production fault-intake path — consuming the two execution-path `Fault<T>` events, extracting the inner message + 6-id correlation + `H`, opening the propagated execution log-scope, and confirming the `_error` record consolidates into the TTL'd forensic DLQ-1 (never Keeper's worklist).
+**Depends on**: Phase 34
+**Requirements**: INTAKE-03, KMET-04
+**Success Criteria** (what must be TRUE):
+  1. The transport-exhaustion record consolidates into DLQ-1 (TTL'd forensic) — Keeper recovers off the `Fault<T>` pub/sub events, never reads the error/DLQ-1 queue, and recovered work is never double-processed from it.
+  2. On every consumed fault, Keeper opens the execution log-scope from the extracted inner message so its OTel logs carry the propagated correlationId + execution-scope ids (consistent with the other consoles).
+  3. A faulted message processed by Keeper produces an Elasticsearch log correlated to the original execution by correlationId + ids (observable end-to-end).
+**Plans**: TBD
+
+### Phase 36: L2 Health-Probe Recovery Loop & DLQs
+**Goal**: Implement the core recovery engine — a bounded, crash-survivable L2 read+write probe loop that re-injects to origin on first success or parks the unrecoverable in `keeper-dlq` (DLQ-2) on give-up — plus the two-DLQ topology (Immediate(N) exhaustion → DLQ-1; probe exhaustion → DLQ-2) and the shared `Immediate(N)` policy across all consumers.
+**Depends on**: Phase 35
+**Requirements**: PROBE-01, PROBE-02, PROBE-03, PROBE-04, PROBE-05, DLQ-01, DLQ-02, DLQ-03, DLQ-04
+**Success Criteria** (what must be TRUE):
+  1. On intake Keeper runs a recovery loop with config-driven inter-attempt delay (s) and max-attempts, each iteration probing L2 by reading `skp:data:{entryId}` AND write-then-deleting a scratch key (read + write, not mere connectivity); `delay × attempts` is documented as bounded under RabbitMQ's delivery-ack timeout.
+  2. On the first successful probe Keeper exits and triggers recovery (re-inject + resume); when max-attempts exhaust it parks the original message in `keeper-dlq` (DLQ-2) and exits.
+  3. The fault message is acked only after the loop exits (success or give-up); killing Keeper mid-loop leaves it un-acked → redelivered → loop restarts, with no lost message (at-least-once recovery observable).
+  4. Two DLQs exist split by mechanism: DLQ-1 (all `Immediate(N)` transport exhaustions, consolidated across processor/orchestrator/Keeper, TTL'd forensic) and DLQ-2 `keeper-dlq` (probe give-ups); `keeper-dlq` depth is the primary Prometheus alert; on give-up the workflow stays paused (no auto-resume).
+  5. All consumers (processor dispatch, orchestrator result/start/stop, Keeper) use the same `Immediate(N)` bound from the shared `RetryOptions` appsettings, routed uniformly to DLQ-1 (same pattern across consoles).
+**Plans**: TBD
+
+### Phase 37: Orchestrator Pause/Resume Coordination
+**Goal**: Add the `PauseWorkflow`/`ResumeWorkflow` contracts and the orchestrator-side consumers that halt and reschedule a workflow's cron off an in-memory L1 pending-recovery set keyed by `H` — keeping the workflow paused while any recovery is in flight (or any message is given up), idempotent under duplicate/concurrent signals.
+**Depends on**: Phase 36 (re-inject lives in Keeper per INTAKE-04; this is the cron-scheduling half)
+**Requirements**: PAUSE-01, PAUSE-02, PAUSE-03, PAUSE-04, PAUSE-05
+**Success Criteria** (what must be TRUE):
+  1. New `PauseWorkflow` and `ResumeWorkflow` contracts exist in `Messaging.Contracts`, fanned from Keeper to the orchestrator (cron scheduling only; re-injection stays in Keeper).
+  2. On the first in-flight recovery for a workflow the orchestrator halts its future cron fires (`UnscheduleOnlyAsync`, L1 preserved), tracking pause-state as a per-workflow pending-recovery set keyed by `H` in its single-replica in-memory L1 — never in L2.
+  3. When no recoveries remain pending for a workflow, the orchestrator reschedules it from L1 (`ScheduleAsync` with the L1 root's `jobId` + `cron`) and future cron fires resume.
+  4. Duplicate/concurrent pause/resume signals (Keeper crash/redelivery, multiple replicas) are serialized by the orchestrator's per-`workflowId` semaphore, keyed idempotently by `H`, and do not double-count.
+  5. A workflow with ≥1 given-up (unrecovered) message remains paused until an operator intervenes; the orchestrator does not auto-resume it.
+**Plans**: TBD
+
+### Phase 38: Keeper Observability + Real-Stack E2E + Close Gate
+**Goal**: Register the Keeper meter + throughput/saturation instruments, then prove the full recover-and-give-up behavior live against the real stack and lock a 3×GREEN triple-SHA net-zero close gate.
+**Depends on**: Phase 37
+**Requirements**: KMET-01, KMET-02, KMET-03, TEST-01, TEST-02, TEST-03
+**Success Criteria** (what must be TRUE):
+  1. A code-defined `Keeper` meter is registered per the house pattern (snake_case, no `_total` suffix, inherited `service_instance_id`).
+  2. Throughput/outcome counters (`keeper_fault_consumed`, `keeper_recovered`, `keeper_dlq_pushed{reason}`, `keeper_workflow_paused`, `keeper_workflow_resumed`, `keeper_l2_probe_failed`) and saturation/latency signals (`keeper_in_flight` UpDownCounter, `keeper_recovery_duration` histogram) are emitted and Prometheus-scrapable, labeled by `processorId` where meaningful with no high-cardinality `workflowId`.
+  3. A real-stack E2E induces an L2 outage that dead-letters both an `EntryStepDispatch` and an `ExecutionResult`, then proves Keeper pauses the workflow, recovers on L2 return, resumes, and re-injects each to origin with exactly-once downstream effect (no duplicate).
+  4. A real-stack E2E proves the give-up path: L2 stays down past max-attempts → message in `keeper-dlq`, workflow stays paused, `keeper_dlq_pushed` increments.
+  5. The close gate runs 3× consecutive GREEN with triple-SHA (psql `\l` / redis `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER — including both DLQs + probe scratch-key scan-clean (net-zero) — at Release+Debug 0-warning.
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31
+Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 → 31.1 → 32 → 32.1 → 33 → 34 → 35 → 36 → 37 → 38
 
 | Phase | Milestone | Plans Complete | Status   | Completed  |
 | ----- | --------- | -------------- | -------- | ---------- |
@@ -212,6 +294,12 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31
 | 31.1 Close-Gate Redis Net-Zero (gap closure) | v3.6.0 | 1/1 | Complete | 2026-06-04 |
 | 32. Cancelled Circuit-Breaker | v3.6.0 | 5/6 | Superseded by 32.1 | — |
 | 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 2/2 | Complete    | 2026-06-05 |
+| 33. Fault-Recovery Spike (De-Risk) | v3.7.0 | 0/? | Not started | — |
+| 34. Keeper Console Foundation | v3.7.0 | 0/? | Not started | — |
+| 35. Fault Intake & Correlation | v3.7.0 | 0/? | Not started | — |
+| 36. L2 Health-Probe Recovery Loop & DLQs | v3.7.0 | 0/? | Not started | — |
+| 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 0/? | Not started | — |
+| 38. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 0/? | Not started | — |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 shipped 2026-06-02 (6 phases 25-30, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip + runtime/business metrics) — note: formal archival (ROADMAP/MILESTONES/tag) deferred. v3.6.0 shipped 2026-06-05 (4 phases 31-32.1, Idempotent Execution — exactly-once-effect round-trip via deterministic `H` + effect-first `flag[H]` dedup at both hops; cancelled circuit-breaker built then reverted to plain dead-lettering). Next milestone planning begins with `/gsd-new-milestone`.*
