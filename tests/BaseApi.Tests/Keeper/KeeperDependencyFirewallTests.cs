@@ -10,6 +10,16 @@ namespace BaseApi.Tests.Keeper;
 /// <c>Quartz</c>, or <c>Cronos</c> — Keeper does not touch the API base, EF/Postgres, OR the scheduler
 /// (it has no cron math). If a future phase introduces a forbidden reference, <c>dotnet test</c> catches
 /// it immediately without a human grep pass.
+///
+/// <para>
+/// NOTE — DIRECT references only: <see cref="Assembly.GetReferencedAssemblies"/> returns just the
+/// references recorded in <c>Keeper.dll</c>'s own manifest; it does NOT walk the transitive closure.
+/// A forbidden assembly pulled in indirectly via <c>BaseConsole.Core</c> or <c>Messaging.Contracts</c>
+/// would NOT trip this guard. A full transitive scan would require a build-task / recursive load-and-walk
+/// (deferred — and would diverge from the analogous <c>ConsoleDependencyFirewallTests</c>, which is also
+/// direct-reference-only by design). This test enforces the DIRECT reference layer; "closure" here means
+/// Keeper's own manifest, not the recursive dependency graph.
+/// </para>
 /// </summary>
 public sealed class KeeperDependencyFirewallTests
 {
