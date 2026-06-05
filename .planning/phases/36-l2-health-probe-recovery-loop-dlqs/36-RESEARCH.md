@@ -455,19 +455,19 @@ public static string KeeperProbe(string h) => $"{Prefix}keeper:probe:{h}";   // 
 | A4 | `x-message-ttl` value is RabbitMQ milliseconds (int/long) via `SetQueueArgument` | Mechanism A | LOW — standard RabbitMQ semantics; verify the MT `SetQueueArgument` overload accepts the numeric type. |
 | A5 | `GenerateFaultFilter`/`ErrorTransportFilter` are the public default error filters in MT 8.5.5 (per discussion 2945, version unstated) | DLQ-1 Consolidation | MEDIUM — names/visibility may differ in 8.5.5; confirm against the transport source. The CONCEPT (replace the move target, keep fault generation) holds regardless. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Exact MT 8.5.5 error-transport filter API for Mechanism A.**
+1. **Exact MT 8.5.5 error-transport filter API for Mechanism A.** — **RESOLVED:** handled by Plan 36-03 / Task 1, a `[BLOCKING] checkpoint:decision` that requires the executor to confirm the precise 8.5.5 API against `MassTransit.RabbitMqTransport` source (spike in a hermetic harness) before any base-library code, with Mechanism B as the documented fallback.
    - What we know: `ConfigureError` exposes the error pipeline; default = fault-gen + error-transport-move; a custom `IFilter<ExceptionReceiveContext>` can replace the move.
    - What's unclear: the precise public type names/constructors in 8.5.5 and how to resolve a fixed send endpoint inside the filter.
    - Recommendation: planner reads `MassTransit.RabbitMqTransport` 8.5.5 source (`MoveToErrorTransport*`) during planning; spike the filter in a hermetic harness before the base-library commit. If costly, use Mechanism B and flag the DLQ-03 immediacy gap.
 
-2. **Orphan `{queue}_error` cleanup on the dev broker.**
+2. **Orphan `{queue}_error` cleanup on the dev broker.** — **RESOLVED:** operator action documented in Plan 36-04 / Task 2 runbook (one-time broker reset before the Phase-39 close gate).
    - What we know: Mechanism A leaves old `{queue}_error` queues dormant; MT never deletes them.
    - What's unclear: whether the Phase-39 close-gate rabbitmq snapshot tolerates them.
    - Recommendation: plan a one-time broker reset (delete orphan `_error` + any pre-TTL `skp-dlq-1`) before the Phase-39 gate.
 
-3. **`ProbeOptions` home (Keeper-local vs `Messaging.Contracts.Configuration`).**
+3. **`ProbeOptions` home (Keeper-local vs `Messaging.Contracts.Configuration`).** — **RESOLVED:** Keeper-local (PATTERNS.md Critical Correction; implemented in Plan 36-01 / Task 2).
    - Recommendation: Keeper-local — it's a Keeper-only knob (unlike `RetryOptions` which is shared). D-04 leaves this to discretion.
 
 ## Environment Availability
