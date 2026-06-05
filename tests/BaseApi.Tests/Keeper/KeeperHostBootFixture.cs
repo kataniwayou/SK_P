@@ -25,6 +25,15 @@ public sealed class KeeperHostBootFixture : ConsoleTestHostFixture
     {
         builder.AddBaseConsoleObservability(builder.Configuration);
         builder.Services.AddBaseConsole(builder.Configuration);
+        // IN-01: inject an explicit "Retry" section mirroring the live appsettings.json (Limit=3,
+        // Strategy=Immediate) so the bind below is exercised against a REAL config value instead of
+        // silently falling back to RetryOptions' property-initializer defaults. This keeps the boot
+        // fixture honest: if RetryOptions later gains a required/validated key, the section is present.
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Retry:Limit"]    = "3",
+            ["Retry:Strategy"] = "Immediate",
+        });
         // Bind RetryOptions so PlaceholderConsumerDefinition's IOptions<RetryOptions> ctor resolves.
         builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
         builder.Services.AddBaseConsoleMessaging(builder.Configuration,
