@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Authored 33-02-PLAN.md (phase-33-close.ps1 committed `26e174a`; LIVE close gate pending operator GATE_EXIT=0)
+status: ready_to_plan
+stopped_at: Phase 33 (Fault-Recovery Spike) COMPLETE — 2/2 plans; verification human_needed (2 operator-gated items tracked in 33-HUMAN-UAT.md). Next: /gsd-discuss-phase 34
 last_updated: "2026-06-05T09:30:00Z"
-last_activity: 2026-06-05 -- Phase 33 Plan 02 authored (phase-33-close.ps1 — clone phase-32.1-close, v3.7.0; D-10 recorded; operator runbook in SUMMARY)
+last_activity: 2026-06-05 -- Phase 33 executed: FaultRecoverySpikeE2ETests + phase-33-close.ps1 authored, committed, verified (6/8, 2 operator-gated); phase complete; LIVE gate pending operator GATE_EXIT=0
 progress:
-  total_phases: 20
-  completed_phases: 19
+  total_phases: 25
+  completed_phases: 20
   total_plans: 70
-  completed_plans: 69
-  percent: 98
+  completed_plans: 70
+  percent: 80
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 33 — fault-recovery-spike-de-risk
+**Current focus:** v3.7.0 Keeper milestone — Phase 33 complete; next Phase 34 (Keeper Console Foundation)
 
 ## Current Position
 
-Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05
-Phase: 33 (fault-recovery-spike-de-risk) — EXECUTING (both plans authored; phase closes on the operator gate)
-Plan: 2 of 2 (Plan 01 complete; Plan 02 authored — phase-33-close.ps1 committed, LIVE close gate pending operator GATE_EXIT=0)
-Status: Executing Phase 33 — Plan 02 authored + committed (`26e174a`); ParseFile-clean + BOM-free + all acceptance greps pass; D-10 recorded; operator runbook in 33-02-SUMMARY
-Last activity: 2026-06-05 -- Phase 33 Plan 02 authored (phase-33-close.ps1 — clone phase-32.1-close, v3.7.0; D-10 recorded)
+Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 1/6 complete)
+Phase: 33 (Fault-Recovery Spike) — COMPLETE (2/2 plans); next Phase 34 (Keeper Console Foundation) needs discuss/plan
+Plan: —
+Status: Phase 33 complete — autonomous half verified (6/8 must-haves); the LIVE FaultRecoverySpikeE2ETests + phase-33-close.ps1 are an operator gate (33-HUMAN-UAT.md, status partial; pending operator GATE_EXIT=0)
+Last activity: 2026-06-05 — spike test + close gate authored & committed; verifier human_needed (2 operator-gated); code review 0 Critical / 0 Warning / 3 Info
 
 ### Phase 33 Plan 02 — AUTHORED, LIVE GATE PENDING (phase-33-close.ps1 — clone phase-32.1-close, relabel 32.1->33, v3.7.0, NO skp:cancelled scan-clean; INTAKE-01/02/04 + PROBE-06 live half; 2026-06-05)
 
@@ -427,7 +427,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 119
+- Total plans completed: 121
 - Average duration: —
 - Total execution time: —
 
@@ -465,7 +465,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 30 | 4 | - | - |
 | 31 | 6 | - | - |
 | 32.1 | 2 | - | - |
-| 33 | 1 | ~10min | ~10min |
+| 33 | 2 | - | - |
 
 **Recent Trend:**
 
