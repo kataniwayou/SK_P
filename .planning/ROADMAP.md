@@ -274,10 +274,22 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   5. The close gate runs 3× consecutive GREEN with triple-SHA (psql `\l` / redis `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER — including both DLQs + probe scratch-key scan-clean (net-zero) — at Release+Debug 0-warning.
 **Plans**: TBD
 
+### Phase 39: Uniform `service` + Instance Labels Across All Metrics
+**Goal**: Promote `service` (one of `orchestrator` / `keeper` / `processor` / `webapi`) and the per-replica instance id from OTel **resource attributes** — currently exported to Prometheus `target_info` by Phase 30's `AddService` + `service.instance.id` wiring in `BaseApi.Core` — into **first-class per-series labels** on EVERY metric stream (runtime, HTTP/instrumentation, and business instruments), so PromQL can `group/filter by (service, service_instance_id)` directly without a `target_info` join. Then verify the instance label is present on all three instrument families and update every dependent Prometheus query/dashboard/alert. No live operator verification required (hermetic + scrape-assertion provable).
+**Depends on**: Phase 38 (Keeper meter + instruments must exist to be labeled); builds on the Phase 30 metrics foundation.
+**Requirements**: MLBL-01, MLBL-02, MLBL-03, MLBL-04, MLBL-05 (new — formalize in `/gsd-spec-phase`)
+**Success Criteria** (what must be TRUE):
+  1. Every metric series scraped from each console — runtime (process/GC/threadpool runtime-instrumentation), HTTP (ASP.NET Core server + `HttpClient`), and business (orchestrator/processor send/consume counters + any registered Keeper instruments) — carries a `service` label equal to exactly one of `orchestrator` / `keeper` / `processor` / `webapi`.
+  2. Every such metric series ALSO carries the per-replica instance label (`service_instance_id`), verified present on all three instrument families — not only the Phase-30 business counters; a scrape/test asserts the label key on a sample from each family.
+  3. Both labels are applied once at the base-library / meter-provider level (e.g. Prometheus exporter resource→telemetry conversion or an equivalent enrichment in `BaseApi.Core` observability wiring), so a newly added console or instrument inherits both with no per-call-site work — no per-instrument duplication.
+  4. All Prometheus artifacts (PromQL dashboard panels, alert rules, recording rules) that consume these metrics are updated to group/filter on `service` and continue to resolve `service_instance_id`; no query references a missing or renamed label, and queries that previously relied on a `target_info` join are simplified or kept working.
+  5. No high-cardinality regression: `service` is a fixed 4-value enum and `service_instance_id` remains the only per-replica dimension; no per-request / `workflowId` / per-message labels are introduced. Provable hermetically + via a scrape assertion / PromQL lint (no operator gate).
+**Plans**: TBD
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 → 31.1 → 32 → 32.1 → 33 → 34 → 35 → 36 → 37 → 38
+Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 → 31.1 → 32 → 32.1 → 33 → 34 → 35 → 36 → 37 → 38 → 39
 
 | Phase | Milestone | Plans Complete | Status   | Completed  |
 | ----- | --------- | -------------- | -------- | ---------- |
@@ -308,6 +320,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 36. L2 Health-Probe Recovery Loop & DLQs | v3.7.0 | 0/? | Not started | — |
 | 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 0/? | Not started | — |
 | 38. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 0/? | Not started | — |
+| 39. Uniform `service` + Instance Labels Across All Metrics | v3.7.0 | 0/? | Not started | — |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 shipped 2026-06-02 (6 phases 25-30, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip + runtime/business metrics) — note: formal archival (ROADMAP/MILESTONES/tag) deferred. v3.6.0 shipped 2026-06-05 (4 phases 31-32.1, Idempotent Execution — exactly-once-effect round-trip via deterministic `H` + effect-first `flag[H]` dedup at both hops; cancelled circuit-breaker built then reverted to plain dead-lettering). Next milestone planning begins with `/gsd-new-milestone`.*
