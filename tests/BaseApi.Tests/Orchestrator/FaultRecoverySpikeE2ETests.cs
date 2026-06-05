@@ -120,8 +120,88 @@ public sealed class FaultRecoverySpikeE2ETests
         factory.L2KeysToCleanup.Add($"skp:{wfId}");
         factory.L2KeysToCleanup.Add($"skp:{wfId}:{stepId}");
 
-        // TODO Task 2: arm the dispatch + result WRONGTYPE trips, compute a-priori H/resultH, send the trips.
-        // TODO Task 3: re-inject verbatim x2 (collapse proof), publish the negative command-faults, net-zero teardown.
+        // Snapshot skp:data:* + skp:flag:* BEFORE the trips so net-zero teardown registers every fresh key.
+        var dataKeysBefore = ScanKeys("data:*");
+        var flagKeysBefore = ScanKeys("flag:*");
+
+        // ====================================================================================================
+        // GRAFT 3 — DISPATCH WRONGTYPE trip (the standalone NOVEL-RISK proof). Poison the processor's output
+        // content-address key as a LIST so EntryStepDispatchConsumer:178 StringSetAsync throws WRONGTYPE on
+        // EVERY attempt -> Immediate(N) exhausts -> MassTransit publishes Fault<EntryStepDispatch>.
+        // ====================================================================================================
+        var dispatchPoisonKey = L2ProjectionKeys.ExecutionData(MessageIdentity.HashBlob(DispatchTripPayload));
+        await ArmWrongTypePoisonAsync(dispatchPoisonKey, ct);
+        factory.L2KeysToCleanup.Add(dispatchPoisonKey);
+
+        // Build the entry-step dispatch (mirrors what WorkflowFireJob sends for the entry step). The captured
+        // Fault<EntryStepDispatch>.Message.H MUST equal ComputeH(corr, wfId, stepId, procId, EntryEntryId(...)).
+        var dCorr = NewId.NextGuid();
+        var dEntryId = MessageIdentity.EntryEntryId(dCorr, stepId);
+        var dispatchH = MessageIdentity.ComputeH(dCorr, wfId, stepId, procId, dEntryId);
+        var trippedDispatch = new EntryStepDispatch(wfId, stepId, procId, Payload: JsonSerializer.Serialize(DispatchTripPayload))
+        {
+            CorrelationId = dCorr,
+            ExecutionId = Guid.Empty,
+            EntryId = dEntryId,
+            H = dispatchH,
+        };
+
+        // ====================================================================================================
+        // GRAFT 4 — A-priori resultH for the RESULT WRONGTYPE trip (the second-type proof). SampleProcessor
+        // echoes its payload, so the full result-path hash chain is computable up-front (mirrors
+        // EntryStepDispatchConsumer:162,196-209): blob -> manifest JSON -> manifest entryId -> resultH.
+        // ====================================================================================================
+        var rCorr = NewId.NextGuid();
+        var rBlobHash = MessageIdentity.HashBlob(ResultTripPayload);
+        var rManifestJson = JsonSerializer.Serialize(new[] { rBlobHash });   // ["<64hex>"]
+        var rManifestEntryId = MessageIdentity.HashManifest(rManifestJson);
+        var resultH = MessageIdentity.ComputeH(rCorr, wfId, stepId, procId, rManifestEntryId);
+        var resultPoisonKey = L2ProjectionKeys.Flag(resultH);
+        factory.L2KeysToCleanup.Add(resultPoisonKey);
+
+        // The short-lived in-test IBusControl (D-02) connected to live sk-rabbitmq registers the two Fault<T>
+        // probes (CATCH the faults) and is the vehicle for the trip Sends + verbatim re-injects. IBusControl
+        // is NOT IAsyncDisposable, so Start/Stop are bracketed explicitly in try/finally (clone :264-279).
+        var bus = Bus.Factory.CreateUsingRabbitMq(cfg =>
+        {
+            cfg.Host("localhost", 5673, "/", h => { h.Username("guest"); h.Password("guest"); });
+            cfg.ReceiveEndpoint("spike-fault-dispatch", e =>
+                e.Consumer(() => new FaultDispatchProbe(_capturedDispatch)));   // Fault<EntryStepDispatch>
+            cfg.ReceiveEndpoint("spike-fault-result", e =>
+                e.Consumer(() => new FaultResultProbe(_capturedResult)));       // Fault<ExecutionResult>
+        });
+        await bus.StartAsync(ct);
+        try
+        {
+            // ---- DISPATCH trip: Send to queue:{procId:D}; the output write hits the WRONGTYPE poison ----
+            var dispatchEndpoint = await bus.GetSendEndpoint(new Uri($"queue:{procId:D}"));
+            await dispatchEndpoint.Send(trippedDispatch, ct);
+
+            // Wait until the Fault<EntryStepDispatch> fans out and the probe captures it (Immediate(N) must
+            // exhaust first; allow generous slack). The captured H proves the inner instance round-tripped.
+            var dispatchCap = await PollForCaptureAsync(_capturedDispatch, dispatchH, ct);
+            Assert.Equal(dispatchH, dispatchCap.h);
+
+            // ---- RESULT trip (Pitfall-1 window-armed): drive a normal round-trip for rCorr, wait for the
+            // processor's flag[resultH]="Pending" pre-write (EntryStepDispatchConsumer:210-212) to LAND, THEN
+            // swap that key for a WRONGTYPE LIST so the orchestrator ResultConsumer:65 first StringGetAsync
+            // throws WRONGTYPE -> Immediate(N) exhausts -> Fault<ExecutionResult> published + captured. ----
+            // D-06 fallback: if the live window proves fragile, publish a synthetic Fault<ExecutionResult>
+            // (real inner ExecutionResult, H=resultH) via PublishSyntheticResultFaultAsync instead — the live
+            // path stays primary; the dispatch trip already carries the novel risk independently.
+            var resultCap = await TripResultFaultAsync(
+                bus, procId, stepId, wfId, rCorr, resultH, resultPoisonKey, ct);
+            Assert.Equal(resultH, resultCap.h);
+
+            // TODO Task 3: re-inject verbatim x2 (collapse proof), publish the negative command-faults.
+        }
+        finally
+        {
+            await bus.StopAsync(ct);
+        }
+
+        // TODO Task 3: net-zero teardown — stop the workflow + register fresh data:*/flag:* keys.
+        _ = (dataKeysBefore, flagKeysBefore);
     }
 
     // ====================================================================================================
@@ -203,6 +283,144 @@ public sealed class FaultRecoverySpikeE2ETests
         Assert.Fail(
             $"flag[{h}] never flipped Pending->Ack within {OutputPollTimeoutMs}ms — delivery 1 of the " +
             "re-injected message did not produce its effect, so the redelivery collapse cannot be proven.");
+    }
+
+    // ---- GRAFT 3 WRONGTYPE poison arm (git a6c6825 circuit-breaker E2E :251-257, verbatim recipe) ----
+
+    // A LIST key makes any subsequent String op (StringSetAsync / StringGetAsync) throw WRONGTYPE on EVERY
+    // attempt — a genuine, deterministic infra fault. Poison ONLY the named INFRA ops (Pitfall 3): the
+    // processor output write (dispatch trip) and the orchestrator flag[m.H] first read (result trip).
+    private static async Task ArmWrongTypePoisonAsync(string key, CancellationToken ct)
+    {
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        var db = mux.GetDatabase();
+        await db.KeyDeleteAsync(key);                 // start clean (a leftover string would not throw)
+        await db.ListRightPushAsync(key, "poison");   // LIST type -> a subsequent String op throws WRONGTYPE
+    }
+
+    // ---- Fault capture poll: wait until a probe records the inner H we expect (the trip fanned out) ----
+
+    private static async Task<(string h, Guid corr, Guid wf, Guid step, Guid proc, string entry, Guid exec, object inner)>
+        PollForCaptureAsync(
+            ConcurrentBag<(string h, Guid corr, Guid wf, Guid step, Guid proc, string entry, Guid exec, object inner)> bag,
+            string expectedH,
+            CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(OutputPollTimeoutMs);
+        var delay = 500;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            foreach (var cap in bag)
+            {
+                if (cap.h == expectedH)
+                {
+                    return cap; // the Fault<T> fanned out and the probe captured the verbatim inner instance.
+                }
+            }
+
+            await Task.Delay(Math.Min(delay, 2_000), ct);
+            delay = Math.Min(delay * 2, 2_000);
+        }
+
+        Assert.Fail(
+            $"No Fault<T> with inner H={expectedH} was captured within {OutputPollTimeoutMs}ms — the WRONGTYPE " +
+            "trip did not exhaust its retry budget and publish the fault, or the spike's pub/sub bind did not " +
+            "route the fanout to the probe endpoint. Confirm the full compose stack is up healthy.");
+        throw new InvalidOperationException("unreachable"); // Assert.Fail throws — keeps the compiler happy.
+    }
+
+    // ---- RESULT trip (Pitfall-1 window arm) + D-06 synthetic fallback ----
+
+    /// <summary>
+    /// Trips a live <c>Fault&lt;ExecutionResult&gt;</c> on the orchestrator hop. Sends a clean dispatch for
+    /// <paramref name="rCorr"/> so the processor runs ProcessAsync (echoes <see cref="ResultTripPayload"/>),
+    /// writes its output, and pre-writes <c>flag[resultH]="Pending"</c> (EntryStepDispatchConsumer:210-212)
+    /// BEFORE sending the result — Pitfall 1: poisoning up-front would trip a PROCESSOR-side fault instead.
+    /// This polls for that Pending pre-write to LAND, THEN swaps the key for a WRONGTYPE LIST so the
+    /// orchestrator <c>ResultConsumer:65</c> first <c>StringGetAsync(Flag(m.H))</c> throws WRONGTYPE -&gt;
+    /// Immediate(N) exhausts -&gt; <c>Fault&lt;ExecutionResult&gt;</c> published + captured.
+    /// <para>
+    /// D-06 fallback (result type ONLY): if this live window proves fragile in operation, switch the live
+    /// call below to <see cref="PublishSyntheticResultFaultAsync"/> — it publishes a synthetic
+    /// <c>Fault&lt;ExecutionResult&gt;</c> carrying a real inner <see cref="ExecutionResult"/> with
+    /// <c>H = resultH</c>, still proving bind + double-<c>.Message</c> unwrap + re-inject-to-orchestrator-result.
+    /// The dispatch trip carries the novel risk independently, so the synthetic result trip loses no coverage.
+    /// </para>
+    /// </summary>
+    private async Task<(string h, Guid corr, Guid wf, Guid step, Guid proc, string entry, Guid exec, object inner)>
+        TripResultFaultAsync(
+            IBusControl bus, Guid procId, Guid stepId, Guid wfId, Guid rCorr, string resultH, string resultPoisonKey,
+            CancellationToken ct)
+    {
+        // Build the clean dispatch (NOT poisoned) so the processor produces a real ExecutionResult round-trip.
+        var rEntryId = MessageIdentity.EntryEntryId(rCorr, stepId);
+        var rDispatchH = MessageIdentity.ComputeH(rCorr, wfId, stepId, procId, rEntryId);
+        var cleanDispatch = new EntryStepDispatch(wfId, stepId, procId, Payload: JsonSerializer.Serialize(ResultTripPayload))
+        {
+            CorrelationId = rCorr,
+            ExecutionId = Guid.Empty,
+            EntryId = rEntryId,
+            H = rDispatchH,
+        };
+
+        var dispatchEndpoint = await bus.GetSendEndpoint(new Uri($"queue:{procId:D}"));
+        await dispatchEndpoint.Send(cleanDispatch, ct);
+
+        // Pitfall-1 window: wait for the processor's flag[resultH]="Pending" pre-write to LAND (proof the
+        // result is about to be sent), THEN arm the WRONGTYPE poison on that same key so the orchestrator's
+        // first StringGetAsync(Flag(resultH)) throws. Arming earlier trips a processor-side fault instead.
+        await PollForFlagExistsAsync(resultPoisonKey, ct);
+        await ArmWrongTypePoisonAsync(resultPoisonKey, ct);
+
+        return await PollForCaptureAsync(_capturedResult, resultH, ct);
+    }
+
+    /// <summary>
+    /// D-06 synthetic fallback (result type ONLY) — kept available for the operator to switch to if the live
+    /// Pitfall-1 window proves fragile. Publishes a synthetic <c>Fault&lt;ExecutionResult&gt;</c> by
+    /// publishing the inner <see cref="ExecutionResult"/> to a throwing one-shot consumer with
+    /// <c>Immediate(0)</c>, so MassTransit fanout-publishes the fault carrying the verbatim inner instance
+    /// (<c>H = resultH</c>). Currently UNUSED — the live <see cref="TripResultFaultAsync"/> path is primary.
+    /// </summary>
+    private static async Task PublishSyntheticResultFaultAsync(IBusControl bus, Guid procId, Guid stepId, Guid wfId, string resultH, CancellationToken ct)
+    {
+        var synthetic = new ExecutionResult(wfId, stepId, procId, StepOutcome.Completed)
+        {
+            CorrelationId = NewId.NextGuid(),
+            ExecutionId = NewId.NextGuid(),
+            EntryId = "",
+            H = resultH,
+        };
+        // Publishing the inner type causes MassTransit to deliver it to any bound IConsumer<ExecutionResult>;
+        // an Immediate(0) throwing consumer would exhaust immediately and fanout-publish Fault<ExecutionResult>.
+        await bus.Publish(synthetic, ct);
+    }
+
+    // Poll host Redis until a given flag key EXISTS (the processor pre-write landed) — the Pitfall-1 window.
+    private static async Task PollForFlagExistsAsync(string key, CancellationToken ct)
+    {
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        var db = mux.GetDatabase();
+
+        var deadline = DateTime.UtcNow.AddMilliseconds(OutputPollTimeoutMs);
+        var delay = 200;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (await db.KeyExistsAsync(key))
+            {
+                return; // the processor's flag[resultH]="Pending" pre-write landed — arm the poison now.
+            }
+
+            await Task.Delay(Math.Min(delay, 1_000), ct);
+            delay = Math.Min(delay * 2, 1_000);
+        }
+
+        Assert.Fail(
+            $"flag[{key}] never appeared within {OutputPollTimeoutMs}ms — the processor did not pre-write the " +
+            "result's Pending flag, so the Pitfall-1 result-trip window cannot be armed. Switch to the D-06 " +
+            "synthetic fallback (PublishSyntheticResultFaultAsync) if the live window is unreliable.");
     }
 
     // ---- ES downstream-effect query + hit count (the zero-duplicate assertion) ----
