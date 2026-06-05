@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 33-01-PLAN.md (Plan 02 = operator-gated live run + close gate)
-last_updated: "2026-06-05T09:00:19Z"
-last_activity: 2026-06-05 -- Phase 33 Plan 01 complete (FaultRecoverySpikeE2ETests authored)
+stopped_at: Authored 33-02-PLAN.md (phase-33-close.ps1 committed `26e174a`; LIVE close gate pending operator GATE_EXIT=0)
+last_updated: "2026-06-05T09:30:00Z"
+last_activity: 2026-06-05 -- Phase 33 Plan 02 authored (phase-33-close.ps1 — clone phase-32.1-close, v3.7.0; D-10 recorded; operator runbook in SUMMARY)
 progress:
   total_phases: 20
   completed_phases: 19
@@ -26,10 +26,21 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05
-Phase: 33 (fault-recovery-spike-de-risk) — EXECUTING
-Plan: 2 of 2 (Plan 01 complete; Plan 02 is the operator-gated live run + close gate)
-Status: Executing Phase 33 — Plan 01 authored + committed (Release 0/0, hermetic 447/0, RealStack-excluded)
-Last activity: 2026-06-05 -- Phase 33 Plan 01 complete (FaultRecoverySpikeE2ETests authored)
+Phase: 33 (fault-recovery-spike-de-risk) — EXECUTING (both plans authored; phase closes on the operator gate)
+Plan: 2 of 2 (Plan 01 complete; Plan 02 authored — phase-33-close.ps1 committed, LIVE close gate pending operator GATE_EXIT=0)
+Status: Executing Phase 33 — Plan 02 authored + committed (`26e174a`); ParseFile-clean + BOM-free + all acceptance greps pass; D-10 recorded; operator runbook in 33-02-SUMMARY
+Last activity: 2026-06-05 -- Phase 33 Plan 02 authored (phase-33-close.ps1 — clone phase-32.1-close, v3.7.0; D-10 recorded)
+
+### Phase 33 Plan 02 — AUTHORED, LIVE GATE PENDING (phase-33-close.ps1 — clone phase-32.1-close, relabel 32.1->33, v3.7.0, NO skp:cancelled scan-clean; INTAKE-01/02/04 + PROBE-06 live half; 2026-06-05)
+
+- **1 task commit (scoped paths only — the in-progress `.planning/` archive deletions + untracked `src/BaseApi.Service/Properties/launchSettings.json` left untouched, NOT staged, NOT reverted).** `26e174a` (chore: add phase-33-close.ps1 — 1 file, 340 insertions, 0 deletions). The 32.1 gate STAYS (this is an ADD, not a rename — `git ls-files scripts/ | grep -c phase-32.1-close` == 1).
+- **Wave 2, depends_on [33-01]. autonomous:false** — Task 2 (the LIVE FaultRecoverySpikeE2ETests trip/recover/re-inject/collapse + the close gate) needs the full v3.7.0 compose stack up healthy with REBUILT processor-sample/orchestrator/baseapi containers (embedded SourceHash must match the host build); not executable/observable in this non-interactive environment. Handled per the Phase-31/31.1/32/32.1 precedent: authored + committed the script, documented the live run as the operator runbook in the SUMMARY Pending-Verification section (do-not-block; auto-approve-human-verify policy).
+- **Task 1 — phase-33-close.ps1:** byte-faithful clone of `phase-32.1-close.ps1` relabeled 32.1 -> 33. **Version label is v3.7.0** (NOT v3.6.0 — phase 33 is the FIRST phase of the v3.7.0 milestone; the 32.1 gate stayed v3.6.0 only because 31/31.1/32/32.1 shared that milestone). Header line 1 `# Phase 33 close gate — v3.7.0 (triple-SHA)`; line 2 `# Fault-recovery spike — pub/sub bind -> unwrap -> re-inject-by-type -> flag[H] collapse closeout`. All 6 internal `v3.6.0` tokens -> `v3.7.0`; the lone bare `version = '3.6.0'` POST-body token -> `'3.7.0'`. **NO `skp:cancelled:*` scan-clean** (breaker reverted; no no-TTL marker ever written; the spike's poison/data/flag keys are TTL'd/content-addressed and net-zeroed by the TEST's L2KeysToCleanup, captured by the unfiltered `--scan` SHA). Retains the steady-state Processor pre-flight (GET-or-create on the unique source-hash), the v3.7.0 `$services` health gate (processor-sample REQUIRED healthy), the UNFILTERED `redis-cli --scan` BEFORE/AFTER triple-SHA, the settle-drain for TTL-bounded `skp:flag:*`/`skp:data:*`, the 3-consecutive-GREEN loop (RealStack live), the Release+Debug zero-warning build, the psql `\l` + rabbitmqctl `list_queues` SHAs, and NO destructive whole-db flush. Header comment notes the spike poison keys are net-zeroed by the TEST (not the gate) + the operator must rebuild the three containers (Pitfall 5).
+- **No deviations of substance** — the clone applied only the named relabels. Two phrasing adjustments so the acceptance greps hold without weakening any guard: (1) the provenance line carries the `v3.7.0` token describing THIS gate (lands the 6th `v3.7.0`, keeps the single `phase-32.1-close` clone-source reference); (2) the historical-revert comment de-versioned ("reverted before this milestone") so `grep -cE "v3.6.0|v3.6.1"` == 0. No gate-logic change, no bugs, no blocking issues, no architectural decisions, no auth gates.
+- **D-10 recorded (verbatim, no topology change in Phase 33):** keep `{procId}_error` as the TTL'd forensic copy consolidating source-agnostically into DLQ-1 (Phase 36 per INTAKE-03/DLQ-02); NEVER Keeper's worklist; triage axis is MECHANISM not origin component; Phase 33 RECORDS only (D-11: no metric work).
+- **Verification (authored, all green):** ParseFile exit 0 (PARSE OK); first 3 bytes `23 20 50` (BOM-free); `grep -c FLUSHDB` == 0; `grep -c skp:cancelled` == 0; `grep -c "redis-cli --scan"` == 12; `grep -c v3.7.0` == 6; `grep -cE "v3.6.0|v3.6.1"` == 0; header line 1 contains "Phase 33 close gate"; `grep -cE "Phase 32.1|phase-32.1-close"` == 1 (the single provenance/clone-source line); `git ls-files scripts/ | grep -c phase-32.1-close` == 1 (32.1 gate stays); `git diff --name-only` shows ONLY `scripts/phase-33-close.ps1` (no `src/`, no test changes); no deletions in the commit.
+- **PENDING (Task 2, operator gate):** rebuild the v3.7.0 stack (`docker compose up -d --build processor-sample orchestrator baseapi-service`) -> run `dotnet test tests/BaseApi.Tests -- --filter-class "*FaultRecoverySpikeE2ETests"` (expect GREEN) -> run `pwsh -NoProfile -File ./scripts/phase-33-close.ps1` (expect GATE_EXIT=0 — 3xGREEN + triple-SHA BEFORE==AFTER). Read GATE_*_EXIT from the gate output, NOT the bg-task wrapper exit. If the result-trip Pitfall-1 window proves fragile live, switch `TripResultFaultAsync` to the kept `PublishSyntheticResultFaultAsync` D-06 fallback. INTAKE-01/02/04 + PROBE-06's LIVE half flips to complete + the plan-counter advances only after the operator reports GATE_EXIT=0. Runbook + failure-triage in 33-02-SUMMARY Pending-Verification.
+- SUMMARY: 33-02-SUMMARY.md (Self-Check PASSED for the authored artifact; Pending-Verification section for the live gate). Phase 33 = 2/2 plans authored (01 complete + 02 authored); the phase closes on the operator gate.
 
 ### Phase 33 Plan 01 — COMPLETE (FaultRecoverySpikeE2ETests authored; bind -> unwrap -> re-inject-by-type -> flag[H]-collapse + negative proof; INTAKE-01/02/04 + PROBE-06; 2026-06-05)
 
