@@ -391,14 +391,14 @@ public async Task One_Publish_Is_Delivered_To_Exactly_One_Replica_On_Shared_Endp
 | A2 | The hermetic in-memory harness proves *binding shape* but NOT true cross-replica distribution | Validation / Code Examples | LOW — flagged explicitly; live-stack manual smoke is the real KEEP-02 proof. |
 | A3 | DLQ-04 retry-binding belongs in Phase 34 (per CONTEXT D-09) despite ROADMAP mapping DLQ-04 to Phase 36 | User Constraints / Stack | LOW — D-09 is explicit that the *pattern* (binding `RetryOptions` + `UseMessageRetry(Immediate(Limit))` on the placeholder definition) lands now; the full two-DLQ routing is Phase 36. Both can be true. Planner should treat D-09 as the authority for Phase 34 scope and NOT check the DLQ-04 requirement box (that's Phase 36). |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **`KeeperQueues` const location + placeholder message location**
+1. **RESOLVED: `KeeperQueues` const location + placeholder message location**
    - What we know: house precedent is const-in-`Messaging.Contracts` (`OrchestratorQueues`/`ProcessorQueues`); the message type for `ExecutionResult`/`StartOrchestration` also live in Contracts.
    - What's unclear: whether a throwaway placeholder (replaced wholesale in Phase 35) warrants a Contracts entry or should stay local to Keeper to avoid polluting the shared contract assembly.
    - Recommendation: Put the `KeeperQueues.FaultRecovery` const in `Messaging.Contracts` (Phase 35's real consumers reuse the SAME endpoint name, so the const survives). Keep the throwaway *message type* (`KeeperPlaceholder`) LOCAL to Keeper — it's deleted in Phase 35 when the real `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` arrive. This minimizes Contracts churn.
 
-2. **Exact stable queue name**
+2. **RESOLVED: Exact stable queue name**
    - What we know: Phase 35 swaps the placeholder for the two real Fault consumers "on the same competing-consumer endpoint pattern" (D-01). Phase 36 introduces `keeper-dlq` (DLQ-2).
    - What's unclear: whether the single shared worklist queue should be named to anticipate Phase 35 (e.g. `keeper-fault-recovery`) vs a neutral placeholder name.
    - Recommendation: name it for its enduring role (`keeper-fault-recovery` or similar) since the endpoint persists into Phase 35; avoid "placeholder" in the queue name. Planner's discretion (D-08).
