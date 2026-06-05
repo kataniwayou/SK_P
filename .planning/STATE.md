@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 35-03-PLAN.md (authored; SC3 live operator-pending)
+stopped_at: Phase 35 complete (authored; SC3 live operator-pending) — next Phase 36
 last_updated: "2026-06-05T17:30:00.000Z"
 last_activity: 2026-06-05
 progress:
-  total_phases: 22
-  completed_phases: 21
+  total_phases: 25
+  completed_phases: 22
   total_plans: 76
   completed_plans: 76
-  percent: 100
+  percent: 88
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 35 — Fault Intake & Correlation
+**Current focus:** Phase 36 — L2 Health-Probe Recovery Loop & DLQs (Phase 35 complete; SC3 live operator-pending)
 
 ## Current Position
 
-Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 2/6 complete — Phase 35 authored, SC3 live operator-pending)
-Phase: 35 (Fault Intake & Correlation) — 3/3 plans authored; SC3 live OPERATOR-PENDING (phase verification gated on the operator's live run)
-Plan: 3 of 3 — AUTHORED (live operator-pending)
-Status: Phase 35 plans complete (authored); the running-Keeper-container SC3 correlated-ES-log proof is operator-gated. Next: Phase 36 (L2 probe loop + two DLQs) once SC3 is confirmed.
+Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 3/6 complete — Phase 35 authored, SC3 live operator-pending)
+Phase: 36
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-06-05
 
 ### Phase 35 Plan 03 — AUTHORED, LIVE SC3 OPERATOR-PENDING (KeeperFaultIntakeE2ETests — running-Keeper-container correlated-ES-log proof; INTAKE-03/KMET-04 live-gated; 2026-06-05)
@@ -479,7 +479,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 124
+- Total plans completed: 127
 - Average duration: —
 - Total execution time: —
 
@@ -519,6 +519,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 32.1 | 2 | - | - |
 | 33 | 2 | - | - |
 | 34 | 3 | - | - |
+| 35 | 3 | - | - |
 
 **Recent Trend:**
 

@@ -17,7 +17,7 @@
 
 - [x] **Phase 33: Fault-Recovery Spike (de-risk)** — Prove `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` consumption via pub/sub, inner-message + 6-id correlation extraction, re-inject to origin, and receiver `flag[H]` collapse — before building anything. (INTAKE-01, INTAKE-02, INTAKE-04, PROBE-06) (completed 2026-06-05 — LIVE-PROVEN: spike GREEN + close gate GATE_EXIT=0, 453 facts ×3, triple-SHA net-zero held; 2 trip recipes corrected, c2d6ea6)
 - [x] **Phase 34: Keeper Console Foundation** — Runnable multi-replica `Keeper` on `BaseConsole.Core`; builds, containerizes, joins compose healthy; competing-consumer load-balancing. (KEEP-01, KEEP-02, KEEP-03) (completed 2026-06-05 — hermetic 4/4: round-robin test consumed==1, ComposeYamlFacts shape guards, docker build green, 0-warning Release+Debug, 454-pass suite; live multi-replica + compose-health smokes operator-pending, 34-HUMAN-UAT.md, Phase-38 live gate)
-- [ ] **Phase 35: Fault Intake & Correlation** — Production intake of the two `Fault<T>` events; extract 6-id tuple + `H`; open execution log-scope; `_error` → TTL'd forensic DLQ-1 only. (INTAKE-03, KMET-04)
+- [x] **Phase 35: Fault Intake & Correlation** — Production intake of the two `Fault<T>` events; extract 6-id tuple + `H`; open execution log-scope; `_error` → TTL'd forensic DLQ-1 only. (INTAKE-03, KMET-04) (completed 2026-06-05 — hermetic: BuildState byte-identical refactor (6 scope-guard classes GREEN), two real `Fault<T>` consumers on `keeper-fault-recovery` with manual CorrelationId scope + KeeperFaultConsumerScopeTests 3/3 (SC2), 0-warning Release; INTAKE-03 separation slice + KMET-04 hermetic-proven; SC3 live ES-correlation operator-pending, 35-HUMAN-UAT.md, Phase-38 live gate)
 - [ ] **Phase 36: L2 Health-Probe Recovery Loop & DLQs** — Bounded crash-survivable L2 read+write probe loop; re-inject on success, give-up to `keeper-dlq` (DLQ-2); ack-after-loop; two DLQs split by exhaustion mechanism (Immediate(N) → DLQ-1, probe → DLQ-2); shared `Immediate(N)` from appsettings across all consumers. (PROBE-01..05, DLQ-01..04)
 - [ ] **Phase 37: Orchestrator Pause/Resume Coordination** — New `PauseWorkflow`/`ResumeWorkflow` contracts + orchestrator consumers; per-workflow pending-recovery set keyed by `H` in single-replica L1; idempotent; stays paused on give-up. *(Only phase touching the Orchestrator project.)* (PAUSE-01..05)
 - [ ] **Phase 38: Keeper Observability + Real-Stack E2E + Close Gate** — `Keeper` meter + counters/histograms; E2E proving recover-both-paths + give-up; 3×GREEN triple-SHA net-zero close gate (both DLQs + scratch-key scan-clean). (KMET-01/02/03, TEST-01/02/03)
@@ -304,7 +304,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 2/2 | Complete    | 2026-06-05 |
 | 33. Fault-Recovery Spike (De-Risk) | v3.7.0 | 2/2 | Complete    | 2026-06-05 |
 | 34. Keeper Console Foundation | v3.7.0 | 3/3 | Complete    | 2026-06-05 |
-| 35. Fault Intake & Correlation | v3.7.0 | 3/3 | Authored (SC3 live operator-pending) | — |
+| 35. Fault Intake & Correlation | v3.7.0 | 3/3 | Complete    | 2026-06-05 |
 | 36. L2 Health-Probe Recovery Loop & DLQs | v3.7.0 | 0/? | Not started | — |
 | 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 0/? | Not started | — |
 | 38. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 0/? | Not started | — |
