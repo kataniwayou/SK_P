@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: verifying
-stopped_at: Completed 34-03-PLAN.md
-last_updated: "2026-06-05T14:51:52.248Z"
-last_activity: 2026-06-05
+status: ready_to_plan
+stopped_at: Phase 34 (Keeper Console Foundation) COMPLETE (3/3 plans) — hermetic 4/4 (454-pass suite, docker build green, 0-warning Release+Debug); live multi-replica + compose-health smokes operator-pending (34-HUMAN-UAT.md; authoritative live gate Phase 38). Next: /gsd-discuss-phase 35
+last_updated: "2026-06-05T15:03:15Z"
+last_activity: 2026-06-05 -- Phase 34 complete: Keeper console foundation (KeeperQueues const + Keeper.csproj/sln + thin-shell Program.cs + placeholder competing-consumer + Dockerfile + compose replicas:2 tier + 3 hermetic tests); code review 0 Critical; verification human_needed (live smokes deferred)
 progress:
-  total_phases: 21
+  total_phases: 25
   completed_phases: 21
   total_plans: 73
   completed_plans: 73
-  percent: 100
+  percent: 84
 ---
 
 # Project State
@@ -21,15 +21,24 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 34 — Keeper Console Foundation
+**Current focus:** Phase 34 (Keeper Console Foundation) COMPLETE; next Phase 35 (Fault Intake & Correlation)
 
 ## Current Position
 
-Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 1/6 complete)
-Phase: 34 (Keeper Console Foundation) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
+Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 2/6 complete)
+Phase: 34 — COMPLETE (3/3 plans); next Phase 35 (Fault Intake & Correlation) needs discuss/plan
+Plan: —
+Status: Phase 34 complete — hermetic 4/4 verified (round-robin test consumed==1, ComposeYamlFacts shape guards, docker build green, 0-warning Release+Debug, full hermetic suite 454 passed); code review 0 Critical / 2 Warning / 2 Info (advisory); verification human_needed — the 2 live operator smokes (multi-replica round-robin + compose-health-ready) deferred to the Phase-38 live gate (34-HUMAN-UAT.md, status partial, auto-approve-human-verify precedent). NOT milestone-complete (35/36/37/38 remain).
 Last activity: 2026-06-05
+
+### Phase 34 Plan 03 — COMPLETE (compose keeper tier replicas:2 + ComposeYamlFacts + 3 hermetic Keeper tests; KEEP-01/02/03 hermetic; live smoke operator-pending; 2026-06-05)
+
+- **2 task commits (scoped paths only — the in-progress `.planning/` archive deletions left untouched).** `b07967a` (feat: keeper compose tier replicas:2/no container_name/8083 + 4 block-scoped ComposeYamlFacts), `57a859b` (test: Keeper hermetic tests — round-robin/host-boot/dependency-firewall + BaseApi.Tests.csproj ProjectReference). Wave 3, depends_on [34-01,34-02], autonomous:false.
+- **Task 3 (live multi-replica + compose-health smoke) auto-approved per the auto-approve-human-verify precedent** — needs the running Docker stack with rebuilt containers (not observable non-interactively); authored as an operator runbook in 34-03-SUMMARY.md, persisted as 34-HUMAN-UAT.md (status partial). Phase-38 is the authoritative live close gate.
+- **Load-bearing deviation caught (Rule 1):** the plan's draft negative `container_name` regex FALSE-PASSED (lazy glob crossed the keeper block into sibling tiers that legitimately carry container_name); replaced with a tempered-greedy `(?:(?!^  \S).)*?` window that cannot cross a service header — proven both directions (real block passes; planted container_name/baseapi catches the regression). The draft would have shipped a false-passing CI guard.
+- **Verification (all green):** `docker compose config` EXIT 0 (keeper resolves replicas:2/no container_name/no baseapi-dep/8083/no ports); `docker build -f src/Keeper/Dockerfile` EXIT 0; `SK_P.sln` 0/0; 3 Keeper tests GREEN + 18 ComposeYamlFacts GREEN; **full hermetic suite 454 passed / 0 failed** (zero regression). Code review 0 Critical / 2 Warning (Strategy-unused + firewall-one-hop, both pre-existing Orchestrator patterns) / 2 Info.
+- **Net-zero note for Phase 38:** the durable `keeper-fault-recovery` queue is intentional/enduring (survives into Phase 35) — the Phase-38 close-gate `rabbitmqctl list_queues` baseline MUST include it so the triple-SHA stays net-zero.
+- SUMMARY: 34-03-SUMMARY.md (Self-Check PASSED). KEEP-01/02/03 hermetic-complete; live halves in 34-HUMAN-UAT.md. **Phase 34 = 3/3 plans complete.**
 
 ### Phase 34 Plan 02 — COMPLETE (Keeper console body — Program.cs thin-shell + placeholder consumer/definition/message + appsettings(8083) + Dockerfile; KEEP-01/KEEP-02; 2026-06-05)
 
@@ -450,7 +459,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 121
+- Total plans completed: 124
 - Average duration: —
 - Total execution time: —
 
@@ -489,6 +498,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 31 | 6 | - | - |
 | 32.1 | 2 | - | - |
 | 33 | 2 | - | - |
+| 34 | 3 | - | - |
 
 **Recent Trend:**
 
