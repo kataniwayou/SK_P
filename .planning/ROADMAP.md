@@ -6,7 +6,7 @@
 - ✅ **v3.3.0 Orchestration L3 → L1 → L2 Build Pipeline** — Phases 12-16 (shipped 2026-05-29) — see [milestones/v3.3.0-ROADMAP.md](milestones/v3.3.0-ROADMAP.md)
 - ✅ **v3.4.0 BaseConsole + Orchestrator Messaging** — Phases 17-24 + 24.1 (shipped 2026-06-01) — see [milestones/v3.4.0-ROADMAP.md](milestones/v3.4.0-ROADMAP.md)
 - ✅ **v3.5.0 Processor Console — Self-Registration, Liveness & Execution Round-Trip** — Phases 25-30 (shipped 2026-06-02)
-- 🚧 **v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip** — Phase 31+ (planning)
+- ✅ **v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip** — Phases 31-32.1 (shipped 2026-06-05) — see [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md)
 
 ## Phases (shipped milestones)
 
@@ -56,6 +56,18 @@
 - [x] Phase 23: Orchestrator Lifecycle — L1 Hydration, Quartz Scheduling, Entry-Step Dispatch & Stop Teardown (5/5 plans) — 2026-05-31
 - [x] Phase 24: Orchestrator Result-Consume & Step Advancement (5/5 plans) — 2026-06-01
 - [x] Phase 24.1: Gating Redesign — L2-dedup + Gate Removal (gap-closure) (1/1 plan) — 2026-06-01
+
+</details>
+
+<details>
+<summary>✅ v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip (Phases 31-32.1) — SHIPPED 2026-06-05</summary>
+
+4 phases / 9 active plans. The orchestrator↔processor round-trip became exactly-once-effect: deterministic identity `H = SHA-256(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded) + effect-first `flag[H]` CAS dedup at both hops → each step's downstream effect happens exactly once, no lost branch, `ProcessAsync` needs no idempotency logic. Content-addressed two-level L2 (blobs + manifest), per-edge merge (content-collapse), N×M manifest fan-out, configurable retry budget. A late course-correction reverted the planned cancelled circuit-breaker (Phase 32 → 32.1) to plain dead-lettering on exhaustion, preserving the Phase-31 idempotency layer. 14/14 active requirements satisfied + live-verified (Phase-32's 8 retired); audit tech_debt with 0 functional blockers; 32.1 close gate `GATE_EXIT=0` (3×GREEN=452, triple-SHA BEFORE==AFTER held). Full phase details, decisions, and the breaker-revert rationale archived to [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md).
+
+- [x] Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect) (6/6 plans) — 2026-06-04
+- [x] Phase 31.1: Close-Gate Redis Net-Zero (gap closure) (1/1 plan) — 2026-06-04
+- [x] Phase 32: Cancelled Circuit-Breaker (5/6 plans) — **superseded by 32.1** (breaker reverted)
+- [x] Phase 32.1: Dead-Letter on Exhaustion (Breaker Reverted) (2/2 plans) — 2026-06-05
 
 </details>
 
@@ -168,66 +180,9 @@
 - [x] 30-03-PLAN.md — BaseProcessor.Core counters: dispatch_consumed + result_sent{outcome} via firewall-correct meter seam (METRIC-05) — 2026-06-02
 - [x] 30-04-PLAN.md — RealStack MetricsRoundTripE2ETests: Prometheus series + by-ProcessorId bottleneck PromQL (METRIC-06; live proof of 01..05; 07 gate) — 2026-06-02
 
-## 🚧 v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip (Planning)
+### Phases 31-32.1 (v3.6.0 — SHIPPED 2026-06-05)
 
-**Milestone Goal:** Make the orchestrator↔processor execution round-trip **exactly-once-effect** under at-least-once delivery — so `Immediate(3)` retries, broker redeliveries, publish-confirm ambiguity, the orchestrator's own re-dispatch, and fan-in/merge all stop producing duplicate downstream execution, with zero lost branches. Achieved by **deterministic content-addressed identity + effect-first receiver dedup**, not producer-side detection (which is provably impossible — confirmation is lossy in one direction).
-
-- [x] **Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)** — Deterministic per-fire identity `H = hash(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded, lineage only); content-addressed two-level L2 data (`data[hash(result)]` blobs + `data[hash(manifest)]` manifest); symmetric effect-first `flag[H] = Pending|Ack` dedup via atomic CAS on every send/receive (processor inbound dispatch + orchestrator inbound result); merge correctness + no-override via input `EntryId` (identical-input collapse); manifest fan-out (successor stepId/processorId, regenerated executionId); configurable retry count (default `Immediate(N)`). Reworks `EntryStepDispatchConsumer` + orchestrator `ResultConsumer`/advancement; extends the wire contracts + `L2ProjectionKeys`. **SPEC locked (8 requirements)** — see [31-SPEC.md](phases/31-idempotent-execution-exactly-once-effect/31-SPEC.md) / [31-CONTEXT.md](phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md). (spec'd 2026-06-04) (completed 2026-06-04)
-- [x] **Phase 31.1: Close-Gate Redis Net-Zero (gap closure)** — Remediate NET-ZERO-31 (deferred from Phase 31, see [31-VERIFICATION.md](phases/31-idempotent-execution-exactly-once-effect/31-VERIFICATION.md)): RealStack E2E tests leave their cron `* * * * *` workflows firing in `sk-orchestrator`, churning per-fire `skp:flag:{H}` key names so the close-gate redis `--scan` triple-SHA never settles. Add stop-workflow-in-teardown across the 5 RealStack E2E tests (`POST /orchestration/stop` → `UnscheduleOnlyAsync`), a close-gate settle-drain before the AFTER snapshot, and a one-time purge of leaked in-memory Quartz jobs (RAMJobStore restart). The permanent-flag-key production bug was already fixed in Phase 31 (`keepTtl`). See [31.1-PLAN.md](phases/31.1-close-gate-net-zero/31.1-PLAN.md). (planned 2026-06-04)
-- [ ] **Phase 32: Cancelled Circuit-Breaker** — On retry-budget exhaustion the processor emits `Cancelled` (sends the consumed message back) and performs a **two-level stop**: sets a `cancelled[workflowId]` marker in L2 (every receiver checks-and-drops in-flight messages → current fire drains to a halt) and signals the orchestrator, which resolves `jobId` from **L1** and unschedules the Quartz job (future fires). `Cancelled` is a terminal stop intercepted before `SelectNext` (advances no successor); **remove `StepEntryCondition.PreviousCancelled` (3)** (leave as gap; validator `IsInEnum` auto-rejects). Trip on first exhaustion (the configurable retry count is the transient-tolerance knob). Design record: the deferred Failure-policy section of [31-CONTEXT.md](phases/31-idempotent-execution-exactly-once-effect/31-CONTEXT.md). (planned 2026-06-04)
-
-### Phase 31: Idempotent Execution Round-Trip (Exactly-Once-Effect)
-**Goal**: Every duplicate inbound message — from `Immediate(3)`, broker redelivery, publish-confirm ambiguity, the orchestrator's own re-dispatch, or a fan-in/merge re-dispatch — reproduces the same deterministic identity and is collapsed at the receiving node, so each step's downstream effect happens exactly once with no lost branch; the processor business transform (`ProcessAsync`) needs no idempotency logic.
-**Depends on**: Phase 30 (the full v3.5.0 round-trip + both consoles + metrics in place; Phase 31 reworks the Phase 27 consumer + the Phase 24 advancement)
-**Requirements**: IDEM-* (formalized at spec) — deterministic identity, content-addressed data, effect-first CAS dedup, merge/fan-out correctness, Cancelled circuit-breaker.
-**Success Criteria** (what must be TRUE — to be sharpened at spec):
-  1. The dedup identity `H = hash(correlationId, workflowId, stepId, processorId, EntryId)` is deterministic (correlationId = per-fire job id; EntryId = `hash(data)`; executionId excluded), so a retry/redelivery/re-dispatch of the same logical message yields the same `H`.
-  2. L2 data is content-addressed at two levels (result blobs + manifest), all writes idempotent; an empty result is a terminal branch.
-  3. Receiver dedup is **effect-first**: the downstream effect (send / dispatch) is produced before `flag[H]` is CAS-flipped `Pending → Ack`, so a crash in the window yields a *collapsed duplicate*, never a lost branch; the flip is atomic (no concurrency double-process).
-  4. A merge step's per-edge executions are distinguished by their input `EntryId` (no false dedup, no output override); the merge is per-edge, not a join.
-  5. A live real-stack proof: the dual-pipeline workflow under the **merge** topology, run across multiple cron fires plus an induced `Immediate(N)`/redelivery, shows in ES **exactly the expected per-fire effect set with no extra downstream execution** (the inverse of the `StepB4`-×2 duplicate).
-**Plans**: 6 plans (4 waves) — planned 2026-06-04. **SPEC locked** — see 31-SPEC.md (8 requirements, ambiguity 0.13).
-  - [x] 31-01-PLAN.md — shared hash helper + L2 key builders + RetryOptions + golden tests (req-1, req-7) [wave 1]
-  - [x] 31-02-PLAN.md — EntryId Guid→string + H contract ripple, compile-green (req-1, req-2) [wave 2]
-  - [x] 31-03-PLAN.md — processor receiver rework: content-addressed two-level write + manifest + effect-first dedup (req-3, req-4) [wave 3]
-  - [x] 31-04-PLAN.md — orchestrator inbound dedup + manifest fan-out + entry-step EntryId + sender pre-write (req-2, req-4, req-5, req-6) [wave 3]
-  - [x] 31-05-PLAN.md — configurable retry: 4 sites bound from RetryOptions per process (req-7) [wave 2]
-  - [x] 31-06-PLAN.md — live exactly-once E2E (merge topology + induced retry) + phase-31-close.ps1 (req-8) [wave 4]
-
-### Phase 32: Cancelled Circuit-Breaker — SUPERSEDED BY 32.1
-**Status note (2026-06-05)**: SUPERSEDED by Phase 32.1. After review the two-level breaker was judged not worth its surface area (best-effort future-fire stop / WR-01, no-TTL marker + manual resume, degrades to plain `_error` under infra-down). The user took "stop the job" off the table; Phase 32.1 reverts the runtime breaker to plain dead-lettering on exhaustion. Phase 32's artifacts are retained as the record of the attempt; the live operator close gate is no longer required.
-**Goal**: On infra-fault retry-budget exhaustion (`GetRetryAttempt() == RetryOptions.Limit`), a workflow is cleanly and completely stopped — the in-flight fire drains to a halt and future cron fires are unscheduled — via a two-level stop (an L2 `cancelled[workflowId]` marker plus a fanned-out `Fault<EntryStepDispatch>` that unschedules the Quartz job), instead of silently dead-lettering to `_error`. NOTE: criteria #1/#3 below are SUPERSEDED by the Fault-fanout design (CONTEXT D-03/D-04/D-06) — the breaker fans out via MassTransit `Fault<EntryStepDispatch>`, NOT a point-to-point `Cancelled` send; SPEC + CONTEXT are the source of truth.
-**Depends on**: Phase 31 (deterministic `H` dedup + configurable retry must exist; `Cancelled` is deduped via `H`, and the final-attempt handler reads the configured retry limit)
-**Requirements**: req-1..req-8 (formalized in 32-SPEC.md, ambiguity 0.11)
-**Success Criteria** (what must be TRUE — to be sharpened at spec):
-  1. On `GetRetryAttempt() == configured Limit`, the processor sends the consumed message back as `Cancelled` (not dead-lettered) and sets `cancelled[workflowId] = true` in L2 (effect-first: marker → send → ack).
-  2. Every receiver (processor `EntryStepDispatchConsumer`, orchestrator `ResultConsumer`) checks `cancelled[workflowId]` before processing and drops in-flight messages → the current fire drains to a halt (stops advancing, no rollback).
-  3. The orchestrator, on `Cancelled`, resolves `jobId` from **L1** (`store.TryGet → wf.JobId`, no L2 read) and unschedules the Quartz job; `Cancelled` is intercepted **before** `SelectNext` (advances no successor, regardless of entry condition).
-  4. `StepEntryCondition.PreviousCancelled (3)` is removed (left as a numeric gap; `IsInEnum` validator auto-rejects 3); no live step uses `EntryCondition == 3`.
-  5. Open decisions resolved at spec: trip-on-first-exhaustion (chosen) blast radius (whole-workflow); the resume path (clear marker + re-Start); `_error` retained as the backstop for bus-down exhaustion.
-**Plans**: 7 plans (4 waves) — planned 2026-06-04. **SPEC locked** — see 32-SPEC.md (8 requirements, ambiguity 0.11).
-  - [x] 32-01-PLAN.md — Wave-0 MassTransit-reality probes: RetryAttemptNumberingFacts (R1) + FaultConsumerBindingFacts (R2) (req-1, req-4) [wave 0]
-  - [x] 32-02-PLAN.md — additive foundation: L2ProjectionKeys.Cancelled marker builder + 3 observability counters (req-2, req-7) [wave 1]
-  - [~] 32-03-PLAN.md — enum cleanup: CANCELLED BY USER (D-12 reversed — PreviousCancelled (3) kept; StepOutcome.Cancelled (3) unchanged) (req-6) [wave 1]
-  - [x] 32-04-PLAN.md — processor breaker seam: final-attempt marker-set + trip counter/log + check-and-drop + dedup counter (req-1, req-2, req-3, req-7) [wave 2] — completed 2026-06-04
-  - [x] 32-05-PLAN.md — orchestrator check-and-drop gate + dedup counter (req-3, req-7) [wave 2] — completed 2026-06-04
-  - [x] 32-06-PLAN.md — Fault<EntryStepDispatch> fan-out consumer → Quartz unschedule, idempotent (req-4, req-8) [wave 2] — completed 2026-06-04
-  - [~] 32-07-PLAN.md — real-stack breaker/halt/resume E2E + phase-32-close.ps1 (no-TTL skp:cancelled:* scan-clean) (req-5, req-6, req-8) [wave 3] — AUTHORED + committed 2026-06-04 (CancelledCircuitBreakerE2ETests + phase-32-close.ps1 build/parse-verified, hermetic suite 467/0); SUPERSEDED by 32.1 — the live operator gate is no longer required (breaker being reverted)
-
-### Phase 32.1: Dead-Letter on Exhaustion (Breaker Reverted)
-**Goal**: On retry-budget exhaustion (processor `EntryStepDispatchConsumer` or orchestrator `ResultConsumer`/Start/Stop), the message dead-letters to `_error` via the existing `UseMessageRetry(Immediate(RetryOptions.Limit))` — NO breaker (no L2 marker, no in-flight check-and-drop, no Fault-driven Quartz unschedule). Stopping the scheduled job on exhaustion is explicitly out of scope. The Phase-31 `flag[H]` idempotency gates and their dedup counters are retained unchanged. Supersedes Phase 32.
-**Depends on**: Phase 32 (reverts its runtime additions); Phase 31 (`flag[H]` dedup + configurable retry `Limit` retained)
-**Requirements**: req-1..req-6 (formalized in 32.1-SPEC.md, ambiguity 0.05)
-**Success Criteria**:
-  1. On exhaustion (either process) the message dead-letters to `_error` with no marker write, no trip metric, no unschedule.
-  2. No `L2ProjectionKeys.Cancelled` / `CancelledMarkerValue` / `WorkflowCancelled` / `FaultUnscheduleConsumer` remain in `src/`.
-  3. `processor_dispatch_deduped` + `orchestrator_result_deduped` counters and their `flag[H]` gates are intact and tested.
-  4. Phase-32 breaker tests + E2E + `phase-32-close.ps1` removed; hermetic suite green, zero dangling references.
-  5. `scripts/phase-32.1-close.ps1` authored (3×GREEN + triple-SHA); live `GATE_EXIT=0` is the operator gate.
-  6. `StepEntryCondition` / `StepOutcome` untouched.
-**Plans**: 2 plans, 2 waves — planned 2026-06-05 (see 32.1-SPEC.md, 6 requirements, ambiguity 0.05)
-- [x] 32.1-01-PLAN.md — revert the breaker across 7 src files + trim breaker tests (catch, both check-and-drop gates, RetryOptions ctor dep, Fault consumer + Program.cs, Cancelled key+sentinel, WorkflowCancelled metric); keep flag[H] dedup gates + DispatchDeduped/ResultDeduped byte-intact (req-1..req-4, req-6) [wave 1] — COMPLETE 2026-06-05 (c046cc8 + f325a5f; Release 0/0, hermetic 447/0, zero dangling refs)
-- [~] 32.1-02-PLAN.md — author scripts/phase-32.1-close.ps1 (clone phase-31, NO skp:cancelled:* scan-clean) + delete phase-32-close.ps1; live GATE_EXIT=0 operator gate (req-5) [wave 2] — AUTHORED + committed 2026-06-05 (d7f34db; ParseFile 0, BOM-free 35 32 80, FLUSHDB/skp:cancelled greps == 0, redis --scan retained, phase-32-close.ps1 deleted); live GATE_EXIT=0 is the PENDING operator gate
+Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, and the cancelled-circuit-breaker revert rationale are archived to [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md). Requirements: [milestones/v3.6.0-REQUIREMENTS.md](milestones/v3.6.0-REQUIREMENTS.md). Audit: [milestones/v3.6.0-MILESTONE-AUDIT.md](milestones/v3.6.0-MILESTONE-AUDIT.md).
 
 ## Progress
 
@@ -256,7 +211,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31
 | 31. Idempotent Execution Round-Trip (Exactly-Once-Effect) | v3.6.0 | 6/6 | Complete    | 2026-06-04 |
 | 31.1 Close-Gate Redis Net-Zero (gap closure) | v3.6.0 | 1/1 | Complete | 2026-06-04 |
 | 32. Cancelled Circuit-Breaker | v3.6.0 | 5/6 | Superseded by 32.1 | — |
-| 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 2/2 | Complete    | 2026-06-04 |
+| 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 2/2 | Complete    | 2026-06-05 |
 
 ---
-*v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 STARTED 2026-06-01 (4 phases 25-28, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip; build order 25→26→27→28). 38/38 requirements mapped.*
+*v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 shipped 2026-06-02 (6 phases 25-30, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip + runtime/business metrics) — note: formal archival (ROADMAP/MILESTONES/tag) deferred. v3.6.0 shipped 2026-06-05 (4 phases 31-32.1, Idempotent Execution — exactly-once-effect round-trip via deterministic `H` + effect-first `flag[H]` dedup at both hops; cancelled circuit-breaker built then reverted to plain dead-lettering). Next milestone planning begins with `/gsd-new-milestone`.*

@@ -2,6 +2,50 @@
 
 A historical log of shipped milestones. Each entry is a frozen snapshot; full archives live in `milestones/`.
 
+> **Note:** v3.5.0 (Processor Console — phases 25-30) shipped 2026-06-02 but its formal milestone
+> entry / ROADMAP archive / git tag were deferred (its requirements snapshot is archived at
+> `milestones/v3.5.0-REQUIREMENTS.md`). The v3.6.0 close was deliberately scoped to v3.6.0 only.
+
+---
+
+## v3.6.0 — Idempotent Execution (Exactly-Once-Effect Round-Trip)
+
+**Shipped:** 2026-06-05
+**Tag:** `v3.6.0`
+**Archives:** [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md) · [milestones/v3.6.0-REQUIREMENTS.md](milestones/v3.6.0-REQUIREMENTS.md) · [milestones/v3.6.0-MILESTONE-AUDIT.md](milestones/v3.6.0-MILESTONE-AUDIT.md)
+
+### Delivered
+
+The orchestrator↔processor execution round-trip became **exactly-once-effect**. Every duplicate inbound message — from configurable `Immediate(N)` retry, broker redelivery, publish-confirm ambiguity, the orchestrator's own re-dispatch, or a fan-in/merge re-dispatch — reproduces the same deterministic identity `H = SHA-256(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded) and is collapsed at the receiving node via an **effect-first** `flag[H]` `Pending → Ack` CAS at both hops, so each step's downstream effect happens exactly once with no lost branch and `ProcessAsync` needs no idempotency logic. L2 data is content-addressed at two levels (result blobs + manifest); merge steps are per-edge (distinguished by input `EntryId`, identical-input collapses), and the orchestrator fans the manifest out N×M. The hard-coded `Immediate(3)` became a configurable retry budget; content-addressed `data`/`flag` keys are `prefix + 64-hex`. A late course-correction (Phase 32 → 32.1) **reverted** the planned cancelled circuit-breaker — after building it, the two-level breaker was judged not worth its surface area and net-deleted in favor of plain dead-lettering to `_error` on exhaustion; the Phase-31 idempotency gates survived the revert intact.
+
+### Stats
+
+| Metric                    | Value                                              |
+| ------------------------- | -------------------------------------------------- |
+| Phases                    | 4 (31, 31.1, 32→32.1)                              |
+| Plans                     | 9 active (31: 6 · 31.1: 1 · 32: 5 superseded · 32.1: 2) |
+| Requirements              | 14 active satisfied (Phase-31 ×8 + Phase-32.1 ×6); Phase-32 ×8 retired |
+| C# files                  | 423 (233 src / 190 tests)                          |
+| Lines of code             | ~34,714 (11,779 src / 22,935 tests)                |
+| Code changed              | 56 files, +2,710 / −255 (src + tests, vs v3.5.0 close) |
+| Commits                   | 93 (first phase-31 spec → HEAD)                    |
+| Timeline                  | 2026-06-04 → 2026-06-05 (~2 days)                  |
+| Final suite               | 3×GREEN = 452 facts (32.1 close gate), Release+Debug 0 warnings |
+| Milestone audit           | tech_debt — 0 functional blockers (safe to ship)  |
+
+### Key accomplishments
+
+1. Deterministic message identity `H` via a single canonical `MessageIdentity` hash class (executionId excluded) — a retry/redelivery/re-dispatch of the same logical message yields the same `H`.
+2. Effect-first `flag[H]` CAS dedup at BOTH hops (processor inbound dispatch + orchestrator inbound result) — exactly-once-EFFECT with a collapsed-duplicate residual, never a lost branch.
+3. Content-addressed two-level L2 data (result blobs at `data[hash(blob)]` + manifest at `data[hash(manifest)]`) with N×M orchestrator manifest fan-out; empty result = terminal branch.
+4. Per-edge merge correctness — content-collapse on identical input, distinct `H` (no override) on divergent input; the `StepB4`-×2 duplicate proven gone live in Elasticsearch.
+5. Configurable retry budget (`Immediate(N)` default) bound from appsettings at all 4 endpoints, replacing the hard-coded `Immediate(3)`.
+6. Cancelled circuit-breaker built then **consciously reverted** (Phase 32 → 32.1) to plain dead-lettering on exhaustion — a net-deletion that preserved the Phase-31 idempotency layer (integration re-confirmed 5/5).
+
+### Known deferred items at close
+
+Artifact/doc hygiene only (no functional blockers): Phase 32's VERIFICATION/VALIDATION still read pending against the reverted breaker (moot — superseded); Phase 31.1 has no VERIFICATION/VALIDATION/SECURITY (gap-closure, script-only); Phase 32.1 VALIDATION `nyquist_compliant: false` by design (real-stack behaviors are manual-only operator-gate, live-proven by the close gate + smoke tests). Accepted runtime consequence: a persistently infra-faulting workflow is not auto-stopped — each cron fire dead-letters one message to `_error` until an operator intervenes. v3.5.0's formal archival (ROADMAP/MILESTONES/tag) remains deferred.
+
 ---
 
 ## v3.4.0 — BaseConsole + Orchestrator Messaging

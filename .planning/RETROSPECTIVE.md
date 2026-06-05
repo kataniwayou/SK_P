@@ -77,6 +77,44 @@ A reusable `BaseConsole.Core` Generic-Host library + a runnable `Orchestrator` c
 - Model mix: orchestration on Opus; verification/integration-check/review on Sonnet.
 - Notable: the milestone audit's parallel integration-checker (Sonnet) confirmed every REQ-ID WIRED across 9 phases in one pass — high signal for the cost.
 
+## Milestone: v3.6.0 — Idempotent Execution (Exactly-Once-Effect Round-Trip)
+
+**Shipped:** 2026-06-05
+**Phases:** 4 (31, 31.1, 32→32.1) | **Plans:** 9 active | **Commits:** 93 | **Timeline:** ~2 days
+
+> Note: v3.5.0 (Processor Console, phases 25-30) shipped 2026-06-02 but was not given its own retrospective section — its formal milestone close was deferred. This section covers v3.6.0 only.
+
+### What Was Built
+Exactly-once-effect execution idempotency: deterministic identity `H = SHA-256(correlationId, workflowId, stepId, processorId, EntryId)` (executionId excluded) + effect-first `flag[H]` `Pending → Ack` CAS dedup at both hops, content-addressed two-level L2 (blobs + manifest), N×M manifest fan-out, per-edge content-collapse merge, and a configurable retry budget. Phase 31.1 closed a redis net-zero gap in the close gate. Phase 32 built a cancelled circuit-breaker that Phase 32.1 then **reverted** to plain dead-lettering on exhaustion.
+
+### What Worked
+- **Wave-0 reality probes before depending on framework behavior.** Phase 32-01 pinned `GetRetryAttempt() == Limit` and `Fault<EntryStepDispatch>.Message.WorkflowId` round-tripping against a *real* in-memory MassTransit harness before any consumer code relied on them — cleared two load-bearing assumptions (R1/R2) up front.
+- **Effect-first dedup as the core invariant.** Producing the downstream effect before the CAS flip made the only residual a collapsed duplicate (never a loss) — the right correctness/complexity trade vs. a transactional outbox (explicitly deferred).
+- **Net-deletion as a first-class outcome.** Phase 32.1 reverted the breaker as a clean 161-deletion/0-insertion refactor with grep-verified zero dangling references and the Phase-31 idempotency layer proven byte-intact — a disciplined "undo" rather than leaving dead surface area.
+- **Close gate caught the redis leak (Phase 31.1).** The 3×GREEN + triple-SHA gate surfaced per-fire `skp:flag:{H}` name churn from self-rescheduling cron E2E tests — exactly the class of resource leak the gate exists to catch.
+
+### What Was Inefficient
+- **The cancelled circuit-breaker was built (5/6 plans) before being reverted.** A two-level breaker (L2 marker + Fault-fanout unschedule) was fully specced, planned, and implemented across Phases 32-01..32-07, then judged not worth its surface area at review (32-REVIEW WR-01) and net-deleted in 32.1. An earlier "what does this actually buy us, and how does it degrade under the infra-down it triggers on?" check would have surfaced that it degrades to plain `_error` anyway — the eventual decision — before the build.
+- **Superseded-phase artifact drift.** Phase 32's VERIFICATION/VALIDATION still read `human_needed`/`validated-partial` against code that no longer exists; the audit flagged it as hygiene debt rather than re-statusing at supersession time.
+- **REQUIREMENTS.md never rolled forward.** The global traceability table sat stale at v3.5.0 for the entire milestone; v3.6.0 requirements lived only in per-phase SPECs and had to be consolidated at close (and revealed v3.5.0's own archival had never been completed).
+- **`milestone.complete` still broken** (carried from v3.4.0) — full archival done manually again.
+
+### Patterns Established
+- **Wave-0 hermetic reality probes** against a real in-memory bus before building consumers that depend on framework-internal behavior (retry-attempt numbering, fault payload shape).
+- **Effect-first CAS dedup** (`flag[H] = Pending|Ack`, effect before flip) as the canonical exactly-once-effect mechanism at every receiver.
+- **Content-addressed identity via a single canonical hash class** so writer/reader desync is structurally impossible (extends the v3.4.0 single-source-of-truth key-scheme pattern to message identity).
+- **Reverts are clean net-deletions with grep-verified zero dangling refs + a proof the kept layer is byte-intact**, committed atomically.
+
+### Key Lessons
+1. **Pressure-test a mechanism against its own trigger conditions before building it.** The breaker was meant to "cleanly stop" on infra-down but degraded to plain `_error` under exactly those conditions — knowable at design time, learned after implementation.
+2. **Re-status superseded artifacts at the moment of supersession.** A reverted phase's VERIFICATION/VALIDATION reading "pending" is misleading debt; flip it when the supersession lands.
+3. **Roll REQUIREMENTS.md forward at milestone start (`/gsd-new-milestone`), not at close.** A traceability table that lags by a milestone hides that a *prior* milestone's archival was never finished.
+
+### Cost Observations
+- Model mix: orchestration/execution on Opus (profile `quality`); audit integration-checker on Sonnet.
+- Sessions: ~2 days (2026-06-04 → 2026-06-05), 93 commits.
+- Notable: the milestone's net source delta was small (+2,710 / −255 across 56 files) despite 4 phases — much of the work was a build-then-revert (Phase 32 → 32.1).
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -85,6 +123,8 @@ A reusable `BaseConsole.Core` Generic-Host library + a runnable `Orchestrator` c
 |-----------|----------|--------|------------|
 | v3.2.0 | 3 days | 11 | Established the reusable BaseApi.Core foundation + 3-GREEN/psql-SHA close gate |
 | v3.3.0 | 1 day | 5 | Added Redis L2 tier; extended close gate with `redis-cli --scan` dual-SHA; doc-first contract amendments |
+| v3.4.0 | ~3 days | 9 | Two-process messaging (RabbitMQ); triple-SHA close gate (+ `rabbitmqctl`); gap-closure decimal phases |
+| v3.6.0 | ~2 days | 4 | Exactly-once-effect dedup; Wave-0 reality probes; build-then-revert (breaker → dead-letter) |
 
 ### Cumulative Quality
 
@@ -92,8 +132,12 @@ A reusable `BaseConsole.Core` Generic-Host library + a runnable `Orchestrator` c
 |-----------|-------|----------|-------------------|
 | v3.2.0 | 142 facts × 3 GREEN | real Postgres + ES + Prom | — |
 | v3.3.0 | 235 facts × 3 GREEN | + real Redis | Redis soft-dependency (no HEALTH contract change) |
+| v3.4.0 | 335 facts × 3 GREEN | + real RabbitMQ | MassTransit messaging tier |
+| v3.6.0 | 452 facts × 3 GREEN | + induced-redelivery E2E | none (idempotency layer over existing tiers) |
 
 ### Top Lessons (Verified Across Milestones)
 
-1. **The 3-consecutive-GREEN + byte-identical SHA close gate catches flakes and resource leaks** — proven across 16 phases now (psql `\l` in v3.2.0, extended with `redis-cli --scan` in v3.3.0).
+1. **The 3-consecutive-GREEN + byte-identical SHA close gate catches flakes and resource leaks** — proven across 20+ phases now (psql `\l` in v3.2.0, `redis-cli --scan` in v3.3.0, `rabbitmqctl list_queues` in v3.4.0; the redis SHA caught the Phase-31.1 flag-churn leak).
 2. **Bisect-friendly N-commit sequences + doc-first amendments keep spec and code aligned** through surface revisions (Phase 10 in v3.2.0; Phase 16 Stop-contract rewrite in v3.3.0).
+3. **Check a design against its real constraints before building it** — infra availability (v3.4.0 delayed-message plugin → 24.1 teardown) and trigger-condition behavior (v3.6.0 breaker → 32.1 revert) both caused build-then-remove cycles a design-time check would have avoided.
+4. **`gsd-sdk milestone.complete` is broken in this SDK build** — manual archival every milestone (v3.4.0, v3.6.0).

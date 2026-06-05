@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.6.0
 milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
 status: milestone_complete
-stopped_at: Phase 32.1 close gate PASSED (GATE_EXIT=0) — milestone v3.6.0 fully verified
+stopped_at: v3.6.0 milestone ARCHIVED (/gsd-complete-milestone) — tagged v3.6.0; ROADMAP/REQUIREMENTS/AUDIT archived to milestones/; stale REQUIREMENTS.md removed; next = /gsd-new-milestone
 last_updated: "2026-06-05T00:00:00.000Z"
-last_activity: 2026-06-05 -- Phase 32.1 live close gate PASSED (phase-32.1-close.ps1 GATE_EXIT=0): 3xGREEN=452 facts, Release+Debug 0-warning, triple-SHA BEFORE==AFTER all HELD (psql 34ac2385…, redis 666b99bc…, rmq 2c9b0868…), redis net-zero settle, ZERO skp:cancelled:* keys. Behavioral half also proven live via smoke tests (Prometheus processor_dispatch_consumed +4=Immediate(3)+1; {procId}_error 0→1; ES infra-fault log)
+last_activity: 2026-06-05 -- v3.6.0 milestone CLOSE: archived ROADMAP+REQUIREMENTS+AUDIT to milestones/v3.6.0-*, added MILESTONES.md entry, evolved PROJECT.md, updated RETROSPECTIVE.md, tagged v3.6.0, removed stale REQUIREMENTS.md (its v3.5.0 content archived to milestones/v3.5.0-REQUIREMENTS.md under the correct name); v3.5.0 formal archival (ROADMAP/MILESTONES/tag) deferred per user scope. Prior: Phase 32.1 live close gate PASSED (phase-32.1-close.ps1 GATE_EXIT=0): 3xGREEN=452 facts, Release+Debug 0-warning, triple-SHA BEFORE==AFTER all HELD (psql 34ac2385…, redis 666b99bc…, rmq 2c9b0868…), redis net-zero settle, ZERO skp:cancelled:* keys. Behavioral half also proven live via smoke tests (Prometheus processor_dispatch_consumed +4=Immediate(3)+1; {procId}_error 0→1; ES infra-fault log)
 progress:
   total_phases: 9
   completed_phases: 9
@@ -18,17 +18,17 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-01 — v3.5.0 started)
+See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
-**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline) and v3.4.0 (BaseConsole + two-process orchestrator messaging).**
-**Current focus:** Phase 32.1 — dead-letter-on-exhaustion
+**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
+**Current focus:** No milestone active — next milestone planning begins with `/gsd-new-milestone`.
 
 ## Current Position
 
-Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — started 2026-06-04
-Phase: 32.1
-Plan: Complete (2/2) — live close gate PASSED (GATE_EXIT=0)
-Status: Milestone complete — Phase 32.1 fully verified (hermetic + live close gate)
+Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — SHIPPED 2026-06-05 (archived to milestones/, tagged v3.6.0)
+Phase: — (milestone closed)
+Plan: —
+Status: Milestone complete + ARCHIVED. v3.5.0 formal archival (ROADMAP/MILESTONES/tag) deferred per user scope; its requirements snapshot is at milestones/v3.5.0-REQUIREMENTS.md.
 Last activity: 2026-06-05
 
 ### Phase 32.1 Plan 02 — AUTHORED, LIVE GATE PENDING (phase-32.1-close.ps1 — clone phase-31-close, NO skp:cancelled:* scan-clean; req-5; 2026-06-05)
