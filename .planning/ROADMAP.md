@@ -251,7 +251,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   5. All consumers (processor dispatch, orchestrator result/start/stop, Keeper) use the same `Immediate(N)` bound from the shared `RetryOptions` appsettings, routed uniformly to DLQ-1 (same pattern across consoles).
 **Plans**: 4 plans
 - [x] 36-01-PLAN.md — Contracts (keeper-dlq const + KeeperProbe key) + ProbeOptions + Wave-0 FakeRedis/bound test (completed 2026-06-05 — KeeperQueues.DeadLetter + L2ProjectionKeys.KeeperProbe; Keeper-local ProbeOptions 5×12 bound+appsettings; FakeRedis down/half-open/up double + ProbeOptions_Bound test; SK_P.sln 0/0 Release; hermetic suite 458/0; 52d2b67, 85c526a, 8f386c6)
-- [ ] 36-02-PLAN.md — L2ProbeRecovery loop helper + consumer re-inject/park bodies (PROBE-01..05)
+- [x] 36-02-PLAN.md — L2ProbeRecovery loop helper + consumer re-inject/park bodies (PROBE-01..05) (completed 2026-06-05 — bounded read+write-then-delete loop, catch RedisException only; both consumers re-inject verbatim inner to origin on Recovered / park original Fault<T> to keeper-dlq on GaveUp; 6 facts GREEN, SK_P.sln 0/0 Release, hermetic 464/0; 399570f, cf627b9)
 - [ ] 36-03-PLAN.md — Consolidated DLQ-1 error transport in BaseConsole.Core (DLQ-01/02/04, all 3 consoles)
 - [ ] 36-04-PLAN.md — RealStack recover-both-paths + give-up E2E (operator-gated live half)
 

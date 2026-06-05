@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 36-01-PLAN.md
-last_updated: "2026-06-05T21:00:00.000Z"
-last_activity: 2026-06-05 -- Phase 36 Plan 01 complete (contract surface + Wave-0 test scaffolding)
+stopped_at: Phase 36 context gathered
+last_updated: "2026-06-05T20:46:35.479Z"
+last_activity: 2026-06-05 -- Phase 36 Plan 02 complete (L2ProbeRecovery loop + consumer re-inject/park bodies)
 progress:
   total_phases: 24
   completed_phases: 22
   total_plans: 80
-  completed_plans: 77
-  percent: 96
+  completed_plans: 78
+  percent: 98
 ---
 
 # Project State
@@ -27,9 +27,19 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 3/6 complete — Phase 35 authored, SC3 live operator-pending)
 Phase: 36 (l2-health-probe-recovery-loop-dlqs) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Executing Phase 36
-Last activity: 2026-06-05 -- Phase 36 Plan 01 complete (contract surface + Wave-0 test scaffolding)
+Last activity: 2026-06-05 -- Phase 36 Plan 02 complete (L2ProbeRecovery loop + consumer re-inject/park bodies)
+
+### Phase 36 Plan 02 — COMPLETE (L2ProbeRecovery bounded probe-loop helper + both consumer re-inject/park bodies; PROBE-01..05 + DLQ-03 hermetic; 2026-06-05)
+
+- **2 task commits (scoped paths only — the ~242 pre-existing `.planning/` archive deletions left UNtouched, NOT staged, NOT reverted; verified 242 still uncommitted after both commits).** `399570f` (feat: L2ProbeRecovery bounded probe-loop helper + 3 helper-level facts), `cf627b9` (feat: wire the loop into both consumers — re-inject | park + 3 harness facts + 3 standing-harness repairs). Wave 2, depends_on [01], autonomous:true, type:tdd. NO file deletions in either commit.
+- **Task 1 — `L2ProbeRecovery` helper (tdd):** `src/Keeper/Recovery/L2ProbeRecovery.cs` — `ProbeOutcome{Recovered,GaveUp}` + stateless `L2ProbeRecovery(IConnectionMultiplexer, IOptions<ProbeOptions>)`. `RunAsync(entryId, h, ct)`: bounded loop, each iter READ `ExecutionData(entryId)` (value need NOT exist) AND WRITE-then-delete `KeeperProbe(h)` (30s TTL scratch, then KeyDeleteAsync → net-zero); Recovered only if BOTH ops clean; `catch (RedisException)` ONLY (NO catch Exception, T-36-06) → Delay+loop; exhaust → GaveUp. NO When.Exists/keepTtl flag-flip (scratch write, not ResultConsumer flag). 3 helper facts GREEN: Probe_RequiresReadAndWrite (HalfOpen→GaveUp, PROBE-02), Probe_FailThenSucceed (Recovered within budget), Probe_FailToMax (Down all→GaveUp).
+- **Task 2 — both consumers + Program.cs + harness facts (tdd):** both `FaultEntryStepDispatch/ExecutionResultConsumer` ctor-inject `L2ProbeRecovery`, `async Consume`; KEEP the Phase-35 double-unwrap + manual CorrelationId scope + BuildState scope + ONE intake log VERBATIM (T-35-06); REPLACE the early return with `await RunAsync` → Recovered ⇒ `GetSendEndpoint`+`Send(inner)` to origin (dispatch→`queue:{ProcessorId:D}`, result→`queue:orchestrator-result`); GaveUp ⇒ `Send(context.Message)` (original Fault<T> envelope) to `queue:keeper-dlq` (D-10). Program.cs registers `AddSingleton<L2ProbeRecovery>()`. 3 harness facts GREEN: Probe_Success_Reinjects (PROBE-03, both types), Probe_GiveUp_ParksToDlq (PROBE-04, envelope not bare inner), Probe_AcksOnlyAfterLoop (PROBE-05).
+- **Deviations (3, all Rule 3 blocking, in-scope):** (1) `RunAsync(entryId, h)` NOT `(IExecutionCorrelated inner)` — `H` is a per-record prop on EntryStepDispatch/ExecutionResult, NOT on IExecutionCorrelated/ICorrelated (plan's interface comment wrong; CS1061). (2) per-consumer concrete-type endpoint NOT the plan's shared `inner switch` — a pattern switch on a statically-known concrete inner is CS8121/CS0104. (3) threaded FakeRedis(Up)+ProbeOptions+L2ProbeRecovery through the 3 standing Keeper harnesses (ScopeTests/RoundRobin/HostBootFixture) so the new ctor-dep resolves (the plan's <verification> anticipated this). No bugs in shipped logic, no architectural decisions, no auth gates, no scope creep.
+- **TDD note:** both tasks tdd=true; no compiling RED possible (SUT types must compile for the facts to reference them) — feat+facts-per-task GREEN, same RED-collapse precedent as 36-01.
+- **Verification (all green):** `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error; all 6 new facts GREEN (3 helper + 3 harness); Keeper namespace 13/13 deterministic; full hermetic suite **464 passed / 0 failed** on a clean run (was 458 + 6 new). One run-to-run 1/464 flake = the documented cross-namespace in-mem-MassTransit harness flake (35-02 precedent), NOT a regression (no touched test fails in isolation). Acceptance greps met (catch RedisException==1/catch Exception==0; StringGet/Set/KeyDelete==1 each; When.Exists|keepTtl==0; both consumers async Consume==1/GetSendEndpoint==2/Send(context.Message)==1/.Publish==0; Program L2ProbeRecovery==1).
+- SUMMARY: 36-02-SUMMARY.md (Self-Check PASSED). PROBE-01..05 + DLQ-03 hermetic-complete; LIVE trip→probe→re-inject|keeper-dlq topology is Plan 04. Phase 36 = 2/4 plans complete; **Plan 03** (probe metrics) next.
 
 ### Phase 36 Plan 01 — COMPLETE (contract surface + Wave-0 test scaffolding — keeper-dlq const + KeeperProbe key + ProbeOptions + FakeRedis/bound test; PROBE-01/02/04 + DLQ-03 foundations; 2026-06-05)
 
@@ -461,7 +471,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 97%
+Progress: [██████████] 98%
 
 ### Milestone Phases (v3.4.0)
 
@@ -654,6 +664,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 34 P02 | 5min | 3 tasks | 6 files |
 | Phase 34 P03 | 9min | 2 tasks | 7 files |
 | Phase 35 P01 | ~6 min | 2 tasks | 2 files |
+| Phase 36 P02 | ~18 min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
