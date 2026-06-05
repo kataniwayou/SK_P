@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Phase 34 context gathered
-last_updated: "2026-06-05T14:38:15.308Z"
-last_activity: 2026-06-05 -- Phase 34 Plan 02 complete (Keeper console body)
+status: verifying
+stopped_at: Completed 34-03-PLAN.md
+last_updated: "2026-06-05T14:51:52.248Z"
+last_activity: 2026-06-05
 progress:
   total_phases: 21
-  completed_phases: 20
+  completed_phases: 21
   total_plans: 73
-  completed_plans: 72
-  percent: 99
+  completed_plans: 73
+  percent: 100
 ---
 
 # Project State
@@ -28,8 +28,8 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 1/6 complete)
 Phase: 34 (Keeper Console Foundation) — EXECUTING
 Plan: 3 of 3
-Status: Executing Phase 34 (Plan 02 complete)
-Last activity: 2026-06-05 -- Phase 34 Plan 02 complete (Keeper console body)
+Status: Phase complete — ready for verification
+Last activity: 2026-06-05
 
 ### Phase 34 Plan 02 — COMPLETE (Keeper console body — Program.cs thin-shell + placeholder consumer/definition/message + appsettings(8083) + Dockerfile; KEEP-01/KEEP-02; 2026-06-05)
 
@@ -421,7 +421,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████████░] 90%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -610,6 +610,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 32 P06 | ~25m | 2 tasks | 5 files |
 | Phase 32 P07 | ~30m | 2 tasks (3rd is operator live gate) | 2 files |
 | Phase 34 P02 | 5min | 3 tasks | 6 files |
+| Phase 34 P03 | 9min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -921,6 +922,8 @@ Recent decisions affecting current work:
 - 29-03: EntryStepDispatchConsumer mints executionId once and passes it to BuildCompleted so the nested-scope value equals the sent ExecutionResult.ExecutionId; minimal nested BeginScope wraps only the Completed-path write/build (early Failed/Cancelled untouched, D-05/Pitfall 2)
 - WorkflowFireJob owns CorrelationId via CorrelationKeys.LogScope (D-06) — it runs outside the consume pipeline; the explicit post-mint BeginScope also carries WorkflowId via ExecutionLogScope.WorkflowId (LOG-05)
 - service.instance.id resolved once per process (POD_NAME->HOSTNAME->MachineName->GUID) and applied to BOTH logs + metrics OTel resources in each base lib (D-09/D-10); collector metrics pipeline untouched (METRIC-07)
+- 34-03: keeper compose tier = single-instance tier MINUS container_name PLUS deploy.replicas:2; docker compose config validates
+- 34-03: block-scoped compose negatives use tempered-greedy (?:(?!^  \S).)*? — a plain prefix-glob FALSE-PASSES across tier boundaries (fixed the plan draft)
 
 ### Roadmap Milestone Log
 
@@ -1021,9 +1024,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 34 context gathered
-Resume file: --resume-file
+Last session: 2026-06-05T14:51:52.230Z
+Stopped at: Completed 34-03-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.

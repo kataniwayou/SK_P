@@ -14,8 +14,10 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 
 - [x] **KEEP-01
 **: A `Keeper` console exists on `BaseConsole.Core` (Generic-Host, metrics-only OTel, soft-dep Redis, embedded health probes, MassTransit/RabbitMQ, inherited correlation filters) with a minimal `Program.cs` mirroring `Orchestrator` — no infrastructure, identity, or bus boilerplate in the concrete beyond its recovery logic.
-- [ ] **KEEP-02**: Keeper runs **multi-replica** with work load-balanced across replicas — a shared competing-consumer endpoint (not instance-unique fan-out), so RabbitMQ round-robins fault events across Keeper replicas.
-- [ ] **KEEP-03**: Keeper builds, containerizes (multi-stage Dockerfile), and joins the compose stack as a new healthy tier alongside `orchestrator` / `processor-sample`.
+- [x] **KEEP-02
+**: Keeper runs **multi-replica** with work load-balanced across replicas — a shared competing-consumer endpoint (not instance-unique fan-out), so RabbitMQ round-robins fault events across Keeper replicas.
+- [x] **KEEP-03
+**: Keeper builds, containerizes (multi-stage Dockerfile), and joins the compose stack as a new healthy tier alongside `orchestrator` / `processor-sample`.
 
 ### Fault Intake (INTAKE)
 
