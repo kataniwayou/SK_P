@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: ready_to_plan
-stopped_at: Phase 36 complete (hermetic 5/5 SC verified; live recover/give-up + kill-mid-loop operator-pending) — ready to plan Phase 37
-last_updated: "2026-06-06T00:38:00.000Z"
-last_activity: 2026-06-06 -- Phase 36 Plan 04 authored (KeeperRecoveryE2ETests RealStack recover-both-paths + give-up; live operator-gated)
+status: planning
+stopped_at: Phase 37 context gathered
+last_updated: "2026-06-05T22:57:03.393Z"
+last_activity: 2026-06-06
 progress:
-  total_phases: 24
+  total_phases: 25
   completed_phases: 23
   total_plans: 80
   completed_plans: 80
-  percent: 96
+  percent: 100
 ---
 
 # Project State
@@ -1104,7 +1104,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: --stopped-at
-Stopped at: Phase 36 context gathered
+Stopped at: Phase 37 context gathered
 Resume file: --resume-file
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
