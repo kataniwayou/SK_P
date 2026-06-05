@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.6.0
-milestone_name: Idempotent Execution — Exactly-Once-Effect Round-Trip
-status: milestone_complete
-stopped_at: v3.6.0 milestone ARCHIVED (/gsd-complete-milestone) — tagged v3.6.0; ROADMAP/REQUIREMENTS/AUDIT archived to milestones/; stale REQUIREMENTS.md removed; next = /gsd-new-milestone
+milestone: v3.7.0
+milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
+status: defining_requirements
+stopped_at: v3.7.0 started — design forks locked, defining requirements (phases continue at 33). v3.6.0 ARCHIVED + tagged.
 last_updated: "2026-06-05T00:00:00.000Z"
 last_activity: 2026-06-05 -- v3.6.0 milestone CLOSE: archived ROADMAP+REQUIREMENTS+AUDIT to milestones/v3.6.0-*, added MILESTONES.md entry, evolved PROJECT.md, updated RETROSPECTIVE.md, tagged v3.6.0, removed stale REQUIREMENTS.md (its v3.5.0 content archived to milestones/v3.5.0-REQUIREMENTS.md under the correct name); v3.5.0 formal archival (ROADMAP/MILESTONES/tag) deferred per user scope. Prior: Phase 32.1 live close gate PASSED (phase-32.1-close.ps1 GATE_EXIT=0): 3xGREEN=452 facts, Release+Debug 0-warning, triple-SHA BEFORE==AFTER all HELD (psql 34ac2385…, redis 666b99bc…, rmq 2c9b0868…), redis net-zero settle, ZERO skp:cancelled:* keys. Behavioral half also proven live via smoke tests (Prometheus processor_dispatch_consumed +4=Immediate(3)+1; {procId}_error 0→1; ES infra-fault log)
 progress:
-  total_phases: 9
-  completed_phases: 9
-  total_plans: 36
-  completed_plans: 35
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 ## Current Position
 
-Milestone: v3.6.0 (Idempotent Execution — Exactly-Once-Effect Round-Trip) — SHIPPED 2026-06-05 (archived to milestones/, tagged v3.6.0)
-Phase: — (milestone closed)
+Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05
+Phase: Not started (defining requirements)
 Plan: —
-Status: Milestone complete + ARCHIVED. v3.5.0 formal archival (ROADMAP/MILESTONES/tag) deferred per user scope; its requirements snapshot is at milestones/v3.5.0-REQUIREMENTS.md.
-Last activity: 2026-06-05
+Status: Defining requirements
+Last activity: 2026-06-05 — Milestone v3.7.0 started (design forks locked: Keeper console on BaseConsole.Core; Fault<EntryStepDispatch> pub/sub intake; bounded L2 probe loop, ack-after-loop; per-workflow pause/resume state in single-replica orchestrator L1; shared keeper-dlq; metrics + OTel). Phase numbering continues at 33. Prior milestone v3.6.0 SHIPPED + ARCHIVED (tagged v3.6.0). v3.5.0 formal archival deferred (requirements snapshot at milestones/v3.5.0-REQUIREMENTS.md).
 
 ### Phase 32.1 Plan 02 — AUTHORED, LIVE GATE PENDING (phase-32.1-close.ps1 — clone phase-31-close, NO skp:cancelled:* scan-clean; req-5; 2026-06-05)
 
