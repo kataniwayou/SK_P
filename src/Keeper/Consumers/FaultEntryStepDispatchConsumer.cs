@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using Keeper.Recovery;
 using MassTransit;
 using Messaging.Contracts;
 using Microsoft.Extensions.Logging;
@@ -25,10 +27,11 @@ namespace Keeper.Consumers;
 /// are surfaced; the exception's stack frames are NOT logged at Information (bounds attribute size / info-leak).
 /// </para>
 /// </summary>
-public sealed class FaultEntryStepDispatchConsumer(ILogger<FaultEntryStepDispatchConsumer> logger)
+public sealed class FaultEntryStepDispatchConsumer(
+    ILogger<FaultEntryStepDispatchConsumer> logger, L2ProbeRecovery recovery)
     : IConsumer<Fault<EntryStepDispatch>>
 {
-    public Task Consume(ConsumeContext<Fault<EntryStepDispatch>> context)
+    public async Task Consume(ConsumeContext<Fault<EntryStepDispatch>> context)
     {
         var inner = context.Message.Message;   // double .Message — verbatim inner IExecutionCorrelated
         var ex    = context.Message.Exceptions is { Length: > 0 } exs ? exs[0] : null;
@@ -41,6 +44,23 @@ public sealed class FaultEntryStepDispatchConsumer(ILogger<FaultEntryStepDispatc
                 nameof(EntryStepDispatch), inner.H, ex?.ExceptionType, ex?.Message);
         }
 
-        return Task.CompletedTask;   // observe-and-ack (D-06) — NO recovery in Phase 35
+        // PROBE-01/05: the bounded probe loop is AWAITED inside Consume — the broker delivery stays
+        // un-acked until the loop exits, so ack-after-loop is automatic (no early Task.CompletedTask).
+        var outcome = await recovery.RunAsync(inner.EntryId, inner.H, context.CancellationToken);
+        if (outcome == ProbeOutcome.Recovered)
+        {
+            // PROBE-03 (spike-proven, GATE_EXIT=0): re-inject the VERBATIM inner to its origin endpoint.
+            // Send (NOT Publish), same H. PROBE-06: NO Keeper-side dedup — the receiver's surviving Phase-31
+            // flag[H] gate collapses any duplicate re-inject. EntryStepDispatch's origin is its processor's queue.
+            var endpoint = await context.GetSendEndpoint(new Uri($"queue:{inner.ProcessorId:D}"));
+            await endpoint.Send(inner, context.CancellationToken);
+        }
+        else
+        {
+            // PROBE-04 (D-09/D-10): park the ORIGINAL Fault<T> envelope (carries Exceptions[] for triage) to
+            // keeper-dlq, then return → ack. A fault in THIS Send is infra → Immediate(N) → DLQ-1 (consistent).
+            var dlq = await context.GetSendEndpoint(new Uri($"queue:{KeeperQueues.DeadLetter}"));
+            await dlq.Send(context.Message, context.CancellationToken);
+        }
     }
 }

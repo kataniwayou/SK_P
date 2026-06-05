@@ -1,10 +1,12 @@
 using System.Linq;
 using Keeper.Consumers;
+using Keeper.Recovery;
 using MassTransit;
 using MassTransit.Testing;
 using Messaging.Contracts;
 using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 using Xunit;
 
 namespace BaseApi.Tests.Keeper;
@@ -47,6 +49,12 @@ public sealed class KeeperRoundRobinTests
             })
             // RetryOptions must be bindable so the definition's IOptions<RetryOptions> ctor resolves.
             .Configure<RetryOptions>(o => o.Limit = 3)
+            // Phase-36: the consumer now ctor-injects L2ProbeRecovery (→ IConnectionMultiplexer + ProbeOptions).
+            // A healthy FakeRedis lets the post-consume probe recover instantly; this test only asserts the
+            // round-robin consumed-count==1 binding shape.
+            .AddSingleton<IConnectionMultiplexer>(new BaseApi.Tests.Keeper.FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer)
+            .Configure<global::Keeper.ProbeOptions>(o => { o.DelaySeconds = 0; o.MaxAttempts = 3; })
+            .AddSingleton<L2ProbeRecovery>()
             .BuildServiceProvider(true);
 
         var harness = provider.GetRequiredService<ITestHarness>();

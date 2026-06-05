@@ -36,6 +36,15 @@ public sealed class KeeperHostBootFixture : ConsoleTestHostFixture
         });
         // Bind RetryOptions so FaultEntryStepDispatchConsumerDefinition's IOptions<RetryOptions> ctor resolves.
         builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
+        // Mirror Program.cs Phase-36 additions so the two fault consumers' L2ProbeRecovery ctor-dep resolves:
+        // bind ProbeOptions + register the helper (IConnectionMultiplexer is already a singleton via AddBaseConsole).
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Probe:DelaySeconds"] = "5",
+            ["Probe:MaxAttempts"]  = "12",
+        });
+        builder.Services.Configure<global::Keeper.ProbeOptions>(builder.Configuration.GetSection("Probe"));
+        builder.Services.AddSingleton<global::Keeper.Recovery.L2ProbeRecovery>();
         builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
         {
             x.AddConsumer<FaultEntryStepDispatchConsumer, FaultEntryStepDispatchConsumerDefinition>();

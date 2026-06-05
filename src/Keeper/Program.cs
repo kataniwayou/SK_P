@@ -26,6 +26,10 @@ builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry
 // registered singleton via AddBaseConsole (line above chains the Redis registration) — do NOT add it again.
 builder.Services.Configure<ProbeOptions>(builder.Configuration.GetSection("Probe"));
 
+// PROBE-01 — the shared bounded probe-loop helper (stateless; ctor-injects the singleton multiplexer +
+// IOptions<ProbeOptions>). Both fault consumers depend on it.
+builder.Services.AddSingleton<Keeper.Recovery.L2ProbeRecovery>();
+
 // D-02/D-03 — the two REAL fault consumers colocate on the ONE stable shared durable queue
 // keeper-fault-recovery (competing-consumer round-robin, NOT the Start/Stop per-replica fan-out).
 // Plain AddConsumer + the same stable EndpointName on both definitions => one durable queue binding

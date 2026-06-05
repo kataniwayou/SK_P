@@ -1,9 +1,11 @@
 using Keeper.Consumers;
+using Keeper.Recovery;
 using MassTransit;
 using MassTransit.Testing;
 using Messaging.Contracts;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using StackExchange.Redis;
 using Xunit;
 using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
@@ -62,6 +64,12 @@ public sealed class KeeperFaultConsumerScopeTests
     private static ServiceProvider BuildHarness(CapturingProvider capturing, Action<IBusRegistrationConfigurator> addConsumers) =>
         new ServiceCollection()
             .AddLogging(b => b.AddProvider(capturing))
+            // Phase-36: the consumers now ctor-inject L2ProbeRecovery (→ IConnectionMultiplexer + ProbeOptions).
+            // A healthy FakeRedis lets the post-log probe recover instantly; the scope assertions (opened BEFORE
+            // the loop) are unaffected.
+            .AddSingleton<IConnectionMultiplexer>(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer)
+            .Configure<global::Keeper.ProbeOptions>(o => { o.DelaySeconds = 0; o.MaxAttempts = 3; })
+            .AddSingleton<L2ProbeRecovery>()
             .AddMassTransitTestHarness(x =>
             {
                 addConsumers(x);

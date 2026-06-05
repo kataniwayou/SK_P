@@ -1,8 +1,14 @@
 using Keeper;
+using Keeper.Consumers;
 using Keeper.Recovery;
+using MassTransit;
+using MassTransit.Testing;
 using Messaging.Contracts;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 using Xunit;
+using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
 namespace BaseApi.Tests.Keeper;
 
@@ -82,5 +88,121 @@ public sealed class KeeperProbeLoopTests
         var outcome = await sut.RunAsync(SampleInner().EntryId, SampleInner().H, TestContext.Current.CancellationToken);
 
         Assert.Equal(ProbeOutcome.GaveUp, outcome);
+    }
+
+    // ── Harness-level facts (wire the SUT consumer + FakeRedis + helper into an in-memory bus) ─────────
+
+    /// <summary>
+    /// Builds an in-memory MassTransit harness wiring the SUT fault consumer(s), with the FakeRedis
+    /// multiplexer + ProbeOptions + the L2ProbeRecovery helper registered (the consumer ctor-deps).
+    /// </summary>
+    private static ServiceProvider BuildHarness(
+        FakeRedis fake, IOptions<ProbeOptions> opts, Action<IBusRegistrationConfigurator> addConsumers) =>
+        new ServiceCollection()
+            .AddLogging()
+            .AddSingleton<IConnectionMultiplexer>(fake.Multiplexer)
+            .AddSingleton(opts)
+            .AddSingleton<L2ProbeRecovery>()
+            .AddMassTransitTestHarness(x =>
+            {
+                addConsumers(x);
+                x.UsingInMemory((ctx, cfg) => cfg.ConfigureEndpoints(ctx));
+            })
+            .BuildServiceProvider(true);
+
+    [Fact]
+    public async Task Probe_Success_Reinjects()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // ── Dispatch: fail-then-up → verbatim re-inject to queue:{ProcessorId:D} ──
+        var processorId = Guid.NewGuid();
+        var dispatchInner = SampleInner(processorId);
+        var fakeUp = new FakeRedis(FakeRedis.RedisHealth.Up);   // probe succeeds immediately → Recovered
+
+        await using var provider = BuildHarness(
+            fakeUp, Opts(maxAttempts: 3), x => x.AddConsumer<FaultEntryStepDispatchConsumer>());
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+        try
+        {
+            await harness.Bus.Publish<Fault<EntryStepDispatch>>(new { Message = dispatchInner }, ct);
+            Assert.True(await harness.Consumed.Any<Fault<EntryStepDispatch>>(ct));
+            // PROBE-03: the verbatim inner is Sent back onto the bus (re-injected to its origin endpoint).
+            Assert.True(await harness.Sent.Any<EntryStepDispatch>(ct));
+        }
+        finally { await harness.Stop(ct); }
+
+        // ── Result: fail-then-up → verbatim re-inject to queue:orchestrator-result ──
+        var resultInner = new ExecutionResult(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), StepOutcome.Failed)
+        {
+            CorrelationId = Guid.NewGuid(),
+            ExecutionId = Guid.NewGuid(),
+            EntryId = Guid.NewGuid().ToString("D"),
+            H = "def456",
+        };
+        var fakeUp2 = new FakeRedis(FakeRedis.RedisHealth.Up);
+
+        await using var provider2 = BuildHarness(
+            fakeUp2, Opts(maxAttempts: 3), x => x.AddConsumer<FaultExecutionResultConsumer>());
+        var harness2 = provider2.GetRequiredService<ITestHarness>();
+        await harness2.Start();
+        try
+        {
+            await harness2.Bus.Publish<Fault<ExecutionResult>>(new { Message = resultInner }, ct);
+            Assert.True(await harness2.Consumed.Any<Fault<ExecutionResult>>(ct));
+            Assert.True(await harness2.Sent.Any<ExecutionResult>(ct));
+        }
+        finally { await harness2.Stop(ct); }
+    }
+
+    [Fact]
+    public async Task Probe_GiveUp_ParksToDlq()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var dispatchInner = SampleInner();
+        var fakeDown = new FakeRedis(FakeRedis.RedisHealth.Down);   // down for all attempts → GaveUp
+
+        await using var provider = BuildHarness(
+            fakeDown, Opts(maxAttempts: 2), x => x.AddConsumer<FaultEntryStepDispatchConsumer>());
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+        try
+        {
+            await harness.Bus.Publish<Fault<EntryStepDispatch>>(new { Message = dispatchInner }, ct);
+            Assert.True(await harness.Consumed.Any<Fault<EntryStepDispatch>>(ct));
+            // PROBE-04: the ORIGINAL Fault<EntryStepDispatch> envelope is parked to keeper-dlq (NOT the bare inner).
+            Assert.True(await harness.Sent.Any<Fault<EntryStepDispatch>>(ct));
+            // The bare inner is NEVER re-injected on give-up.
+            Assert.False(await harness.Sent.Any<EntryStepDispatch>(ct));
+        }
+        finally { await harness.Stop(ct); }
+    }
+
+    [Fact]
+    public async Task Probe_AcksOnlyAfterLoop()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        // A non-trivial loop (fail twice then up) — the await holds the delivery; Consumed becomes true only
+        // AFTER the loop exits (the harness Consumed assertion completing PROVES ack-after-loop, PROBE-05).
+        var dispatchInner = SampleInner();
+        var fake = new FakeRedis();
+        fake.SetFailuresBeforeUp(2);
+
+        await using var provider = BuildHarness(
+            fake, Opts(maxAttempts: 5), x => x.AddConsumer<FaultEntryStepDispatchConsumer>());
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+        try
+        {
+            await harness.Bus.Publish<Fault<EntryStepDispatch>>(new { Message = dispatchInner }, ct);
+            // Consumed completes only after the awaited probe loop exits and the consumer returns (ack).
+            Assert.True(await harness.Consumed.Any<Fault<EntryStepDispatch>>(ct));
+            // The loop recovered → the verbatim inner was re-injected as part of the same (post-loop) consume.
+            Assert.True(await harness.Sent.Any<EntryStepDispatch>(ct));
+        }
+        finally { await harness.Stop(ct); }
     }
 }
