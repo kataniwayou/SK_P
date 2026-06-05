@@ -1,4 +1,4 @@
-# Phase 39: Uniform `service_name` + Instance Labels Across All Metrics — Specification
+# Phase 38: Uniform `service_name` + Instance Labels Across All Metrics — Specification
 
 **Created:** 2026-06-05
 **Ambiguity score:** 0.11 (gate: ≤ 0.20)
@@ -59,7 +59,7 @@ The known in-repo PromQL consumer is the Phase-11 D-17 round-trip test assertion
 - Renaming the singletons' appsettings values (`sk-api`, `orchestrator`, `keeper` stay as-is) — only the version is appended in the metric label.
 - A DB `CHECK`/`NOT NULL` constraint on `Name`/`Version` — application-layer FluentValidation already guarantees non-empty on the write path; DB hardening is not needed here.
 - Adding the version suffix to logs' `service.name` — explicitly excluded to protect the Phase-35 ES queries.
-- New business metrics or Keeper instruments — that is Phase 38; this phase only labels what already exists.
+- New business metrics or Keeper instruments — that is Phase 39 (the next phase); this phase only labels what already exists, and Phase 39's new Keeper instruments inherit this labeling automatically (resource/meter-provider level) and are verified there.
 - Collector relabeling to spell the label key literally `service` — the key stays `service_name` (the OTel→Prom convention), which already distinguishes by human name.
 - Any high-cardinality labels (`workflowId`, per-request, per-message).
 
@@ -110,6 +110,6 @@ Status: ✓ = met minimum, ⚠ = below minimum (planner treats as assumption)
 
 ---
 
-*Phase: 39-metrics-service-instance-labels*
+*Phase: 38-metrics-service-instance-labels*
 *Spec created: 2026-06-05*
-*Next step: /gsd-discuss-phase 39 — implementation decisions (resource-vs-label mechanism for the processor's DB-sourced `service_name`, the `processor-pending` bootstrap, the collector vs SDK transformation for `{name}_{version}`)*
+*Next step: /gsd-discuss-phase 38 — implementation decisions (resource-vs-label mechanism for the processor's DB-sourced `service_name`, the `processor-pending` bootstrap, the collector vs SDK transformation for `{name}_{version}`)*
