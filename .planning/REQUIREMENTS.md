@@ -88,8 +88,8 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 | INTAKE-04 | 33 — Fault-Recovery Spike | Spike-proven LIVE (Phase 33, GATE_EXIT=0; result re-inject via D-06 synthetic) — Keeper impl in 34–38 |
 | PROBE-06 | 33 — Fault-Recovery Spike | Spike-proven LIVE (Phase 33, GATE_EXIT=0; collapse proven on dispatch hop) — Keeper impl in 34–38 |
 | KEEP-01 | 34 — Keeper Console Foundation | Complete (Plan 02 — runnable Keeper console: thin-shell Program.cs + appsettings(8083) + Dockerfile; builds 0-warning, docker image green) |
-| KEEP-02 | 34 — Keeper Console Foundation | Binding landed (Plan 02 — stable durable shared competing-consumer endpoint, zero fan-out); live multi-replica round-robin proof in Plan 03 (compose replicas:2 + RoundRobin test) |
-| KEEP-03 | 34 — Keeper Console Foundation | Not started |
+| KEEP-02 | 34 — Keeper Console Foundation | Hermetic-complete (Plan 02 stable durable competing-consumer binding, zero fan-out; Plan 03 compose replicas:2 + RoundRobin test asserts consumed==1); live multi-replica round-robin smoke operator-pending (34-HUMAN-UAT.md; authoritative live gate Phase 38) |
+| KEEP-03 | 34 — Keeper Console Foundation | Hermetic-complete (Plan 03 — compose keeper tier replicas:2/no container_name/8083, 4 block-scoped ComposeYamlFacts, multi-stage Dockerfile docker-build green, 0-warning Release+Debug); live compose-health-ready smoke operator-pending (34-HUMAN-UAT.md) |
 | INTAKE-03 | 35 — Fault Intake & Correlation | Not started |
 | KMET-04 | 35 — Fault Intake & Correlation | Not started |
 | PROBE-01 | 36 — L2 Probe Loop & DLQs | Not started |
