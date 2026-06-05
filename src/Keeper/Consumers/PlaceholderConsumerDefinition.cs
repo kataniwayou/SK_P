@@ -29,6 +29,11 @@ public sealed class PlaceholderConsumerDefinition : ConsumerDefinition<Placehold
     {
         // Bounded immediate retry of genuine infra faults → _error (DLQ-04 / D-09). The Limit is bound
         // per process from the "Retry" config section (default Immediate(3)) — the single source of truth.
+        // NOTE: Immediate is intentionally the ONLY supported strategy at this milestone — RetryOptions.Strategy
+        // (Interval/Exponential) is structured-for but NOT wired (shared deferral across ALL consoles, see
+        // RetryOptions doc-comment). The config key binds but is deliberately not branched on here; wiring it
+        // must be done UNIFORMLY across every console, not piecemeal in Keeper. Do not add Strategy-switching
+        // here without the same change in Orchestrator/Processor — divergence is worse than the documented gap.
         endpointConfigurator.UseMessageRetry(r => r.Immediate(_retryOptions.Value.Limit));
     }
 }
