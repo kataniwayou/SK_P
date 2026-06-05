@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Phase 36 context gathered
-last_updated: "2026-06-05T20:46:35.479Z"
-last_activity: 2026-06-05 -- Phase 36 Plan 02 complete (L2ProbeRecovery loop + consumer re-inject/park bodies)
+stopped_at: Phase 36 Plan 03 complete
+last_updated: "2026-06-06T00:12:00.000Z"
+last_activity: 2026-06-06 -- Phase 36 Plan 03 complete (consolidated DLQ-1 error transport in BaseConsole.Core, mechanism-a)
 progress:
   total_phases: 24
   completed_phases: 22
   total_plans: 80
-  completed_plans: 78
-  percent: 98
+  completed_plans: 79
+  percent: 99
 ---
 
 # Project State
@@ -27,9 +27,20 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 3/6 complete — Phase 35 authored, SC3 live operator-pending)
 Phase: 36 (l2-health-probe-recovery-loop-dlqs) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Executing Phase 36
-Last activity: 2026-06-05 -- Phase 36 Plan 02 complete (L2ProbeRecovery loop + consumer re-inject/park bodies)
+Last activity: 2026-06-06 -- Phase 36 Plan 03 complete (consolidated DLQ-1 error transport in BaseConsole.Core, mechanism-a)
+
+### Phase 36 Plan 03 — COMPLETE (consolidated skp-dlq-1 error transport in BaseConsole.Core, mechanism-a; DLQ-01/02/04 hermetic; live broker-arg/move/drain = Plan 04/Phase 39; 2026-06-06)
+
+- **2 task commits (scoped paths only — the ~242 pre-existing `.planning/` archive deletions left UNtouched, NOT staged, NOT reverted; verified 242 still uncommitted after both commits).** `edc4787` (feat: ConsolidatedErrorTransportFilter + BaseConsole.Core wiring + skp-dlq-1 declaration), `28d528e` (test: KeeperDlqConsolidationTests 3 facts + typed ConsolidatedFault envelope). Wave 2, depends_on [01], autonomous:false. NO file deletions in either commit.
+- **Task 1 (BLOCKING checkpoint:decision — mechanism-a SELECTED):** Resolved by the executor doing the real source-confirm + spike (the RESEARCH-designated Plan-36-03/Task-1 resolution, NOT a user fork). API confirmed against the MT 8.5.5 assemblies (Assumptions A1/A5 resolved): `ConfigureError(Action<IPipeConfigurator<ExceptionReceiveContext>>)`; `MassTransit.Middleware.GenerateFaultFilter` is PUBLIC parameterless-ctor; `ExceptionReceiveContext : ReceiveContext` exposes `SendEndpointProvider`/`Body`/`ContentType`/`TransportHeaders`/`ExceptionHeaders`/`Exception`; `AddConfigureEndpointsCallback` is on the registration configurator `x`. In-mem spike PASSED: exhausted msg reached skp-dlq-1 AND Fault<T> still published.
+- **Task 2 — filter + wiring + declaration (feat):** `src/BaseConsole.Core/Messaging/ConsolidatedErrorTransportFilter.cs` — custom `IFilter<ExceptionReceiveContext>` resolving the ONE fixed `queue:skp-dlq-1` (const `Dlq1`, never config-injected — T-36-10) and forwarding the original serialized body + content-type + transport + MT-Fault-* headers (T-36-11). `MessagingServiceCollectionExtensions.cs`: `x.AddConfigureEndpointsCallback(… e.ConfigureError(GenerateFaultFilter kept + ConsolidatedErrorTransportFilter))` inside AddMassTransit (once-per-endpoint, framework-deduped — Pitfall 3, retry stays per-consumer); no-consumer `c.ReceiveEndpoint("skp-dlq-1", SetQueueArgument x-message-ttl = FromDays(7) = 604800000 ms)` inside UsingRabbitMq before ConfigureEndpoints. The 4 correlation filters + configureBus + ConfigureEndpoints preserved verbatim/in-order. SK_P.sln 0/0 Release. Acceptance greps exact: GenerateFaultFilter==1, x-message-ttl==1, ConfigureError>=1, 4 correlation filters==4, configureBus==1, ConfigureEndpoints==1.
+- **Task 3 — hermetic facts (test):** `tests/BaseApi.Tests/Keeper/KeeperDlqConsolidationTests.cs` — Dlq1_Consolidated (exhaustion → skp-dlq-1 + Fault<T> still published, DLQ-02/04), Keeper_SendFault_RetriesToDlq1 (Immediate(N) → consolidated DLQ-1, DLQ-01), Dlq_TopologyArgs (skp-dlq-1 TTL'd const vs keeper-dlq no-TTL const, DLQ-03 bridge). Each matches `--filter-method` 1/1. Keeper namespace 16/16 deterministic incl KeeperDependencyFirewallTests (no new forbidden ref).
+- **Deviation (1, Rule 2, in-scope):** typed `ConsolidatedFault` forensic envelope (original serialized body + content-type + exception detail) instead of a bare byte[] move — a byte[] is REJECTED as an MT message/handler type AND is untracked by the in-mem harness; the typed envelope is strictly more faithful (operators reconstruct the original + read structured exception) and is hermetically observable. No bugs, no architectural changes, no auth gates, no scope creep; retry stays per-consumer, GenerateFaultFilter retained.
+- **Verification:** SK_P.sln 0/0 Release; full hermetic suite (`--filter-not-trait "Category=RealStack"`) **465 passed / 2 failed of 467** (was 464 + 3 new). The 2 reds (Orchestrator ResultConsumeTests.Result_ConsumedExactlyOnce_NotBroadcast + FireDispatchTests.OneMessagePerEntryStep_CorrectFields) = the documented run-to-run cross-namespace in-mem-MassTransit harness flake ("Failed to stop bus … (Not Started)" temporary-bus teardown race) — BOTH GREEN in isolation (5/5), untouched Orchestrator files, do not exercise the BaseConsole.Core topology change. NOT a regression.
+- **LIVE DLQ-1 — OPERATOR-PENDING (NOT observed this session):** no Docker stack started. The RMQ-specific behaviors (broker creating skp-dlq-1 with x-message-ttl=7d, the real _error→skp-dlq-1 move, orphan {queue}_error cleanup) are deferred to Plan 04 RealStack E2E + the Phase-39 close gate. Runbook in 36-03-SUMMARY Pending-Verification: rebuild ALL consoles (SourceHash) → one-time broker reset (delete pre-TTL skp-dlq-1 + orphan _error, Pitfall 1/2) → verify args → Plan-04 live move proof.
+- SUMMARY: 36-03-SUMMARY.md (Self-Check PASSED). DLQ-01/02/04 code-complete + hermetically proven; live arg/move/drain operator-pending. Phase 36 = 3/4 plans complete; **Plan 04** (RealStack recover-both-paths + give-up E2E, operator-gated) next.
 
 ### Phase 36 Plan 02 — COMPLETE (L2ProbeRecovery bounded probe-loop helper + both consumer re-inject/park bodies; PROBE-01..05 + DLQ-03 hermetic; 2026-06-05)
 

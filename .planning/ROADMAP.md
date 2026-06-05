@@ -252,7 +252,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
 **Plans**: 4 plans
 - [x] 36-01-PLAN.md — Contracts (keeper-dlq const + KeeperProbe key) + ProbeOptions + Wave-0 FakeRedis/bound test (completed 2026-06-05 — KeeperQueues.DeadLetter + L2ProjectionKeys.KeeperProbe; Keeper-local ProbeOptions 5×12 bound+appsettings; FakeRedis down/half-open/up double + ProbeOptions_Bound test; SK_P.sln 0/0 Release; hermetic suite 458/0; 52d2b67, 85c526a, 8f386c6)
 - [x] 36-02-PLAN.md — L2ProbeRecovery loop helper + consumer re-inject/park bodies (PROBE-01..05) (completed 2026-06-05 — bounded read+write-then-delete loop, catch RedisException only; both consumers re-inject verbatim inner to origin on Recovered / park original Fault<T> to keeper-dlq on GaveUp; 6 facts GREEN, SK_P.sln 0/0 Release, hermetic 464/0; 399570f, cf627b9)
-- [ ] 36-03-PLAN.md — Consolidated DLQ-1 error transport in BaseConsole.Core (DLQ-01/02/04, all 3 consoles)
+- [x] 36-03-PLAN.md — Consolidated DLQ-1 error transport in BaseConsole.Core (DLQ-01/02/04, all 3 consoles) (completed 2026-06-06 — mechanism-a custom IFilter<ExceptionReceiveContext> confirmed against MT 8.5.5 assemblies + in-mem spike; ConsolidatedErrorTransportFilter moves Immediate(N) exhaustion to ONE skp-dlq-1 (x-message-ttl 7d) across processor/orchestrator/Keeper, GenerateFaultFilter retained; typed ConsolidatedFault forensic envelope; 3 hermetic facts GREEN, SK_P.sln 0/0 Release, Keeper ns 16/16, hermetic 465/467 (2 reds = documented cross-ns in-mem-MT flake, GREEN in isolation); live broker-arg/move/drain = Plan 04/Phase 39; edc4787, 28d528e)
 - [ ] 36-04-PLAN.md — RealStack recover-both-paths + give-up E2E (operator-gated live half)
 
 ### Phase 37: Orchestrator Pause/Resume Coordination
