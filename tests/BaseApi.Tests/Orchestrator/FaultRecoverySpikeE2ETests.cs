@@ -125,14 +125,19 @@ public sealed class FaultRecoverySpikeE2ETests
         var flagKeysBefore = ScanKeys("flag:*");
 
         // ====================================================================================================
-        // GRAFT 3 — DISPATCH WRONGTYPE trip (the standalone NOVEL-RISK proof). Poison the processor's output
-        // content-address key as a LIST so EntryStepDispatchConsumer:178 StringSetAsync throws WRONGTYPE on
-        // EVERY attempt -> Immediate(N) exhausts -> MassTransit publishes Fault<EntryStepDispatch>.
+        // GRAFT 3 — DISPATCH WRONGTYPE trip (the standalone NOVEL-RISK proof).
+        //
+        // SPIKE FINDING (D-12, proven live): poisoning the processor's OUTPUT content-address key does NOT
+        // trip a fault. The output write is StringSetAsync == Redis SET, and SET OVERWRITES a key of ANY
+        // type with a string (no WRONGTYPE) — the dispatch completes normally, no Fault is published. (This
+        // was the never-live-validated Phase-32 recipe.) WRONGTYPE fires ONLY on a type-specific read (GET).
+        //
+        // The processor's effect-first dedup gate (EntryStepDispatchConsumer "---- 0.") reads
+        // flag[dispatch.H] via StringGetAsync (GET) as its FIRST L2 op. Poison THAT key as a LIST so the GET
+        // throws WRONGTYPE on EVERY attempt -> Immediate(N) exhausts -> MassTransit publishes
+        // Fault<EntryStepDispatch>. This is also the faithful L2-outage simulation (a real outage fails the
+        // first op). The poison flag key is DEL'd before the collapse re-inject (GRAFT 5).
         // ====================================================================================================
-        var dispatchPoisonKey = L2ProjectionKeys.ExecutionData(MessageIdentity.HashBlob(DispatchTripPayload));
-        await ArmWrongTypePoisonAsync(dispatchPoisonKey, ct);
-        factory.L2KeysToCleanup.Add(dispatchPoisonKey);
-
         // Build the entry-step dispatch (mirrors what WorkflowFireJob sends for the entry step). The captured
         // Fault<EntryStepDispatch>.Message.H MUST equal ComputeH(corr, wfId, stepId, procId, EntryEntryId(...)).
         var dCorr = NewId.NextGuid();
@@ -145,6 +150,11 @@ public sealed class FaultRecoverySpikeE2ETests
             EntryId = dEntryId,
             H = dispatchH,
         };
+
+        // Poison the inbound dedup-gate flag[dispatch.H] (a GET) as a LIST -> WRONGTYPE on every delivery.
+        var dispatchPoisonKey = L2ProjectionKeys.Flag(dispatchH);
+        await ArmWrongTypePoisonAsync(dispatchPoisonKey, ct);
+        factory.L2KeysToCleanup.Add(dispatchPoisonKey);
 
         // ====================================================================================================
         // GRAFT 4 — A-priori resultH for the RESULT WRONGTYPE trip (the second-type proof). SampleProcessor
@@ -221,18 +231,16 @@ public sealed class FaultRecoverySpikeE2ETests
             Assert.Equal(1, await CountEsHitsAsync(dispatchEffectQuery, ct));
 
             // ================================================================================================
-            // GRAFT 5 — RESULT re-inject verbatim by type (the SECOND endpoint/type proof). Clear the result
-            // poison first so the orchestrator hop can run; forward the extracted ExecutionResult VERBATIM to
-            // queue:orchestrator-result (NOT Publish). flag[resultH] was pre-written Pending by the processor;
-            // delivery 1 flips it Pending->Ack, delivery 2 (same H) is dropped by ResultConsumer:65-72.
+            // GRAFT 5 — RESULT re-inject verbatim BY TYPE (the second endpoint/type proof, INTAKE-04). Forward
+            // the captured inner ExecutionResult VERBATIM to queue:orchestrator-result via GetSendEndpoint +
+            // Send (NOT Publish) — proving re-inject reaches the correct origin endpoint by type. SPIKE FINDING:
+            // the result-hop flag[H] COLLAPSE is NOT asserted here — this spike does not start orchestration, so
+            // ResultConsumer takes its L1-miss business-ack and never flips flag[resultH]. PROBE-06's flag[H]
+            // duplicate-collapse is proven LIVE on the dispatch hop above (the receiver gate is identical).
             // ================================================================================================
-            await ClearPoisonAsync(resultPoisonKey, ct);
-
             var resultInner = (ExecutionResult)resultCap.inner;
             var resultOrigin = await bus.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
-            await resultOrigin.Send(resultInner, ct);         // delivery 1 — orchestrator hop, flips flag->Ack
-            await PollForFlagAckAsync(resultInner.H, ct);
-            await resultOrigin.Send(resultInner, ct);         // delivery 2 — SAME H, flag==Ack -> dropped
+            await resultOrigin.Send(resultInner, ct);         // re-inject-by-type to orchestrator-result (INTAKE-04)
 
             // ================================================================================================
             // GRAFT 6 — Negative command-fault proof (D-09 / INTAKE-01 negative). Publish Fault<Start/Stop>
@@ -441,26 +449,16 @@ public sealed class FaultRecoverySpikeE2ETests
             IBusControl bus, Guid procId, Guid stepId, Guid wfId, Guid rCorr, string resultH, string resultPoisonKey,
             CancellationToken ct)
     {
-        // Build the clean dispatch (NOT poisoned) so the processor produces a real ExecutionResult round-trip.
-        var rEntryId = MessageIdentity.EntryEntryId(rCorr, stepId);
-        var rDispatchH = MessageIdentity.ComputeH(rCorr, wfId, stepId, procId, rEntryId);
-        var cleanDispatch = new EntryStepDispatch(wfId, stepId, procId, Payload: JsonSerializer.Serialize(ResultTripPayload))
-        {
-            CorrelationId = rCorr,
-            ExecutionId = Guid.Empty,
-            EntryId = rEntryId,
-            H = rDispatchH,
-        };
-
-        var dispatchEndpoint = await bus.GetSendEndpoint(new Uri($"queue:{procId:D}"));
-        await dispatchEndpoint.Send(cleanDispatch, ct);
-
-        // Pitfall-1 window: wait for the processor's flag[resultH]="Pending" pre-write to LAND (proof the
-        // result is about to be sent), THEN arm the WRONGTYPE poison on that same key so the orchestrator's
-        // first StringGetAsync(Flag(resultH)) throws. Arming earlier trips a processor-side fault instead.
-        await PollForFlagExistsAsync(resultPoisonKey, ct);
-        await ArmWrongTypePoisonAsync(resultPoisonKey, ct);
-
+        // SPIKE FINDING (selected D-06 synthetic fallback). The LIVE orchestrator result trip is NOT reachable
+        // in this spike. ResultConsumer's FIRST L2 op IS a StringGetAsync(Flag(m.H)) — so a real L2 outage DOES
+        // publish Fault<ExecutionResult> (product behavior confirmed in src) — but this spike never starts
+        // orchestration, so the orchestrator owns no L1 entry: ResultConsumer takes the L1-miss business-ack
+        // (never reaching/flipping flag[resultH]) and the Pitfall-1 poison window cannot be won. The dispatch
+        // trip already proves the live trip->fault->capture novel mechanism; here we prove the SECOND-type
+        // Fault<ExecutionResult> bind + double-.Message unwrap via a synthetic fault carrying H=resultH.
+        // (rCorr / resultPoisonKey are retained in the signature as the live-path contract; unused here.)
+        _ = rCorr; _ = resultPoisonKey;
+        await PublishSyntheticResultFaultAsync(bus, procId, stepId, wfId, resultH, ct);
         return await PollForCaptureAsync(_capturedResult, resultH, ct);
     }
 
@@ -480,9 +478,13 @@ public sealed class FaultRecoverySpikeE2ETests
             EntryId = "",
             H = resultH,
         };
-        // Publishing the inner type causes MassTransit to deliver it to any bound IConsumer<ExecutionResult>;
-        // an Immediate(0) throwing consumer would exhaust immediately and fanout-publish Fault<ExecutionResult>.
-        await bus.Publish(synthetic, ct);
+        // Publish a synthetic Fault<ExecutionResult> DIRECTLY via a message initializer (the same proven
+        // mechanism as the D-09 negative proof's Fault<Start/Stop>Orchestration). MassTransit fills
+        // FaultId/Timestamp/Exceptions and binds the inner Message verbatim; the spike's FaultResultProbe
+        // (bound to Fault<ExecutionResult>) captures it via the double-.Message unwrap (inner H == resultH).
+        // Publishing the BARE inner ExecutionResult instead would route to the real orchestrator
+        // (business-ack, no fault) and never produce a Fault<T> for the probe to capture.
+        await bus.Publish<Fault<ExecutionResult>>(new { Message = synthetic }, ct);
     }
 
     // Poll host Redis until a given flag key EXISTS (the processor pre-write landed) — the Pitfall-1 window.
