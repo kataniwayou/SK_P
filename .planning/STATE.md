@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Phase 36 Plan 03 complete
-last_updated: "2026-06-06T00:12:00.000Z"
-last_activity: 2026-06-06 -- Phase 36 Plan 03 complete (consolidated DLQ-1 error transport in BaseConsole.Core, mechanism-a)
+stopped_at: Phase 36 Plan 04 authored (RealStack recover/give-up E2E; live half operator-pending)
+last_updated: "2026-06-06T00:38:00.000Z"
+last_activity: 2026-06-06 -- Phase 36 Plan 04 authored (KeeperRecoveryE2ETests RealStack recover-both-paths + give-up; live operator-gated)
 progress:
   total_phases: 24
   completed_phases: 22
   total_plans: 80
-  completed_plans: 79
-  percent: 99
+  completed_plans: 80
+  percent: 100
 ---
 
 # Project State
@@ -26,10 +26,20 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 3/6 complete — Phase 35 authored, SC3 live operator-pending)
-Phase: 36 (l2-health-probe-recovery-loop-dlqs) — EXECUTING
-Plan: 4 of 4
-Status: Executing Phase 36
-Last activity: 2026-06-06 -- Phase 36 Plan 03 complete (consolidated DLQ-1 error transport in BaseConsole.Core, mechanism-a)
+Phase: 36 (l2-health-probe-recovery-loop-dlqs) — 4/4 PLANS AUTHORED (live half operator-pending)
+Plan: 4 of 4 complete
+Status: Phase 36 complete (hermetic-green + authored RealStack recover/give-up; live operator-gated, Phase-39 authoritative). Milestone v3.7.0 continues — Phases 37/38 remain.
+Last activity: 2026-06-06 -- Phase 36 Plan 04 authored (KeeperRecoveryE2ETests RealStack recover-both-paths + give-up; live operator-gated)
+
+### Phase 36 Plan 04 — AUTHORED, LIVE recover/give-up OPERATOR-PENDING (KeeperRecoveryE2ETests RealStack recover-both-paths + give-up; PROBE-03/04/05 live-gated; 2026-06-06)
+
+- **1 task commit (scoped path only — the ~242 pre-existing `.planning/` archive deletions left UNtouched, NOT staged, NOT reverted; verified 242 still uncommitted after the commit).** `1b0d7d9` (test: KeeperRecoveryE2ETests). Wave 3, depends_on [02, 03], autonomous:false. NO file deletions.
+- **Task 1 — KeeperRecoveryE2ETests authored (sibling clone of FaultRecoverySpikeE2ETests + the Phase-35 KeeperFaultIntakeE2ETests deployed-container-observe pattern, D-09; both rigs untouched):** reuses the rig VERBATIM (3 traits incl. RealStack + Observability, RealStackWebAppFactory + OTEL_EXPORTER_OTLP_ENDPOINT overrides, embedded SourceHash reflection off Processor.Sample, PollForHealthyLivenessAsync, ArmWrongTypePoisonAsync, PollEsForLog/CountEsHitsAsync, net-zero teardown). Two facts: **KeeperRecovery_RecoversBothPaths** (PROBE-03) — WRONGTYPE trip on flag[dispatchH] → deployed keeper probe recovers (its skp:data read + skp:keeper:probe write are unpoisoned, recovers first iteration) + re-injects verbatim to queue:{procId:D}; poison cleared ~2s post-trip (L2 return) → re-injected delivery's effect fires, receiver flag[H] gate collapses dup → CountEsHitsAsync==1 (exactly-once); second type = synthetic Fault<ExecutionResult> (clean entryId) → re-inject verbatim to queue:orchestrator-result caught by in-test ReinjectedResultProbe (same H + CorrelationId). **KeeperRecovery_GivesUp_ParksToDlq** (PROBE-04) — poison the probe's OWN skp:data:{entryId} read → loop exhausts MaxAttempts → original Fault<T> envelope parked to keeper-dlq, caught by in-test KeeperDlqProbe (proves envelope not bare inner) + ack-drained (net-zero terminal queue). Net-zero: skp:keeper:probe:* family scanned BEFORE/AFTER (30s TTL self-cleans) + L2KeysToCleanup + POST /orchestration/stop.
+- **No deviations** — authored exactly as specified (the plan's Task-1 action explicitly authorized the D-06 synthetic Fault<ExecutionResult> result-hop fallback + the bound-probe give-up assertion). No auto-fixes, no architectural decisions, no auth gates, no scope creep.
+- **Verification — authored half PASSED (committed `1b0d7d9`):** `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error; full hermetic suite (`--filter-not-trait "Category=RealStack"`) **467 passed / 0 failed** (unchanged from Plan 03 — the RealStack-trait file adds 0 hermetic tests, zero regression). Acceptance greps: RealStack==8, "E2E"==1, ArmWrongTypePoisonAsync==4, PollEsForLog==2, keeper:probe|KeeperProbe==12, keeper-dlq|DeadLetter==16, fact names==2, CountEsHitsAsync==4; 731 lines (>=80).
+- **LIVE recover/give-up — OPERATOR-PENDING (NOT observed this session):** no Docker stack started. Auto-approved per the Phase-31..35 do-not-block-on-human-verify precedent to FINALIZE the plan WITHOUT claiming the live run was observed. Runbook in 36-04-SUMMARY Pending-Verification: rebuild ALL consoles (keeper+processor-sample+orchestrator+baseapi-service — Plan-03 error-transport embedded in all 3 + keeper SourceHash must match, Pitfall 5) → one-time broker hygiene (pre-TTL skp-dlq-1 + orphan _error, Pitfall 1/2) → optional small Probe__MaxAttempts to shorten the 60s give-up → `dotnet test --filter "Category=RealStack&FullyQualifiedName~KeeperRecovery"` → expect GREEN (recover exactly-once + result re-inject + keeper-dlq park) → net-zero skp:keeper:probe:* + keeper-dlq drained. The Phase-39 close gate is the authoritative live signal; VALIDATION.md Manual-Only kill-mid-loop (PROBE-05 at-least-once) is the operator's optional run.
+- **PROBE-03/04/05 status (honest):** code-complete (36-02/03) + hermetically proven; live recover-both-paths/give-up OPERATOR-PENDING. **NOT ticked in REQUIREMENTS.md** (live proof unobserved — the verifier/operator handles traceability on the GREEN live run; 35-03 precedent).
+- SUMMARY: 36-04-SUMMARY.md (Self-Check PASSED for the authored artifact; LIVE recover/give-up marked PENDING). **Phase 36 = 4/4 plans complete** (01–03 hermetic + 04 authored RealStack); the phase closes on the operator's live run / Phase-39 gate. Milestone v3.7.0 continues — Phases 37 (pause/resume) + 38 (metric labels) remain.
 
 ### Phase 36 Plan 03 — COMPLETE (consolidated skp-dlq-1 error transport in BaseConsole.Core, mechanism-a; DLQ-01/02/04 hermetic; live broker-arg/move/drain = Plan 04/Phase 39; 2026-06-06)
 
