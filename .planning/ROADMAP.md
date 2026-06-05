@@ -234,7 +234,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   2. On every consumed fault, Keeper opens the execution log-scope from the extracted inner message so its OTel logs carry the propagated correlationId + execution-scope ids (consistent with the other consoles).
   3. A faulted message processed by Keeper produces an Elasticsearch log correlated to the original execution by correlationId + ids (observable end-to-end).
 **Plans**: 3 plans
-- [ ] 35-01-PLAN.md — Shared ExecutionLogScope.BuildState refactor (D-07), byte-identical + regression-guarded
+- [x] 35-01-PLAN.md — Shared ExecutionLogScope.BuildState refactor (D-07), byte-identical + regression-guarded
 - [ ] 35-02-PLAN.md — Two real Fault<T> consumers + definitions + Program.cs swap + placeholder deletion + hermetic scope proof
 - [ ] 35-03-PLAN.md — RealStack SC3: running-Keeper-container correlated-ES-log proof (operator-gated)
 
@@ -304,7 +304,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 2/2 | Complete    | 2026-06-05 |
 | 33. Fault-Recovery Spike (De-Risk) | v3.7.0 | 2/2 | Complete    | 2026-06-05 |
 | 34. Keeper Console Foundation | v3.7.0 | 3/3 | Complete    | 2026-06-05 |
-| 35. Fault Intake & Correlation | v3.7.0 | 0/? | Not started | — |
+| 35. Fault Intake & Correlation | v3.7.0 | 1/3 | In progress | — |
 | 36. L2 Health-Probe Recovery Loop & DLQs | v3.7.0 | 0/? | Not started | — |
 | 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 0/? | Not started | — |
 | 38. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 0/? | Not started | — |
