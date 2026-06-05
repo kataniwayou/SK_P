@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: planning
-stopped_at: Phase 33 context gathered
-last_updated: "2026-06-05T08:17:40.003Z"
+status: ready_to_execute
+stopped_at: Phase 33 planned (2 plans, 2 waves) — VERIFICATION PASSED. Next: /gsd-execute-phase 33
+last_updated: "2026-06-05T08:42:59.346Z"
 last_activity: "2026-06-05 — Milestone v3.7.0 roadmap created. Design forks locked: Keeper console on BaseConsole.Core; recover off Fault<EntryStepDispatch>/Fault<ExecutionResult> pub/sub (Start/Stop out of scope); bounded L2 probe loop, ack-after-loop crash survival; Keeper-direct re-inject riding the receiver's flag[H]; per-workflow pause/resume state in the single-replica orchestrator L1; two DLQs split by mechanism (Immediate(N) → DLQ-1 forensic; probe give-up → keeper-dlq alert). Phases 33→38. Prior milestone v3.6.0 SHIPPED + ARCHIVED (tagged v3.6.0). v3.5.0 formal archival deferred (requirements snapshot at milestones/v3.5.0-REQUIREMENTS.md)."
 progress:
   total_phases: 20
   completed_phases: 19
-  total_plans: 68
+  total_plans: 70
   completed_plans: 68
-  percent: 100
+  percent: 97
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05
-Phase: 33 (Fault-Recovery Spike) — not started
-Plan: —
-Status: Roadmap created + approved (6 phases 33-38, 29/29 requirements mapped). Ready to plan Phase 33.
-Last activity: 2026-06-05 — Milestone v3.7.0 roadmap created. Design forks locked: Keeper console on BaseConsole.Core; recover off Fault<EntryStepDispatch>/Fault<ExecutionResult> pub/sub (Start/Stop out of scope); bounded L2 probe loop, ack-after-loop crash survival; Keeper-direct re-inject riding the receiver's flag[H]; per-workflow pause/resume state in the single-replica orchestrator L1; two DLQs split by mechanism (Immediate(N) → DLQ-1 forensic; probe give-up → keeper-dlq alert). Phases 33→38. Prior milestone v3.6.0 SHIPPED + ARCHIVED (tagged v3.6.0). v3.5.0 formal archival deferred (requirements snapshot at milestones/v3.5.0-REQUIREMENTS.md).
+Phase: 33 (Fault-Recovery Spike) — planned, ready to execute
+Plan: 33-01 (author spike, autonomous) + 33-02 (close gate + operator live-run gate, autonomous:false)
+Status: Phase 33 planned — 2 plans / 2 waves, plan-checker VERIFICATION PASSED (12/12 dimensions, 4/4 REQ-IDs covered). CONTEXT + RESEARCH + PATTERNS + VALIDATION committed. Next: /gsd-execute-phase 33.
+Last activity: 2026-06-05 — Phase 33 discuss + plan complete. Spike de-risks the milestone: one RealStack E2E test (clone of IdempotentExactlyOnceE2ETests) proves Fault<EntryStepDispatch>/Fault<ExecutionResult> pub/sub capture → 6-id+H unwrap via context.Message.Message → verbatim re-inject by type (queue:{procId:D} / orchestrator-result) → Phase-31 flag[H] duplicate-collapse, plus the Fault<Start/Stop> negative proof. Both faults tripped live via the WRONGTYPE recipe (dispatch unambiguous; result has the Pitfall-1 pre-write window + D-06 synthetic fallback). Live trip + phase-33-close.ps1 are an autonomous:false operator gate (rebuilt containers). _error = TTL'd forensic → source-agnostic DLQ-1 (recorded, D-10); no metric work (D-11). Wave 1 autonomous; Wave 2 operator-gated.
 
 ### Phase 32.1 Plan 02 — AUTHORED, LIVE GATE PENDING (phase-32.1-close.ps1 — clone phase-31-close, NO skp:cancelled:* scan-clean; req-5; 2026-06-05)
 
@@ -979,4 +979,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 32.1 (dead-letter-on-exhaustion) — 2 plans — 2026-06-04T22:14:44.590Z
+**Planned Phase:** 33 (Fault-Recovery Spike (De-Risk)) — 2 plans — 2026-06-05T08:42:59.332Z
