@@ -25,14 +25,7 @@ public sealed class InboundExecutionScopeConsumeFilter<T>(
             return;
         }
 
-        var state = new Dictionary<string, object>();
-        if (ec.WorkflowId  != Guid.Empty) state[ExecutionLogScope.WorkflowId]  = ec.WorkflowId.ToString();
-        if (ec.StepId      != Guid.Empty) state[ExecutionLogScope.StepId]      = ec.StepId.ToString();
-        if (ec.ProcessorId != Guid.Empty) state[ExecutionLogScope.ProcessorId] = ec.ProcessorId.ToString();
-        if (ec.ExecutionId != Guid.Empty) state[ExecutionLogScope.ExecutionId] = ec.ExecutionId.ToString();
-        if (!string.IsNullOrEmpty(ec.EntryId)) state[ExecutionLogScope.EntryId] = ec.EntryId;
-
-        using (logger.BeginScope(state))
+        using (logger.BeginScope(ExecutionLogScope.BuildState(ec)))
             await next.Send(context);
     }
 
