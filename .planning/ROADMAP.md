@@ -236,7 +236,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
 **Plans**: 3 plans
 - [x] 35-01-PLAN.md — Shared ExecutionLogScope.BuildState refactor (D-07), byte-identical + regression-guarded
 - [x] 35-02-PLAN.md — Two real Fault<T> consumers + definitions + Program.cs swap + placeholder deletion + hermetic scope proof (completed 2026-06-05 — KeeperFaultConsumerScopeTests 3/3 GREEN proving CorrelationId + 5 exec ids; both defs on keeper-fault-recovery, single retry owner; 3 placeholders deleted; SK_P.sln 0/0 Release; hermetic suite 457/0; b71233c, 418bc3f)
-- [ ] 35-03-PLAN.md — RealStack SC3: running-Keeper-container correlated-ES-log proof (operator-gated)
+- [x] 35-03-PLAN.md — RealStack SC3: running-Keeper-container correlated-ES-log proof (authored — KeeperFaultIntakeE2ETests sibling clone of the Phase-33 spike: WRONGTYPE live-trip → running-Keeper-container correlated ES log on service.name=keeper + attributes.CorrelationId == tripped correlationId + attributes.StepId + body.text ~ "keeper fault intake"; net-zero teardown; no DLQ-1/TTL scope creep; SK_P.sln 0/0 Release; hermetic suite unchanged; 1b64143. **LIVE SC3 run OPERATOR-PENDING** — not observed this session; runbook in 35-03-SUMMARY; INTAKE-03/KMET-04 stay unticked until the operator's GREEN live run)
 
 ### Phase 36: L2 Health-Probe Recovery Loop & DLQs
 **Goal**: Implement the core recovery engine — a bounded, crash-survivable L2 read+write probe loop that re-injects to origin on first success or parks the unrecoverable in `keeper-dlq` (DLQ-2) on give-up — plus the two-DLQ topology (Immediate(N) exhaustion → DLQ-1; probe exhaustion → DLQ-2) and the shared `Immediate(N)` policy across all consumers.
@@ -304,7 +304,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 32.1 Dead-Letter on Exhaustion (Breaker Reverted) | v3.6.0 | 2/2 | Complete    | 2026-06-05 |
 | 33. Fault-Recovery Spike (De-Risk) | v3.7.0 | 2/2 | Complete    | 2026-06-05 |
 | 34. Keeper Console Foundation | v3.7.0 | 3/3 | Complete    | 2026-06-05 |
-| 35. Fault Intake & Correlation | v3.7.0 | 1/3 | In progress | — |
+| 35. Fault Intake & Correlation | v3.7.0 | 3/3 | Authored (SC3 live operator-pending) | — |
 | 36. L2 Health-Probe Recovery Loop & DLQs | v3.7.0 | 0/? | Not started | — |
 | 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 0/? | Not started | — |
 | 38. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 0/? | Not started | — |

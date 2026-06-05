@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 35-02-PLAN.md
-last_updated: "2026-06-05T16:49:54.000Z"
+stopped_at: Completed 35-03-PLAN.md (authored; SC3 live operator-pending)
+last_updated: "2026-06-05T17:30:00.000Z"
 last_activity: 2026-06-05
 progress:
   total_phases: 22
   completed_phases: 21
   total_plans: 76
-  completed_plans: 75
-  percent: 99
+  completed_plans: 76
+  percent: 100
 ---
 
 # Project State
@@ -25,11 +25,21 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 ## Current Position
 
-Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 2/6 complete)
-Phase: 35 (Fault Intake & Correlation) — EXECUTING
-Plan: 3 of 3
-Status: Ready to execute
+Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→38; 2/6 complete — Phase 35 authored, SC3 live operator-pending)
+Phase: 35 (Fault Intake & Correlation) — 3/3 plans authored; SC3 live OPERATOR-PENDING (phase verification gated on the operator's live run)
+Plan: 3 of 3 — AUTHORED (live operator-pending)
+Status: Phase 35 plans complete (authored); the running-Keeper-container SC3 correlated-ES-log proof is operator-gated. Next: Phase 36 (L2 probe loop + two DLQs) once SC3 is confirmed.
 Last activity: 2026-06-05
+
+### Phase 35 Plan 03 — AUTHORED, LIVE SC3 OPERATOR-PENDING (KeeperFaultIntakeE2ETests — running-Keeper-container correlated-ES-log proof; INTAKE-03/KMET-04 live-gated; 2026-06-05)
+
+- **1 task commit (scoped path only — the ~242 pre-existing `.planning/` archive deletions left UNtouched, NOT staged, NOT reverted; verified 242 still uncommitted).** `1b64143` (test: KeeperFaultIntakeE2ETests — SC3 running-Keeper-container correlated-ES-log proof). Wave 3, depends_on [35-02], autonomous:false.
+- **Task 1 — KeeperFaultIntakeE2ETests authored (sibling clone of the Phase-33 FaultRecoverySpikeE2ETests; the spike untouched):** reuses the rig VERBATIM (3 traits incl. RealStack + Observability, RealStackWebAppFactory + the OTEL_EXPORTER_OTLP_ENDPOINT env-var overrides, embedded SourceHash reflection off Processor.Sample.SampleProcessor, seed helpers cron `* * * * *`, PollForHealthyLivenessAsync, ArmWrongTypePoisonAsync, net-zero teardown). SC3 delta: NO in-test Fault probe / NO re-inject (the RUNNING Keeper container consumes the published `Fault<EntryStepDispatch>`, D-09); live WRONGTYPE trip on `Flag(dispatchH)` (LIST → dedup-gate GET WRONGTYPE → Immediate(N) exhausts → fault fans out to keeper-fault-recovery → the container's FaultEntryStepDispatchConsumer emits the intake log); `PollEsForLog` (EsPollTimeoutMs=120_000) asserts a hit on `resource.attributes.service.name=keeper` + `attributes.CorrelationId == dCorr` (the PROPAGATED id — proves the Plan-02 manual CorrelationId scope works through the deployed container) + `attributes.StepId == stepId` + `body.text ~ "keeper fault intake"`. Net-zero: `POST /orchestration/stop` + every run-minted skp:data:*/skp:flag:* + the poison key registered via L2KeysToCleanup/ParentIndexMembersToSrem. NO DLQ-1/TTL/keeper-dlq topology, NO _error topology (Pitfall 4 — Phase 36).
+- **No deviations** — authored exactly as specified (sibling clone, spike untouched, no scope creep). No auto-fixes, no architectural decisions, no auth gates.
+- **Verification — authored half PASSED (committed `1b64143`):** `dotnet build SK_P.sln -c Release` 0/0; hermetic suite unchanged (the RealStack-trait file adds 0 hermetic tests). Acceptance greps re-verified at finalization: RealStack trait ==1; `service.name` ==4 (filters `"keeper"`); `PollEsForLog` ==3; `ArmWrongTypePoisonAsync` ==3; `CorrelationId` ==8 / `StepId` ==9; `keeper fault intake` ==2; scope-creep `x-message-ttl|x-dead-letter-exchange|keeper-dlq` ==0; net-zero (`L2KeysToCleanup`/`ParentIndexMembersToSrem` + `POST /orchestration/stop` present).
+- **LIVE SC3 — OPERATOR-PENDING (NOT observed this session):** no Docker stack was started; the running-Keeper-container correlated ES log was NOT run live. Auto-approved per the Phase-31..34 do-not-block-on-human-verify precedent to FINALIZE the plan WITHOUT claiming the live run was observed. Runbook in 35-03-SUMMARY Pending-Verification: rebuild (`docker compose up -d --build keeper processor-sample orchestrator baseapi-service` — Keeper MUST be rebuilt or the Phase-34 placeholder runs, Pitfall 5) → wait healthy → `dotnet test tests/BaseApi.Tests -- --filter-class "*KeeperFaultIntakeE2ETests"` → expect GREEN (service.name=keeper hit, propagated CorrelationId/StepId, body.text ~ "keeper fault intake") → net-zero skp:* check. The Phase-38 close gate is the authoritative live signal.
+- **INTAKE-03/KMET-04 status (honest):** code-complete (35-02 consumers/definitions) + hermetically proven (KeeperFaultConsumerScopeTests 3/3); live ES-correlation (SC3) OPERATOR-PENDING. **NOT ticked in REQUIREMENTS.md** (live proof unobserved — the orchestrator/verifier handles traceability on the operator's GREEN run).
+- SUMMARY: 35-03-SUMMARY.md (Self-Check PASSED for the authored artifact; LIVE SC3 marked PENDING). Phase 35 = 3/3 plans authored (01/02 complete + 03 authored); the phase closes on the operator's SC3 live run.
 
 ### Phase 35 Plan 02 — COMPLETE (two real Fault<T> consumers on keeper-fault-recovery + manual CorrelationId scope + placeholder deletion; KMET-04/INTAKE-03 hermetic; 2026-06-05)
 
