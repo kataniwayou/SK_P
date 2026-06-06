@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: completed
+status: executing
 stopped_at: context exhaustion at 90% (2026-06-06)
-last_updated: "2026-06-06T19:29:01.830Z"
-last_activity: 2026-06-06
+last_updated: "2026-06-06T19:41:10.618Z"
+last_activity: 2026-06-06 -- Phase 40 execution started
 progress:
   total_phases: 42
   completed_phases: 41
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 39 — keeper-observability-real-stack-e2e-close-gate
+**Current focus:** Phase 40 — keeper-recovery-hardening
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
-Phase: 40 (Keeper Recovery Hardening) — planned
-Plan: Ready to execute — 3 plans in 2 waves (40-01 KHARD-03 extract handler → 40-02 KHARD-01 cap ∥ 40-03 KHARD-02 drain)
-Status: Ready to execute
-Last activity: 2026-06-06
+Phase: 40 (keeper-recovery-hardening) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 40
+Last activity: 2026-06-06 -- Phase 40 execution started
 
 ### Phase 39 Plan 03 — COMPLETE (Wave 3: keeper_* Prometheus scrape assertions on the two RealStack facts; TEST-01/02; 2026-06-06)
 
