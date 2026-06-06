@@ -278,10 +278,14 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
 **Success Criteria** (what must be TRUE):
   1. Every metric series (runtime / HTTP / business) for each console carries `service_name = {name}_{version}` (e.g. `keeper_3.7.0`, `orchestrator_3.4.0`, `sk-api_3.2.0`, and the processor's DB `{Name}_{Version}`); no series carries a bare `service_name` lacking the version suffix.
   2. Every metric series carries a non-empty `service_instance_id`, verified present on all three instrument families — not only the Phase-30 business counters.
-  3. The processor's name+version are sourced from the DB: `ProcessorIdentityFound` is extended with `Name`+`Version`, the responder + `IProcessorContext` carry them, the processor's appsettings `Service:Name`/`Service:Version` are removed as redundant, and metrics before identity-resolution carry `service_name="processor-pending"`.
+  3. The processor's steady-state name+version are sourced from the DB: `ProcessorIdentityFound` is extended with `Name`+`Version`, the responder + `IProcessorContext` carry them; the processor's appsettings `Service:Name`/`Service:Version` are **retained** as the boot-window placeholder (GA-3 amendment - supersedes the original "removed / `processor-pending`" framing), and metrics before identity-resolution carry the appsettings `{name}_{version}` (e.g. `processor-sample_3.5.0`), then the MeterProvider is swapped to the DB-sourced resource once identity resolves.
   4. The logs' `service.name` stays the bare identity (metrics-only version suffix) — the Phase-35 ES assertion `service.name="keeper"` still passes.
   5. All in-repo Prometheus query consumers (incl. the Phase-11 `service_name="sk-api"` round-trip assertion) are updated to the combined label and pass; no high-cardinality labels introduced.
-**Plans**: TBD
+**Plans**: 4 plans
+  - [ ] 38-01-PLAN.md - Processor identity round-trip: extend ProcessorIdentityFound + responder + IProcessorContext with Name/Version; update 3 IProcessorContext fakes (CS0535 firewall) (MLBL-03)
+  - [ ] 38-02-PLAN.md - Combine service_name={name}_{version} on the metrics resource (both base libs); keep logs bare + hermetic guard; reconcile PromQL literals to sk-api_3.2.0 (MLBL-01/04/05)
+  - [ ] 38-03-PLAN.md - MeterProviderHolder swap (Model A1): placeholder->DB service.name on identity-resolve in Loop A; hermetic MeterProviderHolderFacts (MLBL-03)
+  - [ ] 38-04-PLAN.md - RealStack scrape gate: combined service_name + non-empty service_instance_id across runtime/HTTP/business; DB-sourced processor series; appsettings-retained + MLBL-05 inventory (MLBL-01/02/03/05)
 
 ### Phase 39: Keeper Observability + Real-Stack E2E + Close Gate
 **Goal**: Register the Keeper meter + throughput/saturation instruments, then prove the full recover-and-give-up behavior live against the real stack and lock a 3×GREEN triple-SHA net-zero close gate.
