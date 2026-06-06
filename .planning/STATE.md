@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Phase 38 execution started
-last_updated: "2026-06-06T06:42:41.341Z"
+stopped_at: Completed 38-03-PLAN.md (Phase 38 Wave 2)
+last_updated: "2026-06-06T10:30:00.000Z"
 last_activity: 2026-06-06
 progress:
   total_phases: 41
@@ -27,9 +27,18 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
 Phase: 38
-Plan: Wave 1 — 38-01 COMPLETE, 38-02 COMPLETE
+Plan: Wave 1 — 38-01 COMPLETE, 38-02 COMPLETE; Wave 2 — 38-03 COMPLETE (38-04 RealStack gate remaining)
 Status: Executing
 Last activity: 2026-06-06
+
+### Phase 38 Plan 03 — COMPLETE (Wave 2: processor MeterProvider swap — placeholder->DB service_name on identity-resolve; MLBL-03 (ii)+(iv) / D-02/D-03; 2026-06-06)
+
+- **3 task commits (scoped src/ + tests/ paths only — pre-existing untracked items psql-*.txt/.claude/27-PATTERNS.md/launchSettings.json left UNtouched).** `69bbd55` (feat: MeterProviderHolder A1), `ef209d0` (feat: register holder + fire SwapTo in Loop A), `e41a475` (test: hermetic MeterProviderHolderFacts). NO file deletions (pure additions/edits). Wave 2, depends_on [38-01], autonomous:true, type:execute. Consumes 38-01's `found.Message.Name`/`.Version` + 38-02's `{name}_{version}` combine pattern.
+- **Task 1 — MeterProviderHolder (Model A1):** NEW `src/BaseProcessor.Core/Observability/MeterProviderHolder.cs` — `public sealed class : IDisposable`. Holder receives the host's provider #1 via ctor; `SwapTo` runs build #2 -> repoint `_current` -> `ForceFlush(5000)` -> `Dispose(#1)`. `Build` = `Sdk.CreateMeterProviderBuilder()` + `.AddMeter(ProcessorMetrics.MeterName)` + `.AddMeter(InstrumentationOptions.MeterName)` + `.AddRuntimeInstrumentation()` + BARE `.AddOtlpExporter()`; resource carries combined `service.name` + the captured `service.instance.id` (reused, never re-resolved — Pitfall 4 / Phase-30 D-10). Transitive OTLP+Runtime types resolved from BaseConsole.Core (no csproj change needed).
+- **Task 2 — registration + swap trigger:** `AddBaseProcessor` adds `AddSingleton<MeterProviderHolder>` from `sp.GetRequiredService<MeterProvider>()` (#1) + `cfg.Require("Service:Version")` + `ResolveInstanceIdForHolder()` (the documented 4th IN-03 drift site, POD_NAME??HOSTNAME??MachineName??GUID inline). `ProcessorStartupOrchestrator` gained a `MeterProviderHolder` ctor param; `SwapTo($"{found.Message.Name}_{found.Message.Version}")` fires in Loop A immediately after `SetIdentity`, BEFORE the `{id:D}` queue-bind / `MarkHealthy` (race-safe).
+- **Task 3 (tdd) — hermetic MeterProviderHolderFacts:** NEW `tests/BaseApi.Tests/Observability/MeterProviderHolderFacts.cs` proves placeholder (`processor-sample_3.5.0`) -> DB (`db-name_9.9.9`) `service.name` swap + SAME `service.instance.id` (`unit-instance-42`) across the swap + provider #1 shutdown (custom `MetricReader` OnShutdown sentinel) + A1 double-dispose safety. Inspection seam: the public `MeterProvider.GetResource()` extension (metrics analog of the logs `ParentProvider.GetResource()`); provider #2 read off the holder's private `_current` via reflection. Authored GREEN-by-construction (SUT built in Task 1) but assertions have teeth (would RED on any build-#2/repoint/dispose/id-reuse regression).
+- **Deviations:** [Rule 1 - Bug] OTel 1.15.3 `ForceFlush(timeoutMilliseconds:)` not `milliseconds:` + `MeterProvider.Dispose()` cref unresolvable (inherited) -> plain `<c>` (folded into 69bbd55). [Rule 3 - Blocking] the new orchestrator ctor param broke 3 direct-construction test sites (IdentityResolutionFacts/SchemaResolutionFacts/DispatchBindSequenceFacts) which drive identity-resolve so the swap FIRES -> added a shared `internal static StubMeterProviderHolder()` returning a REAL holder over a minimal hermetic provider (folded into ef209d0). No architectural changes, no auth gates, no stubs.
+- **Verification:** `dotnet build SK_P.sln` 0 Warning / 0 Error in BOTH Debug + Release. `MeterProviderHolderFacts` 1/1 GREEN; orchestrator-drive tests (`IdentityResolutionFacts`+`SchemaResolutionFacts`+`DispatchBindSequenceFacts`) 5/5 GREEN (real `SwapTo` fires, no regression); full hermetic Observability namespace 27/27 GREEN (26 prior + 1 new; RealStack excluded). Run via the MTP `BaseApi.Tests.exe --filter-class`/`--filter-namespace` (VSTest `--filter` unusable on this MTP project). SUMMARY: 38-03-SUMMARY.md (Self-Check PASSED). **Phase 38 Wave 2 = 1/1 plan complete**; only 38-04 (RealStack live scrape gate) remains for the phase.
 
 ### Phase 38 Plan 02 — COMPLETE (Wave 1: combined metrics service_name={name}_{version} + bare-logs hermetic guard + PromQL literal reconcile — MLBL-01/04/05; 2026-06-06)
 
