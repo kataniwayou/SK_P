@@ -185,7 +185,12 @@ public sealed class WorkflowLifecycle(
         var state = await scheduler.GetTriggerStateAsync(wf.JobId, ct);
         if (state != TriggerState.Paused)
         {
-            // None(Stopped)/Normal(Running)/Blocked/Error -> ignore (D-09).
+            // None(Stopped)/Normal(Running)/Blocked/Error -> ignore (D-09). Log-only diagnostic so a Resume
+            // dropped in the narrow fire window is observable (WR-01 / D-01). NOT a re-arm: None is overloaded
+            // with operator-Stopped, so re-arming would resurrect a Stopped workflow (D-02).
+            logger.LogInformation(
+                "Resume ignored for workflow {WorkflowId} — trigger state is {TriggerState}, not Paused (D-09)",
+                workflowId, state);
             return;
         }
 
