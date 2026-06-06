@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Completed 39-03-PLAN.md
-last_updated: "2026-06-06T10:59:00.000Z"
-last_activity: 2026-06-06 -- Phase 39 Plan 03 complete (both Keeper RealStack facts extended with keeper_* Prometheus scrape blocks)
+status: milestone_complete
+stopped_at: Completed phase 39 (4/4 plans) — close gate 3xGREEN + triple-SHA net-zero (keeper-dlq drain-timing follow-up)
+last_updated: "2026-06-06T15:30:00.000Z"
+last_activity: 2026-06-06 -- Phase 39 complete; milestone v3.7.0 ready for /gsd-complete-milestone
 progress:
   total_phases: 42
-  completed_phases: 40
+  completed_phases: 41
   total_plans: 145
   completed_plans: 157
-  percent: 100
+  percent: 98
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 6/7 complete — Phase 38 complete (hermetic + live RealStack GREEN); Phase 39 close gate remains)
-Phase: 39 (keeper-observability-real-stack-e2e-close-gate) — EXECUTING
-Plan: 4 of 4
-Status: Executing Phase 39 (Plans 01-03 complete — KeeperMetrics defined + threaded + keeper_* scrape assertions; only the close gate 39-04 remains)
-Last activity: 2026-06-06 -- Phase 39 Plan 03 complete (both Keeper RealStack facts extended with keeper_* Prometheus scrape blocks)
+Phase: 39
+Plan: Not started
+Status: Milestone complete
+Last activity: 2026-06-06
 
 ### Phase 39 Plan 03 — COMPLETE (Wave 3: keeper_* Prometheus scrape assertions on the two RealStack facts; TEST-01/02; 2026-06-06)
 
@@ -622,7 +622,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 135
+- Total plans completed: 139
 - Average duration: —
 - Total execution time: —
 
@@ -665,6 +665,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 35 | 3 | - | - |
 | 36 | 4 | - | - |
 | 37 | 4 | - | - |
+| 39 | 4 | - | - |
 
 **Recent Trend:**
 

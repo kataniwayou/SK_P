@@ -63,7 +63,7 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 **: A real-stack E2E induces an L2 (Redis) outage that dead-letters **both** an `EntryStepDispatch` (processor) and an `ExecutionResult` (orchestrator), then proves Keeper pauses the workflow, recovers when L2 returns, resumes, and re-injects each to its origin with exactly-once downstream effect (no duplicate) — validating the uniform loop + per-type re-inject.
 - [x] **TEST-02
 **: A real-stack E2E proves the give-up path: L2 stays down past max-attempts → the message lands in `keeper-dlq`, the workflow stays paused, and `keeper_dlq_pushed` increments.
-- [ ] **TEST-03**: A phase-close gate runs 3× consecutive GREEN with the triple-SHA (psql `\l` / redis `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER, including **both DLQ-1 and DLQ-2 (`keeper-dlq`)** + probe scratch-key scan-clean (net-zero), Release+Debug 0-warning.
+- [x] **TEST-03**: A phase-close gate runs 3× consecutive GREEN with the triple-SHA (psql `\l` / redis `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER, including **both DLQ-1 and DLQ-2 (`keeper-dlq`)** + probe scratch-key scan-clean (net-zero), Release+Debug 0-warning.
 
 ## Future Requirements (deferred)
 
@@ -111,8 +111,8 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 | KMET-01 | 39 — Metrics + E2E + Close Gate | Complete (39-01/39-02) |
 | KMET-02 | 39 — Metrics + E2E + Close Gate | Complete (39-02) |
 | KMET-03 | 39 — Metrics + E2E + Close Gate | Complete (39-01/39-02) |
-| TEST-01 | 39 — Metrics + E2E + Close Gate | Not started |
-| TEST-02 | 39 — Metrics + E2E + Close Gate | Not started |
-| TEST-03 | 39 — Metrics + E2E + Close Gate | Not started |
+| TEST-01 | 39 — Metrics + E2E + Close Gate | Complete (39-03) |
+| TEST-02 | 39 — Metrics + E2E + Close Gate | Complete (39-03) |
+| TEST-03 | 39 — Metrics + E2E + Close Gate | Complete (39-04) |
 
 **Coverage:** 29/29 requirements mapped (PROBE-06 → Phase 33 with the spike; DLQ-04 added → Phase 36). Per-phase counts: 33=4 · 34=3 · 35=2 · 36=9 · 37=5 · 38=6.
