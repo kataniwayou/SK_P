@@ -1,7 +1,10 @@
 using System.Collections.Generic;
 using System.Diagnostics.Metrics;
 using System.Linq;
+using System.Reflection;
+using Keeper.Consumers;
 using Keeper.Observability;
+using Keeper.Recovery;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
@@ -163,4 +166,35 @@ public sealed class KeeperMetricsFacts
         Assert.Equal("gave_up",         KeeperMetricTags.OutcomeGaveUp);
         Assert.Equal("probe_exhausted", KeeperMetricTags.ReasonProbeExhausted);
     }
+
+    // ---- Plan 02 (KMET-02/03): the instrumentation-site wiring contract ----
+
+    [Fact]
+    public void Both_Fault_Consumers_Take_KeeperMetrics_In_Ctor()
+    {
+        // The increment sites are threaded via a KeeperMetrics primary-ctor param (mirrors the
+        // ProcessorMetrics injection precedent). Assert the wiring point exists structurally.
+        Assert.True(CtorHasParam(typeof(FaultEntryStepDispatchConsumer), typeof(KeeperMetrics)),
+            "FaultEntryStepDispatchConsumer must take KeeperMetrics in its ctor");
+        Assert.True(CtorHasParam(typeof(FaultExecutionResultConsumer), typeof(KeeperMetrics)),
+            "FaultExecutionResultConsumer must take KeeperMetrics in its ctor");
+    }
+
+    [Fact]
+    public void L2ProbeRecovery_Takes_KeeperMetrics_And_ProcId_Threaded_RunAsync()
+    {
+        Assert.True(CtorHasParam(typeof(L2ProbeRecovery), typeof(KeeperMetrics)),
+            "L2ProbeRecovery must take KeeperMetrics in its ctor");
+
+        // OPEN QUESTION resolved: RunAsync threads a `procId` string param so l2_probe_failed/in_flight
+        // carry {ProcessorId}. Signature: RunAsync(string entryId, string h, string procId, CancellationToken).
+        var run = typeof(L2ProbeRecovery).GetMethod(nameof(L2ProbeRecovery.RunAsync));
+        Assert.NotNull(run);
+        var paramNames = run!.GetParameters().Select(p => p.Name).ToArray();
+        Assert.Contains("procId", paramNames);
+    }
+
+    private static bool CtorHasParam(System.Type type, System.Type paramType) =>
+        type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
+            .Any(c => c.GetParameters().Any(p => p.ParameterType == paramType));
 }
