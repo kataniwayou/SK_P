@@ -6,6 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Keeper;
 using Keeper.Consumers;
+using Keeper.Observability;
+using OpenTelemetry.Metrics;   // ConfigureOpenTelemetryMeterProvider (via OpenTelemetry.Extensions.Hosting)
 
 // Thin-shell composition root (KEEP-01). Generic Host — Host.CreateApplicationBuilder, NOT
 // WebApplication. BaseConsole.Core supplies all infra (metrics-only OTel, Redis soft-dep,
@@ -29,6 +31,15 @@ builder.Services.Configure<ProbeOptions>(builder.Configuration.GetSection("Probe
 // PROBE-01 — the shared bounded probe-loop helper (stateless; ctor-injects the singleton multiplexer +
 // IOptions<ProbeOptions>). Both fault consumers depend on it.
 builder.Services.AddSingleton<Keeper.Recovery.L2ProbeRecovery>();
+
+// KMET-01 — the code-owned "Keeper" meter + its eight instruments. The holder is a DI-singleton
+// (IMeterFactory pattern, no static Meter — D-01); ConfigureOpenTelemetryMeterProvider additively
+// attaches the meter to the shared MeterProvider AddBaseConsoleObservability (line 18) already built —
+// mirrors Orchestrator/Program.cs:72-73, preserving the const-to-AddMeter symmetry. The histogram's
+// second-scale buckets ride on the instrument's InstrumentAdvice (Route A — DiagnosticSource 10.0.0),
+// so no AddView is needed in this lambda.
+builder.Services.AddSingleton<KeeperMetrics>();
+builder.Services.ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(KeeperMetrics.MeterName));
 
 // D-02/D-03 — the two REAL fault consumers colocate on the ONE stable shared durable queue
 // keeper-fault-recovery (competing-consumer round-robin, NOT the Start/Stop per-replica fan-out).
