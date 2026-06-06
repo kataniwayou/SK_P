@@ -319,6 +319,12 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   2. The give-up RealStack E2E teardown drains `keeper-dlq` with a poll-until-stably-empty strategy (bounded), so `scripts/phase-39-close.ps1` (or the Phase-40 gate) yields `keeper-dlq depth==0` deterministically across the 3× cadence — no late give-up park races the AFTER snapshot.
   3. The recover/probe/re-inject/park/pause/resume logic shared by `FaultEntryStepDispatchConsumer` and `FaultExecutionResultConsumer` is extracted into one shared helper/base; both consumers delegate to it (no near-total duplication); KHARD-01's cap exists in exactly one place. Hermetic suite stays GREEN, Release 0-warning.
 
+**Plans**: 3 plans (2 waves)
+Plans:
+- [ ] 40-01-PLAN.md -- KHARD-03: extract one shared KeeperRecoveryHandler; both consumers delegate (keystone, Wave 1)
+- [ ] 40-02-PLAN.md -- KHARD-01: per-H recover-attempt cap + hermetic cap test (Wave 2)
+- [ ] 40-03-PLAN.md -- KHARD-02: poll-until-stably-empty keeper-dlq drain in the give-up E2E teardown (Wave 2)
+
 ### Phase 41: Orchestrator Pause/Resume Diagnostics
 **Goal**: A Resume dropped during the narrow fire window is diagnosable, and the scheduler's reschedule fallback cannot throw on a purged non-durable job.
 **Depends on**: Phase 37
