@@ -21,41 +21,41 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 
 ### Fault Intake (INTAKE)
 
-- [ ] **INTAKE-01**: Keeper recovers off the **published `Fault<T>` events** of the autonomous execution-path consumers — one `IConsumer<Fault<EntryStepDispatch>>` (processor) and one `IConsumer<Fault<ExecutionResult>>` (orchestrator) — each binding covers all producing replicas via pub/sub (no per-`{procId}_error`-queue binding). `Fault<StartOrchestration>` / `Fault<StopOrchestration>` are NOT consumed (operator-retried commands).
-- [ ] **INTAKE-02**: Keeper extracts the original message and its full 6-id `IExecutionCorrelated` tuple (correlationId, workflowId, stepId, processorId, entryId, executionId) + `H` from `Fault<T>.Message`, and opens the execution log-scope from that inner message (since `Fault<T>` is not itself `IExecutionCorrelated`), so OTel logs carry the propagated correlation + execution ids.
-- [ ] **INTAKE-03**: The MassTransit transport-exhaustion record consolidates into **DLQ-1** (the `Immediate(N)` exhaustion queue) as a **self-expiring (TTL'd) forensic copy** — never Keeper's worklist. Keeper recovers off the `Fault<T>` events, so recovered work is never re-processed from the error / DLQ-1 queue.
-- [ ] **INTAKE-04**: On recovery, Keeper **re-injects the original message directly to its origin endpoint by type** — `queue:{processorId:D}` for `EntryStepDispatch`, `queue:orchestrator-result` for `ExecutionResult` — riding the receiver's existing dedup gate (processor `flag[H]`; orchestrator `flag[m.H]`); no orchestrator round-trip for re-injection.
+- [x] **INTAKE-01**: Keeper recovers off the **published `Fault<T>` events** of the autonomous execution-path consumers — one `IConsumer<Fault<EntryStepDispatch>>` (processor) and one `IConsumer<Fault<ExecutionResult>>` (orchestrator) — each binding covers all producing replicas via pub/sub (no per-`{procId}_error`-queue binding). `Fault<StartOrchestration>` / `Fault<StopOrchestration>` are NOT consumed (operator-retried commands).
+- [x] **INTAKE-02**: Keeper extracts the original message and its full 6-id `IExecutionCorrelated` tuple (correlationId, workflowId, stepId, processorId, entryId, executionId) + `H` from `Fault<T>.Message`, and opens the execution log-scope from that inner message (since `Fault<T>` is not itself `IExecutionCorrelated`), so OTel logs carry the propagated correlation + execution ids.
+- [x] **INTAKE-03**: The MassTransit transport-exhaustion record consolidates into **DLQ-1** (the `Immediate(N)` exhaustion queue) as a **self-expiring (TTL'd) forensic copy** — never Keeper's worklist. Keeper recovers off the `Fault<T>` events, so recovered work is never re-processed from the error / DLQ-1 queue.
+- [x] **INTAKE-04**: On recovery, Keeper **re-injects the original message directly to its origin endpoint by type** — `queue:{processorId:D}` for `EntryStepDispatch`, `queue:orchestrator-result` for `ExecutionResult` — riding the receiver's existing dedup gate (processor `flag[H]`; orchestrator `flag[m.H]`); no orchestrator round-trip for re-injection.
 
 ### L2 Health-Probe Recovery Loop (PROBE)
 
-- [ ] **PROBE-01**: On intake, Keeper runs a recovery loop with a configurable inter-attempt delay (seconds) and configurable max-attempts; `delay × attempts` is bounded under RabbitMQ's consumer delivery-ack timeout (documented constraint).
-- [ ] **PROBE-02**: Each iteration performs an L2 health probe — a read at the message's `skp:data:{entryId}` key **and** a write-then-delete of a scratch key — exercising both Redis read and write availability (not mere connectivity).
-- [ ] **PROBE-03**: On the first successful probe, Keeper exits the loop and triggers recovery (re-inject + resume).
-- [ ] **PROBE-04**: When max-attempts exhaust without a successful probe, Keeper parks the original message in `keeper-dlq` and exits the loop.
-- [ ] **PROBE-05**: The fault message is acked **only after the loop exits** (success or give-up); a Keeper crash mid-loop leaves it un-acked → redelivered → the loop restarts (no lost message; at-least-once recovery).
-- [ ] **PROBE-06**: Keeper performs **no `flag[H]` dedup of its own** — re-injection idempotency rides the receiver's surviving Phase-31 dedup gate; a duplicate re-inject (crash/redelivery, multiple replicas) collapses at the processor or orchestrator.
+- [x] **PROBE-01**: On intake, Keeper runs a recovery loop with a configurable inter-attempt delay (seconds) and configurable max-attempts; `delay × attempts` is bounded under RabbitMQ's consumer delivery-ack timeout (documented constraint).
+- [x] **PROBE-02**: Each iteration performs an L2 health probe — a read at the message's `skp:data:{entryId}` key **and** a write-then-delete of a scratch key — exercising both Redis read and write availability (not mere connectivity).
+- [x] **PROBE-03**: On the first successful probe, Keeper exits the loop and triggers recovery (re-inject + resume).
+- [x] **PROBE-04**: When max-attempts exhaust without a successful probe, Keeper parks the original message in `keeper-dlq` and exits the loop.
+- [x] **PROBE-05**: The fault message is acked **only after the loop exits** (success or give-up); a Keeper crash mid-loop leaves it un-acked → redelivered → the loop restarts (no lost message; at-least-once recovery).
+- [x] **PROBE-06**: Keeper performs **no `flag[H]` dedup of its own** — re-injection idempotency rides the receiver's surviving Phase-31 dedup gate; a duplicate re-inject (crash/redelivery, multiple replicas) collapses at the processor or orchestrator.
 
 ### Give-Up / Dead-Letter (DLQ)
 
-- [ ] **DLQ-01**: Keeper's own infra faults (e.g., a failed re-inject send or pause/resume publish) retry under the same configurable `Immediate(N)` policy bound from config; on exhaustion they land in DLQ-1 (transport-exhaustion), like any other consumer.
-- [ ] **DLQ-02**: Two dead-letter queues, split by exhaustion mechanism — **DLQ-1** (`Immediate(N)` transport exhaustion, consolidated across all consumers; the exact consolidation mechanism is confirmed in the Phase-33 spike) and **DLQ-2 `keeper-dlq`** (Keeper's L2-probe-loop give-ups, explicit Send-then-ack).
-- [ ] **DLQ-03**: `keeper-dlq` (DLQ-2) depth is the **primary** Prometheus alert (terminal "L2 recovery gave up — needs an operator"); DLQ-1 is a TTL'd transport-exhaustion forensic record (secondary — it also contains transient faults Keeper already recovered, plus Start/Stop exhaustions). On give-up the affected workflow **stays paused** and resume is an operator action (no auto-resume into a still-broken L2).
-- [ ] **DLQ-04**: All consumers (processor dispatch, orchestrator result/start/stop, **and Keeper**) use the same `Immediate(N)` policy bound from the shared `RetryOptions` appsettings, with transport exhaustions routed uniformly to DLQ-1 via a shared error-transport configuration (same design pattern across consoles).
+- [x] **DLQ-01**: Keeper's own infra faults (e.g., a failed re-inject send or pause/resume publish) retry under the same configurable `Immediate(N)` policy bound from config; on exhaustion they land in DLQ-1 (transport-exhaustion), like any other consumer.
+- [x] **DLQ-02**: Two dead-letter queues, split by exhaustion mechanism — **DLQ-1** (`Immediate(N)` transport exhaustion, consolidated across all consumers; the exact consolidation mechanism is confirmed in the Phase-33 spike) and **DLQ-2 `keeper-dlq`** (Keeper's L2-probe-loop give-ups, explicit Send-then-ack).
+- [x] **DLQ-03**: `keeper-dlq` (DLQ-2) depth is the **primary** Prometheus alert (terminal "L2 recovery gave up — needs an operator"); DLQ-1 is a TTL'd transport-exhaustion forensic record (secondary — it also contains transient faults Keeper already recovered, plus Start/Stop exhaustions). On give-up the affected workflow **stays paused** and resume is an operator action (no auto-resume into a still-broken L2).
+- [x] **DLQ-04**: All consumers (processor dispatch, orchestrator result/start/stop, **and Keeper**) use the same `Immediate(N)` policy bound from the shared `RetryOptions` appsettings, with transport exhaustions routed uniformly to DLQ-1 via a shared error-transport configuration (same design pattern across consoles).
 
 ### Workflow Pause/Resume Coordination (PAUSE)
 
-- [ ] **PAUSE-01**: New `PauseWorkflow` and `ResumeWorkflow` message contracts exist in `Messaging.Contracts`, fanned out from Keeper to the orchestrator over the bus (cron scheduling only — re-injection lives in Keeper per INTAKE-04).
-- [ ] **PAUSE-02**: On the first in-flight recovery for a workflow, the orchestrator halts that workflow's future cron fires (`UnscheduleOnlyAsync`, L1 preserved); the pause-state — a per-workflow pending-recovery set keyed by `H` — lives in the **single-replica orchestrator's in-memory L1** (available during the L2 outage), never in L2.
-- [ ] **PAUSE-03**: When no recoveries remain pending for a workflow, the orchestrator reschedules it from L1 (`ScheduleAsync` with the L1 root's `jobId` + `cron`).
-- [ ] **PAUSE-04**: Pause/resume signals are **idempotent and keyed by `H`**; duplicate or concurrent signals (Keeper crash/redelivery, multiple Keeper replicas) are serialized by the orchestrator's per-`workflowId` semaphore and do not double-count.
-- [ ] **PAUSE-05**: A workflow with ≥1 unrecovered (given-up) message **remains paused** until an operator intervenes; the orchestrator does not auto-resume it.
+- [x] **PAUSE-01**: New `PauseWorkflow` and `ResumeWorkflow` message contracts exist in `Messaging.Contracts`, fanned out from Keeper to the orchestrator over the bus (cron scheduling only — re-injection lives in Keeper per INTAKE-04).
+- [x] **PAUSE-02**: On the first in-flight recovery for a workflow, the orchestrator halts that workflow's future cron fires (`UnscheduleOnlyAsync`, L1 preserved); the pause-state — a per-workflow pending-recovery set keyed by `H` — lives in the **single-replica orchestrator's in-memory L1** (available during the L2 outage), never in L2.
+- [x] **PAUSE-03**: When no recoveries remain pending for a workflow, the orchestrator reschedules it from L1 (`ScheduleAsync` with the L1 root's `jobId` + `cron`).
+- [x] **PAUSE-04**: Pause/resume signals are **idempotent and keyed by `H`**; duplicate or concurrent signals (Keeper crash/redelivery, multiple Keeper replicas) are serialized by the orchestrator's per-`workflowId` semaphore and do not double-count.
+- [x] **PAUSE-05**: A workflow with ≥1 unrecovered (given-up) message **remains paused** until an operator intervenes; the orchestrator does not auto-resume it.
 
 ### Keeper Observability (KMET)
 
 - [x] **KMET-01**: A code-defined `Keeper` meter is registered following the house pattern (snake_case instruments, no `_total` suffix, inherited `service_instance_id` resource label).
 - [x] **KMET-02**: Throughput/outcome counters exist — `keeper_fault_consumed`, `keeper_recovered`, `keeper_dlq_pushed{reason}`, `keeper_workflow_paused`, `keeper_workflow_resumed`, `keeper_l2_probe_failed` — labeled by `processorId` where meaningful, with no high-cardinality `workflowId` label.
 - [x] **KMET-03**: Bottleneck signals exist — `keeper_in_flight` (UpDownCounter of messages currently held in probe loops) and a `keeper_recovery_duration` histogram (intake → terminal) — enabling saturation/latency PromQL.
-- [ ] **KMET-04**: Keeper emits OTel logs consistent with the other consoles, carrying the correlationId + execution-scope ids propagated from the faulted message.
+- [x] **KMET-04**: Keeper emits OTel logs consistent with the other consoles, carrying the correlationId + execution-scope ids propagated from the faulted message.
 
 ### Live Proof & Close Gate (TEST)
 
@@ -100,22 +100,22 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 | KEEP-01 | 34 — Keeper Console Foundation | Complete (Plan 02 — runnable Keeper console: thin-shell Program.cs + appsettings(8083) + Dockerfile; builds 0-warning, docker image green) |
 | KEEP-02 | 34 — Keeper Console Foundation | Hermetic-complete (Plan 02 stable durable competing-consumer binding, zero fan-out; Plan 03 compose replicas:2 + RoundRobin test asserts consumed==1); live multi-replica round-robin smoke operator-pending (34-HUMAN-UAT.md; authoritative live gate Phase 39) |
 | KEEP-03 | 34 — Keeper Console Foundation | Hermetic-complete (Plan 03 — compose keeper tier replicas:2/no container_name/8083, 4 block-scoped ComposeYamlFacts, multi-stage Dockerfile docker-build green, 0-warning Release+Debug); live compose-health-ready smoke operator-pending (34-HUMAN-UAT.md) |
-| INTAKE-03 | 35 — Fault Intake & Correlation | Not started |
-| KMET-04 | 35 — Fault Intake & Correlation | Not started |
-| PROBE-01 | 36 — L2 Probe Loop & DLQs | Not started |
-| PROBE-02 | 36 — L2 Probe Loop & DLQs | Not started |
-| PROBE-03 | 36 — L2 Probe Loop & DLQs | Not started |
-| PROBE-04 | 36 — L2 Probe Loop & DLQs | Not started |
-| PROBE-05 | 36 — L2 Probe Loop & DLQs | Not started |
-| DLQ-01 | 36 — L2 Probe Loop & DLQs | Not started |
-| DLQ-02 | 36 — L2 Probe Loop & DLQs | Not started |
-| DLQ-03 | 36 — L2 Probe Loop & DLQs | Not started |
-| DLQ-04 | 36 — L2 Probe Loop & DLQs | Not started |
-| PAUSE-01 | 37 — Orchestrator Pause/Resume | Not started |
-| PAUSE-02 | 37 — Orchestrator Pause/Resume | Not started |
-| PAUSE-03 | 37 — Orchestrator Pause/Resume | Not started |
-| PAUSE-04 | 37 — Orchestrator Pause/Resume | Not started |
-| PAUSE-05 | 37 — Orchestrator Pause/Resume | Not started |
+| INTAKE-03 | 35 — Fault Intake & Correlation | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| KMET-04 | 35 — Fault Intake & Correlation | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PROBE-01 | 36 — L2 Probe Loop & DLQs | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PROBE-02 | 36 — L2 Probe Loop & DLQs | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PROBE-03 | 36 — L2 Probe Loop & DLQs | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PROBE-04 | 36 — L2 Probe Loop & DLQs | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PROBE-05 | 36 — L2 Probe Loop & DLQs | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| DLQ-01 | 36 — L2 Probe Loop & DLQs | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| DLQ-02 | 36 — L2 Probe Loop & DLQs | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| DLQ-03 | 36 — L2 Probe Loop & DLQs | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| DLQ-04 | 36 — L2 Probe Loop & DLQs | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PAUSE-01 | 37 — Orchestrator Pause/Resume | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PAUSE-02 | 37 — Orchestrator Pause/Resume | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PAUSE-03 | 37 — Orchestrator Pause/Resume | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PAUSE-04 | 37 — Orchestrator Pause/Resume | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| PAUSE-05 | 37 — Orchestrator Pause/Resume | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
 | KMET-01 | 39 — Metrics + E2E + Close Gate | Complete (39-01/39-02) |
 | KMET-02 | 39 — Metrics + E2E + Close Gate | Complete (39-02) |
 | KMET-03 | 39 — Metrics + E2E + Close Gate | Complete (39-01/39-02) |
