@@ -1,12 +1,22 @@
+using System;
 using System.Collections.Generic;
 using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
+using Keeper;
 using Keeper.Consumers;
 using Keeper.Observability;
 using Keeper.Recovery;
+using MassTransit;
+using Messaging.Contracts;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using NSubstitute;
 using Xunit;
+using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
 namespace BaseApi.Tests.Keeper;
 
@@ -197,4 +207,190 @@ public sealed class KeeperMetricsFacts
     private static bool CtorHasParam(System.Type type, System.Type paramType) =>
         type.GetConstructors(BindingFlags.Public | BindingFlags.Instance)
             .Any(c => c.GetParameters().Any(p => p.ParameterType == paramType));
+
+    // ── Hermetic faked-flow capture (KMET-01/02/03 falsifiable signal) ─────────────────────────────────
+    //
+    // Drives the REAL increment code (the two consumers + the probe loop) over a MeterListener that captures
+    // every (name, value, tags) measurement from the "Keeper" meter, then asserts each instrument fired with
+    // the EXACT tag set, in_flight measured +1 then -1, and NO measurement carries a workflowId tag.
+
+    private sealed record Captured(string Name, double Value, IReadOnlyDictionary<string, object?> Tags);
+
+    /// <summary>A MeterListener that records every long+double measurement from the "Keeper" meter.</summary>
+    private sealed class KeeperCapture : IDisposable
+    {
+        private readonly MeterListener _listener;
+        public List<Captured> Measurements { get; } = new();
+
+        public KeeperCapture()
+        {
+            _listener = new MeterListener
+            {
+                InstrumentPublished = (instrument, l) =>
+                {
+                    if (instrument.Meter.Name == KeeperMetrics.MeterName)
+                        l.EnableMeasurementEvents(instrument);
+                },
+            };
+            _listener.SetMeasurementEventCallback<long>((inst, m, tags, _) => Record(inst.Name, m, tags));
+            _listener.SetMeasurementEventCallback<double>((inst, m, tags, _) => Record(inst.Name, m, tags));
+            _listener.Start();
+        }
+
+        private void Record(string name, double value, ReadOnlySpan<KeyValuePair<string, object?>> tags)
+        {
+            var dict = new Dictionary<string, object?>();
+            foreach (var t in tags) dict[t.Key] = t.Value;
+            lock (Measurements) Measurements.Add(new Captured(name, value, dict));
+        }
+
+        public void Dispose() => _listener.Dispose();
+    }
+
+    private static KeeperMetrics MetricsFor(IMeterFactory f) => new(f);
+
+    private static IOptions<ProbeOptions> Opts(int maxAttempts = 1, int delaySeconds = 0) =>
+        Options.Create(new ProbeOptions { DelaySeconds = delaySeconds, MaxAttempts = maxAttempts });
+
+    private static EntryStepDispatch DispatchInner(Guid processorId) =>
+        new(Guid.NewGuid(), Guid.NewGuid(), processorId, "payload")
+        {
+            CorrelationId = Guid.NewGuid(),
+            ExecutionId = Guid.NewGuid(),
+            EntryId = Guid.NewGuid().ToString("D"),
+            H = "hermetic-h",
+        };
+
+    /// <summary>A ConsumeContext substitute carrying the Fault&lt;EntryStepDispatch&gt; envelope.</summary>
+    private static ConsumeContext<Fault<EntryStepDispatch>> FaultContext(EntryStepDispatch inner)
+    {
+        var fault = Substitute.For<Fault<EntryStepDispatch>>();
+        fault.Message.Returns(inner);
+        fault.Exceptions.Returns(Array.Empty<ExceptionInfo>());
+
+        var context = Substitute.For<ConsumeContext<Fault<EntryStepDispatch>>>();
+        context.Message.Returns(fault);
+        context.CancellationToken.Returns(CancellationToken.None);
+        context.GetSendEndpoint(Arg.Any<Uri>()).Returns(Task.FromResult(Substitute.For<ISendEndpoint>()));
+        return context;
+    }
+
+    private static bool HasTag(Captured c, string key, string value) =>
+        c.Tags.TryGetValue(key, out var v) && (v as string) == value;
+
+    [Fact]
+    public async Task RecoveredFlow_Fires_All_Recovered_Instruments_With_Exact_Tags()
+    {
+        var processorId = Guid.NewGuid();
+        var procId = processorId.ToString("D");
+        var inner = DispatchInner(processorId);
+
+        var provider = new ServiceCollection().AddMetrics().BuildServiceProvider();
+        using (provider)
+        using (var cap = new KeeperCapture())
+        {
+            var metrics = MetricsFor(provider.GetRequiredService<IMeterFactory>());
+            // Up Redis → the probe recovers on the first iteration → the recovered branch fires.
+            var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer, Opts(), metrics);
+            var consumer = new FaultEntryStepDispatchConsumer(
+                NullLogger<FaultEntryStepDispatchConsumer>.Instance, recovery, metrics);
+
+            await consumer.Consume(FaultContext(inner));
+
+            var ms = cap.Measurements;
+
+            Assert.Contains(ms, c => c.Name == "keeper_fault_consumed"
+                && HasTag(c, KeeperMetricTags.FaultType, KeeperMetricTags.FaultTypeDispatch)
+                && HasTag(c, KeeperMetricTags.ProcessorId, procId));
+            Assert.Contains(ms, c => c.Name == "keeper_workflow_paused"
+                && HasTag(c, KeeperMetricTags.ProcessorId, procId)
+                && !c.Tags.ContainsKey(KeeperMetricTags.FaultType));   // workflow-scoped — no fault_type
+            Assert.Contains(ms, c => c.Name == "keeper_workflow_resumed"
+                && HasTag(c, KeeperMetricTags.ProcessorId, procId));
+            Assert.Contains(ms, c => c.Name == "keeper_recovered"
+                && HasTag(c, KeeperMetricTags.FaultType, KeeperMetricTags.FaultTypeDispatch)
+                && HasTag(c, KeeperMetricTags.ProcessorId, procId));
+            Assert.Contains(ms, c => c.Name == "keeper_recovery_duration"
+                && HasTag(c, KeeperMetricTags.Outcome, KeeperMetricTags.OutcomeRecovered)
+                && HasTag(c, KeeperMetricTags.ProcessorId, procId));
+
+            // No dlq on the recovered path.
+            Assert.DoesNotContain(ms, c => c.Name == "keeper_dlq_pushed");
+            AssertNoWorkflowIdAnywhere(ms);
+        }
+    }
+
+    [Fact]
+    public async Task GiveUpFlow_Fires_Dlq_GaveUp_And_ProbeFailed_With_Exact_Tags()
+    {
+        var processorId = Guid.NewGuid();
+        var procId = processorId.ToString("D");
+        var inner = DispatchInner(processorId);
+
+        var provider = new ServiceCollection().AddMetrics().BuildServiceProvider();
+        using (provider)
+        using (var cap = new KeeperCapture())
+        {
+            var metrics = MetricsFor(provider.GetRequiredService<IMeterFactory>());
+            // Down Redis for all attempts → give-up branch fires + one l2_probe_failed per attempt.
+            var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Down).Multiplexer, Opts(maxAttempts: 2), metrics);
+            var consumer = new FaultEntryStepDispatchConsumer(
+                NullLogger<FaultEntryStepDispatchConsumer>.Instance, recovery, metrics);
+
+            await consumer.Consume(FaultContext(inner));
+
+            var ms = cap.Measurements;
+
+            Assert.Contains(ms, c => c.Name == "keeper_dlq_pushed"
+                && HasTag(c, KeeperMetricTags.Reason, KeeperMetricTags.ReasonProbeExhausted)
+                && HasTag(c, KeeperMetricTags.FaultType, KeeperMetricTags.FaultTypeDispatch)
+                && HasTag(c, KeeperMetricTags.ProcessorId, procId));
+            Assert.Contains(ms, c => c.Name == "keeper_recovery_duration"
+                && HasTag(c, KeeperMetricTags.Outcome, KeeperMetricTags.OutcomeGaveUp)
+                && HasTag(c, KeeperMetricTags.ProcessorId, procId));
+            // One probe-failed per Down attempt (maxAttempts = 2).
+            Assert.Equal(2, ms.Count(c => c.Name == "keeper_l2_probe_failed"
+                && HasTag(c, KeeperMetricTags.ProcessorId, procId)));
+
+            // No recovered-path instruments on give-up.
+            Assert.DoesNotContain(ms, c => c.Name == "keeper_recovered");
+            Assert.DoesNotContain(ms, c => c.Name == "keeper_workflow_resumed");
+            AssertNoWorkflowIdAnywhere(ms);
+        }
+    }
+
+    [Fact]
+    public async Task InFlight_Measures_Plus1_Then_Minus1_Across_RunAsync()
+    {
+        var procId = Guid.NewGuid().ToString("D");
+
+        var provider = new ServiceCollection().AddMetrics().BuildServiceProvider();
+        using (provider)
+        using (var cap = new KeeperCapture())
+        {
+            var metrics = MetricsFor(provider.GetRequiredService<IMeterFactory>());
+            var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer, Opts(), metrics);
+
+            await recovery.RunAsync("entry-id", "h", procId, CancellationToken.None);
+
+            var inFlight = cap.Measurements.Where(c => c.Name == "keeper_in_flight").ToArray();
+            Assert.Equal(2, inFlight.Length);
+            Assert.Equal(1d, inFlight[0].Value);    // +1 on entry
+            Assert.Equal(-1d, inFlight[1].Value);   // -1 in finally
+            Assert.All(inFlight, c => Assert.True(HasTag(c, KeeperMetricTags.ProcessorId, procId)));
+
+            AssertNoWorkflowIdAnywhere(cap.Measurements);
+        }
+    }
+
+    private static void AssertNoWorkflowIdAnywhere(IEnumerable<Captured> measurements)
+    {
+        foreach (var c in measurements)
+        {
+            Assert.DoesNotContain("workflowId", c.Tags.Keys);
+            Assert.DoesNotContain("WorkflowId", c.Tags.Keys);
+            Assert.DoesNotContain("correlationId", c.Tags.Keys);
+            Assert.DoesNotContain("CorrelationId", c.Tags.Keys);
+        }
+    }
 }
