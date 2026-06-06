@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: context exhaustion at 90% (2026-06-06)
-last_updated: "2026-06-06T19:41:10.618Z"
-last_activity: 2026-06-06 -- Phase 40 execution started
+stopped_at: Completed 40-01-PLAN.md (KHARD-03 keystone)
+last_updated: "2026-06-06T20:05:00.000Z"
+last_activity: 2026-06-06 -- Phase 40 Plan 01 complete (KeeperRecoveryHandler extracted)
 progress:
   total_phases: 42
   completed_phases: 41
   total_plans: 148
-  completed_plans: 159
+  completed_plans: 160
   percent: 100
 ---
 
@@ -27,9 +27,17 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
 Phase: 40 (keeper-recovery-hardening) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 40
-Last activity: 2026-06-06 -- Phase 40 execution started
+Plan: 2 of 3
+Status: Executing Phase 40 (40-01 complete — KHARD-03 keystone landed)
+Last activity: 2026-06-06 -- Phase 40 Plan 01 complete (KeeperRecoveryHandler extracted)
+
+### Phase 40 Plan 01 — COMPLETE (Wave 1: KHARD-03 keystone — extract KeeperRecoveryHandler; both consumers delegate; 2026-06-06)
+
+- **5 commits (scoped src/Keeper + src/Messaging.Contracts + tests/BaseApi.Tests paths only — pre-existing untracked items .claude/ / 27-PATTERNS.md / psql-*.txt / launchSettings.json left UNtouched).** `119b84f` (feat: hoist H onto IExecutionCorrelated), `8b8eec6` (refactor: extract KeeperRecoveryHandler + one-line delegators), `d6cd8ae` (feat: DI registration + harness wiring + stale-fact rewrite + ExecProbeMessage H stub), `c7b6c4f` (test: register handler in the two remaining harnesses). NO src file deletions (the consumer-body removals are the intended refactor). Wave 1, depends_on [], autonomous:true, type:execute.
+- **The keystone:** the two formerly byte-identical fault-consumer bodies (`FaultEntryStepDispatchConsumer.Consume`, `FaultExecutionResultConsumer.Consume`) now live ONCE in a new `public sealed class KeeperRecoveryHandler(ILogger, L2ProbeRecovery, KeeperMetrics)` (`src/Keeper/Recovery/KeeperRecoveryHandler.cs`, mirrors the L2ProbeRecovery singleton shape). One generic `HandleAsync<T>(ConsumeContext<Fault<T>>, string faultTypeTag, Func<T,Uri> reinjectEndpoint, CancellationToken ct) where T : class, IExecutionCorrelated` absorbs the verbatim body; the 3 per-type deltas are params (fault_type tag, reinject endpoint, ct). Both `Consume` methods are now single expression-body delegations. **KHARD-01's cap (Plan 02) now has exactly one place to land.**
+- **D-A6 (a):** `string H { get; }` added to `IExecutionCorrelated`; both records' existing `{ get; init; }` satisfy it — ZERO record edits. The generic body reads `inner.H` through the bound. The two `*ConsumerDefinition.cs` retry-owner files are byte-unchanged (Pitfall 4, not in git diff).
+- **Deviations (all auto-fixed):** (1) Rule 3 — dropped the now-unused `ILogger` ctor param from both consumers (handler owns logging) to clear CS9113 unread-parameter under TreatWarningsAsErrors; (2) Rule 3 — added empty `H` to the `ExecProbeMessage` IExecutionCorrelated test stub (CS0535 ripple from the interface add); (3) Rule 1 — rewrote the stale `KeeperMetricsFacts.Both_Fault_Consumers_Take_KeeperMetrics_In_Ctor` fact to assert the relocated wiring (consumers take the handler; handler owns KeeperMetrics); (4) Rule 3 — registered the handler in `KeeperRoundRobinTests` + `KeeperHostBootFixture` harnesses the plan did not name (else the consumer never resolves → count==0 / boot gap). No architectural changes, no auth gates, no stubs.
+- **Verification:** Messaging.Contracts + Keeper + BaseApi.Tests all 0 Warning / 0 Error Release (TreatWarningsAsErrors). **Full hermetic suite `--filter-not-trait Category=RealStack` = 491 passed / 0 failed / 0 skipped.** KeeperProbeLoopTests 6/6 GREEN (Task-3 gate); all 26 touched-class facts GREEN. Acceptance greps clean (1 handler class; 1 handler.HandleAsync per consumer; 0 recovery.RunAsync in consumers; 1 DeadLetter site in handler; 1 AddSingleton<KeeperRecoveryHandler> in Program.cs + 1 in KeeperProbeLoopTests). SUMMARY: 40-01-SUMMARY.md (Self-Check PASSED). **Phase 40 Wave 1 = 1/1 plan; next is Wave 2 (40-02 KHARD-01 per-H recover-attempt cap inside the single handler body + hermetic cap test; 40-03 KHARD-02 poll-until-stably-empty keeper-dlq drain).**
 
 ### Phase 39 Plan 03 — COMPLETE (Wave 3: keeper_* Prometheus scrape assertions on the two RealStack facts; TEST-01/02; 2026-06-06)
 
