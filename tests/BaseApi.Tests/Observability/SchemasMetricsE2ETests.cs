@@ -13,7 +13,7 @@ namespace BaseApi.Tests.Observability;
 /// metrics (1-second interval per Phase 11 D-18 / Pattern 4 fixture override + 15-second
 /// Prom scrape cycle per Phase 11 D-08), then polls Prometheus until the cumulative
 /// <c>http_server_request_duration_seconds_count</c> sample for the
-/// <c>service_name="sk-api"</c>, <c>http_route="api/v1/schemas"</c> labels reaches at
+/// <c>service_name="sk-api_3.2.0"</c>, <c>http_route="api/v1/schemas"</c> labels reaches at
 /// least N.
 ///
 /// <para>
@@ -82,8 +82,9 @@ public sealed class SchemasMetricsE2ETests : IClassFixture<Phase11WebAppFactory>
         // OTLP `http.server.request.duration` (Histogram, unit "s") translates to Prom
         // `http_server_request_duration_seconds_count` (the histogram triplet's count
         // dimension — load-bearing for the "≥ N requests happened" assertion).
-        // service_name="sk-api" surfaces because Phase 11 D-07 sets
-        // resource_to_telemetry_conversion: true on the collector's prometheus exporter.
+        // service_name="sk-api_3.2.0" — the combined {name}_{version} label (MLBL-01/D-08) —
+        // surfaces because Phase 11 D-07 sets resource_to_telemetry_conversion: true on the
+        // collector's prometheus exporter.
         //
         // http_route="api/v{version:apiVersion}/Schemas" is the ROUTE TEMPLATE LITERAL
         // emitted by ASP.NET Core HTTP instrumentation — NOT the resolved request URL.
@@ -99,7 +100,7 @@ public sealed class SchemasMetricsE2ETests : IClassFixture<Phase11WebAppFactory>
         // 60s polling timeout; Task 3 troubleshooting step 5 explicitly anticipated this
         // discrepancy as a possible diagnostic).
         const string query =
-            """http_server_request_duration_seconds_count{service_name="sk-api",http_route="api/v{version:apiVersion}/Schemas"}""";
+            """http_server_request_duration_seconds_count{service_name="sk-api_3.2.0",http_route="api/v{version:apiVersion}/Schemas"}""";
 
         using var promClient = new PrometheusTestClient();
         var samples = await promClient.PollPrometheusUntilSumAtLeast(query, threshold: RequestCount, ct: ct);
@@ -108,6 +109,6 @@ public sealed class SchemasMetricsE2ETests : IClassFixture<Phase11WebAppFactory>
         var totalCount = PrometheusTestClient.SumSampleValues(samples);
         Assert.True(totalCount >= RequestCount,
             $"Expected http_server_request_duration_seconds_count >= {RequestCount} for "
-            + $"service_name=sk-api, http_route=api/v{{version:apiVersion}}/Schemas; got {totalCount}.");
+            + $"service_name=sk-api_3.2.0, http_route=api/v{{version:apiVersion}}/Schemas; got {totalCount}.");
     }
 }

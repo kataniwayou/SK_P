@@ -26,7 +26,11 @@ namespace BaseApi.Tests.Observability.Helpers;
 ///   <item>monotonic Sum types gain <c>_total</c> suffix</item>
 ///   <item><c>service.name</c> resource attribute → <c>service_name</c> label (only because
 ///         <c>resource_to_telemetry_conversion: true</c> is set on the collector's Prom
-///         exporter per Phase 11 D-07)</item>
+///         exporter per Phase 11 D-07). Since Phase 38 (MLBL-01) the METRICS resource
+///         <c>service.name</c> is the combined <c>{name}_{version}</c>, so the label value is
+///         e.g. <c>sk-api_3.2.0</c> (NOT the bare <c>sk-api</c>); <c>service_version</c> is kept
+///         as a standalone label (D-07). NOTE: the LOGS resource <c>service.name</c> stays BARE
+///         (MLBL-04) — this combine is metrics-only.</item>
 /// </list>
 /// </para>
 /// </summary>

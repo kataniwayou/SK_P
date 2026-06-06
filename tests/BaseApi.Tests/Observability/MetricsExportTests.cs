@@ -44,9 +44,10 @@ public sealed class MetricsExportTests : IClassFixture<Phase11WebAppFactory>
         // Prom-form name (Pitfall 1):
         //   OTLP http.server.request.duration (Histogram, unit "s")
         //   → http_server_request_duration_seconds_count (+ _sum + _bucket)
-        // service_name="sk-api" because D-07 resource_to_telemetry_conversion: true.
+        // service_name="sk-api_3.2.0" — the combined {name}_{version} label (MLBL-01/D-08);
+        // surfaces because D-07 resource_to_telemetry_conversion: true.
         // http_route="test-obs/ok" (NO leading slash — ASP.NET Core route template).
-        const string query = """http_server_request_duration_seconds_count{service_name="sk-api",http_route="test-obs/ok"}""";
+        const string query = """http_server_request_duration_seconds_count{service_name="sk-api_3.2.0",http_route="test-obs/ok"}""";
 
         using var prom = new PrometheusTestClient();
         var samples = await prom.PollPrometheusUntilSumAtLeast(query, threshold: RequestCount, ct: ct);
@@ -55,7 +56,7 @@ public sealed class MetricsExportTests : IClassFixture<Phase11WebAppFactory>
         var totalCount = PrometheusTestClient.SumSampleValues(samples);
         Assert.True(totalCount >= RequestCount,
             $"Expected http_server_request_duration_seconds_count >= {RequestCount} for "
-            + $"service_name=sk-api, http_route=test-obs/ok; got {totalCount}.");
+            + $"service_name=sk-api_3.2.0, http_route=test-obs/ok; got {totalCount}.");
     }
 
     [Fact]
@@ -94,9 +95,9 @@ public sealed class MetricsExportTests : IClassFixture<Phase11WebAppFactory>
         // pipeline IS receiving samples; the empty negative assertion then proves the
         // filter (NOT a transport failure) is the reason /health/* is absent.
         const string positiveControl =
-            """http_server_request_duration_seconds_count{service_name="sk-api",http_route!~".*health.*"}""";
+            """http_server_request_duration_seconds_count{service_name="sk-api_3.2.0",http_route!~".*health.*"}""";
         const string negativeQuery =
-            """http_server_request_duration_seconds_count{service_name="sk-api",http_route=~".*health.*"}""";
+            """http_server_request_duration_seconds_count{service_name="sk-api_3.2.0",http_route=~".*health.*"}""";
 
         using var prom = new PrometheusTestClient();
         var positiveSamples = await prom.QueryPrometheus(positiveControl, ct);
