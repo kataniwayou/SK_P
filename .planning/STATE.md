@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 37-02-PLAN.md
-last_updated: "2026-06-06T00:10:16.931Z"
-last_activity: 2026-06-06 -- Phase 37 Plan 02 complete (contracts + scheduler GREEN)
+stopped_at: Completed 37-03-PLAN.md
+last_updated: "2026-06-06T00:18:53.349Z"
+last_activity: 2026-06-06
 progress:
   total_phases: 41
   completed_phases: 38
   total_plans: 137
-  completed_plans: 148
+  completed_plans: 150
   percent: 100
 ---
 
@@ -27,9 +27,18 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
 Phase: 37 (orchestrator-pause-resume-coordination) — EXECUTING
-Plan: 3 of 4 (Wave 0 Plan 01 + Wave 1 Plan 02 complete; Plan 03 orchestrator consumers next)
-Status: Executing Phase 37
-Last activity: 2026-06-06 -- Phase 37 Plan 02 complete (contracts + scheduler GREEN)
+Plan: 4 of 4 (Wave 0 Plan 01 + Wave 1 Plan 02 + Wave 2 Plan 03 complete; Plan 04 Keeper publish sites next)
+Status: Ready to execute
+Last activity: 2026-06-06
+
+### Phase 37 Plan 03 — COMPLETE (Wave 2 GREEN: orchestrator Pause/Resume consumers + ConcurrentMessageLimit=1 definitions; PauseResumeConsumerTests RED→GREEN; 2026-06-06)
+
+- **2 task commits (scoped src/ paths + one required tests/ harness fix — pre-existing `.planning/` archive items + untracked files left UNtouched).** `ce81ac7` (feat: pause/resume lifecycle seams + consumers), `0631fc3` (feat: consumer definitions + Program wiring). Wave 2, depends_on [37-01, 37-02], autonomous:true, type:execute (TDD GREEN). NO file deletions.
+- **Task 1 — seams + consumers (PAUSE-02/03/05):** `WorkflowLifecycle.PauseOnlyAsync` (clone of UnscheduleOnlyAsync but calls `scheduler.PauseAsync`/PauseJob — keeps L1, D-06/D-08) + `ResumeAsync` (TryGet L1 → `GetTriggerStateAsync` → guard `state != TriggerState.Paused` return [None/Normal/Blocked/Error ignored, D-09] → `UnscheduleAsync` DeleteJob the stale paused job → `ScheduleAsync` fresh from-now Normal trigger off `wf.Cron`, no HydrateAndScheduleAsync per RESEARCH §7); added `using Quartz;`. New `PauseWorkflowConsumer`/`ResumeWorkflowConsumer` ctor `(WorkflowLifecycle, ILogger<T>)` mirroring StopOrchestrationConsumer, single-WorkflowId, `{WorkflowId}`/`{H}` structured log holes, return→ACK, NO Wait(0)/lock/stripe (D-07).
+- **Task 2 — definitions + Program (PAUSE-04):** `PauseWorkflowConsumerDefinition` (EndpointName "orchestrator-pauseresume", ConcurrentMessageLimit=1, owns the shared-endpoint UseMessageRetry, dropped the WorkflowRootNotFoundException ignore) + `ResumeWorkflowConsumerDefinition` (same endpoint + ConcurrentMessageLimit=1, NO second UseMessageRetry — per-endpoint ownership, RESEARCH §5). Program.cs registers both on the per-replica fan-out endpoint (`.Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; })`). Start/Stop/Result UNCHANGED (D-06, git diff confirms zero edits).
+- **One deviation (Rule 3 - blocking):** removed a redundant `Assert.Equal(1, jobKeys.Count)` (line 84, directly below `Assert.Single`) in the 37-01 RED test `PauseResumeConsumerTests.cs` — the repo treats xUnit2013 as an error and it blocked the assembly from compiling once this plan's symbols existed (it was masked by CS0246/CS1061 while symbols were missing). Intent fully preserved by the adjacent `Assert.Single`. No production behavior changed. No stubs, no new threat surface.
+- **Verification:** Orchestrator.csproj Build succeeded 0 Error / 0 Warning. GREEN via MTP executable `--filter-class`: `PauseResumeConsumerTests` 1/1 GREEN; `PauseResumeSchedulingTests` 3/3 + `PauseResumeContractTests` 4/4 still GREEN (no regression). `KeeperPausePublishTests` REMAIN RED 2/2 (Plan-04 Keeper publish sites absent — expected/correct).
+- SUMMARY: 37-03-SUMMARY.md (Self-Check PASSED). Plan 04 (Keeper publish sites — `context.Publish(PauseWorkflow)` at intake, `Publish(ResumeWorkflow)` on Recovered, none on GaveUp) is next; these consumers are now live on `orchestrator-pauseresume-{instanceId}` to receive them.
 
 ### Phase 37 Plan 02 — COMPLETE (Wave 1 GREEN: Pause/Resume contracts + deterministic-TriggerKey scheduler; contract + scheduling tests RED→GREEN; 2026-06-06)
 
@@ -705,6 +714,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 35 P01 | ~6 min | 2 tasks | 2 files |
 | Phase 36 P02 | ~18 min | 2 tasks | 8 files |
 | Phase 37 P02 | 11min | 2 tasks | 3 files |
+| Phase 37 P03 | ~4min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1123,8 +1133,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-06T00:10:16.908Z
-Stopped at: Completed 37-02-PLAN.md
+Last session: 2026-06-06T00:18:53.320Z
+Stopped at: Completed 37-03-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.

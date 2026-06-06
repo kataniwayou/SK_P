@@ -268,7 +268,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
 **Plans**: 4 plans
   - [x] 37-01-PLAN.md — Wave 0: four RED test files (contracts, Keeper publish, scheduling Pause/Resume/ignore, consumer idempotency) (completed 2026-06-06 — deliberate RED; build fails only on the 6 missing production symbols plans 02/03 create)
   - [x] 37-02-PLAN.md — Contracts + load-bearing deterministic TriggerKey stamping + PauseAsync/GetTriggerStateAsync (completed 2026-06-06 — PauseResumeContractTests 4/4 + PauseResumeSchedulingTests 3/3 GREEN; SchedulingTests no regression; consumer/Keeper tests remain RED for plans 03/04)
-  - [ ] 37-03-PLAN.md — Orchestrator Pause/Resume consumers + lifecycle seams + ConcurrentMessageLimit=1 definitions + Program wiring
+  - [x] 37-03-PLAN.md — Orchestrator Pause/Resume consumers + lifecycle seams + ConcurrentMessageLimit=1 definitions + Program wiring (completed 2026-06-06 — PauseResumeConsumerTests 1/1 GREEN; scheduling/contract tests no regression; Keeper tests remain RED for plan 04)
   - [ ] 37-04-PLAN.md — Keeper publish sites: PauseWorkflow at intake + ResumeWorkflow on Recovered (GaveUp unchanged)
 
 ### Phase 38: Uniform `service_name` + Instance Labels Across All Metrics
