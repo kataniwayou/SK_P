@@ -89,7 +89,7 @@ Added 2026-06-06 from `.planning/v3.7.0-MILESTONE-AUDIT.md` (status `tech_debt`)
 
 ## Traceability
 
-Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38).
+Every REQ-ID maps to exactly one phase (34 requirements across phases 33–39, + KHARD-01..03 gap-closure in Phase 40).
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
@@ -116,6 +116,11 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 | PAUSE-03 | 37 — Orchestrator Pause/Resume | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
 | PAUSE-04 | 37 — Orchestrator Pause/Resume | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
 | PAUSE-05 | 37 — Orchestrator Pause/Resume | Complete (Phase-39 live gate — 3×500 GREEN triple-SHA) |
+| MLBL-01 | 38 — Uniform service_name + Instance Labels | Complete (38-02/38-04; live scrape gate, verified 5/5) |
+| MLBL-02 | 38 — Uniform service_name + Instance Labels | Complete (38-04; non-empty service_instance_id across runtime/HTTP/business) |
+| MLBL-03 | 38 — Uniform service_name + Instance Labels | Complete (38-01/38-03/38-04; DB-sourced processor name+version via MeterProviderHolder swap) |
+| MLBL-04 | 38 — Uniform service_name + Instance Labels | Complete (38-02; logs service.name kept bare, ES contract preserved) |
+| MLBL-05 | 38 — Uniform service_name + Instance Labels | Complete (38-02/38-04; PromQL consumers reconciled, 0 bare literals) |
 | KMET-01 | 39 — Metrics + E2E + Close Gate | Complete (39-01/39-02) |
 | KMET-02 | 39 — Metrics + E2E + Close Gate | Complete (39-02) |
 | KMET-03 | 39 — Metrics + E2E + Close Gate | Complete (39-01/39-02) |
@@ -126,6 +131,4 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 | KHARD-02 | 40 — Keeper Recovery Hardening | Complete (40-03; live 3× close-gate Manual-Only) |
 | KHARD-03 | 40 — Keeper Recovery Hardening | Satisfied (40-01, keystone extracted; cap lands in 40-02) |
 
-**Coverage:** 29/29 requirements mapped (PROBE-06 → Phase 33 with the spike; DLQ-04 added → Phase 36). Per-phase counts: 33=4 · 34=3 · 35=2 · 36=9 · 37=5 · 38=6.
-
-> **NOTE (stale — full reconciliation is Phase 42's scope):** This table predates the Phase-38 insertion and the Phase-39 close gate. It is missing the **MLBL-01..05** rows (Phase 38) and the per-phase status text reads "Not started" for INTAKE/PROBE/DLQ/PAUSE despite those being satisfied + live-proven by the Phase-39 close gate. Phase 42 (Docs & Traceability Reconciliation) fixes the checkboxes, adds the MLBL rows, and corrects this footer to the true totals (34 delivered requirements across phases 33-39, + KHARD-01..03 gap-closure). Phases 41/42 are doc/code-quality and carry no new REQ-IDs.
+**Coverage:** 34/34 requirements mapped across phases 33–39, + KHARD-01..03 gap-closure (Phase 40). Per-phase counts: 33=4 · 34=3 · 35=2 · 36=9 · 37=5 · 38=5 · 39=6 (= 34). All 34 satisfied + live-proven by the Phase-39 close gate (3×500 GREEN, triple-SHA net-zero, GATE substance passed); KHARD-01..03 closed the recovery-hardening tech-debt in Phase 40.
