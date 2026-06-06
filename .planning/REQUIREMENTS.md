@@ -70,7 +70,7 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 Added 2026-06-06 from `.planning/v3.7.0-MILESTONE-AUDIT.md` (status `tech_debt`). The milestone was delivered and live-proven; these close the functional tech-debt items before archival.
 
 - [x] **KHARD-01**: The recover→reinject cycle is bounded by a configurable attempt cap; when the cap is reached for a given `H`, Keeper parks the original `Fault<T>` to `keeper-dlq` (give-up) rather than reinjecting again — a persistent (non-transient) fault converges to a single park, not an unbounded reinject loop (~67 cyc/s/replica risk eliminated).
-- [ ] **KHARD-02**: The give-up RealStack E2E teardown drains `keeper-dlq` with a bounded poll-until-stably-empty strategy, so the close gate's `keeper-dlq depth==0` invariant holds deterministically across the 3× cadence (no late give-up park races the AFTER snapshot; clears the lone `GATE_EXIT=1`).
+- [x] **KHARD-02**: The give-up RealStack E2E teardown drains `keeper-dlq` with a bounded poll-until-stably-empty strategy, so the close gate's `keeper-dlq depth==0` invariant holds deterministically across the 3× cadence (no late give-up park races the AFTER snapshot; clears the lone `GATE_EXIT=1`).
 - [x] **KHARD-03**: The shared recover/probe/re-inject/park/pause/resume logic of the two Keeper fault consumers (`FaultEntryStepDispatchConsumer`, `FaultExecutionResultConsumer`) is extracted into one shared helper/base; both consumers delegate to it (no near-total duplication), and the KHARD-01 cap exists in exactly one place.
 
 ## Future Requirements (deferred)
@@ -123,7 +123,7 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 | TEST-02 | 39 — Metrics + E2E + Close Gate | Complete (39-03) |
 | TEST-03 | 39 — Metrics + E2E + Close Gate | Complete (39-04) |
 | KHARD-01 | 40 — Keeper Recovery Hardening | Complete (40-02) |
-| KHARD-02 | 40 — Keeper Recovery Hardening | Pending (gap closure) |
+| KHARD-02 | 40 — Keeper Recovery Hardening | Complete (40-03; live 3× close-gate Manual-Only) |
 | KHARD-03 | 40 — Keeper Recovery Hardening | Satisfied (40-01, keystone extracted; cap lands in 40-02) |
 
 **Coverage:** 29/29 requirements mapped (PROBE-06 → Phase 33 with the spike; DLQ-04 added → Phase 36). Per-phase counts: 33=4 · 34=3 · 35=2 · 36=9 · 37=5 · 38=6.

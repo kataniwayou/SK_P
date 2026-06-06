@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 40-02-PLAN.md (KHARD-01 per-H recover-attempt cap)
-last_updated: "2026-06-06T20:23:10.000Z"
-last_activity: 2026-06-06 -- Phase 40 Plan 02 complete (per-H recover-attempt cap landed; reinject self-DoS fixed)
+stopped_at: Completed 40-03-PLAN.md (KHARD-02 poll-until-stably-empty keeper-dlq drain) — Phase 40 plans 3/3, awaiting verification
+last_updated: "2026-06-06T20:29:27.000Z"
+last_activity: 2026-06-06 -- Phase 40 Plan 03 complete (poll-until-stably-empty keeper-dlq drain; GATE_EXIT=1 flake cleared); Phase 40 plans 3/3 — awaiting verification
 progress:
   total_phases: 42
   completed_phases: 41
@@ -26,10 +26,19 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
-Phase: 40 (keeper-recovery-hardening) — EXECUTING
-Plan: 3 of 3
-Status: Executing Phase 40 (40-01 + 40-02 complete — KHARD-03 keystone + KHARD-01 cap landed; 40-03 KHARD-02 drain next)
-Last activity: 2026-06-06 -- Phase 40 Plan 02 complete (per-H recover-attempt cap; reinject self-DoS fixed)
+Phase: 40 (keeper-recovery-hardening) — plans 3/3 COMPLETE, awaiting verification
+Plan: 3 of 3 (all complete)
+Status: Phase 40 plans 3/3 complete (40-01 KHARD-03 keystone + 40-02 KHARD-01 cap + 40-03 KHARD-02 drain landed) — awaiting verification (Manual-Only 3x-GREEN live close-gate run with the 4 rebuilt app containers)
+Last activity: 2026-06-06 -- Phase 40 Plan 03 complete (poll-until-stably-empty keeper-dlq drain; GATE_EXIT=1 flake cleared)
+
+### Phase 40 Plan 03 — COMPLETE (Wave 2: KHARD-02 poll-until-stably-empty keeper-dlq drain; the lone GATE_EXIT=1 flake cleared; 2026-06-06)
+
+- **2 task commits (scoped tests/BaseApi.Tests/Keeper path only — pre-existing untracked items .claude/ / 27-PATTERNS.md / psql-*.txt / launchSettings.json left UNtouched; NO file deletions; scripts/phase-39-close.ps1 NEVER staged).** `37fc9bf` (test: add DrainKeeperDlqUntilStablyEmptyAsync + GetKeeperDlqDepthAsync), `61b9ebb` (test: wire the drain into the give-up teardown, remove the fragile fixed wait). Wave 2, depends_on [40-01], autonomous:true, type:execute.
+- **The fix (KHARD-02):** replaced the give-up E2E teardown's fragile `Task.Delay(10s)` + one-shot `PurgeKeeperDlqAsync` with `DrainKeeperDlqUntilStablyEmptyAsync(ct)` — a bounded poll-until-stably-empty drain (D-A5: 2s poll / 15s stable window / 90s cap, re-purge each iteration via the retained `PurgeKeeperDlqAsync`, `Assert.Fail` on timeout). A new `GetKeeperDlqDepthAsync` reads depth off the rmq mgmt-API (`GET /api/queues/%2F/keeper-dlq` → `messages`; `int.MaxValue` on any failure so a transient hiccup keeps the loop draining, no false-pass). `keeper-dlq depth==0` now holds deterministically across the close-gate 3x cadence — the lone GATE_EXIT=1 flake source is cleared.
+- **Tolerates BOTH give-up sources:** the existing `probe_exhausted` 2-replica park (>10s apart) AND the Plan-02 `recover_cap` single-winner park — the 15s stability window EXCEEDS the >10s inter-replica gap; keeper-dlq is terminal (no prod consumer) so each late park is actively re-purged until depth holds 0 for the full window.
+- **Pitfall 2 (gate untouched):** NO purge added to `scripts/phase-39-close.ps1` — the gate stays snapshot-only by contract (asserted: gate-script diff empty + not staged) so a future teardown regression still surfaces as depth>0. The KeeperDlqProbe-based park PROOF (`PollForDlqParkAsync`) and all Prometheus give-up assertions are UNCHANGED — only the net-zero drain was replaced.
+- **Deviations (1 auto-fixed):** Rule 1 (plan-fidelity / acceptance reconciliation) — `GetKeeperDlqDepthAsync` uses the literal `GetProperty("messages")` inside try/catch (a missing-property `KeyNotFoundException` or any other failure → `int.MaxValue`), satisfying BOTH the acceptance grep (`GetProperty("messages")`==1) AND the "missing property → not empty" fallback the plan body requires. No architectural changes, no auth gates, no stubs.
+- **Verification:** BaseApi.Tests 0 Warning / 0 Error Release (TreatWarningsAsErrors). The E2E fact is RealStack-gated (not run hermetically — the authored test is the deliverable); acceptance greps clean (Drain=1, Depth=2, messages=1, Assert.Fail≥1, Purge≥2 retained+called; Task.Delay(10s)=0 gone; DrainKeeperDlqUntilStablyEmptyAsync wired ×1; gate-script diff EMPTY). SUMMARY: 40-03-SUMMARY.md (Self-Check PASSED). **Live 3x-GREEN close-gate proof is Manual-Only (40-VALIDATION.md): rebuild baseapi-service orchestrator processor-sample keeper, then `pwsh -File scripts/phase-39-close.ps1` → keeper-dlq depth==0 across 3x GREEN triple-SHA. Phase 40 = 3/3 plans complete — awaiting verification.**
 
 ### Phase 40 Plan 02 — COMPLETE (Wave 2: KHARD-01 per-H recover-attempt cap inside the single handler + hermetic cap test; 2026-06-06)
 

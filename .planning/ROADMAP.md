@@ -323,7 +323,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
 Plans:
 - [x] 40-01-PLAN.md -- KHARD-03: extract one shared KeeperRecoveryHandler; both consumers delegate (keystone, Wave 1)
 - [x] 40-02-PLAN.md -- KHARD-01: per-H recover-attempt cap + hermetic cap test (Wave 2)
-- [ ] 40-03-PLAN.md -- KHARD-02: poll-until-stably-empty keeper-dlq drain in the give-up E2E teardown (Wave 2)
+- [x] 40-03-PLAN.md -- KHARD-02: poll-until-stably-empty keeper-dlq drain in the give-up E2E teardown (Wave 2)
 
 ### Phase 41: Orchestrator Pause/Resume Diagnostics
 **Goal**: A Resume dropped during the narrow fire window is diagnosable, and the scheduler's reschedule fallback cannot throw on a purged non-durable job.
@@ -380,7 +380,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
 | 38. Uniform `service_name` + Instance Labels Across All Metrics | v3.7.0 | 0/? | Not started | — |
 | 39. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
-| 40. Keeper Recovery Hardening (gap closure) | v3.7.0 | 0/? | Not started | — |
+| 40. Keeper Recovery Hardening (gap closure) | v3.7.0 | 3/3 | Awaiting Verification | — |
 | 41. Orchestrator Pause/Resume Diagnostics (gap closure) | v3.7.0 | 0/? | Not started | — |
 | 42. v3.7.0 Docs & Traceability Reconciliation (gap closure) | v3.7.0 | 0/? | Not started | — |
 
