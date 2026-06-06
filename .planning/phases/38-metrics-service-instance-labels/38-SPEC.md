@@ -30,10 +30,10 @@ The known in-repo PromQL consumer is the Phase-11 D-17 round-trip test assertion
    - Target: a non-empty `service_instance_id` label is verified present on runtime, HTTP, and business series alike.
    - Acceptance: for each of the three families, at least one scraped series is asserted to contain a non-empty `service_instance_id`; a test fails if any sampled family is missing it.
 
-3. **MLBL-03 — Processor name+version sourced from the DB (single source of truth)**: The processor's identity is read from its DB row, and its appsettings name/version are removed.
+3. **MLBL-03 — Processor name+version sourced from the DB (single source of truth)**: The processor's steady-state identity is read from its DB row; its appsettings name/version are **retained** only as the boot-window placeholder until the DB identity resolves. *(Amended in `/gsd-discuss-phase 38`, GA-3 — supersedes the original "appsettings removed / `processor-pending` sentinel" framing.)*
    - Current: `ProcessorIdentityFound` has no Name/Version; the responder drops `p.Name`/`p.Version`; `IProcessorContext` stores only `{ Id + 3 schema Ids }`; the processor's metric identity comes from appsettings `Service:Name`/`Service:Version`.
-   - Target: `ProcessorIdentityFound` carries `Name` + `Version`; `GetProcessorBySourceHashConsumer` populates them from `p.Name`/`p.Version`; `IProcessorContext`/`ProcessorContext` store and expose them; the processor's metric `service_name` = `{db.Name}_{db.Version}`. The processor's appsettings `Service:Name`/`Service:Version` are **removed as redundant**, and the processor observability bootstrap no longer hard-requires them, emitting `service_name="processor-pending"` until the DB identity resolves.
-   - Acceptance: (i) the contract has `Name`+`Version` and the responder populates them; (ii) a running processor's business metric carries `service_name = {seeded DB row Name}_{seeded DB row Version}` (not `processor-sample`); (iii) `src/Processor.Sample/appsettings.json` contains no `Service:Name` / `Service:Version` keys; (iv) metrics emitted before identity resolves carry `service_name="processor-pending"`.
+   - Target: `ProcessorIdentityFound` carries `Name` + `Version`; `GetProcessorBySourceHashConsumer` populates them from `p.Name`/`p.Version`; `IProcessorContext`/`ProcessorContext` store and expose them; the processor's steady-state metric `service_name` = `{db.Name}_{db.Version}`. The processor's appsettings `Service:Name`/`Service:Version` are **retained** and feed the shared observability bootstrap unchanged (`cfg.Require` keeps working); until the DB identity resolves the metric `service_name` = the appsettings `{name}_{version}` (e.g. `processor-sample_3.5.0`), then the MeterProvider is swapped to the DB-sourced resource (GA-2 #1).
+   - Acceptance: (i) the contract has `Name`+`Version` and the responder populates them; (ii) a running processor's business metric carries `service_name = {seeded DB row Name}_{seeded DB row Version}` (not the appsettings `processor-sample_3.5.0`) once identity resolves; (iii) `src/Processor.Sample/appsettings.json` **retains** its `Service:Name` / `Service:Version` keys (the boot-window placeholder source); (iv) metrics emitted before identity resolves carry `service_name` = the appsettings `{name}_{version}` (e.g. `processor-sample_3.5.0`), which is swapped to the DB value on resolve.
 
 4. **MLBL-04 — Logs `service.name` stays the bare identity (metrics-only change)**: The `{name}_{version}` combination applies to the **metrics** `service_name` label only; the logs' resource `service.name` is unchanged.
    - Current: logs' `service.name` = bare name; the Phase-35 SC3 E2E and other ES queries filter `service.name="keeper"`.
@@ -51,7 +51,7 @@ The known in-repo PromQL consumer is the Phase-11 D-17 round-trip test assertion
 - Combined `service_name={name}_{version}` on every metric series (runtime/HTTP/business) for webapi, orchestrator, keeper, processor.
 - Verifying a non-empty `service_instance_id` on all three instrument families.
 - Extending `ProcessorIdentityFound` with `Name`+`Version`; updating the responder, `IProcessorContext`/`ProcessorContext`.
-- Sourcing the processor's metric `service_name` from the DB; removing the processor's appsettings `Service:Name`/`Service:Version`; `processor-pending` placeholder until identity resolves.
+- Sourcing the processor's steady-state metric `service_name` from the DB; **retaining** the processor's appsettings `Service:Name`/`Service:Version` as the boot-window placeholder; swapping the MeterProvider to the DB-sourced resource once identity resolves (GA-3 amendment).
 - Updating/verifying all in-repo Prometheus query consumers (incl. the Phase-11 `service_name` assertion).
 - Keeping logs' `service.name` as the bare identity (no version suffix).
 
@@ -66,7 +66,7 @@ The known in-repo PromQL consumer is the Phase-11 D-17 round-trip test assertion
 ## Constraints
 
 - **Startup ordering:** the OTel metrics resource is built synchronously at host startup, but the processor's DB identity resolves later (async, via the `GetProcessorBySourceHash` request/response in `ProcessorStartupOrchestrator`, after the MeterProvider is built). The processor's `service_name` mechanism must bridge this (placeholder → resolved) rather than rely on an immutable startup resource value.
-- Removing the processor's appsettings keys means the shared `AddBaseConsoleObservability` path (`cfg.Require("Service:Name")`, which throws if absent) cannot be used unchanged for the processor.
+- The processor **keeps** its appsettings keys, so the shared `AddBaseConsoleObservability` path (`cfg.Require("Service:Name")`) is used **unchanged** to build the boot-window placeholder resource; the DB-sourced value is applied later via a MeterProvider swap (GA-2 #1), not by altering the shared path. *(Supersedes the original constraint that removing the keys would break the shared path.)*
 - Low cardinality preserved: `{name}_{version}` is a small fixed set (version is strict SemVer); `service_instance_id` remains the only per-replica dimension.
 - The Phase-30 single-resolve invariant for `service.instance.id` (resolved once per process; logs and metrics carry the same value) must be preserved.
 - Non-emptiness of processor `Name`/`Version` is an application-layer (FluentValidation) guarantee on the HTTP write path, not a DB constraint — assumes all processor rows are written through the validated API.
@@ -80,8 +80,8 @@ The known in-repo PromQL consumer is the Phase-11 D-17 round-trip test assertion
 - [ ] `ProcessorIdentityFound` includes `Name` and `Version`; `GetProcessorBySourceHashConsumer` populates them from `p.Name`/`p.Version`.
 - [ ] `IProcessorContext`/`ProcessorContext` store and expose the resolved `Name`+`Version`.
 - [ ] A running processor's metric `service_name` equals `{seeded DB Name}_{seeded DB Version}` (not `processor-sample`).
-- [ ] `src/Processor.Sample/appsettings.json` contains no `Service:Name` / `Service:Version` keys.
-- [ ] Metrics emitted before the processor's identity resolves carry `service_name="processor-pending"`.
+- [ ] `src/Processor.Sample/appsettings.json` **retains** its `Service:Name` / `Service:Version` keys (boot-window placeholder source — GA-3 amendment).
+- [ ] Metrics emitted before the processor's identity resolves carry `service_name` = the appsettings `{name}_{version}` (e.g. `processor-sample_3.5.0`); the MeterProvider swaps to the DB-sourced `service_name` once identity resolves.
 - [ ] Logs' `service.name` for keeper/orchestrator/webapi is unchanged (bare name); the Phase-35 ES assertion `service.name="keeper"` still passes.
 - [ ] All in-repo Prometheus query consumers (incl. the Phase-11 `service_name` round-trip assertion) are updated to the combined label and pass.
 - [ ] Solution builds 0 warning / 0 error (Release + Debug); the hermetic suite is green.
