@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: planning
-stopped_at: Phase 42 context gathered
-last_updated: "2026-06-06T23:02:18.224Z"
-last_activity: 2026-06-06
+status: executing
+stopped_at: Completed 42-01-PLAN.md
+last_updated: "2026-06-07T00:00:00.000Z"
+last_activity: 2026-06-07 -- Phase 42 Plan 01 complete (REQUIREMENTS.md reconciled)
 progress:
   total_phases: 45
   completed_phases: 43
-  total_plans: 150
+  total_plans: 153
   completed_plans: 164
   percent: 100
 ---
@@ -21,15 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 42 — v3.7.0-docs-traceability-reconciliation (Phase 41 complete)
+**Current focus:** Phase 42 — v3.7.0-docs-traceability-reconciliation
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
-Phase: 42
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-06-06
+Phase: 42 (v3.7.0-docs-traceability-reconciliation) — EXECUTING
+Plan: 2 of 3 (Plan 01 complete)
+Status: Executing Phase 42
+Last activity: 2026-06-07 -- Phase 42 Plan 01 complete (REQUIREMENTS.md reconciled)
+
+### Phase 42 Plan 01 — COMPLETE (Wave 1: REQUIREMENTS.md v3.7.0 traceability reconciliation; 2026-06-07)
+
+- **2 task commits (scoped .planning/REQUIREMENTS.md ONLY — pre-existing untracked items .claude/ / 27-PATTERNS.md / psql-*.txt / launchSettings.json left UNtouched; NO file deletions).** `08b72b8` (docs: flip 20 satisfied checkboxes [ ]->[x] + rewrite 16 "Not started" traceability rows to "Complete (Phase-39 live gate — 3×500 GREEN triple-SHA)"), `8ee4e1a` (docs: add 5 MLBL-01..05 rows mapped to Phase 38 phase-sorted between PAUSE-05 and KMET-01 + correct opener/footer to counted 34/34 across phases 33-39 + KHARD Phase 40 + delete stale Phase-42-scope NOTE). Wave 1, depends_on [], autonomous:true, type:execute.
+- **The reconciliation:** REQUIREMENTS.md previously lied about the delivered+live-proven v3.7.0 milestone — INTAKE/PROBE/DLQ/PAUSE/KMET-04 read `[ ]`, their traceability said "Not started", MLBL-01..05 (Phase 38) were entirely absent, and the footer count (29/6-phases/33-38) predated the Phase-38 insertion + Phase-39 close gate. Now: all 20 satisfied checkboxes `[x]`, 16 rows name the Phase-39 live gate, 5 MLBL rows present, footer states counted 34/34 (breakdown 33=4 · 34=3 · 35=2 · 36=9 · 37=5 · 38=5 · 39=6 = 34) + KHARD-01..03 Phase-40 gap-closure, stale NOTE gone.
+- **Encoding discipline (MEMORY landmine):** Edit-tool-only targeted in-place replacements — NO full-file Write/Set-Content — so the file's 90 em-dashes (—) + 20 × glyphs + · separators stayed byte-intact and NO UTF-8 BOM was introduced. Re-counted the per-phase breakdown before writing the footer (=34, matched the planner's counted truth; no D-03 discrepancy note needed).
+- **Deviations:** None (content). Tooling adaptation only — the Bash tool runs bash (strips PowerShell `$` + re-encodes literal mojibake glyphs under the console codepage), so the plan's inline literal-glyph mojibake greps were authored as standalone `.ps1` verify scripts (byte-level UTF-8 decode + cp1252 sentinel-char scan: 0x00E2 corrupt-em-dash lead, 0x00C3 corrupt-× lead, EF BB BF BOM prefix), invoked via `powershell -File`, then deleted (never committed). No architectural changes, no auth gates, no stubs.
+- **Verification:** T1 OK (gate rows=16 ≥14, 0 unchecked INTAKE/PROBE/DLQ/PAUSE/KMET-04, 0 "Not started" cells, INTAKE-01=[x], PAUSE-05=[x], BOM=False, mojibake=0). T2 OK (5 MLBL rows phase-sorted, 34/34 footer present, "38=5 · 39=6" breakdown present, stale "29..." strings + NOTE gone, BOM=False, mojibake=0). Self-Check PASSED (both files exist, no BOM/mojibake; both commits exist). SUMMARY: 42-01-SUMMARY.md. **Note: only REQUIREMENTS.md (SC1+SC2) — ROADMAP/STATE milestone-counter reconciliation is the rest of Phase 42's scope. `roadmap update-plan-progress` is a known no-op on this ROADMAP format; orchestrator reconciles tracking after the wave. Phase 42 Wave 1 = 1/3 plans.**
 
 ### Phase 40 Plan 03 — COMPLETE (Wave 2: KHARD-02 poll-until-stably-empty keeper-dlq drain; the lone GATE_EXIT=1 flake cleared; 2026-06-06)
 
@@ -1248,4 +1256,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 41 (orchestrator-pause-resume-diagnostics) — 2 plans — 2026-06-06T22:19:01.916Z
+**Planned Phase:** 42 (v3.7.0-docs-traceability-reconciliation) — 3 plans — 2026-06-06T23:15:52.259Z
