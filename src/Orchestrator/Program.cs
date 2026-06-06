@@ -41,6 +41,13 @@ builder.Services.AddBaseConsoleMessaging(builder.Configuration,
             .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
         x.AddConsumer<StopOrchestrationConsumer, StopOrchestrationConsumerDefinition>()
             .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
+        // PAUSE-02/03/04: Pause + Resume share their own dedicated per-replica fan-out endpoint
+        // "orchestrator-pauseresume-{instanceId}" (ConcurrentMessageLimit=1, single retry ownership held
+        // by the Pause definition) so they don't throttle Start/Stop/Result (RESEARCH §5b).
+        x.AddConsumer<PauseWorkflowConsumer, PauseWorkflowConsumerDefinition>()
+            .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
+        x.AddConsumer<ResumeWorkflowConsumer, ResumeWorkflowConsumerDefinition>()
+            .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
         // ORCH-RESULT-02: shared competing-consumer (NO InstanceId/Temporary) — the inverse of the
         // Start/Stop fan-out. ResultConsumerDefinition binds the stable "orchestrator-result" endpoint.
         x.AddConsumer<ResultConsumer, ResultConsumerDefinition>();
