@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 42-01-PLAN.md
+stopped_at: Completed 42-02-PLAN.md
 last_updated: "2026-06-07T00:00:00.000Z"
-last_activity: 2026-06-07 -- Phase 42 Plan 01 complete (REQUIREMENTS.md reconciled)
+last_activity: 2026-06-07 -- Phase 42 Plan 02 complete (ROADMAP Phase-38 Progress row reconciled)
 progress:
   total_phases: 45
   completed_phases: 43
@@ -27,9 +27,17 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
 Phase: 42 (v3.7.0-docs-traceability-reconciliation) — EXECUTING
-Plan: 2 of 3 (Plan 01 complete)
+Plan: 3 of 3 (Plans 01-02 complete)
 Status: Executing Phase 42
-Last activity: 2026-06-07 -- Phase 42 Plan 01 complete (REQUIREMENTS.md reconciled)
+Last activity: 2026-06-07 -- Phase 42 Plan 02 complete (ROADMAP Phase-38 Progress row reconciled)
+
+### Phase 42 Plan 02 — COMPLETE (Wave 1: ROADMAP.md Phase-38 Progress-row reconciliation, SC3; 2026-06-07)
+
+- **1 task commit (scoped .planning/ROADMAP.md ONLY — 1 insertion/1 deletion; pre-existing untracked items .claude/ / 27-PATTERNS.md / psql-*.txt / launchSettings.json left UNtouched; NO file deletions).** `26c8817` (docs: change the stale Phase-38 Progress row `0/? | Not started | —` to `4/4 | Complete | 2026-06-06`). Wave 1, depends_on [], autonomous:true, type:execute.
+- **The reconciliation (SC3):** the ROADMAP Progress table's Phase-38 row was the lone false row in an otherwise-Complete v3.7.0 ladder — Phase 38 ("Uniform service_name + Instance Labels") shipped 4 plans (38-01..38-04-PLAN.md, counted on disk) and is verified Complete 2026-06-06, yet the table still read un-started. `/gsd-complete-milestone` reads this table, so the row is now truthful. Counted the plan files (=4), matched the planner's expected 4/4 — no D-03 discrepancy.
+- **Encoding discipline (MEMORY landmine):** Edit-tool single-row in-place replacement — NO full-file Write/Set-Content — so the file's em-dashes (—), ×, →, ← stayed byte-intact and NO UTF-8 BOM was introduced. Acceptance BOM+mojibake grep PASSED.
+- **Deviations:** None (content). Tooling adaptation only — the Bash tool runs bash (strips PowerShell `$` + re-encodes literal mojibake glyphs under the console codepage), so the inline literal-glyph mojibake grep was authored as a standalone `.ps1` verify script (byte-level UTF-8 decode + cp1252 sentinel scan: 0x00E2 corrupt-em-dash lead, 0x00C3 corrupt-× lead, EF BB BF BOM prefix), invoked via `powershell -File`, then deleted (never committed). No architectural changes, no auth gates, no stubs.
+- **Verification:** T1 OK (plans=4, fixed=1, stale 0/? gone=0, Phase-39 row undisturbed=1, Phase-42 row undisturbed=1, BOM=False, mojibake=0). Self-Check PASSED (SUMMARY + ROADMAP exist, no BOM/mojibake; commit 26c8817 exists). SUMMARY: 42-02-SUMMARY.md. **Phase 42 Wave 1 = 2/3 plans complete; next is 42-03. `roadmap update-plan-progress` is a known no-op on this ROADMAP format; orchestrator reconciles ROADMAP/STATE milestone counters after the wave.**
 
 ### Phase 42 Plan 01 — COMPLETE (Wave 1: REQUIREMENTS.md v3.7.0 traceability reconciliation; 2026-06-07)
 
