@@ -376,24 +376,26 @@ public sealed class KeeperRecoveryE2ETests
             var parked = await PollForDlqParkAsync(giveUpH, ct);
             Assert.Equal(giveUpH, parked);
 
-            // 2-replica drain (Phase-39): the synthetic Fault<ExecutionResult> is PUBLISHED, so BOTH keeper
-            // replicas independently consume + give up + park to keeper-dlq (~simultaneously, ~60s after intake).
-            // PollForDlqParkAsync returns on the FIRST park; keep the in-test probe alive briefly so it also
-            // ACK-drains the SECOND replica's park before the bus stops — otherwise keeper-dlq is left at depth 1
-            // and the close gate's keeper-dlq==0 invariant fails.
-            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+            // The park is now PROVEN (PollForDlqParkAsync). The net-zero drain (which tolerates the late
+            // >10s-apart 2nd-replica park AND the Plan-02 recover_cap give-up source) runs in the teardown
+            // below via DrainKeeperDlqUntilStablyEmptyAsync — no fragile fixed wait here.
         }
         finally
         {
             await bus.StopAsync(ct);
         }
 
-        // Phase-39 net-zero: deterministically drain keeper-dlq. The synthetic Fault<ExecutionResult> is
-        // PUBLISHED, so BOTH keeper replicas can independently give up + park to keeper-dlq, at DIFFERENT times
-        // (>10s apart) — a timing-based in-test-probe drain misses the late one and leaves keeper-dlq at depth 1,
-        // failing the close gate's keeper-dlq==0 invariant. The park was already PROVEN above via the probe;
-        // purge the terminal queue here so the invariant holds regardless of replica/park timing.
-        await PurgeKeeperDlqAsync(ct);
+        // KHARD-02 net-zero (D-A5): deterministically drain keeper-dlq via a bounded poll-until-stably-empty
+        // loop (2s poll / 15s stable window / 90s cap, fail-loud) instead of a fragile fixed wait + one-shot
+        // purge. The synthetic Fault<ExecutionResult> is PUBLISHED, so BOTH keeper replicas independently give
+        // up + park at DIFFERENT times (>10s apart); the Plan-02 recover_cap crossing is a SECOND give-up source
+        // that can also park here. A one-shot purge or a timing-based in-test-probe drain misses a late park and
+        // leaves keeper-dlq at depth 1, failing the close gate's keeper-dlq==0 invariant. keeper-dlq is terminal
+        // (no prod consumer drains it), so the loop must actively re-purge each iteration; it returns only once
+        // depth has held 0 for the full 15s window (> the >10s inter-replica gap), tolerating any late park. The
+        // park was already PROVEN above via the probe. NB Pitfall 2: the drain lives ONLY here — the close-gate
+        // script stays snapshot-only, so a future teardown regression still surfaces as depth>0.
+        await DrainKeeperDlqUntilStablyEmptyAsync(ct);
 
         // Net-zero teardown: stop the workflow; the keeper-dlq parked message was ACK-drained by the in-test probe
         // (the terminal queue is purged so the Phase-39 close-gate snapshot stays net-zero); the poisoned
