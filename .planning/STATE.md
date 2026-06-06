@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: planning
-stopped_at: Phase 39 planned (4 plans, ready to execute)
-last_updated: "2026-06-06T10:15:54.517Z"
-last_activity: 2026-06-06
+status: executing
+stopped_at: Phase 39 Plan 01 complete
+last_updated: "2026-06-06T10:32:30.000Z"
+last_activity: 2026-06-06 -- Phase 39 Plan 01 complete (KeeperMetrics meter; Route A locked)
 progress:
   total_phases: 42
   completed_phases: 40
@@ -21,15 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 39 — Keeper observability + real-stack E2E + close gate (Phase 38 complete)
+**Current focus:** Phase 39 — keeper-observability-real-stack-e2e-close-gate
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 6/7 complete — Phase 38 complete (hermetic + live RealStack GREEN); Phase 39 close gate remains)
-Phase: 39 (planned — 4 plans in 4 waves, ready to execute)
-Plan: 4 plans created (39-01 meter, 39-02 instrument sites, 39-03 RealStack E2E scrape, 39-04 close gate); plan-checker PASSED (1st pass, 0 blockers); requirements 6/6 covered
-Status: Phase 39 PLANNED — ready to execute (`/gsd-execute-phase 39`)
-Last activity: 2026-06-06
+Phase: 39 (keeper-observability-real-stack-e2e-close-gate) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 39 (Plan 01 complete — KeeperMetrics meter authored)
+Last activity: 2026-06-06 -- Phase 39 Plan 01 complete (KeeperMetrics + const-to-AddMeter; Route A locked)
+
+### Phase 39 Plan 01 — COMPLETE (Wave 1: KeeperMetrics meter definition + Wave-0 DiagnosticSource gate; KMET-01/03; 2026-06-06)
+
+- **2 task commits (scoped src/ + tests/ paths only — pre-existing untracked items .claude/ / 27-PATTERNS.md / psql-*.txt / launchSettings.json left UNtouched).** `aba2079` (test RED: KeeperMetricsFacts), `c09e33b` (feat GREEN: KeeperMetrics + Program.cs registration). NO file deletions. Wave 1, depends_on [], autonomous:true, type:execute (TDD on Task 2).
+- **Task 1 — Wave-0 gate (verification-only, no commit):** `dotnet list src/Keeper/Keeper.csproj package --include-transitive | grep DiagnosticSource` -> `System.Diagnostics.DiagnosticSource 10.0.0` (>= 9.0.0). **Route A (advice) LOCKED** for Plans 02/03: the histogram's `{1,5,10,30,60,120}`s buckets ride on `InstrumentAdvice<double>{HistogramBucketBoundaries=...}` co-located on the instrument; NO OTel `AddView` in `Program.cs`.
+- **Task 2 (tdd) — KeeperMetrics + registration:** NEW `src/Keeper/Observability/KeeperMetrics.cs` — `sealed class`, `public const string MeterName = "Keeper"`, IMeterFactory ctor (no `static Meter`), exactly 6 `Counter<long>` (keeper_fault_consumed/recovered/dlq_pushed/workflow_paused/workflow_resumed/l2_probe_failed) + 1 `UpDownCounter<long>` (keeper_in_flight) + 1 `Histogram<double>` (keeper_recovery_duration, unit `"s"`, advice buckets). Plus `KeeperMetricTags` interned closed-enum labels (fault_type{dispatch,result}, outcome{recovered,gave_up}, reason{probe_exhausted}, ProcessorId) + `FaultTags(...)` DRY helper for Plan 02's two consumers. `Program.cs` gained `AddSingleton<KeeperMetrics>()` + `ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(KeeperMetrics.MeterName))` (mirrors Orchestrator/Program.cs:72-73) + 2 usings.
+- **No deviations** (plan executed as written; only fold-in was the required `using OpenTelemetry.Metrics;` for `ConfigureOpenTelemetryMeterProvider`, caught at first Release build). No architectural changes, no auth gates, no stubs (instruments defined but not yet incremented — that is Plan 02's explicit scope, not a stub). No new threat surface (T-39-01 mitigated: ProcessorId-only cardinality, MeterListener-asserted no workflowId).
+- **Verification:** `dotnet build src/Keeper/Keeper.csproj -c Release` 0 Warning / 0 Error (TreatWarningsAsErrors). `KeeperMetricsFacts` **6/6 GREEN** via MTP `BaseApi.Tests.exe --filter-class` (RED proven first at aba2079 — CS0234 Keeper.Observability absent). Grep gates clean (no embedded _total/_seconds in instrument literals; bucket array present; AddSingleton+AddMeter symmetry present). SUMMARY: 39-01-SUMMARY.md (Self-Check PASSED). **Phase 39 Wave 1 = 1/1 plan; next is Wave 2 (39-02 metric instrumentation into the two fault consumers + probe loop, using the locked instruments + KeeperMetricTags).**
 
 ### Phase 38 — COMPLETE (all 4 plans; verified 5/5 must-haves; code review 0 critical / 2 warning advisory; 2026-06-06)
 
