@@ -160,6 +160,17 @@ public sealed class KeeperFaultIntakeE2ETests
             var dispatchEndpoint = await bus.GetSendEndpoint(new Uri($"queue:{procId:D}"));
             await dispatchEndpoint.Send(trippedDispatch, ct);
 
+            // Phase-39 LOOP-BREAK: Phase 36 added recover+re-inject to the Keeper consumer. The original
+            // SC3 recipe (written in Phase 35, "no re-inject") left the WRONGTYPE poison armed forever — which
+            // now turns intake into an UNBOUNDED recover->reinject->refault storm (the keeper's generic L2
+            // probe sees redis healthy → re-injects → the processor re-faults on the still-armed flag[H] →
+            // republishes → ∞), flooding OTLP→ES so the bare-service.name intake log never surfaces within the
+            // poll budget. The intake log we assert is emitted on the FIRST cycle; give that cycle time to
+            // publish+consume, then clear the poison so the keeper's next re-inject succeeds and the loop ends.
+            // (Source hardening — a keeper recover-attempt cap — is tracked as a separate item; see MEMORY.)
+            await Task.Delay(TimeSpan.FromSeconds(3), ct);
+            await ClearPoisonAsync(dispatchPoisonKey, ct);
+
             // ================================================================================================
             // SC3 ASSERTION — the Keeper-container correlated intake log. PollEsForLog the Keeper service's
             // ES log keyed on the PROPAGATED correlationId (dCorr) + the tripped stepId + the D-08 body.text
@@ -212,6 +223,14 @@ public sealed class KeeperFaultIntakeE2ETests
         await db.ListRightPushAsync(key, "poison");   // LIST type -> a subsequent String op throws WRONGTYPE
     }
 
+    // Disarm the WRONGTYPE poison (delete the LIST key) so a subsequent GET returns nil rather than throwing —
+    // lets the keeper's recover+re-inject succeed and terminates the recover->reinject->refault loop (Phase-39).
+    private static async Task ClearPoisonAsync(string key, CancellationToken ct)
+    {
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        await mux.GetDatabase().KeyDeleteAsync(key);
+    }
+
     // ---- The Keeper-container correlated-intake ES query (the SC3 readback) ----
 
     // Filter the Keeper service's intake log on the PROPAGATED correlationId + the tripped stepId + the D-08
@@ -228,7 +247,7 @@ public sealed class KeeperFaultIntakeE2ETests
               { "term": { "{{EsIndexNames.CorrelationIdFieldPath}}": "{{correlationId:D}}" } },
               { "term": { "attributes.StepId": "{{stepId:D}}" } },
               { "term": { "resource.attributes.service.name": "{{KeeperServiceName}}" } },
-              { "wildcard": { "body.text": "*{{KeeperIntakeMessage}}*" } }
+              { "wildcard": { "body.text": { "value": "*{{KeeperIntakeMessage}}*", "case_insensitive": true } } }
             ]
           }
         }

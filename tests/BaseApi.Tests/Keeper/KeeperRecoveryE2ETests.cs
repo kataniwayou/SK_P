@@ -189,8 +189,14 @@ public sealed class KeeperRecoveryE2ETests
         var bus = Bus.Factory.CreateUsingRabbitMq(cfg =>
         {
             cfg.Host("localhost", 5673, "/", h => { h.Username("guest"); h.Password("guest"); });
-            // Bind the orchestrator-result endpoint to observe the Keeper container's re-injected ExecutionResult.
-            cfg.ReceiveEndpoint(OrchestratorQueues.Result, e =>
+            // Phase-39: observe the keeper's recovered-branch ResumeWorkflow (PUBLISHED → fanout) on a TEMPORARY
+            // auto-delete endpoint — NOT the Send'd ExecutionResult on the shared queue:orchestrator-result. The
+            // orchestrator container competes for orchestrator-result (the keeper Sends point-to-point there), so
+            // racing it for the re-injected result is flaky. ResumeWorkflow is published in the SAME recovered
+            // branch (right after the verbatim re-inject Send) carrying the inner's H + CorrelationId, so a fanout
+            // copy on our own temp queue deterministically proves the verbatim result recovery. The temp queue is
+            // auto-deleted on bus stop (net-zero — no leaked queue in the close-gate rmq SHA).
+            cfg.ReceiveEndpoint(e =>
                 e.Consumer(() => new ReinjectedResultProbe(_reinjectedResults)));
         });
         await bus.StartAsync(ct);
@@ -465,13 +471,16 @@ public sealed class KeeperRecoveryE2ETests
     /// inner H + CorrelationId + StepId so the test asserts the re-inject reached the correct origin endpoint by
     /// type, verbatim (same H). No re-deserialize — the bare inner instance is delivered.
     /// </summary>
+    // Phase-39: observes the keeper's recovered-branch ResumeWorkflow (fanout) — proves the verbatim result
+    // recovery via the carried H + CorrelationId without racing the orchestrator for queue:orchestrator-result
+    // (the keeper Sends the verbatim ExecutionResult there point-to-point, then publishes this ResumeWorkflow).
     private sealed class ReinjectedResultProbe(ConcurrentBag<(string h, Guid corr, Guid step)> captured)
-        : IConsumer<ExecutionResult>
+        : IConsumer<ResumeWorkflow>
     {
-        public Task Consume(ConsumeContext<ExecutionResult> context)
+        public Task Consume(ConsumeContext<ResumeWorkflow> context)
         {
             var m = context.Message;
-            captured.Add((m.H, m.CorrelationId, m.StepId));
+            captured.Add((m.H, m.CorrelationId, Guid.Empty));   // ResumeWorkflow carries no StepId — unused by the assertion
             return Task.CompletedTask;
         }
     }
@@ -533,7 +542,7 @@ public sealed class KeeperRecoveryE2ETests
         await bus.Publish<Fault<ExecutionResult>>(new { Message = synthetic }, ct);
     }
 
-    // ---- Poll the in-test orchestrator-result probe until the re-injected result H is seen (Recovered). ----
+    // ---- Poll the in-test ResumeWorkflow probe until the keeper's recovered-branch resume for this H is seen. ----
     private async Task<(string h, Guid corr, Guid step)> PollForResultReinjectAsync(string expectedH, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(OutputPollTimeoutMs);
@@ -550,9 +559,10 @@ public sealed class KeeperRecoveryE2ETests
         }
 
         Assert.Fail(
-            $"No re-injected ExecutionResult with inner H={expectedH} arrived on queue:{OrchestratorQueues.Result} " +
-            $"within {OutputPollTimeoutMs}ms — the deployed Keeper container did not probe-recover + re-inject the " +
-            "verbatim result. Confirm the full compose stack incl. a REBUILT keeper is up healthy.");
+            $"No keeper ResumeWorkflow carrying inner H={expectedH} was observed within {OutputPollTimeoutMs}ms — " +
+            $"the deployed Keeper container did not probe-recover + re-inject the verbatim result (Send to " +
+            $"queue:{OrchestratorQueues.Result}) + publish ResumeWorkflow. Confirm the full compose stack incl. a " +
+            "REBUILT keeper is up healthy.");
         throw new InvalidOperationException("unreachable"); // Assert.Fail throws — keeps the compiler happy.
     }
 

@@ -205,20 +205,22 @@ public sealed class FaultRecoverySpikeE2ETests
 
             // ================================================================================================
             // GRAFT 5 — DISPATCH re-inject verbatim x2 + duplicate-collapse (the STANDALONE NOVEL-RISK proof:
-            // INTAKE-04 re-inject-by-type + PROBE-06 collapse). Before re-injecting, REMOVE the dispatch poison
-            // so delivery 1 can produce its real effect (the collapse rides the receiver gate, not the fault).
+            // INTAKE-04 re-inject-by-type + PROBE-06 collapse). DISARM the poison AND seed flag[H]="Pending" in
+            // one atomic SET so the receiver's conditional Pending->Ack flip can engage on the first effect.
             // ================================================================================================
-            await ClearPoisonAsync(dispatchPoisonKey, ct);
+            await DisarmPoisonSeedPendingAsync(dispatchPoisonKey, ct);
 
             var dispatchInner = (EntryStepDispatch)dispatchCap.inner;   // the VERBATIM extracted instance (same H)
             var dispatchOrigin = await bus.GetSendEndpoint(new Uri($"queue:{dispatchInner.ProcessorId:D}"));
 
-            // PROBE-06 / D-08: ONE flag[H]="Pending" seed (re-arming Ack->Pending leaks the dup — Anti-Pattern),
-            // Send delivery 1 (effect, flips flag Pending->Ack), wait for Ack, Send delivery 2 (flag==Ack ->
-            // dropped by the receiver's surviving Phase-31 flag[H] gate, EntryStepDispatchConsumer:76-84).
-            await PrewriteFlagPendingAsync(dispatchInner.H);
-            await dispatchOrigin.Send(dispatchInner, ct);     // delivery 1 — produces the effect, flips flag->Ack
-            await PollForFlagAckAsync(dispatchInner.H, ct);
+            // PROBE-06 / D-08 (Phase-39 keeper-aware): the disarm above already seeded flag[H]="Pending". The
+            // RUNNING Keeper container also recovers the tripped Fault and re-injects the verbatim inner; whoever
+            // processes first (keeper re-inject OR our delivery 1) flips Pending->Ack and produces the SINGLE
+            // downstream effect. Both manual deliveries then collapse on the surviving Phase-31 flag[H] gate
+            // (EntryStepDispatchConsumer:76-84) — exactly-once across keeper + test deliveries. We do NOT re-seed
+            // Pending here: the prior recipe re-armed flag AFTER the keeper's (non-deduped) effect → count==2.
+            await dispatchOrigin.Send(dispatchInner, ct);     // delivery 1 — collapses if already Ack'd, else produces the effect
+            await PollForFlagAckAsync(dispatchInner.H, ct);   // wait for the effect to flip flag->Ack before delivery 2
             await dispatchOrigin.Send(dispatchInner, ct);     // delivery 2 — SAME H, flag==Ack -> dropped
 
             // Assert EXACTLY ONE downstream effect for the re-injected dispatch identity (the live inverse of
@@ -332,18 +334,10 @@ public sealed class FaultRecoverySpikeE2ETests
         }
     }
 
-    // ---- Induced-duplicate sender helpers (clone :221-260): symmetric flag pre-write + Ack-wait ----
-
-    // SENDER pre-write (D-06, symmetric inbound analog of the processor's outbound seed): write
-    // flag[H]="Pending" so the consumer's effect-first When.Exists flip Pending->Ack has a key to flip.
-    // Production StepDispatcher does this EXACTLY ONCE before its single Send; a broker redelivery never
-    // repeats it. Called once (before delivery 1), NOT per send. TTL bounds the key.
-    private static async Task PrewriteFlagPendingAsync(string h)
-    {
-        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
-        await mux.GetDatabase().StringSetAsync(
-            L2ProjectionKeys.Flag(h), "Pending", expiry: TimeSpan.FromSeconds(300));
-    }
+    // ---- Induced-duplicate sender helper (clone :221-260): Ack-wait ----
+    // (Phase-39: the separate flag="Pending" pre-write was folded into DisarmPoisonSeedPendingAsync so the seed
+    //  happens AT disarm time — before the keeper container's recovery re-inject can process. The prior recipe
+    //  seeded AFTER the keeper had already produced a non-deduped effect, yielding count==2.)
 
     // Poll host Redis until the receiver flips flag[H] Pending->Ack (effect produced). Makes the
     // redelivery deterministic: delivery 2 is sent only AFTER delivery 1's effect completed, so it
@@ -386,12 +380,16 @@ public sealed class FaultRecoverySpikeE2ETests
         await db.ListRightPushAsync(key, "poison");   // LIST type -> a subsequent String op throws WRONGTYPE
     }
 
-    // Clear an armed WRONGTYPE LIST poison so the receiver's real String op can succeed on re-inject
-    // (the duplicate-collapse proof rides the receiver flag[H] gate, NOT the lingering infra fault).
-    private static async Task ClearPoisonAsync(string key, CancellationToken ct)
+    // Disarm an armed WRONGTYPE LIST poison AND seed flag[H]="Pending" in ONE atomic Redis SET (SET clobbers
+    // any prior type — no WRONGTYPE, no absent-key window). Seeding Pending at disarm time is load-bearing
+    // (Phase-39): the receiver's flag[H] flip is conditional (Pending->Ack) and a no-op on an absent key, so
+    // whoever processes first (the running Keeper container's recovery re-inject OR our delivery 1) needs a
+    // "Pending" key to flip — that single flip produces the lone effect and every later delivery collapses on
+    // "Ack". TTL bounds the key (registered for net-zero teardown).
+    private static async Task DisarmPoisonSeedPendingAsync(string key, CancellationToken ct)
     {
         await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
-        await mux.GetDatabase().KeyDeleteAsync(key);
+        await mux.GetDatabase().StringSetAsync(key, "Pending", expiry: TimeSpan.FromSeconds(300));
     }
 
     // ---- Fault capture poll: wait until a probe records the inner H we expect (the trip fanned out) ----
