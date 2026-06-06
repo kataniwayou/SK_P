@@ -333,6 +333,9 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. `WorkflowLifecycle.ResumeAsync` emits an informational log on the `state != TriggerState.Paused` ignore branch (WorkflowId + observed state), so a Resume that arrives mid-fire and is dropped is observable in logs.
   2. `WorkflowScheduler.RescheduleAsync` no longer assumes the non-durable job still exists on the `RescheduleJob`-returns-null fallback path — it either re-creates the job+trigger or fails loudly with a clear message rather than an opaque Quartz throw. Hermetic test covers the fallback path.
+**Plans:** 2 plans (Wave 1, parallel)
+- [ ] 41-01-PLAN.md — WR-01: informational log on the ResumeAsync non-Paused ignore branch (WorkflowId + observed TriggerState; log-only, no re-arm) (Wave 1)
+- [ ] 41-02-PLAN.md — WR-02: thread workflowId into RescheduleAsync + re-create full job+trigger in the purged-job fallback so it cannot throw; hermetic fallback test (Wave 1)
 
 ### Phase 42: v3.7.0 Docs & Traceability Reconciliation
 **Goal**: REQUIREMENTS.md and ROADMAP.md tell the truth about v3.7.0 before archival — every satisfied requirement is checked, MLBL is in the traceability table, counts are correct, and the close-gate phase has a VERIFICATION.md.
@@ -381,7 +384,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 38. Uniform `service_name` + Instance Labels Across All Metrics | v3.7.0 | 0/? | Not started | — |
 | 39. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
 | 40. Keeper Recovery Hardening (gap closure) | v3.7.0 | 3/3 | Complete (live gate Manual-Only) | 2026-06-06 |
-| 41. Orchestrator Pause/Resume Diagnostics (gap closure) | v3.7.0 | 0/? | Not started | — |
+| 41. Orchestrator Pause/Resume Diagnostics (gap closure) | v3.7.0 | 0/2 | Not started | — |
 | 42. v3.7.0 Docs & Traceability Reconciliation (gap closure) | v3.7.0 | 0/? | Not started | — |
 
 ---
