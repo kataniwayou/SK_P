@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Phase 40 complete (KHARD-01/02/03 verified 9/9; status human_needed → live 3×-GREEN close-gate Manual-Only, tracked in 40-HUMAN-UAT.md) — next is Phase 41
-last_updated: "2026-06-07T00:20:00.000Z"
-last_activity: 2026-06-07 -- Phase 40 threat-secure (40-SECURITY.md threats_open:0, 10/10). WR-01/WR-03 (T-40-05/06) fixed in 9e9b578 (atomic INCR+PEXPIRE + retry-safe cap-park; 495 hermetic green); WR-02 remains advisory. Live 3×-GREEN close-gate still Manual-Only (40-HUMAN-UAT.md)
+status: verifying
+stopped_at: Phase 41 context gathered
+last_updated: "2026-06-06T21:56:57.597Z"
+last_activity: 2026-06-06 -- Phase 40 verified complete; next is Phase 41 (orchestrator pause/resume diagnostics, no CONTEXT.md yet)
 progress:
-  total_phases: 42
-  completed_phases: 41
+  total_phases: 45
+  completed_phases: 42
   total_plans: 148
-  completed_plans: 160
+  completed_plans: 162
   percent: 100
 ---
 
@@ -1238,9 +1238,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-06T18:44:03.640Z
-Stopped at: context exhaustion at 90% (2026-06-06)
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 41 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
