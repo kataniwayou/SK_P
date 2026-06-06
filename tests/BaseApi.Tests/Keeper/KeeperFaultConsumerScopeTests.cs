@@ -77,6 +77,8 @@ public sealed class KeeperFaultConsumerScopeTests
             .AddMetrics()
             .AddSingleton<KeeperMetrics>()
             .AddSingleton<L2ProbeRecovery>()
+            // KHARD-03 (Phase-40): the consumers now ctor-inject the shared KeeperRecoveryHandler.
+            .AddSingleton<KeeperRecoveryHandler>()
             .AddMassTransitTestHarness(x =>
             {
                 addConsumers(x);

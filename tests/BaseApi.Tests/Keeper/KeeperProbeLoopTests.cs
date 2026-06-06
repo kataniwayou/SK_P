@@ -114,6 +114,7 @@ public sealed class KeeperProbeLoopTests
             .AddSingleton<IConnectionMultiplexer>(fake.Multiplexer)
             .AddSingleton(opts)
             .AddSingleton<L2ProbeRecovery>()
+            .AddSingleton<KeeperRecoveryHandler>()
             .AddMassTransitTestHarness(x =>
             {
                 addConsumers(x);

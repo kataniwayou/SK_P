@@ -29,7 +29,11 @@ public sealed class ConsoleExecutionScopeFilterTests
     /// <summary>A minimal <see cref="IExecutionCorrelated"/> probe message — carries the five execution ids.</summary>
     public sealed record ExecProbeMessage(
         Guid CorrelationId, Guid WorkflowId, Guid StepId, Guid ProcessorId, Guid ExecutionId, string EntryId)
-        : IExecutionCorrelated;
+        : IExecutionCorrelated
+    {
+        // KHARD-03 (Phase-40): IExecutionCorrelated now declares H; this probe record carries an empty one.
+        public string H => "";
+    }
 
     /// <summary>A non-IExecutionCorrelated message — the filter must pass it through untouched (case c).</summary>
     public sealed record PlainExecMessage(string Text);

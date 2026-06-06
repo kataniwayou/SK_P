@@ -32,6 +32,9 @@ builder.Services.Configure<ProbeOptions>(builder.Configuration.GetSection("Probe
 // IOptions<ProbeOptions>). Both fault consumers depend on it.
 builder.Services.AddSingleton<Keeper.Recovery.L2ProbeRecovery>();
 
+// KHARD-03 — the shared recovery body both fault consumers delegate to (ctor-injects L2ProbeRecovery + KeeperMetrics).
+builder.Services.AddSingleton<Keeper.Recovery.KeeperRecoveryHandler>();
+
 // KMET-01 — the code-owned "Keeper" meter + its eight instruments. The holder is a DI-singleton
 // (IMeterFactory pattern, no static Meter — D-01); ConfigureOpenTelemetryMeterProvider additively
 // attaches the meter to the shared MeterProvider AddBaseConsoleObservability (line 18) already built —

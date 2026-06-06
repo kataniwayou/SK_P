@@ -180,14 +180,17 @@ public sealed class KeeperMetricsFacts
     // ---- Plan 02 (KMET-02/03): the instrumentation-site wiring contract ----
 
     [Fact]
-    public void Both_Fault_Consumers_Take_KeeperMetrics_In_Ctor()
+    public void Both_Fault_Consumers_Delegate_To_KeeperRecoveryHandler_Which_Owns_KeeperMetrics()
     {
-        // The increment sites are threaded via a KeeperMetrics primary-ctor param (mirrors the
-        // ProcessorMetrics injection precedent). Assert the wiring point exists structurally.
-        Assert.True(CtorHasParam(typeof(FaultEntryStepDispatchConsumer), typeof(KeeperMetrics)),
-            "FaultEntryStepDispatchConsumer must take KeeperMetrics in its ctor");
-        Assert.True(CtorHasParam(typeof(FaultExecutionResultConsumer), typeof(KeeperMetrics)),
-            "FaultExecutionResultConsumer must take KeeperMetrics in its ctor");
+        // KHARD-03 (Phase-40): the increment sites moved out of the two consumers into the single shared
+        // KeeperRecoveryHandler. The consumers now ctor-inject the handler; the handler ctor-injects
+        // KeeperMetrics. Assert the relocated-by-one-hop wiring point exists structurally.
+        Assert.True(CtorHasParam(typeof(FaultEntryStepDispatchConsumer), typeof(KeeperRecoveryHandler)),
+            "FaultEntryStepDispatchConsumer must take KeeperRecoveryHandler in its ctor");
+        Assert.True(CtorHasParam(typeof(FaultExecutionResultConsumer), typeof(KeeperRecoveryHandler)),
+            "FaultExecutionResultConsumer must take KeeperRecoveryHandler in its ctor");
+        Assert.True(CtorHasParam(typeof(KeeperRecoveryHandler), typeof(KeeperMetrics)),
+            "KeeperRecoveryHandler must take KeeperMetrics in its ctor (the single increment-site owner)");
     }
 
     [Fact]
@@ -292,8 +295,9 @@ public sealed class KeeperMetricsFacts
             var metrics = MetricsFor(provider.GetRequiredService<IMeterFactory>());
             // Up Redis → the probe recovers on the first iteration → the recovered branch fires.
             var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer, Opts(), metrics);
-            var consumer = new FaultEntryStepDispatchConsumer(
-                NullLogger<FaultEntryStepDispatchConsumer>.Instance, recovery, metrics);
+            // KHARD-03 (Phase-40): the consumer now delegates to the shared KeeperRecoveryHandler.
+            var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics);
+            var consumer = new FaultEntryStepDispatchConsumer(handler);
 
             await consumer.Consume(FaultContext(inner));
 
@@ -334,8 +338,9 @@ public sealed class KeeperMetricsFacts
             var metrics = MetricsFor(provider.GetRequiredService<IMeterFactory>());
             // Down Redis for all attempts → give-up branch fires + one l2_probe_failed per attempt.
             var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Down).Multiplexer, Opts(maxAttempts: 2), metrics);
-            var consumer = new FaultEntryStepDispatchConsumer(
-                NullLogger<FaultEntryStepDispatchConsumer>.Instance, recovery, metrics);
+            // KHARD-03 (Phase-40): the consumer now delegates to the shared KeeperRecoveryHandler.
+            var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics);
+            var consumer = new FaultEntryStepDispatchConsumer(handler);
 
             await consumer.Consume(FaultContext(inner));
 
