@@ -9,7 +9,9 @@ using MassTransit.Testing;
 using Messaging.Contracts;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using StackExchange.Redis;
 using Xunit;
 
@@ -140,5 +142,119 @@ public sealed class KeeperRecoverCapTests
         // The winner DELs the counter on park → no Redis leak (the no-DEL'd-key path is also TTL-bounded).
         await db.KeyDeleteAsync(key);
         Assert.False(fake.CounterKeyExists(key));
+    }
+
+    /// <summary>
+    /// WR-01 / T-40-05 regression: the per-H counter key is BORN with a TTL atomically (the moment it first
+    /// exists, n==1), and later increments do NOT reset/clobber that TTL. This is what the atomic INCR+PEXPIRE-NX
+    /// Lua eval (replacing the old non-atomic INCR-then-EXPIRE pair) guarantees — there is no crash window in
+    /// which the counter could exist without a TTL, so a crashed keeper can never leak an un-TTL'd counter key.
+    /// Driven through the real handler against an Up FakeRedis (each drive = exactly one handler INCR).
+    /// </summary>
+    [Fact]
+    public async Task Wr01_CounterKey_BornWithTtl_AtomicallyAndNotClobberedOnReincrement()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const int cap = 3;   // so n=1 and n=2 both fall on the reinject path (no park) — we only probe TTL state
+
+        var processorId = Guid.NewGuid();
+        var fake = new FakeRedis(FakeRedis.RedisHealth.Up);   // probe recovers every time → Recovered branch
+        var key  = (RedisKey)L2ProjectionKeys.KeeperRecoverAttempts(CapH);
+
+        await using var provider = BuildHarness(fake, Opts(cap));
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+        try
+        {
+            // First drive → handler INCRs to n==1 → the key is created. Assert it is born WITH a 300s TTL.
+            await harness.Bus.Publish<Fault<EntryStepDispatch>>(new { Message = CapInner(processorId) }, ct);
+            Assert.True(await harness.Consumed.Any<Fault<EntryStepDispatch>>(ct));
+            Assert.True(fake.CounterKeyExists(key));
+            Assert.True(fake.KeyHasTtl(key));                          // atomic: TTL set the moment the key exists
+            Assert.Equal(300_000L, fake.KeyTtlMillis(key));            // 300s window (the crash net-zero net)
+
+            // Second drive → handler INCRs to n==2. The PEXPIRE is gated on first-create (n==1) only, so the
+            // TTL must be UNCHANGED — later increments never clobber/reset it (no-clobber semantics preserved).
+            await harness.Bus.Publish<Fault<EntryStepDispatch>>(new { Message = CapInner(processorId) }, ct);
+            // Wait deterministically until BOTH faults have been consumed (the counter has walked to n==2).
+            var consumed = 0;
+            await foreach (var _ in harness.Consumed.SelectAsync<Fault<EntryStepDispatch>>(ct))
+                if (++consumed == 2) break;
+            Assert.Equal(2L, fake.CounterValue(key));
+            Assert.Equal(300_000L, fake.KeyTtlMillis(key));            // not clobbered on the n==2 increment
+        }
+        finally { await harness.Stop(ct); }
+    }
+
+    /// <summary>
+    /// WR-03 / T-40-06 regression: the cap-park is retry-safe — a park whose keeper-dlq <c>Send</c> throws is
+    /// re-attempted (the exception propagates so MassTransit's Immediate(N) retry re-runs the body), and once
+    /// the Send succeeds the envelope is parked EXACTLY ONCE and the counter is DEL'd. Under the old strict
+    /// <c>n == cap+1</c> gate the retry's INCR (cap+2) took a silent non-parking <c>return</c>, dropping the
+    /// Fault&lt;T&gt;. Driven by calling <see cref="KeeperRecoveryHandler.HandleAsync{T}"/> directly with a
+    /// substitute <see cref="ConsumeContext{T}"/> whose dlq send endpoint throws once, then succeeds.
+    /// </summary>
+    [Fact]
+    public async Task Wr03_CapPark_FailedSend_IsRetried_ThenParksExactlyOnce()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const int cap = 3;
+
+        var fake = new FakeRedis(FakeRedis.RedisHealth.Up);   // probe always recovers → Recovered branch reached
+        var db   = fake.Multiplexer.GetDatabase();
+        var key  = (RedisKey)L2ProjectionKeys.KeeperRecoverAttempts(CapH);
+
+        // Pre-arm the counter to n==cap (as if `cap` reinjects already happened): the NEXT handler INCR crosses
+        // to cap+1. Use the same atomic Lua path the handler uses so the key is born with its TTL.
+        const string incrWithTtl =
+            "local n = redis.call('INCR', KEYS[1]) " +
+            "if n == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end " +
+            "return n";
+        for (var i = 0; i < cap; i++)
+            await db.ScriptEvaluateAsync(incrWithTtl, new[] { key }, new RedisValue[] { 300_000L });
+        Assert.True(fake.CounterKeyExists(key));
+
+        var metrics = NewMetrics();
+        var recovery = new L2ProbeRecovery(fake.Multiplexer, Opts(cap), metrics);
+        var handler  = new KeeperRecoveryHandler(
+            NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics, fake.Multiplexer, Opts(cap));
+
+        // A dlq send endpoint that THROWS on its first Send (broker hiccup) then SUCCEEDS on the retry.
+        // The handler parks via `capDlq.Send(context.Message, ct)` where context.Message is Fault<EntryStepDispatch>,
+        // so configure the generic Send<Fault<EntryStepDispatch>> overload it resolves to.
+        var sends = 0;
+        var dlqEndpoint = Substitute.For<ISendEndpoint>();
+        dlqEndpoint.Send(Arg.Any<Fault<EntryStepDispatch>>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                sends++;
+                return sends == 1 ? Task.FromException(new InvalidOperationException("broker-hiccup")) : Task.CompletedTask;
+            });
+
+        var inner = CapInner(Guid.NewGuid());
+        var fault = Substitute.For<Fault<EntryStepDispatch>>();
+        fault.Message.Returns(inner);
+        fault.Exceptions.Returns(System.Array.Empty<ExceptionInfo>());   // ex resolves to null → ex?.X is safe
+        var context = Substitute.For<ConsumeContext<Fault<EntryStepDispatch>>>();
+        context.Message.Returns(fault);
+        context.CancellationToken.Returns(ct);
+        context.Publish(Arg.Any<object>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        context.Publish(Arg.Any<PauseWorkflow>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        context.Publish(Arg.Any<ResumeWorkflow>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        context.GetSendEndpoint(Arg.Any<Uri>()).Returns(Task.FromResult(dlqEndpoint));
+
+        Func<EntryStepDispatch, Uri> reinject = i => new Uri($"queue:{i.ProcessorId:D}");
+
+        // First attempt: INCR crosses to cap+1 → park path → Send throws → the exception MUST propagate
+        // (so the message is NOT acked and MassTransit re-delivers). The counter must remain live (DEL skipped).
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            handler.HandleAsync(context, KeeperMetricTags.FaultTypeDispatch, reinject, ct));
+        Assert.True(fake.CounterKeyExists(key));   // DEL was NOT reached on the failed park → counter still live
+
+        // Retry: INCR now yields cap+2 (n >= cap+1) → STILL parks (not a silent drop). Send succeeds this time.
+        await handler.HandleAsync(context, KeeperMetricTags.FaultTypeDispatch, reinject, ct);
+
+        Assert.Equal(2, sends);                     // exactly one failed Send + one successful Send (no silent drop)
+        Assert.False(fake.CounterKeyExists(key));   // DEL ran only AFTER the successful park → no leak
     }
 }

@@ -51,6 +51,12 @@ public sealed class FakeRedis
     // returns 1,2,3,... on consecutive calls, DEL removes the key (proving the no-leak park).
     private readonly ConcurrentDictionary<RedisKey, long> _counters = new();
 
+    // WR-01 (T-40-05): per-key TTL-set state. A key gains an entry here the moment a PEXPIRE/EXPIRE
+    // actually lands on it (records the milliseconds the TTL was set to). This lets the WR-01 regression
+    // test assert (a) the counter key is BORN with a TTL atomically (n==1), and (b) later INCRs do NOT
+    // clobber/reset it (the PEXPIRE-NX / ExpireWhen.HasNoExpiry no-clobber semantics).
+    private readonly ConcurrentDictionary<RedisKey, long> _ttlMillis = new();
+
     /// <summary>Constructs the double in the given initial health (default <see cref="RedisHealth.Down"/>).</summary>
     public FakeRedis(RedisHealth initial = RedisHealth.Down)
     {
@@ -71,6 +77,18 @@ public sealed class FakeRedis
     /// <summary>KHARD-01: true while the per-H recover-attempt counter key is live — the cap test asserts
     /// this is <c>false</c> after the park (the counter was DEL'd, no leak).</summary>
     public bool CounterKeyExists(RedisKey key) => _counters.ContainsKey(key);
+
+    /// <summary>KHARD-01/WR-01: the current per-H counter value (0 if absent) — lets a test wait deterministically
+    /// for the handler's INCR to walk to a given n before asserting the TTL/no-clobber state.</summary>
+    public long CounterValue(RedisKey key) => _counters.TryGetValue(key, out var v) ? v : 0;
+
+    /// <summary>WR-01 (T-40-05): true while the key has a TTL recorded — the atomic-TTL test asserts the
+    /// counter key is born WITH a TTL (n==1) so a crash can never leave an un-TTL'd counter leaking.</summary>
+    public bool KeyHasTtl(RedisKey key) => _ttlMillis.ContainsKey(key);
+
+    /// <summary>WR-01 (T-40-05): the TTL (in ms) currently recorded for the key, or <c>null</c> if none —
+    /// lets the test assert later INCRs do NOT clobber/reset the first-write TTL (no-clobber semantics).</summary>
+    public long? KeyTtlMillis(RedisKey key) => _ttlMillis.TryGetValue(key, out var ms) ? ms : null;
 
     /// <summary>Flip the simulated Redis fully up (read + write succeed).</summary>
     public void BringUp() { _failuresRemaining = 0; _health = (int)RedisHealth.Up; }
@@ -134,14 +152,55 @@ public sealed class FakeRedis
         db.StringIncrementAsync(Arg.Any<RedisKey>(), Arg.Any<long>(), Arg.Any<CommandFlags>())
             .Returns(ci => Task.FromResult(_counters.AddOrUpdate((RedisKey)ci[0], (long)ci[1], (_, v) => v + (long)ci[1])));
 
+        // WR-01 (T-40-05): KeyExpireAsync now HONOURS ExpireWhen so the no-clobber TTL semantics are testable.
+        // ExpireWhen.HasNoExpiry sets the TTL only if none is already recorded (the set-once-on-create rule);
+        // ExpireWhen.Always overwrites. Records the TTL (ms) in _ttlMillis so a test can assert the key is born
+        // with a TTL and that later increments do not clobber it.
         db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<ExpireWhen>(), Arg.Any<CommandFlags>())
-            .Returns(Task.FromResult(true));   // TTL set is a no-op success in the double
+            .Returns(ci =>
+            {
+                var k  = (RedisKey)ci[0];
+                var ts = (TimeSpan?)ci[1];
+                var when = (ExpireWhen)ci[2];
+                var ms = (long)(ts?.TotalMilliseconds ?? 0);
+                if (when == ExpireWhen.HasNoExpiry)
+                    return Task.FromResult(_ttlMillis.TryAdd(k, ms));   // no-clobber: only set if not already present
+                _ttlMillis[k] = ms;
+                return Task.FromResult(true);
+            });
+
+        // WR-01 (T-40-05): the atomic INCR + PEXPIRE-NX Lua path (KeeperRecoveryHandler) goes through
+        // ScriptEvaluateAsync(string, RedisKey[], RedisValue[], flags). Implement the minimal semantics the
+        // script needs: INCR KEYS[1]; if the result is 1 (first create) PEXPIRE KEYS[1] ARGV[1]; return the
+        // count. The TTL is set-once on first create and NEVER clobbered on later increments — the same
+        // no-clobber guarantee the previous ExpireWhen.HasNoExpiry round-trip gave, now atomic.
+        db.ScriptEvaluateAsync(
+                Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .Returns(ci =>
+            {
+                var keys = (RedisKey[])ci[1];
+                var args = (RedisValue[])ci[2];
+                var k = keys[0];
+                var n = _counters.AddOrUpdate(k, 1, (_, v) => v + 1);
+                if (n == 1)
+                {
+                    var ms = args is { Length: > 0 } ? (long)args[0] : 0;
+                    _ttlMillis.TryAdd(k, ms);   // PEXPIRE only on first create (no clobber on later INCRs)
+                }
+                return Task.FromResult(RedisResult.Create(n));
+            });
 
         // The newer StackExchange.Redis StringSetAsync overload (with the extra `keepTtl`/`SetWhen` params)
         // also routes through OnWrite — NSubstitute matches the most-specific configured overload by arg shape.
-        // KeyDeleteAsync ALSO removes the counter key so the cap test can prove the DEL-on-park (no leak).
+        // KeyDeleteAsync ALSO removes the counter key AND its TTL state so the cap test can prove the
+        // DEL-on-park (no leak), and a re-INCR after a DEL is treated as a fresh first-create (TTL re-set).
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(ci => { _counters.TryRemove((RedisKey)ci[0], out _); return Task.FromResult(OnWrite()); });
+            .Returns(ci =>
+            {
+                _counters.TryRemove((RedisKey)ci[0], out _);
+                _ttlMillis.TryRemove((RedisKey)ci[0], out _);
+                return Task.FromResult(OnWrite());
+            });
 
         return db;
     }

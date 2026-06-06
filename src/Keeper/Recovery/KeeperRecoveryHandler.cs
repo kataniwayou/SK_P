@@ -38,6 +38,21 @@ public sealed class KeeperRecoveryHandler(
     IConnectionMultiplexer redis, IOptions<ProbeOptions> opts)   // KHARD-01: cap deps (mirrors L2ProbeRecovery)
 {
     /// <summary>
+    /// WR-01 (T-40-05): atomic INCR + conditional PEXPIRE for the per-H recover-attempt counter. INCR the
+    /// key; iff the result is 1 (the key was just created) PEXPIRE it with ARGV[1] ms; return the count.
+    /// Run as a single Redis op so the key can NEVER exist without a TTL (no INCR-then-EXPIRE crash window);
+    /// the PEXPIRE is gated on first-create so later increments do NOT clobber the TTL (no-clobber, net-zero).
+    /// </summary>
+    private const string IncrWithTtl =
+        "local n = redis.call('INCR', KEYS[1]) " +
+        "if n == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end " +
+        "return n";
+
+    /// <summary>D-A3: the counter-key TTL window in milliseconds (300s — matches the flag/data window).
+    /// Passed as ARGV[1] to <see cref="IncrWithTtl"/> so the TTL value lives in exactly one place.</summary>
+    private const long CounterTtlMillis = 300_000;
+
+    /// <summary>
     /// The shared recovery body. <typeparamref name="T"/> is the verbatim inner faulted message
     /// (<see cref="IExecutionCorrelated"/>), read through the generic bound — including <c>inner.H</c>
     /// (hoisted onto the interface in Task 1, D-A6).
@@ -85,29 +100,41 @@ public sealed class KeeperRecoveryHandler(
         {
             // KHARD-01 (D-A1/D-A3): bound the OUTER recover→reinject cycle per H. A persistent fault that the
             // probe keeps "recovering" but the receiver keeps re-faulting would otherwise flood the stack. The
-            // atomic INCR is race-free across the 2 keeper replicas; only the single CROSSING increment
-            // (n == cap+1) parks — mirrors the flag[H] first-writer-wins dedup.
+            // atomic INCR is race-free across the 2 keeper replicas; any crossing increment (n >= cap+1) parks
+            // — retry-safe (WR-03): a park after a failed Send is re-attempted, never silently dropped.
             var db  = redis.GetDatabase();
             var key = (RedisKey)L2ProjectionKeys.KeeperRecoverAttempts(inner.H);
-            var n   = await db.StringIncrementAsync(key);                                     // atomic INCR (race-free)
-            await db.KeyExpireAsync(key, TimeSpan.FromSeconds(300), ExpireWhen.HasNoExpiry);  // D-A3: TTL only if not already set (no clobber)
+            // WR-01 (T-40-05): atomic INCR + PEXPIRE-NX in ONE round-trip. The previous INCR-then-EXPIRE pair
+            // had a crash window between the two ops that could leave the counter key with NO TTL → permanent
+            // leak. The Lua eval makes the key BORN with a TTL the moment it first exists (n==1); the PEXPIRE
+            // is conditional on first-create so later increments NEVER clobber the TTL — exactly the prior
+            // ExpireWhen.HasNoExpiry no-clobber semantics, now indivisible (no leak window, net-zero skp: growth).
+            var n   = (long)await db.ScriptEvaluateAsync(
+                IncrWithTtl,
+                new[] { key },
+                new RedisValue[] { CounterTtlMillis });
             var cap = opts.Value.RecoverAttemptCap;
-            if (n > cap)
+            if (n >= cap + 1)
             {
-                if (n == cap + 1)   // D-A1: single-winner — only the crossing increment parks
-                {
-                    var capDlq = await context.GetSendEndpoint(new Uri($"queue:{KeeperQueues.DeadLetter}"));
-                    await capDlq.Send(context.Message, ct);
-                    metrics.DlqPushed.Add(1,
-                        new KeyValuePair<string, object?>(KeeperMetricTags.Reason, KeeperMetricTags.ReasonRecoverCap),
-                        new KeyValuePair<string, object?>(KeeperMetricTags.FaultType, faultTypeTag),
-                        new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
-                    metrics.RecoveryDuration.Record(sw.Elapsed.TotalSeconds,
-                        new KeyValuePair<string, object?>(KeeperMetricTags.Outcome, KeeperMetricTags.OutcomeGaveUp),
-                        new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
-                    await db.KeyDeleteAsync(key);   // DEL — converges to a single park, no counter leak
-                }
-                return;   // n > cap (winner already parked, or race loser): never reinject
+                // WR-03 (T-40-06): retry-safe cap-park. Treat ANY crossing (n >= cap+1), not just the exact
+                // n == cap+1, as "must be parked". Rationale: if the Send below throws (broker hiccup), the
+                // exception propagates BEFORE the DEL, MassTransit's Immediate(N) re-delivers, and the retry's
+                // INCR yields cap+2 — under the old strict n==cap+1 gate that retry took a silent non-parking
+                // return, dropping the Fault<T> envelope. With n >= cap+1 the retry still parks. keeper-dlq is
+                // terminal and a duplicate park under the rare 2-replica race is drained by the Plan-03
+                // stably-empty loop, so park-idempotency (not single-winner) is the correct contract here.
+                var capDlq = await context.GetSendEndpoint(new Uri($"queue:{KeeperQueues.DeadLetter}"));
+                await capDlq.Send(context.Message, ct);   // if this throws → propagate → Immediate(N) retry re-parks (DEL below NOT reached)
+                // Metrics recorded only AFTER the Send is confirmed durable (a failed Send never counts a park).
+                metrics.DlqPushed.Add(1,
+                    new KeyValuePair<string, object?>(KeeperMetricTags.Reason, KeeperMetricTags.ReasonRecoverCap),
+                    new KeyValuePair<string, object?>(KeeperMetricTags.FaultType, faultTypeTag),
+                    new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
+                metrics.RecoveryDuration.Record(sw.Elapsed.TotalSeconds,
+                    new KeyValuePair<string, object?>(KeeperMetricTags.Outcome, KeeperMetricTags.OutcomeGaveUp),
+                    new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
+                await db.KeyDeleteAsync(key);   // DEL only AFTER a SUCCESSFUL park — converges, no counter leak
+                return;   // parked: never reinject past cap
             }
 
             // PROBE-03 (spike-proven, GATE_EXIT=0): re-inject the VERBATIM inner to its origin endpoint.
