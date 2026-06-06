@@ -4,8 +4,8 @@ milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
 stopped_at: Phase 40 complete (KHARD-01/02/03 verified 9/9; status human_needed → live 3×-GREEN close-gate Manual-Only, tracked in 40-HUMAN-UAT.md) — next is Phase 41
-last_updated: "2026-06-06T20:51:14.000Z"
-last_activity: 2026-06-06 -- Phase 40 verified complete (9/9 must-haves; 493 hermetic tests green; code review 0 critical/3 warning advisory); live close-gate remains Manual-Only
+last_updated: "2026-06-07T00:20:00.000Z"
+last_activity: 2026-06-07 -- Phase 40 threat-secure (40-SECURITY.md threats_open:0, 10/10). WR-01/WR-03 (T-40-05/06) fixed in 9e9b578 (atomic INCR+PEXPIRE + retry-safe cap-park; 495 hermetic green); WR-02 remains advisory. Live 3×-GREEN close-gate still Manual-Only (40-HUMAN-UAT.md)
 progress:
   total_phases: 42
   completed_phases: 41
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
 Phase: 40 (keeper-recovery-hardening) — COMPLETE & VERIFIED (9/9 must-haves; status human_needed — live 3×-GREEN close-gate Manual-Only, tracked in 40-HUMAN-UAT.md)
 Plan: 3 of 3 (all complete) — next phase is 41 (not started)
-Status: Phase 40 verified complete (40-01 KHARD-03 keystone + 40-02 KHARD-01 cap + 40-03 KHARD-02 drain). 493 hermetic tests green, Release 0-warning, code review 0 critical/3 warning advisory (WR-01/02/03 counter-key durability — deferred/advisory). Live multi-replica 3×-GREEN close-gate (4 rebuilt containers) is the one outstanding human-verification item.
+Status: Phase 40 verified complete + threat-secure (40-SECURITY.md threats_open:0, 10/10 closed). 40-01 KHARD-03 keystone + 40-02 KHARD-01 cap + 40-03 KHARD-02 drain. Code review WR-01 (T-40-05 counter-key leak) + WR-03 (T-40-06 silent fault drop) FIXED in 9e9b578 (atomic Lua INCR+PEXPIRE; retry-safe n>=cap+1 must-park); WR-02 quarantine-vs-rate-limit left as advisory. 495 hermetic tests green, Release 0-warning. Live multi-replica 3×-GREEN close-gate (4 rebuilt containers) is the one outstanding human-verification item (40-HUMAN-UAT.md).
 Last activity: 2026-06-06 -- Phase 40 verified complete; next is Phase 41 (orchestrator pause/resume diagnostics, no CONTEXT.md yet)
 
 ### Phase 40 Plan 03 — COMPLETE (Wave 2: KHARD-02 poll-until-stably-empty keeper-dlq drain; the lone GATE_EXIT=1 flake cleared; 2026-06-06)
