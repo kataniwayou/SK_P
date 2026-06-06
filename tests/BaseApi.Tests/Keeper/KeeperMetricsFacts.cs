@@ -373,7 +373,12 @@ public sealed class KeeperMetricsFacts
 
             await recovery.RunAsync("entry-id", "h", procId, CancellationToken.None);
 
-            var inFlight = cap.Measurements.Where(c => c.Name == "keeper_in_flight").ToArray();
+            // Filter by THIS test's unique procId: KeeperMetricsFacts has no [Collection], so it runs in
+            // parallel with other "Keeper"-meter tests; the process-wide MeterListener would otherwise also
+            // capture a concurrent test's in_flight +1/-1 (observed as Expected 2 / Actual 4). The other
+            // assertions in this file already ProcessorId-filter; this one was missing it.
+            var inFlight = cap.Measurements.Where(c => c.Name == "keeper_in_flight"
+                && HasTag(c, KeeperMetricTags.ProcessorId, procId)).ToArray();
             Assert.Equal(2, inFlight.Length);
             Assert.Equal(1d, inFlight[0].Value);    // +1 on entry
             Assert.Equal(-1d, inFlight[1].Value);   // -1 in finally
