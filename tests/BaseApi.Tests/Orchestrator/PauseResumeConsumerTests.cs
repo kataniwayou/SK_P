@@ -80,8 +80,7 @@ public sealed class PauseResumeConsumerTests
 
             // Idempotent end state: exactly one Normal trigger, exactly one Quartz job (no orphans, D-07).
             var jobKeys = await scheduler.GetJobKeys(GroupMatcher<JobKey>.AnyGroup(), ct);
-            Assert.Single(jobKeys);
-            Assert.Equal(1, jobKeys.Count);
+            Assert.Single(jobKeys); // exactly one Quartz job (no orphans, D-07)
             var triggerKey = new TriggerKey(jobId.ToString("D"));
             Assert.Equal(TriggerState.Normal, await scheduler.GetTriggerState(triggerKey, ct));
         }
