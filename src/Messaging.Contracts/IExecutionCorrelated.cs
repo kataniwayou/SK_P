@@ -14,4 +14,7 @@ public interface IExecutionCorrelated : ICorrelated
     Guid StepId      { get; }
     Guid ProcessorId { get; }
     string EntryId   { get; }
+
+    /// <summary>The stable per-message content hash (64-hex), used as the cross-message recovery key. Declared on the concrete records; hoisted here so the generic Keeper recovery body can read it (KHARD-03).</summary>
+    string H { get; }
 }
