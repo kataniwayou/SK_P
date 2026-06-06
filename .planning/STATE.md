@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 38-03-PLAN.md (Phase 38 Wave 2)
-last_updated: "2026-06-06T10:30:00.000Z"
+stopped_at: Completed 38-04-PLAN.md (Phase 38 Wave 3 — RealStack gate GREEN)
+last_updated: "2026-06-06T11:10:00.000Z"
 last_activity: 2026-06-06
 progress:
   total_phases: 41
@@ -27,9 +27,18 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
 Phase: 38
-Plan: Wave 1 — 38-01 COMPLETE, 38-02 COMPLETE; Wave 2 — 38-03 COMPLETE (38-04 RealStack gate remaining)
+Plan: Wave 1 — 38-01 COMPLETE, 38-02 COMPLETE; Wave 2 — 38-03 COMPLETE; Wave 3 — 38-04 COMPLETE (all 4 plans done — RealStack gate GREEN; phase hermetic + live complete)
 Status: Executing
 Last activity: 2026-06-06
+
+### Phase 38 Plan 04 — COMPLETE (Wave 3: RealStack metrics round-trip gate — combined service_name + non-empty service_instance_id across runtime/HTTP/business + DB-sourced processor series; MLBL-01/02/03(ii,iii)/05 live; 2026-06-06)
+
+- **1 task commit (scoped tests/ path only — pre-existing untracked items psql-*.txt/.claude/27-PATTERNS.md/launchSettings.json left UNtouched).** `30a23d7` (test: combined service_name + instance-id family assertions + DB-sourced processor series). Task 2 was verification-only (appsettings already retained; grep gate clean from Plan 02) — no code change. NO file deletions. Wave 3, depends_on [38-02, 38-03], autonomous:true, type:execute.
+- **Task 1 — extend MetricsRoundTripE2ETests:** `SeedProcessorAsync` now returns `(Id, Name, Version)` so the test builds `procServiceName = $"{procName}_{procVersion}"` DYNAMICALLY (GET-or-create row wins; no hardcoded processor-sample_3.5.0 — RESEARCH line 239 / D-05). Added 4 RealStack assertions after the existing runtime block: (1) MLBL-03(ii) `processor_dispatch_consumed_total{ProcessorId,service_name={procServiceName}}` non-empty (DB-sourced swap observable); (2) MLBL-01/02 HTTP `http_server_request_duration_seconds_count{service_name=sk-api_3.2.0}` + non-empty service_instance_id; (3) MLBL-01/02 business `orchestrator_dispatch_sent_total{ProcessorId,service_name=orchestrator_3.4.0}` + non-empty instance id; (4) MLBL-01 runtime `process_runtime_dotnet_*{service_name=orchestrator_3.4.0}` non-empty. All within the existing `[Trait("Category","RealStack")]` test; NET-ZERO-31 orchestration/stop teardown left intact.
+- **Task 2 — verification:** MLBL-03(iii) appsettings RETAINED confirmed (`src/Processor.Sample/appsettings.json` Service:Name=processor-sample / Version=3.5.0, lines 9-12 — no change). MLBL-05 inventory recorded (5 test files carry combined literals; grep `service_name="(sk-api|orchestrator|keeper|processor-sample)"` over tests/ = 0; no prometheus rules; no Grafana dashboards). Container rebuild performed per MEMORY: `docker compose build baseapi-service orchestrator processor-sample` (BUILD_EXIT=0) + `up -d` (all 3 healthy) — the 22h-stale images predated the 38-02 combine + 38-03 swap.
+- **Live RealStack result — GREEN.** `MetricsRoundTripE2ETests` 1/1 PASSED (exit 0, 2m47s) against the rebuilt stack. Direct :9090 scrape proof: HTTP sk-api_3.2.0 (15 series, instance USERPC); business orchestrator_3.4.0 (instance f2735eda5f87, ProcessorId f3f8682e…); runtime orchestrator_3.4.0 (27 series, same instance). **MLBL-03(ii) key proof:** exercised processor business series carries `service_name=sample-proc-8ca4608c07744158b90d586533752433_1.0.0` (the DB row's {Name}_{Version}), and `count(...{service_name="processor-sample_3.5.0"})` = 0 (the boot placeholder never carried a business counter — swap fired before any dispatch). A second stale `service_name=processor-sample` series on an old ProcessorId is a pre-rebuild artifact aging out (T-38-09 accept / D-02).
+- **No deviations** (plan executed as written; Task 2 resolved to verification-only because the appsettings keys were never removed and Plan 02 already cleared the grep gate). No architectural changes, no auth gates, no stubs, no new threat surface (T-38-08/T-38-09 both accept).
+- **Verification:** `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error. Hermetic suite (`BaseApi.Tests.exe --filter-not-trait Category=RealStack`) **479/479 GREEN** (0 failed, 0 skipped, exit 0; RabbitMq Connection-Failed lines are broker-down-posture test reconnect noise, not failures). RealStack `MetricsRoundTripE2ETests` 1/1 GREEN. SUMMARY: 38-04-SUMMARY.md (Self-Check PASSED). **Phase 38 = 4/4 plans complete — hermetic + live-scrape complete; no live operator step (SPEC constraint satisfied).**
 
 ### Phase 38 Plan 03 — COMPLETE (Wave 2: processor MeterProvider swap — placeholder->DB service_name on identity-resolve; MLBL-03 (ii)+(iv) / D-02/D-03; 2026-06-06)
 
