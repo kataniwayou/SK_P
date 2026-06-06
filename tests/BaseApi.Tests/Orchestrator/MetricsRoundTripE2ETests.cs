@@ -76,7 +76,14 @@ public sealed class MetricsRoundTripE2ETests
             .GetCustomAttributes<AssemblyMetadataAttribute>()
             .First(a => a.Key == "SourceHash").Value!;
 
-        var procId = await SeedProcessorAsync(client, hash, ct);
+        // MLBL-03 (ii): SeedProcessorAsync is GET-or-create by SourceHash, so the row may PRE-EXIST
+        // with whatever Name/Version it was first written with (a fresh seed yields
+        // Name=$"sample-proc-{guid:N}", Version="1.0.0"). The processor's steady-state metric
+        // service_name is sourced from THIS DB row ({Name}_{Version}) once the live container resolves
+        // identity — NOT the boot placeholder processor-sample_3.5.0. Capture the actual seeded values
+        // and build the expected combined label dynamically; do NOT hardcode.
+        var (procId, procName, procVersion) = await SeedProcessorAsync(client, hash, ct);
+        var procServiceName = $"{procName}_{procVersion}";
         var stepId = await SeedStepAsync(client, procId, ct);
         // Seed WITH a cron so the orchestrator's one-shot job actually fires the dispatch (null cron is a
         // business-skip in HydrateAndScheduleAsync — the round-trip would never run).
@@ -162,6 +169,55 @@ public sealed class MetricsRoundTripE2ETests
             TryGetNonEmpty(runtimeMetric, "service_instance_id", out _),
             "A process_runtime_dotnet_* series must carry a non-empty service_instance_id label (METRIC-01/02) "
             + "— presence/non-emptiness only; per-replica uniqueness is not asserted here.");
+
+        // ══ Phase 38 MLBL-01/02/03 — combined service_name={name}_{version} + non-empty ══════════════
+        //    service_instance_id across runtime / HTTP / business families, plus the DB-sourced
+        //    processor steady-state series. Pitfall 7: poll with the full 120s budget (SDK 60s export +
+        //    15s scrape + placeholder→resolved swap window) and assert the RESOLVED series PRESENCE —
+        //    never the placeholder's absence within this window.
+
+        // MLBL-03 (ii) — processor steady-state DB-sourced service_name (business family). The live
+        // container swaps its MeterProvider to the DB-sourced resource on identity-resolve (Plan 03),
+        // so its business counters carry service_name={db.Name}_{db.Version} — NOT processor-sample_3.5.0.
+        // Filter by BOTH ProcessorId AND the captured combined name; a non-empty vector proves the swap
+        // is observable end-to-end through resource_to_telemetry_conversion.
+        var procDbSeries = await prom.PollPromForQuery(
+            $"processor_dispatch_consumed_total{{ProcessorId=\"{procId:D}\",service_name=\"{procServiceName}\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(procDbSeries); // resolved series carries the DB {Name}_{Version}, NOT processor-sample_3.5.0
+
+        // MLBL-01 + MLBL-02 — HTTP family (sk-api). The webapi's http_server_* series must carry the
+        // combined service_name=sk-api_3.2.0 (Plan 02 combine) AND a non-empty service_instance_id.
+        var httpSeries = await prom.PollPromForQuery(
+            "http_server_request_duration_seconds_count{service_name=\"sk-api_3.2.0\"}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(httpSeries);
+        var httpMetric = FirstMetricObject(httpSeries!.Value);
+        Assert.True(
+            TryGetNonEmpty(httpMetric, "service_instance_id", out _),
+            "An http_server_* series must carry the combined service_name=sk-api_3.2.0 AND a non-empty "
+            + "service_instance_id (MLBL-01/02).");
+
+        // MLBL-01 + MLBL-02 — business family (orchestrator). An orchestrator business counter filtered
+        // by BOTH ProcessorId AND the combined orchestrator_3.4.0 name, with a non-empty instance id.
+        var orchSeries = await prom.PollPromForQuery(
+            $"orchestrator_dispatch_sent_total{{ProcessorId=\"{procId:D}\",service_name=\"orchestrator_3.4.0\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(orchSeries);
+        var orchMetric = FirstMetricObject(orchSeries!.Value);
+        Assert.True(
+            TryGetNonEmpty(orchMetric, "service_instance_id", out _),
+            "An orchestrator_* business series must carry service_name=orchestrator_3.4.0 AND a non-empty "
+            + "service_instance_id (MLBL-01/02).");
+
+        // MLBL-01 — runtime family carries the combined service_name. Extends the pre-existing unfiltered
+        // runtime instance-id assertion (above) with a service_name-FILTERED runtime selector: a
+        // process_runtime_dotnet_* series filtered by an emitting console's combined name (orchestrator)
+        // must still return non-empty, proving the combine reaches the runtime instrument family too.
+        var runtimeNamed = await prom.PollPromForQuery(
+            "{__name__=~\"process_runtime_dotnet_.*\",service_name=\"orchestrator_3.4.0\"}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(runtimeNamed); // runtime family carries the combined service_name (MLBL-01)
 
         // NET-ZERO-31 (Phase 31.1): stop the workflow so its self-rescheduling cron fire ceases — left
         // running it mints a fresh per-fire skp:flag:{H} every minute, churning the close-gate redis
@@ -316,7 +372,11 @@ public sealed class MetricsRoundTripE2ETests
 
     // ── HTTP seeding helpers (Processor → Step → Workflow) — mirrors SampleRoundTripE2ETests ──
 
-    private static async Task<Guid> SeedProcessorAsync(HttpClient client, string sourceHash, CancellationToken ct)
+    // Returns the seeded processor's Id PLUS its DB Name/Version — MLBL-03 (ii) asserts the live
+    // processor's steady-state metric service_name = {Name}_{Version} sourced from THIS row, so the
+    // caller must know the actual seeded identity (GET-or-create means a pre-existing row's values win).
+    private static async Task<(Guid Id, string Name, string Version)> SeedProcessorAsync(
+        HttpClient client, string sourceHash, CancellationToken ct)
     {
         // GET-or-create (idempotent): the genuine embedded hash is FIXED and guarded by the unique
         // uq_processor_source_hash constraint that persists across runs. Resolve the existing row by hash
@@ -325,7 +385,7 @@ public sealed class MetricsRoundTripE2ETests
         if (lookup.StatusCode == HttpStatusCode.OK)
         {
             var existing = await lookup.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
-            return existing!.Id;
+            return (existing!.Id, existing.Name, existing.Version);
         }
 
         var dto = new ProcessorCreateDto(
@@ -339,7 +399,7 @@ public sealed class MetricsRoundTripE2ETests
         var resp = await client.PostAsJsonAsync("/api/v1/processors", dto, ct);
         resp.EnsureSuccessStatusCode();
         var proc = await resp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
-        return proc!.Id;
+        return (proc!.Id, proc.Name, proc.Version);
     }
 
     private static async Task<Guid> SeedStepAsync(HttpClient client, Guid processorId, CancellationToken ct)
