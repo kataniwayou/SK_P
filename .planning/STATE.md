@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
+status: ready_to_plan
 stopped_at: Completed 37-04-PLAN.md
 last_updated: "2026-06-06T03:40:00.000Z"
 last_activity: 2026-06-06
 progress:
   total_phases: 41
-  completed_phases: 38
+  completed_phases: 39
   total_plans: 137
   completed_plans: 150
-  percent: 100
+  percent: 95
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
-Phase: 37 (orchestrator-pause-resume-coordination) — COMPLETE (4/4 plans; hermetic-complete, live round-trip operator-pending for Phase-39 gate)
-Plan: 4 of 4 COMPLETE (Wave 0 Plan 01 RED + Wave 1 Plan 02 contracts/scheduler + Wave 2 Plan 03 orchestrator consumers + Wave 2 Plan 04 Keeper publish sites — all GREEN)
-Status: Phase 37 complete — next is Phase 38 (uniform metric labels)
+Phase: 38
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-06
 
 ### Phase 37 Plan 04 — COMPLETE (Wave 2 GREEN: Keeper publish sites; KeeperPausePublishTests RED→GREEN 2/2; FULL phase-37 assembly now compiles end-to-end; 2026-06-06)
@@ -555,7 +555,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 131
+- Total plans completed: 135
 - Average duration: —
 - Total execution time: —
 
@@ -597,6 +597,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 34 | 3 | - | - |
 | 35 | 3 | - | - |
 | 36 | 4 | - | - |
+| 37 | 4 | - | - |
 
 **Recent Trend:**
 
