@@ -68,8 +68,12 @@ public static class ObservabilityServiceCollectionExtensions
         // propagates to the metrics provider. Traces pipeline REMOVED in Phase 11 (D-03).
         builder.Services.AddOpenTelemetry()
             .ConfigureResource(r => r
-                .AddService(serviceName: serviceName, serviceVersion: serviceVersion)
-                .AddAttributes(instanceAttrs))    // Phase 30 METRIC-01/02/03 — every metric carries service.instance.id
+                // MLBL-01/D-01: the METRICS resource service.name is the combined {name}_{version}
+                // (e.g. sk-api_3.2.0) so every Prom series carries a single human label. service.version
+                // is still set standalone (D-07). The LOGS SetResourceBuilder block above stays BARE
+                // (MLBL-04 / Pitfall 5 — protects the Phase-35 ES service.name="keeper" query contract).
+                .AddService(serviceName: $"{serviceName}_{serviceVersion}", serviceVersion: serviceVersion)
+                .AddAttributes(instanceAttrs))    // Phase 30 METRIC-01/02/03 — every metric carries service.instance.id; service_name={name}_{version} (MLBL-01)
             .WithMetrics(m => m
                 // OpenTelemetry.Instrumentation.AspNetCore 1.15.0's metrics-side
                 // AddAspNetCoreInstrumentation is parameterless (no opts.Filter overload on
