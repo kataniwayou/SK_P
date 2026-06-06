@@ -386,7 +386,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 35. Fault Intake & Correlation | v3.7.0 | 3/3 | Complete    | 2026-06-05 |
 | 36. L2 Health-Probe Recovery Loop & DLQs | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
 | 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
-| 38. Uniform `service_name` + Instance Labels Across All Metrics | v3.7.0 | 0/? | Not started | — |
+| 38. Uniform `service_name` + Instance Labels Across All Metrics | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
 | 39. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
 | 40. Keeper Recovery Hardening (gap closure) | v3.7.0 | 3/3 | Complete (live gate Manual-Only) | 2026-06-06 |
 | 41. Orchestrator Pause/Resume Diagnostics (gap closure) | v3.7.0 | 2/2 | Complete    | 2026-06-06 |
