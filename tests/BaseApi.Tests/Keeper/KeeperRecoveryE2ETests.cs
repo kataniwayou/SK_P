@@ -388,6 +388,13 @@ public sealed class KeeperRecoveryE2ETests
             await bus.StopAsync(ct);
         }
 
+        // Phase-39 net-zero: deterministically drain keeper-dlq. The synthetic Fault<ExecutionResult> is
+        // PUBLISHED, so BOTH keeper replicas can independently give up + park to keeper-dlq, at DIFFERENT times
+        // (>10s apart) — a timing-based in-test-probe drain misses the late one and leaves keeper-dlq at depth 1,
+        // failing the close gate's keeper-dlq==0 invariant. The park was already PROVEN above via the probe;
+        // purge the terminal queue here so the invariant holds regardless of replica/park timing.
+        await PurgeKeeperDlqAsync(ct);
+
         // Net-zero teardown: stop the workflow; the keeper-dlq parked message was ACK-drained by the in-test probe
         // (the terminal queue is purged so the Phase-39 close-gate snapshot stays net-zero); the poisoned
         // skp:data:{entryId} key is registered for deletion; assert the skp:keeper:probe:* family is net-zero.
@@ -499,6 +506,19 @@ public sealed class KeeperRecoveryE2ETests
     /// <c>Fault&lt;T&gt;</c> carrying <c>Exceptions[]</c>). Capturing == acking, so this DRAINS the terminal queue
     /// (net-zero for the Phase-39 close gate — keeper-dlq must be empty in both snapshots).
     /// </summary>
+    // Phase-39: deterministically drain keeper-dlq via the rabbitmq management API (host port 15673). Used by
+    // the give-up test's net-zero teardown to remove any 2-replica duplicate park the in-test probe missed —
+    // the park is already proven; this guarantees the close gate's keeper-dlq==0 snapshot regardless of timing.
+    private static async Task PurgeKeeperDlqAsync(CancellationToken ct)
+    {
+        using var http = new System.Net.Http.HttpClient { BaseAddress = new Uri("http://localhost:15673") };
+        var auth = Convert.ToBase64String(Encoding.ASCII.GetBytes("guest:guest"));
+        http.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", auth);
+        try { await http.DeleteAsync("/api/queues/%2F/keeper-dlq/contents", ct); }
+        catch { /* best-effort terminal-queue drain */ }
+    }
+
     private sealed class KeeperDlqProbe(ConcurrentBag<string> capturedHashes)
         : IConsumer<Fault<ExecutionResult>>
     {
