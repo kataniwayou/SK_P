@@ -334,8 +334,8 @@ Plans:
   1. `WorkflowLifecycle.ResumeAsync` emits an informational log on the `state != TriggerState.Paused` ignore branch (WorkflowId + observed state), so a Resume that arrives mid-fire and is dropped is observable in logs.
   2. `WorkflowScheduler.RescheduleAsync` no longer assumes the non-durable job still exists on the `RescheduleJob`-returns-null fallback path — it either re-creates the job+trigger or fails loudly with a clear message rather than an opaque Quartz throw. Hermetic test covers the fallback path.
 **Plans:** 2 plans (Wave 1, parallel)
-- [ ] 41-01-PLAN.md — WR-01: informational log on the ResumeAsync non-Paused ignore branch (WorkflowId + observed TriggerState; log-only, no re-arm) (Wave 1)
-- [ ] 41-02-PLAN.md — WR-02: thread workflowId into RescheduleAsync + re-create full job+trigger in the purged-job fallback so it cannot throw; hermetic fallback test (Wave 1)
+- [x] 41-01-PLAN.md — WR-01: informational log on the ResumeAsync non-Paused ignore branch (WorkflowId + observed TriggerState; log-only, no re-arm) (Wave 1) (completed 2026-06-07 — 9e14eeb; LogInformation on ignore branch, no behavioral re-arm per D-01/D-02; hermetic 504/0, Release 0-warning)
+- [x] 41-02-PLAN.md — WR-02: thread workflowId into RescheduleAsync + re-create full job+trigger in the purged-job fallback so it cannot throw; hermetic fallback test (Wave 1) (completed 2026-06-07 — de0cec0/0edeb53; 4-arg RescheduleAsync re-creates job+trigger in null-fallback per D-04, RescheduleSchedulingTests asserts re-establishment per D-06; hermetic 505/0, Release 0-warning)
 
 ### Phase 42: v3.7.0 Docs & Traceability Reconciliation
 **Goal**: REQUIREMENTS.md and ROADMAP.md tell the truth about v3.7.0 before archival — every satisfied requirement is checked, MLBL is in the traceability table, counts are correct, and the close-gate phase has a VERIFICATION.md.

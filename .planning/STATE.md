@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: verifying
+status: executing
 stopped_at: Phase 41 context gathered
-last_updated: "2026-06-06T22:19:01.932Z"
-last_activity: 2026-06-06 -- Phase 40 verified complete; next is Phase 41 (orchestrator pause/resume diagnostics, no CONTEXT.md yet)
+last_updated: "2026-06-06T22:24:13.320Z"
+last_activity: 2026-06-06 -- Phase 41 execution started
 progress:
   total_phases: 45
   completed_phases: 42
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 41 — orchestrator-pause-resume-diagnostics (next; not started)
+**Current focus:** Phase 41 — orchestrator-pause-resume-diagnostics
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
-Phase: 40 (keeper-recovery-hardening) — COMPLETE & VERIFIED (9/9 must-haves; status human_needed — live 3×-GREEN close-gate Manual-Only, tracked in 40-HUMAN-UAT.md)
-Plan: 3 of 3 (all complete) — next phase is 41 (not started)
-Status: Phase 40 verified complete + threat-secure (40-SECURITY.md threats_open:0, 10/10 closed). 40-01 KHARD-03 keystone + 40-02 KHARD-01 cap + 40-03 KHARD-02 drain. Code review WR-01 (T-40-05 counter-key leak) + WR-03 (T-40-06 silent fault drop) FIXED in 9e9b578 (atomic Lua INCR+PEXPIRE; retry-safe n>=cap+1 must-park); WR-02 quarantine-vs-rate-limit left as advisory. 495 hermetic tests green, Release 0-warning. Live multi-replica 3×-GREEN close-gate (4 rebuilt containers) is the one outstanding human-verification item (40-HUMAN-UAT.md).
-Last activity: 2026-06-06 -- Phase 40 verified complete; next is Phase 41 (orchestrator pause/resume diagnostics, no CONTEXT.md yet)
+Phase: 41 (orchestrator-pause-resume-diagnostics) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 41
+Last activity: 2026-06-06 -- Phase 41 execution started
 
 ### Phase 40 Plan 03 — COMPLETE (Wave 2: KHARD-02 poll-until-stably-empty keeper-dlq drain; the lone GATE_EXIT=1 flake cleared; 2026-06-06)
 
