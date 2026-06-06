@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: planning
-stopped_at: Phase 38 context gathered
+status: executing
+stopped_at: Phase 38 execution started
 last_updated: "2026-06-06T06:42:41.341Z"
 last_activity: 2026-06-06
 progress:
@@ -21,15 +21,23 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 37 — orchestrator-pause-resume-coordination
+**Current focus:** Phase 38 — metrics-service-instance-labels
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
 Phase: 38
-Plan: Not started
-Status: Ready to plan
+Plan: Wave 1 — 38-01, 38-02
+Status: Executing
 Last activity: 2026-06-06
+
+### Phase 38 Plan 01 — COMPLETE (Wave 1: processor identity round-trip Name/Version plumbing — MLBL-03 (i) contract/context half; 2026-06-06)
+
+- **2 task commits (scoped src/ + tests/ paths only — pre-existing untracked items left UNtouched).** `1ccae71` (feat: carry Name+Version through the identity contract+responder, TDD), `867edaf` (feat: expose Name+Version on IProcessorContext/ProcessorContext). NO file deletions (git diff --diff-filter=D clean both commits). Wave 1, depends_on [], autonomous:true, type:execute.
+- **Task 1 (tdd) — contract + responder:** `ProcessorIdentityFound` positional record extended with `string Name, string Version`; `GetProcessorBySourceHashConsumer` populates them from `p.Name`/`p.Version` (ProcessorReadDto); `ProcessorResponderTests` asserts seeded `Name="seed"`/`Version="1.0.0"` on the Found response. RED proven (CS1061 missing members) before GREEN; folded into one feat commit because a positional-record param cannot compile apart from its construction sites.
+- **Task 2 — context plumbing (CS0535 firewall):** `IProcessorContext` + `ProcessorContext` expose `string? Name`/`Version` (WR-03 plain auto-props, stored in `SetIdentity`); all three test fakes updated (`StubContext`/`FakeProcessorContext` settable, `RecordingContext` delegate-to-inner).
+- **Deviation [Rule 3 - Blocking]:** the positional extension broke 3 *additional* test construction sites the plan's `<interfaces>` note had not enumerated (`SchemaResolutionFacts.cs` ×2, `ProcessorTestHarness.cs`) — fixed inline with placeholder `Name:"proc", Version:"1.0.0"` (folded into `1ccae71`, since the build can't pass without them). No architectural changes, no auth gates, no stubs.
+- **Verification:** `dotnet build SK_P.sln` 0 Warning / 0 Error in BOTH Debug + Release (CS0535 firewall holds). `ProcessorResponderTests` 2/2 GREEN; `SchemaResolutionFacts`+`DispatchBindSequenceFacts`+`ProcessorIdEnricherTests` 6/6 GREEN (run via the MTP `BaseApi.Tests.exe --filter-class`; `dotnet test --filter-not-trait` is unusable on this MTP project). SUMMARY: 38-01-SUMMARY.md (Self-Check PASSED). Provides `found.Message.Name`/`.Version` for the Plan 38-03 MeterProvider swap call-site.
 
 ### Phase 37 Plan 04 — COMPLETE (Wave 2 GREEN: Keeper publish sites; KeeperPausePublishTests RED→GREEN 2/2; FULL phase-37 assembly now compiles end-to-end; 2026-06-06)
 
