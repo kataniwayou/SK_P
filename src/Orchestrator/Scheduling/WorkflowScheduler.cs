@@ -18,6 +18,8 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
 {
     private static JobKey KeyFor(Guid jobId) => new(jobId.ToString("D"));
 
+    private static TriggerKey TriggerKeyFor(Guid jobId) => new(jobId.ToString("D"));
+
     /// <summary>
     /// Schedule the one-shot job for <paramref name="workflowId"/> keyed by <paramref name="jobId"/>,
     /// firing at the next Cronos occurrence of <paramref name="cron"/>. If there is no future
@@ -39,6 +41,7 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
             .Build();
 
         var trigger = TriggerBuilder.Create()
+            .WithIdentity(TriggerKeyFor(jobId))
             .ForJob(jobKey)
             .StartAt(new DateTimeOffset(nextUtc, TimeSpan.Zero))
             .WithSimpleSchedule(s => s.WithMisfireHandlingInstructionFireNow())
@@ -62,6 +65,7 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
         }
 
         var trigger = TriggerBuilder.Create()
+            .WithIdentity(TriggerKeyFor(jobId))
             .ForJob(KeyFor(jobId))
             .StartAt(new DateTimeOffset(nextUtc, TimeSpan.Zero))
             .WithSimpleSchedule(s => s.WithMisfireHandlingInstructionFireNow())
@@ -75,4 +79,13 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
     /// </summary>
     public Task UnscheduleAsync(Guid jobId, CancellationToken ct) =>
         scheduler.DeleteJob(KeyFor(jobId), ct);
+
+    /// <summary>Pause the job's current triggers (Quartz PauseJob) — Pause, D-06/D-08. Idempotent.</summary>
+    public Task PauseAsync(Guid jobId, CancellationToken ct) =>
+        scheduler.PauseJob(KeyFor(jobId), ct);
+
+    /// <summary>Read the deterministic trigger's state (Normal=Running / Paused / None=Stopped) — D-05.
+    /// Returns None for an unknown key (RESEARCH §4), never throws.</summary>
+    public Task<TriggerState> GetTriggerStateAsync(Guid jobId, CancellationToken ct) =>
+        scheduler.GetTriggerState(TriggerKeyFor(jobId), ct);
 }
