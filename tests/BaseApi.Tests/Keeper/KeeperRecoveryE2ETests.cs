@@ -375,6 +375,13 @@ public sealed class KeeperRecoveryE2ETests
             // Probe (5s × 12 = 60s) the loop exhausts ~60s after intake; allow the full window + park latency.
             var parked = await PollForDlqParkAsync(giveUpH, ct);
             Assert.Equal(giveUpH, parked);
+
+            // 2-replica drain (Phase-39): the synthetic Fault<ExecutionResult> is PUBLISHED, so BOTH keeper
+            // replicas independently consume + give up + park to keeper-dlq (~simultaneously, ~60s after intake).
+            // PollForDlqParkAsync returns on the FIRST park; keep the in-test probe alive briefly so it also
+            // ACK-drains the SECOND replica's park before the bus stops — otherwise keeper-dlq is left at depth 1
+            // and the close gate's keeper-dlq==0 invariant fails.
+            await Task.Delay(TimeSpan.FromSeconds(10), ct);
         }
         finally
         {
