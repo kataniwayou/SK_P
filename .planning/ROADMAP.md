@@ -348,6 +348,11 @@ Plans:
   3. The ROADMAP.md progress table Phase-38 row reads its true plan count + "Complete" (not "0/? Not started").
   4. `39-VERIFICATION.md` exists for the close-gate phase, recording the 3×500 GREEN triple-SHA result and the accepted keeper-dlq drain-timing follow-up.
 
+**Plans:** 3 plans (Wave 1, all parallel - disjoint files)
+- [ ] 42-01-PLAN.md - REQUIREMENTS.md: flip satisfied checkboxes [x] + reconcile traceability rows + add MLBL-01..05 + correct coverage footer (SC1, SC2)
+- [ ] 42-02-PLAN.md - ROADMAP.md: fix Progress-table Phase-38 row to 4/4 Complete (SC3)
+- [ ] 42-03-PLAN.md - backfill 39-VERIFICATION.md from close-gate evidence (SC4)
+
 ## Progress
 
 **Execution Order:**
