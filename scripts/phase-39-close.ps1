@@ -170,11 +170,18 @@ try {
     Write-Host "Pre-flight: compose stack health check..." -ForegroundColor Cyan
     $services = @('postgres', 'redis', 'rabbitmq', 'otel-collector', 'elasticsearch', 'prometheus', 'orchestrator', 'processor-sample', 'baseapi-service', 'keeper')   # + keeper (DELTA 1)
     foreach ($svc in $services) {
-        $raw = docker compose ps $svc --format json 2>$null | Out-String
-        $parsed = if ([string]::IsNullOrWhiteSpace($raw)) { $null } else { $raw | ConvertFrom-Json }
-        $health = if ($null -eq $parsed) { 'not-running' }
-                  elseif ($parsed -is [array]) { $parsed[0].Health }
-                  else { $parsed.Health }
+        # `docker compose ps --format json` emits NDJSON (one object per line). A multi-replica
+        # service (keeper has replicas: 2) yields several lines, so the concatenated string cannot
+        # be fed to a single ConvertFrom-Json — parse line-by-line and require ALL instances healthy
+        # (DELTA 1 fix: phase-33 assumed one container per service).
+        $instances = @(docker compose ps $svc --format json 2>$null |
+            Where-Object { $_ -match '\S' } |
+            ForEach-Object { $_ | ConvertFrom-Json })
+        $health = if ($instances.Count -eq 0) { 'not-running' }
+                  else {
+                      $unhealthy = @($instances | Where-Object { $_.Health -ne 'healthy' })
+                      if ($unhealthy.Count -gt 0) { "$($unhealthy[0].Health)" } else { 'healthy' }
+                  }
         if ($health -ne 'healthy' -and $svc -ne 'otel-collector') {
             Write-Host "Service '$svc' is not healthy (Health=$health). Aborting." -ForegroundColor Red
             exit 2
