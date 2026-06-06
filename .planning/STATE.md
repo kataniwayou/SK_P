@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 42-02-PLAN.md
+stopped_at: Completed 42-03-PLAN.md
 last_updated: "2026-06-07T00:00:00.000Z"
-last_activity: 2026-06-07 -- Phase 42 Plan 02 complete (ROADMAP Phase-38 Progress row reconciled)
+last_activity: 2026-06-07 -- Phase 42 Plan 03 complete (39-VERIFICATION.md backfilled from close-gate evidence, SC4)
 progress:
   total_phases: 45
   completed_phases: 43
@@ -27,9 +27,18 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
 Phase: 42 (v3.7.0-docs-traceability-reconciliation) — EXECUTING
-Plan: 3 of 3 (Plans 01-02 complete)
+Plan: 3 of 3 complete (Plans 01-03 done)
 Status: Executing Phase 42
-Last activity: 2026-06-07 -- Phase 42 Plan 02 complete (ROADMAP Phase-38 Progress row reconciled)
+Last activity: 2026-06-07 -- Phase 42 Plan 03 complete (39-VERIFICATION.md backfilled from close-gate evidence, SC4)
+
+### Phase 42 Plan 03 — COMPLETE (Wave 1: backfill 39-VERIFICATION.md from close-gate evidence, SC4; 2026-06-07)
+
+- **1 task commit (scoped to the NEW `.planning/phases/39-keeper-observability-real-stack-e2e-close-gate/39-VERIFICATION.md` ONLY — pre-existing untracked items .claude/ / 27-PATTERNS.md / psql-*.txt / launchSettings.json left UNtouched; NO file deletions, git diff --diff-filter=D clean).** `a1ab46d` (docs: backfill 39-VERIFICATION.md from close-gate evidence). Wave 1, depends_on [], autonomous:true, type:execute.
+- **The backfill (SC4):** Phase 39 was the only v3.7.0 phase missing a VERIFICATION.md (38/40/41 each have one). Created a 143-line report modeled on 41-VERIFICATION.md's shape (frontmatter phase/verified/status: passed/score 6/6/overrides_applied 0/backfilled: true; Observable Truths; Required Artifacts; Key Link Verification; Requirements Coverage; Accepted Follow-Up; Cross-Cutting Fixes; Gaps Summary). Facts transcribed faithfully from 39-04-SUMMARY (operator run 2026-06-06, bw615ju9t/b1xvh3508): 3x500 GREEN (Run 1/2/3 = 500/500/500), Release+Debug 0-warning, triple-SHA psql 34ac2385 / redis b2d8ec21 / rabbitmq ee79f392 BEFORE==AFTER HELD, skp-dlq-1 depth==0 HELD. Mapped all six REQ-IDs (KMET-01/02/03, TEST-01/02/03) to VERIFIED.
+- **keeper-dlq follow-up recorded (D-04/D-05):** the lone keeper-dlq depth=1 drain-timing artifact (GATE_EXIT=1 on that invariant only; TEST-03 SUBSTANCE met) is documented as an accepted single-LATE give-up-park test-teardown race (single shared keeper-fault-recovery competing-consumer queue → not a duplicate) and CLOSED by KHARD-02 (Phase 40, 40-03 poll-until-stably-empty drain) — cross-referenced, NOT re-verified. Gate NOT re-run (D-05): no RealStack, no container rebuild, no test execution.
+- **Encoding discipline (MEMORY landmine):** new file written BOM-less UTF-8 via the Write tool (not Set-Content/Out-File); genuine UTF-8 glyphs (em-dash, ≈) where natural + ASCII tokens (3x500, ->, ~) elsewhere; NO pre-mojibaked bytes. Byte-level acceptance check PASSED: lines=143 green=10 sha=9 dlq=14 khard=7 BOM=False mojibake=0.
+- **Deviations:** None (content). Tooling adaptation only — the in-plan PowerShell acceptance one-liner could not run through the Bash tool (bash consumed the `$` vars + Windows PS 5.x decoded the BOM-less verify script as ANSI); resolved by a standalone `.ps1` invoked via `powershell -File` doing a byte-level UTF-8 decode + 0xC3-lead mojibake scan, then deleted (never committed). No architectural changes, no auth gates, no stubs, no new threat surface (doc-only local markdown).
+- **Verification:** Task verify PASSED. Self-Check PASSED (39-VERIFICATION.md + 42-03-SUMMARY.md exist, both BOM=False mojibake=0; commit a1ab46d exists). SUMMARY: 42-03-SUMMARY.md. **Phase 42 Wave 1 = 3/3 plans complete — all four SCs (REQUIREMENTS checkboxes, MLBL rows, ROADMAP Phase-38 row, 39-VERIFICATION.md backfill) delivered. `roadmap update-plan-progress` is a known no-op on this ROADMAP format; orchestrator reconciles ROADMAP/STATE milestone counters + Phase-42 phase-row after the wave.**
 
 ### Phase 42 Plan 02 — COMPLETE (Wave 1: ROADMAP.md Phase-38 Progress-row reconciliation, SC3; 2026-06-07)
 
