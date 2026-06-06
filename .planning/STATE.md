@@ -4,12 +4,12 @@ milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: verifying
 stopped_at: Phase 41 context gathered
-last_updated: "2026-06-06T21:56:57.597Z"
+last_updated: "2026-06-06T22:19:01.932Z"
 last_activity: 2026-06-06 -- Phase 40 verified complete; next is Phase 41 (orchestrator pause/resume diagnostics, no CONTEXT.md yet)
 progress:
   total_phases: 45
   completed_phases: 42
-  total_plans: 148
+  total_plans: 150
   completed_plans: 162
   percent: 100
 ---
@@ -1247,4 +1247,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 40 (keeper-recovery-hardening) — 3 plans — 2026-06-06T19:29:01.811Z
+**Planned Phase:** 41 (orchestrator-pause-resume-diagnostics) — 2 plans — 2026-06-06T22:19:01.916Z
