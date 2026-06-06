@@ -283,7 +283,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   5. All in-repo Prometheus query consumers (incl. the Phase-11 `service_name="sk-api"` round-trip assertion) are updated to the combined label and pass; no high-cardinality labels introduced.
 **Plans**: 4 plans
   - [x] 38-01-PLAN.md - Processor identity round-trip: extend ProcessorIdentityFound + responder + IProcessorContext with Name/Version; update 3 IProcessorContext fakes (CS0535 firewall) (MLBL-03) (completed 2026-06-06 — ProcessorResponderTests 2/2 GREEN; SK_P.sln 0/0 Debug+Release; commits 1ccae71, 867edaf)
-  - [ ] 38-02-PLAN.md - Combine service_name={name}_{version} on the metrics resource (both base libs); keep logs bare + hermetic guard; reconcile PromQL literals to sk-api_3.2.0 (MLBL-01/04/05)
+  - [x] 38-02-PLAN.md - Combine service_name={name}_{version} on the metrics resource (both base libs); keep logs bare + hermetic guard; reconcile PromQL literals to sk-api_3.2.0 (MLBL-01/04/05) (completed 2026-06-06 — 26/26 hermetic Observability GREEN; LogsResourceBareNameFacts 1/1; SK_P.sln 0/0 Release; 0 bare service_name literals; commits 013bc0a, 39792b3, 4d67977)
   - [ ] 38-03-PLAN.md - MeterProviderHolder swap (Model A1): placeholder->DB service.name on identity-resolve in Loop A; hermetic MeterProviderHolderFacts (MLBL-03)
   - [ ] 38-04-PLAN.md - RealStack scrape gate: combined service_name + non-empty service_instance_id across runtime/HTTP/business; DB-sourced processor series; appsettings-retained + MLBL-05 inventory (MLBL-01/02/03/05)
 

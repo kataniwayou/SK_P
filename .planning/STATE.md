@@ -27,9 +27,18 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
 Phase: 38
-Plan: Wave 1 — 38-01, 38-02
+Plan: Wave 1 — 38-01 COMPLETE, 38-02 COMPLETE
 Status: Executing
 Last activity: 2026-06-06
+
+### Phase 38 Plan 02 — COMPLETE (Wave 1: combined metrics service_name={name}_{version} + bare-logs hermetic guard + PromQL literal reconcile — MLBL-01/04/05; 2026-06-06)
+
+- **3 task commits (scoped src/ + tests/ paths only — pre-existing untracked items psql-*.txt/.claude/27-PATTERNS.md/launchSettings.json left UNtouched).** `013bc0a` (feat: combine metrics service.name to {name}_{version}; keep logs bare), `39792b3` (test: hermetic logs-resource bare-name guard), `4d67977` (feat: reconcile in-repo PromQL literals to sk-api_3.2.0). NO file deletions (git diff --diff-filter=D clean all 3). Wave 1, depends_on [], autonomous:true, type:execute. Shares NO files with 38-01.
+- **Task 1 — metrics combine (MLBL-01/D-01 + D-07):** both base libs' metrics `ConfigureResource` block now `AddService(serviceName: $"{serviceName}_{serviceVersion}", serviceVersion: serviceVersion)` (BaseConsoleObservabilityExtensions.cs + ObservabilityServiceCollectionExtensions.cs); service.version kept standalone (D-07). LOGS `SetResourceBuilder` blocks UNTOUCHED (MLBL-04 — protects Phase-35 ES service.name="keeper"). grep `_{serviceVersion}` over src/ = exactly 1 hit/file, both in the metrics block.
+- **Task 2 (tdd) — hermetic logs guard (MLBL-04):** NEW `tests/BaseApi.Tests/Observability/LogsResourceBareNameFacts.cs` builds a bare keeper logs provider, reads service.name off `BaseProcessor<LogRecord>.ParentProvider.GetResource().Attributes`, asserts `== "keeper"` + `DoesNotContain "_3.7.0"`. Authored GREEN-by-construction (Task 1 left logs bare → no RED-first gap); standing regression guard (a logs-side combine leak → RED). SDK seam confirmed via reflection (OpenTelemetry 1.15.1 net8.0: ProviderExtensions.GetResource → Resource.Attributes).
+- **Task 3 — PromQL reconcile (MLBL-05/D-08):** 4 query literals → `service_name="sk-api_3.2.0"` (MetricsExportTests ×3, SchemasMetricsE2ETests ×1) + doc-comment narratives (PrometheusTestClient) + unquoted diagnostic message strings. grep `service_name="sk-api"` (quoted bare) over tests/ = 0; `service_name="(sk-api|orchestrator|keeper|processor-sample)"` = 0; `sk-api_3.2.0` = 7 occurrences.
+- **No deviations** (plan executed as written; the only minor expansion was reconciling unquoted diagnostic message strings for truthfulness — no behavior change, did not affect the MLBL-05 quoted-literal grep gate). No architectural changes, no auth gates, no stubs, no new threat surface (T-38-03 accept / T-38-04 mitigate via the new guard test).
+- **Verification:** `dotnet build SK_P.sln -c Release` 0 Warning / 0 Error (after Task 1 + Task 3). `LogsResourceBareNameFacts` 1/1 GREEN; full hermetic Observability namespace (`-- --filter-not-trait "Category=RealStack" --filter-namespace "BaseApi.Tests.Observability"`) **26/26 GREEN**. RealStack live-Prom E2E excluded (operator/Phase-39 live gate — those now expect sk-api_3.2.0). SUMMARY: 38-02-SUMMARY.md (Self-Check PASSED). **Phase 38 Wave 1 = 2/2 plans complete** (38-01 identity plumbing + 38-02 metric-label combine); next is Wave 2 (38-03 processor MeterProvider swap, depends on 38-01's found.Message.Name/Version + 38-02's combine pattern).
 
 ### Phase 38 Plan 01 — COMPLETE (Wave 1: processor identity round-trip Name/Version plumbing — MLBL-03 (i) contract/context half; 2026-06-06)
 
@@ -1150,9 +1159,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-06T05:46:52.786Z
-Stopped at: Phase 38 context gathered
-Resume file: .planning/phases/38-metrics-service-instance-labels/38-CONTEXT.md
+Last session: 2026-06-06T07:11:24Z
+Stopped at: Completed 38-02-PLAN.md (Phase 38 Wave 1 complete: 38-01 + 38-02)
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
