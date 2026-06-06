@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
+status: ready_to_plan
 stopped_at: Phase 41 context gathered
 last_updated: "2026-06-06T22:24:13.320Z"
 last_activity: 2026-06-06 -- Phase 41 execution started
 progress:
   total_phases: 45
-  completed_phases: 42
+  completed_phases: 43
   total_plans: 150
   completed_plans: 162
-  percent: 100
+  percent: 96
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 41 — orchestrator-pause-resume-diagnostics
+**Current focus:** Phase 42 — v3.7.0-docs-traceability-reconciliation (Phase 41 complete)
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
-Phase: 41 (orchestrator-pause-resume-diagnostics) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 41
-Last activity: 2026-06-06 -- Phase 41 execution started
+Phase: 42
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-06-06
 
 ### Phase 40 Plan 03 — COMPLETE (Wave 2: KHARD-02 poll-until-stably-empty keeper-dlq drain; the lone GATE_EXIT=1 flake cleared; 2026-06-06)
 
@@ -647,7 +647,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 139
+- Total plans completed: 141
 - Average duration: —
 - Total execution time: —
 
@@ -691,6 +691,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 36 | 4 | - | - |
 | 37 | 4 | - | - |
 | 39 | 4 | - | - |
+| 41 | 2 | - | - |
 
 **Recent Trend:**
 
