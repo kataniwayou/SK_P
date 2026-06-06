@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Completed 38-04-PLAN.md (Phase 38 Wave 3 — RealStack gate GREEN)
-last_updated: "2026-06-06T11:10:00.000Z"
+status: planning
+stopped_at: Phase 38 COMPLETE (verified 5/5; hermetic + live RealStack GREEN) — ready for Phase 39
+last_updated: "2026-06-06T11:15:00.000Z"
 last_activity: 2026-06-06
 progress:
   total_phases: 41
@@ -21,15 +21,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 38 — metrics-service-instance-labels
+**Current focus:** Phase 39 — Keeper observability + real-stack E2E + close gate (Phase 38 complete)
 
 ## Current Position
 
-Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
-Phase: 38
-Plan: Wave 1 — 38-01 COMPLETE, 38-02 COMPLETE; Wave 2 — 38-03 COMPLETE; Wave 3 — 38-04 COMPLETE (all 4 plans done — RealStack gate GREEN; phase hermetic + live complete)
-Status: Executing
+Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 6/7 complete — Phase 38 complete (hermetic + live RealStack GREEN); Phase 39 close gate remains)
+Phase: 39 (next — not started)
+Plan: Not started
+Status: Phase 38 COMPLETE (verified 5/5 must-haves) — ready to plan Phase 39
 Last activity: 2026-06-06
+
+### Phase 38 — COMPLETE (all 4 plans; verified 5/5 must-haves; code review 0 critical / 2 warning advisory; 2026-06-06)
+
+- **Goal achieved:** every Prometheus metric series (runtime/HTTP/business) for the 4 consoles carries `service_name={name}_{version}` + non-empty `service_instance_id`; processor name/version DB-sourced via the MeterProvider swap (after identity Loop A); LOGS `service.name` stays bare; in-repo PromQL consumers reconciled. No live operator step required (hermetic + scrape-assertion provable).
+- **Evidence:** hermetic suite 479 passed / 0 failed (0-warning Release); live RealStack `MetricsRoundTripE2ETests` 1/1 GREEN after rebuilding the 3 stale (22h-old) app containers — :9090 scrape confirmed `sk-api_3.2.0`, `orchestrator_3.4.0`, and DB-sourced `sample-proc-…_1.0.0` (boot-placeholder series count=0). Verifier 5/5 → `38-VERIFICATION.md` status: passed.
+- **Code review (advisory, non-blocking):** `38-REVIEW.md` — 2 warnings on `MeterProviderHolder` lifecycle: WR-01 (no memory barrier on the `_current` swap field — shutdown racing the swap could leak provider #2); WR-02 (prior-provider leak + `BackgroundService` host-fault if `ForceFlush` throws before `Dispose`). Candidate for `/gsd-code-review-fix 38` or a Phase-39 hygiene pass.
 
 ### Phase 38 Plan 04 — COMPLETE (Wave 3: RealStack metrics round-trip gate — combined service_name + non-empty service_instance_id across runtime/HTTP/business + DB-sourced processor series; MLBL-01/02/03(ii,iii)/05 live; 2026-06-06)
 
