@@ -294,9 +294,10 @@ public sealed class KeeperMetricsFacts
         {
             var metrics = MetricsFor(provider.GetRequiredService<IMeterFactory>());
             // Up Redis → the probe recovers on the first iteration → the recovered branch fires.
-            var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer, Opts(), metrics);
+            var capRedis = new FakeRedis(FakeRedis.RedisHealth.Up);   // KHARD-01: cap counter reachable (n=1 <= cap → reinject, recovered metrics)
+            var recovery = new L2ProbeRecovery(capRedis.Multiplexer, Opts(), metrics);
             // KHARD-03 (Phase-40): the consumer now delegates to the shared KeeperRecoveryHandler.
-            var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics);
+            var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics, capRedis.Multiplexer, Opts());
             var consumer = new FaultEntryStepDispatchConsumer(handler);
 
             await consumer.Consume(FaultContext(inner));
@@ -337,9 +338,10 @@ public sealed class KeeperMetricsFacts
         {
             var metrics = MetricsFor(provider.GetRequiredService<IMeterFactory>());
             // Down Redis for all attempts → give-up branch fires + one l2_probe_failed per attempt.
-            var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Down).Multiplexer, Opts(maxAttempts: 2), metrics);
+            var capRedis = new FakeRedis(FakeRedis.RedisHealth.Down);   // GaveUp → the cap check is never reached
+            var recovery = new L2ProbeRecovery(capRedis.Multiplexer, Opts(maxAttempts: 2), metrics);
             // KHARD-03 (Phase-40): the consumer now delegates to the shared KeeperRecoveryHandler.
-            var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics);
+            var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics, capRedis.Multiplexer, Opts());
             var consumer = new FaultEntryStepDispatchConsumer(handler);
 
             await consumer.Consume(FaultContext(inner));

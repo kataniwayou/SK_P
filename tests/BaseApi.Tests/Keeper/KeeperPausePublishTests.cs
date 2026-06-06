@@ -77,9 +77,10 @@ public sealed class KeeperPausePublishTests
         var inner = SampleInner();
         // Up Redis → the probe loop returns Recovered on its first iteration.
         var metrics = NewMetrics();
-        var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer, Opts(), metrics);
+        var capRedis = new FakeRedis(FakeRedis.RedisHealth.Up);   // KHARD-01: cap counter reachable (n=1 <= cap → reinject)
+        var recovery = new L2ProbeRecovery(capRedis.Multiplexer, Opts(), metrics);
         // KHARD-03 (Phase-40): the consumer now delegates to the shared KeeperRecoveryHandler.
-        var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics);
+        var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics, capRedis.Multiplexer, Opts());
         var consumer = new FaultEntryStepDispatchConsumer(handler);
 
         var context = FaultContext(inner, ct);
@@ -105,9 +106,10 @@ public sealed class KeeperPausePublishTests
         var inner = SampleInner();
         // Down Redis → the probe loop exhausts MaxAttempts and returns GaveUp.
         var metrics = NewMetrics();
-        var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Down).Multiplexer, Opts(), metrics);
+        var capRedis = new FakeRedis(FakeRedis.RedisHealth.Down);   // GaveUp → the cap check is never reached
+        var recovery = new L2ProbeRecovery(capRedis.Multiplexer, Opts(), metrics);
         // KHARD-03 (Phase-40): the consumer now delegates to the shared KeeperRecoveryHandler.
-        var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics);
+        var handler = new KeeperRecoveryHandler(NullLogger<KeeperRecoveryHandler>.Instance, recovery, metrics, capRedis.Multiplexer, Opts());
         var consumer = new FaultEntryStepDispatchConsumer(handler);
 
         var context = FaultContext(inner, ct);
