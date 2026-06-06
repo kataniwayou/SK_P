@@ -41,12 +41,12 @@ created: 2026-06-06
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | KMET-01 | — | `Keeper` meter registered (MeterName const ↔ AddMeter symmetry, IMeterFactory) | unit/build | `dotnet build -c Release` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | KMET-02 | — | throughput/outcome counters emit with `fault_type`/`ProcessorId`/`reason`, no `workflowId` | e2e scrape | `KeeperRecovery_*` live | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | KMET-03 | — | `keeper_in_flight` UpDownCounter + `keeper_recovery_duration` histogram scrapable | e2e scrape | `KeeperRecovery_*` live | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | TEST-01 | — | recover-both-paths E2E asserts `keeper_*` series + labels after live recover | e2e | `KeeperRecovery_RecoversBothPaths` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | TEST-02 | — | give-up E2E asserts `keeper_dlq_pushed` + message in `keeper-dlq` | e2e | `KeeperRecovery_GivesUp_ParksToDlq` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | TEST-03 | — | `phase-39-close.ps1` 3×GREEN + triple-SHA + both DLQs depth==0 + scratch scan-clean | gate | `pwsh scripts/phase-39-close.ps1` | ❌ W0 | ⬜ pending |
+| 39-01-T2 / 39-02-T1 | 01,02 | 1,2 | KMET-01 | — | `Keeper` meter registered (MeterName const ↔ AddMeter symmetry, IMeterFactory) | unit/build | `dotnet build -c Release` | ❌ W0 | ⬜ pending |
+| 39-02-T1 | 02 | 2 | KMET-02 | — | throughput/outcome counters emit with `fault_type`/`ProcessorId`/`reason`, no `workflowId` | e2e scrape | `KeeperRecovery_*` live | ❌ W0 | ⬜ pending |
+| 39-01-T2 / 39-02-T2 | 01,02 | 1,2 | KMET-03 | — | `keeper_in_flight` UpDownCounter + `keeper_recovery_duration` histogram scrapable | e2e scrape | `KeeperRecovery_*` live | ❌ W0 | ⬜ pending |
+| 39-03-T1 | 03 | 3 | TEST-01 | — | recover-both-paths E2E asserts `keeper_*` series + labels after live recover | e2e | `KeeperRecovery_RecoversBothPaths` | ❌ W0 | ⬜ pending |
+| 39-03-T1 | 03 | 3 | TEST-02 | — | give-up E2E asserts `keeper_dlq_pushed` + message in `keeper-dlq` | e2e | `KeeperRecovery_GivesUp_ParksToDlq` | ❌ W0 | ⬜ pending |
+| 39-04-T1/T2 | 04 | 4 | TEST-03 | — | `phase-39-close.ps1` 3×GREEN + triple-SHA + both DLQs depth==0 + scratch scan-clean | gate | `pwsh scripts/phase-39-close.ps1` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
