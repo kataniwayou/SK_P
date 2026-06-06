@@ -86,7 +86,19 @@ public sealed class ProcessorStartupOrchestrator(
                     // MarkHealthy (race-safe: the dispatch counters can't fire until the queue is bound
                     // post-swap; the heartbeat writes Redis only). Reads Name/Version straight off the
                     // received message (WR-03 memory-visibility is moot at the call-site).
-                    meterProviderHolder.SwapTo($"{found.Message.Name}_{found.Message.Version}");
+                    // WR-02: the metrics label is non-load-bearing for correctness and identity has already
+                    // resolved — a swap fault (e.g. ForceFlush on the placeholder provider throwing) must NOT
+                    // fault this BackgroundService. Degrade to "keep emitting on the placeholder provider + warn".
+                    try
+                    {
+                        meterProviderHolder.SwapTo($"{found.Message.Name}_{found.Message.Version}");
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex,
+                            "Metrics provider swap failed for hash {Hash}; continuing on the placeholder service_name (non-fatal).",
+                            hash);
+                    }
                     logger.LogInformation("Identity resolved for hash {Hash}: processor {ProcessorId}",
                         hash, found.Message.Id);
                     break;
