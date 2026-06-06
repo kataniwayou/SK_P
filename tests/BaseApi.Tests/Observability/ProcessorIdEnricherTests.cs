@@ -44,6 +44,8 @@ public sealed class ProcessorIdEnricherTests
         public Guid? InputSchemaId { get; }
         public Guid? OutputSchemaId { get; }
         public Guid? ConfigSchemaId { get; }
+        public string? Name { get; set; }
+        public string? Version { get; set; }
         public string? InputDefinition { get; }
         public string? OutputDefinition { get; }
         public bool IsHealthy { get; }

@@ -42,6 +42,12 @@ public sealed class ProcessorContext : IProcessorContext
     public Guid? ConfigSchemaId { get; private set; }
 
     /// <inheritdoc/>
+    public string? Name { get; private set; }
+
+    /// <inheritdoc/>
+    public string? Version { get; private set; }
+
+    /// <inheritdoc/>
     public string? InputDefinition { get; private set; }
 
     /// <inheritdoc/>
@@ -60,6 +66,8 @@ public sealed class ProcessorContext : IProcessorContext
         InputSchemaId = identity.InputSchemaId;
         OutputSchemaId = identity.OutputSchemaId;
         ConfigSchemaId = identity.ConfigSchemaId;
+        Name = identity.Name;
+        Version = identity.Version;
     }
 
     /// <inheritdoc/>

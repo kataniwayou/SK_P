@@ -22,7 +22,8 @@ namespace BaseProcessor.Core.Identity;
 /// <b>Memory-visibility invariant (WR-03):</b> only <see cref="IsHealthy"/>/<see cref="WhenHealthy"/>
 /// carry synchronization. The identity and definition properties (<see cref="Id"/>,
 /// <see cref="InputSchemaId"/>, <see cref="OutputSchemaId"/>, <see cref="ConfigSchemaId"/>,
-/// <see cref="InputDefinition"/>, <see cref="OutputDefinition"/>) are plain auto-properties with NO
+/// <see cref="InputDefinition"/>, <see cref="OutputDefinition"/>, <see cref="Name"/>,
+/// <see cref="Version"/>) are plain auto-properties with NO
 /// volatile/barrier semantics. They are only safe to read from another thread AFTER observing
 /// <see cref="IsHealthy"/> == <c>true</c> or after <see cref="WhenHealthy"/> has completed — the
 /// full barrier in <see cref="MarkHealthy"/>'s <c>Interlocked.Exchange</c> publishes the prior
@@ -43,6 +44,12 @@ public interface IProcessorContext
 
     /// <summary>The config schema Id (carried for completeness; never resolved to a definition — D-05).</summary>
     Guid? ConfigSchemaId { get; }
+
+    /// <summary>The resolved processor Name (DB single source of truth; null until Loop A completes). WR-03: read after IsHealthy.</summary>
+    string? Name { get; }
+
+    /// <summary>The resolved processor Version (DB single source of truth; null until Loop A completes). WR-03: read after IsHealthy.</summary>
+    string? Version { get; }
 
     /// <summary>The resolved input schema definition (null until Loop B resolves it).</summary>
     string? InputDefinition { get; }

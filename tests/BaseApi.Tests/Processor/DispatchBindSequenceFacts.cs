@@ -77,6 +77,8 @@ public sealed class DispatchBindSequenceFacts
         public Guid? InputSchemaId => _inner.InputSchemaId;
         public Guid? OutputSchemaId => _inner.OutputSchemaId;
         public Guid? ConfigSchemaId => _inner.ConfigSchemaId;
+        public string? Name => _inner.Name;
+        public string? Version => _inner.Version;
         public string? InputDefinition => _inner.InputDefinition;
         public string? OutputDefinition => _inner.OutputDefinition;
         public bool IsHealthy => _inner.IsHealthy;

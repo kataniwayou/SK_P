@@ -19,6 +19,8 @@ internal sealed class FakeProcessorContext : IProcessorContext
     public Guid? InputSchemaId { get; set; }
     public Guid? OutputSchemaId { get; set; }
     public Guid? ConfigSchemaId { get; set; }
+    public string? Name { get; set; }
+    public string? Version { get; set; }
     public string? InputDefinition { get; set; }
     public string? OutputDefinition { get; set; }
     public bool IsHealthy { get; set; }
