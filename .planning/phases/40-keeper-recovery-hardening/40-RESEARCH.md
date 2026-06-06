@@ -337,7 +337,9 @@ Algorithm `DrainKeeperDlqUntilStablyEmptyAsync(ct)`:
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> Both resolved during planning. Q1 → Plan 40-02 D-A1 (park gated on the crossing increment `n == cap+1`, mirroring the `flag[H]` first-writer-wins dedup). Q2 → the hermetic cap test drives the same `H` directly `cap+N` times; no RealStack republish test is needed (and a live cap test is FORBIDDEN — Pitfall 5).
 
 1. **2-replica exactly-once park (A1).**
    - What we know: the synthetic give-up Fault is Published → both replicas independently give up; `H` + `INCR` are atomic.
