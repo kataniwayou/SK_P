@@ -7,7 +7,7 @@
 - ✅ **v3.4.0 BaseConsole + Orchestrator Messaging** — Phases 17-24 + 24.1 (shipped 2026-06-01) — see [milestones/v3.4.0-ROADMAP.md](milestones/v3.4.0-ROADMAP.md)
 - ✅ **v3.5.0 Processor Console — Self-Registration, Liveness & Execution Round-Trip** — Phases 25-30 (shipped 2026-06-02)
 - ✅ **v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip** — Phases 31-32.1 (shipped 2026-06-05) — see [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md)
-- 🚧 **v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume** — Phases 33-38 (in progress)
+- 🚧 **v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume** — Phases 33-42 (in progress — milestone delivered + live-proven; gap-closure phases 40-42 from the v3.7.0 audit)
 
 ## 🚧 v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume (In Progress)
 
@@ -22,6 +22,12 @@
 - [x] **Phase 37: Orchestrator Pause/Resume Coordination** — New `PauseWorkflow`/`ResumeWorkflow` contracts + orchestrator consumers; per-workflow pending-recovery set keyed by `H` in single-replica L1; idempotent; stays paused on give-up. *(Only phase touching the Orchestrator project.)* (PAUSE-01..05) (completed 2026-06-06 — hermetic 5/5 SC verified against source: deterministic-TriggerKey three-state model (Quartz `PauseJob`/`GetTriggerState`, no L1 state field), `ConcurrentMessageLimit=1` consumers on dedicated fan-out endpoint, Keeper `Publish` Pause-at-intake + Resume-on-Recovered (GaveUp parks, no Resume); 477-pass hermetic suite (`--filter-not-trait Category=RealStack`), 0-warning Release; **caught + fixed a load-bearing 37-02 self-reschedule regression** (`RescheduleAsync` `ScheduleJob`→`RescheduleJob` replace, `571498f`) the 37-04 run had mis-filed as pre-existing; code review 0 critical / 2 warning; live pause↔resume bus round-trip operator-pending, 37-HUMAN-UAT.md, Phase-39 live gate)
 - [x] **Phase 38: Uniform `service_name` + Instance Labels Across All Metrics** — `service_name={name}_{version}` + `service_instance_id` on every metric series (runtime/HTTP/business); processor name+version sourced from the DB (not appsettings); logs `service.name` unchanged; Prometheus query consumers updated. (MLBL-01..05) (completed 2026-06-06 — verified 5/5 must-haves: combined `service_name={name}_{version}` on the metrics resource for all 4 consoles + non-empty `service_instance_id` across runtime/HTTP/business; processor name/version DB-sourced via the `MeterProviderHolder` swap after identity Loop A; LOGS `service.name` stays bare (LogsResourceBareNameFacts); PromQL consumers reconciled (0 bare literals). Hermetic 479-pass / 0-warning Release; live RealStack `MetricsRoundTripE2ETests` 1/1 GREEN after container rebuild — :9090 scrape proved sk-api_3.2.0 / orchestrator_3.4.0 / DB-sourced sample-proc-…_1.0.0 (placeholder count=0); no live operator step. Code review 0 critical / 2 warning (MeterProviderHolder lifecycle, advisory))
 - [x] **Phase 39: Keeper Observability + Real-Stack E2E + Close Gate** (2026-06-06) — `Keeper` meter + counters/histograms; E2E proving recover-both-paths + give-up; 3×GREEN triple-SHA net-zero close gate (both DLQs + scratch-key scan-clean). (KMET-01/02/03, TEST-01/02/03)
+
+### Gap-Closure Phases (v3.7.0 audit — 2026-06-06)
+
+- [ ] **Phase 40: Keeper Recovery Hardening** — Bound the recover→reinject cycle with a config attempt cap (persistent fault parks instead of flooding the stack); make the keeper-dlq give-up-park drain deterministic (poll-until-stably-empty teardown → close-gate `keeper-dlq depth==0` holds); extract the shared fault-consumer recovery logic so the cap lands in one place. (KHARD-01, KHARD-02, KHARD-03)
+- [ ] **Phase 41: Orchestrator Pause/Resume Diagnostics** — Log on the `ResumeAsync` silent-ignore path (dropped Resume becomes diagnosable); harden `WorkflowScheduler.RescheduleAsync` fallback against a purged non-durable job. (closes 37-REVIEW WR-01, WR-02)
+- [ ] **Phase 42: v3.7.0 Docs & Traceability Reconciliation** — Flip stale REQUIREMENTS.md checkboxes `[ ]→[x]` for satisfied INTAKE/PROBE/DLQ/PAUSE/KMET-04 + fix their traceability rows; add missing MLBL-01..05 rows + correct the footer count; fix ROADMAP Phase-38 progress row; backfill `39-VERIFICATION.md`. (doc-only)
 
 ## Phases (shipped milestones)
 
@@ -303,10 +309,40 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   - [x] 39-03-PLAN.md — Extend the two KeeperRecovery RealStack facts with keeper_* Prometheus scrape assertions + Wave-0 histogram-suffix gate (TEST-01/02) (completed 2026-06-06 — recover fact: fault_consumed/recovered/workflow_paused/workflow_resumed/recovery_duration_seconds_count{recovered}; give-up fact: dlq_pushed{probe_exhausted,result}/recovery_duration_seconds_count{gave_up}/l2_probe_failed; all ProcessorId-filtered via PollPromForQuery + non-empty service_instance_id + no-workflowId ban; PromPollTimeoutMs=120_000; Wave-0 suffix written _seconds per Plan 01, live-confirm on 39-04 gate; test build 0/0 Release; 9e938eb)
   - [x] 39-04-PLAN.md — Clone phase-39-close.ps1 (triple-SHA + keeper rebuild + both-DLQ depth==0) + live 3xGREEN gate (TEST-03)
 
+### Phase 40: Keeper Recovery Hardening
+**Goal**: A persistent (non-transient) fault can no longer flood the stack, the give-up-park drain is deterministic so the close gate's `keeper-dlq depth==0` invariant holds every run, and the two Keeper fault consumers share one recovery body so future recovery changes land in a single place.
+**Depends on**: Phase 39 (close gate + KeeperMetrics in place)
+**Requirements**: KHARD-01, KHARD-02, KHARD-03
+**Gap Closure**: Closes the two functional tech-debt items + IN-01 from `.planning/v3.7.0-MILESTONE-AUDIT.md`.
+**Success Criteria** (what must be TRUE):
+  1. The recover→reinject cycle is bounded by a config attempt cap; when the cap is reached for a given `H`, Keeper parks the original `Fault<T>` to `keeper-dlq` (give-up) instead of reinjecting again — a persistent fault converges to a single park, not an unbounded reinject loop. A hermetic test proves the cap is honored (no reinject after cap; exactly one park).
+  2. The give-up RealStack E2E teardown drains `keeper-dlq` with a poll-until-stably-empty strategy (bounded), so `scripts/phase-39-close.ps1` (or the Phase-40 gate) yields `keeper-dlq depth==0` deterministically across the 3× cadence — no late give-up park races the AFTER snapshot.
+  3. The recover/probe/re-inject/park/pause/resume logic shared by `FaultEntryStepDispatchConsumer` and `FaultExecutionResultConsumer` is extracted into one shared helper/base; both consumers delegate to it (no near-total duplication); KHARD-01's cap exists in exactly one place. Hermetic suite stays GREEN, Release 0-warning.
+
+### Phase 41: Orchestrator Pause/Resume Diagnostics
+**Goal**: A Resume dropped during the narrow fire window is diagnosable, and the scheduler's reschedule fallback cannot throw on a purged non-durable job.
+**Depends on**: Phase 37
+**Requirements**: (closes 37-REVIEW WR-01, WR-02 — code-quality, no new REQ-IDs)
+**Gap Closure**: Closes the Phase-37 code-quality warnings from the v3.7.0 audit.
+**Success Criteria** (what must be TRUE):
+  1. `WorkflowLifecycle.ResumeAsync` emits an informational log on the `state != TriggerState.Paused` ignore branch (WorkflowId + observed state), so a Resume that arrives mid-fire and is dropped is observable in logs.
+  2. `WorkflowScheduler.RescheduleAsync` no longer assumes the non-durable job still exists on the `RescheduleJob`-returns-null fallback path — it either re-creates the job+trigger or fails loudly with a clear message rather than an opaque Quartz throw. Hermetic test covers the fallback path.
+
+### Phase 42: v3.7.0 Docs & Traceability Reconciliation
+**Goal**: REQUIREMENTS.md and ROADMAP.md tell the truth about v3.7.0 before archival — every satisfied requirement is checked, MLBL is in the traceability table, counts are correct, and the close-gate phase has a VERIFICATION.md.
+**Depends on**: Phases 40, 41 (so the doc pass reflects final state)
+**Requirements**: (doc-only — no new REQ-IDs)
+**Gap Closure**: Closes the documentation-drift tech-debt items from the v3.7.0 audit.
+**Success Criteria** (what must be TRUE):
+  1. REQUIREMENTS.md checkboxes for all satisfied v3.7.0 reqs read `[x]` (INTAKE-01..04, PROBE-01..06, DLQ-01..04, PAUSE-01..05, KMET-01..04) and their traceability rows reflect "Complete (Phase-39 live gate)" rather than "Not started".
+  2. MLBL-01..05 rows exist in the REQUIREMENTS.md traceability table mapped to Phase 38; the coverage footer reads the correct totals (34 requirements across phases 33-39, plus the gap-closure KHARD set) — no stale "29 / 6 phases / 33-38".
+  3. The ROADMAP.md progress table Phase-38 row reads its true plan count + "Complete" (not "0/? Not started").
+  4. `39-VERIFICATION.md` exists for the close-gate phase, recording the 3×500 GREEN triple-SHA result and the accepted keeper-dlq drain-timing follow-up.
+
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 → 31.1 → 32 → 32.1 → 33 → 34 → 35 → 36 → 37 → 38 → 39
+Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 → 31.1 → 32 → 32.1 → 33 → 34 → 35 → 36 → 37 → 38 → 39 → 40 → 41 → 42
 
 | Phase | Milestone | Plans Complete | Status   | Completed  |
 | ----- | --------- | -------------- | -------- | ---------- |
@@ -338,6 +374,9 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
 | 38. Uniform `service_name` + Instance Labels Across All Metrics | v3.7.0 | 0/? | Not started | — |
 | 39. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
+| 40. Keeper Recovery Hardening (gap closure) | v3.7.0 | 0/? | Not started | — |
+| 41. Orchestrator Pause/Resume Diagnostics (gap closure) | v3.7.0 | 0/? | Not started | — |
+| 42. v3.7.0 Docs & Traceability Reconciliation (gap closure) | v3.7.0 | 0/? | Not started | — |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 shipped 2026-06-02 (6 phases 25-30, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip + runtime/business metrics) — note: formal archival (ROADMAP/MILESTONES/tag) deferred. v3.6.0 shipped 2026-06-05 (4 phases 31-32.1, Idempotent Execution — exactly-once-effect round-trip via deterministic `H` + effect-first `flag[H]` dedup at both hops; cancelled circuit-breaker built then reverted to plain dead-lettering). Next milestone planning begins with `/gsd-new-milestone`.*

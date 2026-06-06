@@ -65,6 +65,14 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 **: A real-stack E2E proves the give-up path: L2 stays down past max-attempts → the message lands in `keeper-dlq`, the workflow stays paused, and `keeper_dlq_pushed` increments.
 - [x] **TEST-03**: A phase-close gate runs 3× consecutive GREEN with the triple-SHA (psql `\l` / redis `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER, including **both DLQ-1 and DLQ-2 (`keeper-dlq`)** + probe scratch-key scan-clean (net-zero), Release+Debug 0-warning.
 
+### Keeper Recovery Hardening (KHARD — v3.7.0 gap closure, Phase 40)
+
+Added 2026-06-06 from `.planning/v3.7.0-MILESTONE-AUDIT.md` (status `tech_debt`). The milestone was delivered and live-proven; these close the functional tech-debt items before archival.
+
+- [ ] **KHARD-01**: The recover→reinject cycle is bounded by a configurable attempt cap; when the cap is reached for a given `H`, Keeper parks the original `Fault<T>` to `keeper-dlq` (give-up) rather than reinjecting again — a persistent (non-transient) fault converges to a single park, not an unbounded reinject loop (~67 cyc/s/replica risk eliminated).
+- [ ] **KHARD-02**: The give-up RealStack E2E teardown drains `keeper-dlq` with a bounded poll-until-stably-empty strategy, so the close gate's `keeper-dlq depth==0` invariant holds deterministically across the 3× cadence (no late give-up park races the AFTER snapshot; clears the lone `GATE_EXIT=1`).
+- [ ] **KHARD-03**: The shared recover/probe/re-inject/park/pause/resume logic of the two Keeper fault consumers (`FaultEntryStepDispatchConsumer`, `FaultExecutionResultConsumer`) is extracted into one shared helper/base; both consumers delegate to it (no near-total duplication), and the KHARD-01 cap exists in exactly one place.
+
 ## Future Requirements (deferred)
 
 - **FUTURE-KEEPER-SWEEP** — a background L2-liveness sweep in Keeper that auto-resumes paused workflows on L2 recovery (replacing the operator step for given-up messages).
@@ -114,5 +122,10 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 | TEST-01 | 39 — Metrics + E2E + Close Gate | Complete (39-03) |
 | TEST-02 | 39 — Metrics + E2E + Close Gate | Complete (39-03) |
 | TEST-03 | 39 — Metrics + E2E + Close Gate | Complete (39-04) |
+| KHARD-01 | 40 — Keeper Recovery Hardening | Pending (gap closure) |
+| KHARD-02 | 40 — Keeper Recovery Hardening | Pending (gap closure) |
+| KHARD-03 | 40 — Keeper Recovery Hardening | Pending (gap closure) |
 
 **Coverage:** 29/29 requirements mapped (PROBE-06 → Phase 33 with the spike; DLQ-04 added → Phase 36). Per-phase counts: 33=4 · 34=3 · 35=2 · 36=9 · 37=5 · 38=6.
+
+> **NOTE (stale — full reconciliation is Phase 42's scope):** This table predates the Phase-38 insertion and the Phase-39 close gate. It is missing the **MLBL-01..05** rows (Phase 38) and the per-phase status text reads "Not started" for INTAKE/PROBE/DLQ/PAUSE despite those being satisfied + live-proven by the Phase-39 close gate. Phase 42 (Docs & Traceability Reconciliation) fixes the checkboxes, adds the MLBL rows, and corrects this footer to the true totals (34 delivered requirements across phases 33-39, + KHARD-01..03 gap-closure). Phases 41/42 are doc/code-quality and carry no new REQ-IDs.
