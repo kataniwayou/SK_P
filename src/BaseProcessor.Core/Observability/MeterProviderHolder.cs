@@ -29,6 +29,10 @@ public sealed class MeterProviderHolder : IDisposable
 {
     private readonly string _instanceId;     // captured ONCE — never re-resolve (Pitfall 4 / Phase 30 D-10)
     private readonly string _serviceVersion; // appsettings Service:Version — kept as service.version attr (D-07)
+    // Cross-thread field (WR-01): WRITTEN by SwapTo on the Loop A background-service thread, READ by Dispose
+    // on the DI-container / host-shutdown thread. Published with Interlocked.Exchange (release) in SwapTo and
+    // read with Volatile.Read (acquire) in Dispose so the shutdown thread is GUARANTEED to observe provider #2
+    // and never skips disposing it — even under a SIGTERM-during-boot race against the swap.
     private MeterProvider _current;          // starts as the host-built provider #1 (A1)
 
     /// <param name="hostProvider">Provider #1 — the host's shared MeterProvider (placeholder resource). A1.</param>
@@ -67,16 +71,35 @@ public sealed class MeterProviderHolder : IDisposable
     /// Called from Loop A immediately after <c>SetIdentity</c>, BEFORE the queue-bind / <c>MarkHealthy</c>.
     /// Build-before-dispose ordering is load-bearing for race-safety (Pitfall 2): <see cref="_current"/>
     /// is ALWAYS a live provider, so the runtime / MassTransit meters always write to a current provider.
+    ///
+    /// <para>
+    /// <b>Thread-safety (WR-01):</b> the swap is published with <c>Interlocked.Exchange(ref _current, next)</c>
+    /// — a single atomic release-store of provider #2 that also takes the prior provider, so a racing
+    /// host-shutdown <see cref="Dispose"/> (via <c>Volatile.Read(ref _current)</c>) sees either #1 or #2,
+    /// never a torn value, and the prior provider is owned by exactly one caller.
+    /// </para>
+    /// <para>
+    /// <b>Leak/host-fault safety (WR-02):</b> the best-effort flush is wrapped in
+    /// <c>try { prior.ForceFlush } finally { prior.Dispose }</c>, so provider #1's reader/exporter/gRPC
+    /// channel is ALWAYS released even if <c>ForceFlush</c> throws. (A <c>ForceFlush</c> fault still
+    /// propagates to the caller; the call site degrades it to a logged warning — the metrics label is
+    /// non-load-bearing for correctness, so a swap fault must NOT fault the host.)
+    /// </para>
     /// </summary>
     public void SwapTo(string resolvedServiceName)
     {
-        var next  = Build(resolvedServiceName);   // (1) build #2 first — a live provider exists before #1 dies
-        var prior = _current;
-        _current  = next;                          // (2) repoint BEFORE disposing prior
-        prior.ForceFlush(timeoutMilliseconds: 5000); // (3) push the placeholder window's in-flight batch
-        prior.Dispose();                           // (4) flush+shutdown reader, release OTLP gRPC channel
+        var next  = Build(resolvedServiceName);                  // (1) build #2 first — a live provider exists before #1 dies
+        var prior = Interlocked.Exchange(ref _current, next);   // (2) atomic release-publish #2 + take #1 (WR-01)
+        try
+        {
+            prior.ForceFlush(timeoutMilliseconds: 5000);        // (3) push the placeholder window's in-flight batch
+        }
+        finally
+        {
+            prior.Dispose();                                    // (4) ALWAYS release #1's reader/exporter/gRPC channel (WR-02)
+        }
     }
 
     /// <summary>Host shutdown — idempotent if also disposed by DI (A1 double-dispose safe).</summary>
-    public void Dispose() => _current?.Dispose();
+    public void Dispose() => Volatile.Read(ref _current)?.Dispose(); // acquire-read the latest provider (WR-01)
 }
