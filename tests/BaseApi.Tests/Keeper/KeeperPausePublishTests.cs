@@ -3,9 +3,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using Keeper;
 using Keeper.Consumers;
+using Keeper.Observability;
 using Keeper.Recovery;
 using MassTransit;
 using Messaging.Contracts;
+using Microsoft.Extensions.DependencyInjection;
+using System.Diagnostics.Metrics;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -39,6 +42,9 @@ public sealed class KeeperPausePublishTests
     private static IOptions<ProbeOptions> Opts(int maxAttempts = 1, int delaySeconds = 0) =>
         Options.Create(new ProbeOptions { DelaySeconds = delaySeconds, MaxAttempts = maxAttempts });
 
+    private static KeeperMetrics NewMetrics() =>
+        new(new ServiceCollection().AddMetrics().BuildServiceProvider().GetRequiredService<IMeterFactory>());
+
     private static EntryStepDispatch SampleInner() =>
         new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "payload")
         {
@@ -70,9 +76,10 @@ public sealed class KeeperPausePublishTests
 
         var inner = SampleInner();
         // Up Redis → the probe loop returns Recovered on its first iteration.
-        var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer, Opts());
+        var metrics = NewMetrics();
+        var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer, Opts(), metrics);
         var consumer = new FaultEntryStepDispatchConsumer(
-            NullLogger<FaultEntryStepDispatchConsumer>.Instance, recovery);
+            NullLogger<FaultEntryStepDispatchConsumer>.Instance, recovery, metrics);
 
         var context = FaultContext(inner, ct);
 
@@ -96,9 +103,10 @@ public sealed class KeeperPausePublishTests
 
         var inner = SampleInner();
         // Down Redis → the probe loop exhausts MaxAttempts and returns GaveUp.
-        var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Down).Multiplexer, Opts());
+        var metrics = NewMetrics();
+        var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Down).Multiplexer, Opts(), metrics);
         var consumer = new FaultEntryStepDispatchConsumer(
-            NullLogger<FaultEntryStepDispatchConsumer>.Instance, recovery);
+            NullLogger<FaultEntryStepDispatchConsumer>.Instance, recovery, metrics);
 
         var context = FaultContext(inner, ct);
 

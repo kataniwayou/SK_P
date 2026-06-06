@@ -1,5 +1,7 @@
+using System.Diagnostics.Metrics;
 using Keeper;
 using Keeper.Consumers;
+using Keeper.Observability;
 using Keeper.Recovery;
 using MassTransit;
 using MassTransit.Testing;
@@ -38,6 +40,10 @@ public sealed class KeeperProbeLoopTests
     private static IOptions<ProbeOptions> Opts(int maxAttempts = 3, int delaySeconds = 0) =>
         Options.Create(new ProbeOptions { DelaySeconds = delaySeconds, MaxAttempts = maxAttempts });
 
+    /// <summary>A throwaway KeeperMetrics (IMeterFactory-backed) for the helper-level facts — no listener attached.</summary>
+    private static KeeperMetrics NewMetrics() =>
+        new(new ServiceCollection().AddMetrics().BuildServiceProvider().GetRequiredService<IMeterFactory>());
+
     private static EntryStepDispatch SampleInner(Guid? processorId = null) =>
         new(Guid.NewGuid(), Guid.NewGuid(), processorId ?? Guid.NewGuid(), "payload")
         {
@@ -54,9 +60,10 @@ public sealed class KeeperProbeLoopTests
     {
         // HalfOpen: read OK, write/delete throw → the iteration is NOT a success; loop runs to MaxAttempts → GaveUp.
         var fake = new FakeRedis(FakeRedis.RedisHealth.HalfOpen);
-        var sut = new L2ProbeRecovery(fake.Multiplexer, Opts(maxAttempts: 3));
+        var sut = new L2ProbeRecovery(fake.Multiplexer, Opts(maxAttempts: 3), NewMetrics());
 
-        var outcome = await sut.RunAsync(SampleInner().EntryId, SampleInner().H, TestContext.Current.CancellationToken);
+        var inner = SampleInner();
+        var outcome = await sut.RunAsync(inner.EntryId, inner.H, inner.ProcessorId.ToString("D"), TestContext.Current.CancellationToken);
 
         Assert.Equal(ProbeOutcome.GaveUp, outcome);   // write-failing half-open Redis never counts as recovered (PROBE-02)
     }
@@ -69,9 +76,10 @@ public sealed class KeeperProbeLoopTests
         const int failuresBeforeUp = 2;
         var fake = new FakeRedis();
         fake.SetFailuresBeforeUp(failuresBeforeUp);   // first 2 probe ops throw, then health flips Up
-        var sut = new L2ProbeRecovery(fake.Multiplexer, Opts(maxAttempts: maxAttempts));
+        var sut = new L2ProbeRecovery(fake.Multiplexer, Opts(maxAttempts: maxAttempts), NewMetrics());
 
-        var outcome = await sut.RunAsync(SampleInner().EntryId, SampleInner().H, TestContext.Current.CancellationToken);
+        var inner = SampleInner();
+        var outcome = await sut.RunAsync(inner.EntryId, inner.H, inner.ProcessorId.ToString("D"), TestContext.Current.CancellationToken);
 
         Assert.Equal(ProbeOutcome.Recovered, outcome);
         Assert.Equal(FakeRedis.RedisHealth.Up, fake.Health);   // recovered within the budget (did NOT exhaust)
@@ -83,9 +91,10 @@ public sealed class KeeperProbeLoopTests
         // Down for all MaxAttempts → GaveUp. (A Null read on an Up Redis still counts as a successful read —
         // the read value need NOT exist; here Redis is Down throughout so every attempt faults.)
         var fake = new FakeRedis(FakeRedis.RedisHealth.Down);
-        var sut = new L2ProbeRecovery(fake.Multiplexer, Opts(maxAttempts: 3));
+        var sut = new L2ProbeRecovery(fake.Multiplexer, Opts(maxAttempts: 3), NewMetrics());
 
-        var outcome = await sut.RunAsync(SampleInner().EntryId, SampleInner().H, TestContext.Current.CancellationToken);
+        var inner = SampleInner();
+        var outcome = await sut.RunAsync(inner.EntryId, inner.H, inner.ProcessorId.ToString("D"), TestContext.Current.CancellationToken);
 
         Assert.Equal(ProbeOutcome.GaveUp, outcome);
     }
@@ -100,6 +109,8 @@ public sealed class KeeperProbeLoopTests
         FakeRedis fake, IOptions<ProbeOptions> opts, Action<IBusRegistrationConfigurator> addConsumers) =>
         new ServiceCollection()
             .AddLogging()
+            .AddMetrics()
+            .AddSingleton<KeeperMetrics>()
             .AddSingleton<IConnectionMultiplexer>(fake.Multiplexer)
             .AddSingleton(opts)
             .AddSingleton<L2ProbeRecovery>()

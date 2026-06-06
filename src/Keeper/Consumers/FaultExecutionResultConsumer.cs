@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using Keeper.Observability;
 using Keeper.Recovery;
 using MassTransit;
 using Messaging.Contracts;
@@ -29,13 +31,19 @@ namespace Keeper.Consumers;
 /// </para>
 /// </summary>
 public sealed class FaultExecutionResultConsumer(
-    ILogger<FaultExecutionResultConsumer> logger, L2ProbeRecovery recovery)
+    ILogger<FaultExecutionResultConsumer> logger, L2ProbeRecovery recovery, KeeperMetrics metrics)
     : IConsumer<Fault<ExecutionResult>>
 {
     public async Task Consume(ConsumeContext<Fault<ExecutionResult>> context)
     {
         var inner = context.Message.Message;   // double .Message — verbatim inner IExecutionCorrelated
         var ex    = context.Message.Exceptions is { Length: > 0 } exs ? exs[0] : null;
+
+        // KMET-02/03: intake — start the intake→terminal timer and count the consumed fault. ProcessorId is
+        // the only bounded id label (no workflowId). fault_type="result" (this consumer's closed enum).
+        var procId = inner.ProcessorId.ToString("D");
+        var sw     = Stopwatch.StartNew();
+        metrics.FaultConsumed.Add(1, KeeperMetricTags.FaultTags(KeeperMetricTags.FaultTypeResult, procId));
 
         using (logger.BeginScope(new Dictionary<string, object> { [CorrelationKeys.LogScope] = inner.CorrelationId.ToString() }))
         using (logger.BeginScope(ExecutionLogScope.BuildState(inner)))
@@ -51,10 +59,11 @@ public sealed class FaultExecutionResultConsumer(
         await context.Publish(
             new PauseWorkflow(inner.WorkflowId, inner.H) { CorrelationId = inner.CorrelationId },
             context.CancellationToken);
+        metrics.WorkflowPaused.Add(1, new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId)); // workflow-scoped (no fault_type)
 
         // PROBE-01/05: the bounded probe loop is AWAITED inside Consume — the broker delivery stays
         // un-acked until the loop exits, so ack-after-loop is automatic (no early Task.CompletedTask).
-        var outcome = await recovery.RunAsync(inner.EntryId, inner.H, context.CancellationToken);
+        var outcome = await recovery.RunAsync(inner.EntryId, inner.H, procId, context.CancellationToken);
         if (outcome == ProbeOutcome.Recovered)
         {
             // PROBE-03 (spike-proven, GATE_EXIT=0): re-inject the VERBATIM inner to its origin endpoint.
@@ -67,6 +76,14 @@ public sealed class FaultExecutionResultConsumer(
             await context.Publish(
                 new ResumeWorkflow(inner.WorkflowId, inner.H) { CorrelationId = inner.CorrelationId },
                 context.CancellationToken);
+
+            // KMET-02/03: recovered terminal — resume + recovered counters + the intake→terminal duration
+            // (seconds, NOT milliseconds — the buckets are seconds).
+            metrics.WorkflowResumed.Add(1, new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
+            metrics.Recovered.Add(1, KeeperMetricTags.FaultTags(KeeperMetricTags.FaultTypeResult, procId));
+            metrics.RecoveryDuration.Record(sw.Elapsed.TotalSeconds,
+                new KeyValuePair<string, object?>(KeeperMetricTags.Outcome, KeeperMetricTags.OutcomeRecovered),
+                new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
         }
         else
         {
@@ -74,6 +91,15 @@ public sealed class FaultExecutionResultConsumer(
             // keeper-dlq, then return → ack. A fault in THIS Send is infra → Immediate(N) → DLQ-1 (consistent).
             var dlq = await context.GetSendEndpoint(new Uri($"queue:{KeeperQueues.DeadLetter}"));
             await dlq.Send(context.Message, context.CancellationToken);
+
+            // KMET-02/03: gave-up terminal — dlq counter (reason+fault_type+ProcessorId) + the duration.
+            metrics.DlqPushed.Add(1,
+                new KeyValuePair<string, object?>(KeeperMetricTags.Reason, KeeperMetricTags.ReasonProbeExhausted),
+                new KeyValuePair<string, object?>(KeeperMetricTags.FaultType, KeeperMetricTags.FaultTypeResult),
+                new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
+            metrics.RecoveryDuration.Record(sw.Elapsed.TotalSeconds,
+                new KeyValuePair<string, object?>(KeeperMetricTags.Outcome, KeeperMetricTags.OutcomeGaveUp),
+                new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
         }
     }
 }
