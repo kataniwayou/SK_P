@@ -1,5 +1,6 @@
 using System.Linq;
 using Keeper.Consumers;
+using Keeper.Observability;
 using Keeper.Recovery;
 using MassTransit;
 using MassTransit.Testing;
@@ -54,6 +55,11 @@ public sealed class KeeperRoundRobinTests
             // round-robin consumed-count==1 binding shape.
             .AddSingleton<IConnectionMultiplexer>(new BaseApi.Tests.Keeper.FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer)
             .Configure<global::Keeper.ProbeOptions>(o => { o.DelaySeconds = 0; o.MaxAttempts = 3; })
+            // Phase-39 (KMET-02/03): the consumer now ctor-injects KeeperMetrics; the harness must register it
+            // (AddMetrics supplies IMeterFactory) or the consumer fails to resolve at runtime and is never
+            // consumed, breaking the count==1 assertion.
+            .AddMetrics()
+            .AddSingleton<KeeperMetrics>()
             .AddSingleton<L2ProbeRecovery>()
             .BuildServiceProvider(true);
 

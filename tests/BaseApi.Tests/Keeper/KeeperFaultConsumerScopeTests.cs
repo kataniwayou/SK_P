@@ -1,4 +1,5 @@
 using Keeper.Consumers;
+using Keeper.Observability;
 using Keeper.Recovery;
 using MassTransit;
 using MassTransit.Testing;
@@ -69,6 +70,12 @@ public sealed class KeeperFaultConsumerScopeTests
             // the loop) are unaffected.
             .AddSingleton<IConnectionMultiplexer>(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer)
             .Configure<global::Keeper.ProbeOptions>(o => { o.DelaySeconds = 0; o.MaxAttempts = 3; })
+            // Phase-39 (KMET-02/03): the consumers now ctor-inject KeeperMetrics (IMeterFactory pattern).
+            // The harness must register it or the MassTransit consumer factory fails to resolve the consumer
+            // at runtime — the intake log scope is then never opened and the CorrelationId assertion throws
+            // KeyNotFoundException. AddMetrics() supplies the IMeterFactory KeeperMetrics depends on.
+            .AddMetrics()
+            .AddSingleton<KeeperMetrics>()
             .AddSingleton<L2ProbeRecovery>()
             .AddMassTransitTestHarness(x =>
             {
