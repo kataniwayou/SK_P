@@ -322,7 +322,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
 **Plans**: 3 plans (2 waves)
 Plans:
 - [x] 40-01-PLAN.md -- KHARD-03: extract one shared KeeperRecoveryHandler; both consumers delegate (keystone, Wave 1)
-- [ ] 40-02-PLAN.md -- KHARD-01: per-H recover-attempt cap + hermetic cap test (Wave 2)
+- [x] 40-02-PLAN.md -- KHARD-01: per-H recover-attempt cap + hermetic cap test (Wave 2)
 - [ ] 40-03-PLAN.md -- KHARD-02: poll-until-stably-empty keeper-dlq drain in the give-up E2E teardown (Wave 2)
 
 ### Phase 41: Orchestrator Pause/Resume Diagnostics

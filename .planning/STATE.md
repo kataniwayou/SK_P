@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 40-01-PLAN.md (KHARD-03 keystone)
-last_updated: "2026-06-06T20:05:00.000Z"
-last_activity: 2026-06-06 -- Phase 40 Plan 01 complete (KeeperRecoveryHandler extracted)
+stopped_at: Completed 40-02-PLAN.md (KHARD-01 per-H recover-attempt cap)
+last_updated: "2026-06-06T20:23:10.000Z"
+last_activity: 2026-06-06 -- Phase 40 Plan 02 complete (per-H recover-attempt cap landed; reinject self-DoS fixed)
 progress:
   total_phases: 42
   completed_phases: 41
@@ -27,9 +27,17 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
 Phase: 40 (keeper-recovery-hardening) — EXECUTING
-Plan: 2 of 3
-Status: Executing Phase 40 (40-01 complete — KHARD-03 keystone landed)
-Last activity: 2026-06-06 -- Phase 40 Plan 01 complete (KeeperRecoveryHandler extracted)
+Plan: 3 of 3
+Status: Executing Phase 40 (40-01 + 40-02 complete — KHARD-03 keystone + KHARD-01 cap landed; 40-03 KHARD-02 drain next)
+Last activity: 2026-06-06 -- Phase 40 Plan 02 complete (per-H recover-attempt cap; reinject self-DoS fixed)
+
+### Phase 40 Plan 02 — COMPLETE (Wave 2: KHARD-01 per-H recover-attempt cap inside the single handler + hermetic cap test; 2026-06-06)
+
+- **3 task commits (scoped src/Keeper + src/Messaging.Contracts + tests/BaseApi.Tests paths only — pre-existing untracked items .claude/ / 27-PATTERNS.md / psql-*.txt / launchSettings.json left UNtouched; NO file deletions).** `5f62fb0` (feat: Wave-0 config key + counter key factory + recover_cap reason + FakeRedis counter ops), `22b8388` (feat: land the per-H recover-attempt cap in the shared handler), `b2ef45f` (test: hermetic cap proof + direct-construction ctor fixes). Wave 2, depends_on [40-01], autonomous:true, type:execute.
+- **The fix (the MEMORY-tracked reinject self-DoS landmine):** the OUTER recover→reinject cycle is now bounded per-`H` by `ProbeOptions.RecoverAttemptCap` (default 3, bound from the existing `Probe` section — distinct from `MaxAttempts`, the INNER probe-loop count). Inside the single `KeeperRecoveryHandler.HandleAsync` Recovered branch (before the reinject Send): atomic `StringIncrementAsync` on `skp:keeper:attempts:{H}` (`L2ProjectionKeys.KeeperRecoverAttempts`); `n <= cap` → reinject as before; `n == cap+1` (single-winner crossing) → park the original `Fault<T>` ONCE with `reason=recover_cap` + `RecoveryDuration{gave_up}` + DEL the counter; `n > cap+1` (race loser) → do nothing. A persistent fault converges to exactly ONE park, not ~67 cyc/s/replica flood. KHARD-01 satisfied.
+- **D-A1/A3 race + leak discipline:** single-winner gated on the atomic INCR crossing (mirrors flag[H] first-writer-wins) → race-free across the 2 keeper replicas. Counter TTL=300s set via `ExpireWhen.HasNoExpiry` (set-once, NO clobber on later INCRs — the keepTtl landmine) + DEL on park; a missed DEL self-cleans → close-gate triple-SHA net-zero. `recover_cap` reason is distinct from `probe_exhausted` (D-A4) so operators distinguish flood-cap from L2-never-returned. The GaveUp/probe_exhausted branch is UNTOUCHED.
+- **Deviations (all auto-fixed):** (1) Rule 3 — updated the two direct-`new` handler construction sites (`KeeperPausePublishTests` ×2, `KeeperMetricsFacts` ×2) for the new cap ctor deps (CS7036 ripple, same class as 40-01's direct-construction fixes; every existing assertion preserved); (2) Rule 3 — `Assert.Single` instead of the plan's literal `Assert.Equal(1, …Count())` (xUnit2013 forbids the latter under TreatWarningsAsErrors; `Select<T>(ct)` for xUnit1051); (3) Rule 1 — Fact 2 proves the single-winner invariant on the atomic-INCR contract directly (8 concurrent INCRs → exactly one returns cap+1) rather than via harness re-drive (DEL-on-park resets the counter so serial re-drives legitimately restart a window; `n>cap+1` is only reachable under a concurrent race a serialized harness can't model). No architectural changes, no auth gates, no stubs.
+- **Verification:** Keeper + BaseApi.Tests both 0 Warning / 0 Error Release (TreatWarningsAsErrors). **Full hermetic suite (MTP default, excludes RealStack) = 502 passed / 0 failed / 0 skipped** (491 Plan-01 baseline + growth + 2 new cap facts; no sibling regressed). Isolated cap class via `-- --filter-class` = 2 passed. Acceptance greps clean (RecoverAttemptCap default 3 in ProbeOptions + appsettings; keeper:attempts: factory; ReasonRecoverCap="recover_cap"; FakeRedis StringIncrementAsync + CounterKeyExists; handler n==cap+1 + KeyDeleteAsync(key) + ExpireWhen.HasNoExpiry + ReasonProbeExhausted intact; test class present, CounterKeyExists asserted, NO RealStack trait). SUMMARY: 40-02-SUMMARY.md (Self-Check PASSED). **Phase 40 Wave 2 = 1/2 plans; next is 40-03 (KHARD-02 poll-until-stably-empty keeper-dlq drain — note the cap-park is now a SECOND give-up source, reason=recover_cap, that the drain must reach depth==0).**
 
 ### Phase 40 Plan 01 — COMPLETE (Wave 1: KHARD-03 keystone — extract KeeperRecoveryHandler; both consumers delegate; 2026-06-06)
 
