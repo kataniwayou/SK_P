@@ -27,7 +27,7 @@
 
 - [x] **Phase 40: Keeper Recovery Hardening** (2026-06-06 — KHARD-01/02/03 verified 9/9; live 3×-GREEN close-gate Manual-Only, tracked in 40-HUMAN-UAT.md) — Bound the recover→reinject cycle with a config attempt cap (persistent fault parks instead of flooding the stack); make the keeper-dlq give-up-park drain deterministic (poll-until-stably-empty teardown → close-gate `keeper-dlq depth==0` holds); extract the shared fault-consumer recovery logic so the cap lands in one place. (KHARD-01, KHARD-02, KHARD-03)
 - [x] **Phase 41: Orchestrator Pause/Resume Diagnostics** — Log on the `ResumeAsync` silent-ignore path (dropped Resume becomes diagnosable); harden `WorkflowScheduler.RescheduleAsync` fallback against a purged non-durable job. (closes 37-REVIEW WR-01, WR-02) (completed 2026-06-07 — 2/2 plans, verifier 2/2 SC, code review clean; LogInformation on ResumeAsync ignore branch (log-only, D-01/D-02), RescheduleAsync threaded workflowId + null-fallback re-creates job+trigger (D-04), RescheduleSchedulingTests asserts re-establishment (D-06); hermetic 505/0, Release 0-warning)
-- [ ] **Phase 42: v3.7.0 Docs & Traceability Reconciliation** — Flip stale REQUIREMENTS.md checkboxes `[ ]→[x]` for satisfied INTAKE/PROBE/DLQ/PAUSE/KMET-04 + fix their traceability rows; add missing MLBL-01..05 rows + correct the footer count; fix ROADMAP Phase-38 progress row; backfill `39-VERIFICATION.md`. (doc-only)
+- [x] **Phase 42: v3.7.0 Docs & Traceability Reconciliation** — Flip stale REQUIREMENTS.md checkboxes `[ ]→[x]` for satisfied INTAKE/PROBE/DLQ/PAUSE/KMET-04 + fix their traceability rows; add missing MLBL-01..05 rows + correct the footer count; fix ROADMAP Phase-38 progress row; backfill `39-VERIFICATION.md`. (doc-only) (completed 2026-06-07 — 3/3 plans, verifier 4/4 SC: SC1 20 checkboxes + 16 traceability rows, SC2 MLBL-01..05 + 34/34 footer, SC3 Phase-38 row 4/4, SC4 39-VERIFICATION.md backfilled; encoding clean, close-gate NOT re-run)
 
 ## Phases (shipped milestones)
 
@@ -348,10 +348,10 @@ Plans:
   3. The ROADMAP.md progress table Phase-38 row reads its true plan count + "Complete" (not "0/? Not started").
   4. `39-VERIFICATION.md` exists for the close-gate phase, recording the 3×500 GREEN triple-SHA result and the accepted keeper-dlq drain-timing follow-up.
 
-**Plans:** 3 plans (Wave 1, all parallel - disjoint files)
-- [ ] 42-01-PLAN.md - REQUIREMENTS.md: flip satisfied checkboxes [x] + reconcile traceability rows + add MLBL-01..05 + correct coverage footer (SC1, SC2)
-- [ ] 42-02-PLAN.md - ROADMAP.md: fix Progress-table Phase-38 row to 4/4 Complete (SC3)
-- [ ] 42-03-PLAN.md - backfill 39-VERIFICATION.md from close-gate evidence (SC4)
+**Plans:** 3/3 plans complete
+- [x] 42-01-PLAN.md - REQUIREMENTS.md: flip satisfied checkboxes [x] + reconcile traceability rows + add MLBL-01..05 + correct coverage footer (SC1, SC2)
+- [x] 42-02-PLAN.md - ROADMAP.md: fix Progress-table Phase-38 row to 4/4 Complete (SC3)
+- [x] 42-03-PLAN.md - backfill 39-VERIFICATION.md from close-gate evidence (SC4)
 
 ## Progress
 
@@ -390,7 +390,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 39. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
 | 40. Keeper Recovery Hardening (gap closure) | v3.7.0 | 3/3 | Complete (live gate Manual-Only) | 2026-06-06 |
 | 41. Orchestrator Pause/Resume Diagnostics (gap closure) | v3.7.0 | 2/2 | Complete    | 2026-06-06 |
-| 42. v3.7.0 Docs & Traceability Reconciliation (gap closure) | v3.7.0 | 0/? | Not started | — |
+| 42. v3.7.0 Docs & Traceability Reconciliation (gap closure) | v3.7.0 | 3/3 | Complete    | 2026-06-07 |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 shipped 2026-06-02 (6 phases 25-30, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip + runtime/business metrics) — note: formal archival (ROADMAP/MILESTONES/tag) deferred. v3.6.0 shipped 2026-06-05 (4 phases 31-32.1, Idempotent Execution — exactly-once-effect round-trip via deterministic `H` + effect-first `flag[H]` dedup at both hops; cancelled circuit-breaker built then reverted to plain dead-lettering). Next milestone planning begins with `/gsd-new-milestone`.*
