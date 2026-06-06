@@ -54,8 +54,17 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
     /// Schedule a NEW one-shot trigger for the EXISTING job <paramref name="jobId"/> at the next
     /// Cronos occurrence (Pitfall 4b — does NOT re-add the job). Skips when there is no future
     /// occurrence.
+    /// <para>
+    /// <b>WR-02 / D-04:</b> when no prior trigger exists on the deterministic key (the non-durable
+    /// <see cref="WorkflowFireJob"/> may have been purged once it had no triggers), this method
+    /// RE-CREATES the full job+trigger — mirroring <see cref="ScheduleAsync"/> — so the fallback
+    /// re-establishes the schedule instead of throwing <c>JobPersistenceException</c>. The re-created
+    /// job re-stamps the <paramref name="workflowId"/> job-data so the resurrected fire keeps its
+    /// workflow context; hence <paramref name="workflowId"/> must be supplied by the caller (it cannot
+    /// be recovered from a purged job).
+    /// </para>
     /// </summary>
-    public async Task RescheduleAsync(Guid jobId, string cron, CancellationToken ct)
+    public async Task RescheduleAsync(Guid workflowId, Guid jobId, string cron, CancellationToken ct)
     {
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
         var next = CronInterval.NextOccurrence(cron, nowUtc);
@@ -82,7 +91,18 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
         var replaced = await scheduler.RescheduleJob(triggerKey, trigger, ct);
         if (replaced is null)
         {
-            await scheduler.ScheduleJob(trigger, ct);
+            // No prior trigger on the deterministic key. The non-durable WorkflowFireJob may have been
+            // purged (Quartz auto-removes a non-durable job once it has no triggers), so a bare
+            // ScheduleJob(trigger) would throw JobPersistenceException. Re-create the FULL job+trigger —
+            // mirroring ScheduleAsync — so the fallback re-establishes the schedule instead of throwing
+            // (WR-02 / D-04). The re-created job MUST re-stamp the workflowId job-data or the resurrected
+            // fire loses its workflow context. The trigger above already .ForJob(KeyFor(jobId)), so it
+            // binds to the re-created job by key.
+            var job = JobBuilder.Create<WorkflowFireJob>()
+                .WithIdentity(KeyFor(jobId))
+                .UsingJobData("workflowId", workflowId.ToString("D"))
+                .Build();
+            await scheduler.ScheduleJob(job, trigger, ct);
         }
     }
 

@@ -100,7 +100,7 @@ public sealed class WorkflowFireJob(
             // Self-reschedule off the next Cronos occurrence (Pitfall 4b — new trigger for the existing job).
             if (CronInterval.NextOccurrence(wf.Cron, nowUtc) is not null)
             {
-                await scheduler.RescheduleAsync(wf.JobId, wf.Cron, context.CancellationToken);
+                await scheduler.RescheduleAsync(workflowId, wf.JobId, wf.Cron, context.CancellationToken);
             }
         }
     }
