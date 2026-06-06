@@ -6,7 +6,10 @@ using System.Threading.Tasks;
 using Keeper.Observability;
 using MassTransit;
 using Messaging.Contracts;
+using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace Keeper.Recovery;
 
@@ -31,7 +34,8 @@ namespace Keeper.Recovery;
 /// </para>
 /// </summary>
 public sealed class KeeperRecoveryHandler(
-    ILogger<KeeperRecoveryHandler> logger, L2ProbeRecovery recovery, KeeperMetrics metrics)
+    ILogger<KeeperRecoveryHandler> logger, L2ProbeRecovery recovery, KeeperMetrics metrics,
+    IConnectionMultiplexer redis, IOptions<ProbeOptions> opts)   // KHARD-01: cap deps (mirrors L2ProbeRecovery)
 {
     /// <summary>
     /// The shared recovery body. <typeparamref name="T"/> is the verbatim inner faulted message
@@ -79,6 +83,33 @@ public sealed class KeeperRecoveryHandler(
         var outcome = await recovery.RunAsync(inner.EntryId, inner.H, procId, ct);
         if (outcome == ProbeOutcome.Recovered)
         {
+            // KHARD-01 (D-A1/D-A3): bound the OUTER recover→reinject cycle per H. A persistent fault that the
+            // probe keeps "recovering" but the receiver keeps re-faulting would otherwise flood the stack. The
+            // atomic INCR is race-free across the 2 keeper replicas; only the single CROSSING increment
+            // (n == cap+1) parks — mirrors the flag[H] first-writer-wins dedup.
+            var db  = redis.GetDatabase();
+            var key = (RedisKey)L2ProjectionKeys.KeeperRecoverAttempts(inner.H);
+            var n   = await db.StringIncrementAsync(key);                                     // atomic INCR (race-free)
+            await db.KeyExpireAsync(key, TimeSpan.FromSeconds(300), ExpireWhen.HasNoExpiry);  // D-A3: TTL only if not already set (no clobber)
+            var cap = opts.Value.RecoverAttemptCap;
+            if (n > cap)
+            {
+                if (n == cap + 1)   // D-A1: single-winner — only the crossing increment parks
+                {
+                    var capDlq = await context.GetSendEndpoint(new Uri($"queue:{KeeperQueues.DeadLetter}"));
+                    await capDlq.Send(context.Message, ct);
+                    metrics.DlqPushed.Add(1,
+                        new KeyValuePair<string, object?>(KeeperMetricTags.Reason, KeeperMetricTags.ReasonRecoverCap),
+                        new KeyValuePair<string, object?>(KeeperMetricTags.FaultType, faultTypeTag),
+                        new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
+                    metrics.RecoveryDuration.Record(sw.Elapsed.TotalSeconds,
+                        new KeyValuePair<string, object?>(KeeperMetricTags.Outcome, KeeperMetricTags.OutcomeGaveUp),
+                        new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId));
+                    await db.KeyDeleteAsync(key);   // DEL — converges to a single park, no counter leak
+                }
+                return;   // n > cap (winner already parked, or race loser): never reinject
+            }
+
             // PROBE-03 (spike-proven, GATE_EXIT=0): re-inject the VERBATIM inner to its origin endpoint.
             // Send (NOT Publish), same H. PROBE-06: NO Keeper-side dedup — the receiver's surviving Phase-31
             // flag[H] gate collapses any duplicate re-inject. Origin endpoint is the per-type delta.
