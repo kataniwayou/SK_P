@@ -52,4 +52,7 @@ public static class L2ProjectionKeys
 
     /// <summary>D-03: probe scratch key — short-TTL write-then-delete; the TTL is the crash net-zero net.</summary>
     public static string KeeperProbe(string h) => $"{Prefix}keeper:probe:{h}";   // "skp:keeper:probe:{h}"
+
+    /// <summary>KHARD-01: per-H outer recover-attempt counter — atomic INCR, TTL-bounded, DEL on park.</summary>
+    public static string KeeperRecoverAttempts(string h) => $"{Prefix}keeper:attempts:{h}";   // "skp:keeper:attempts:{h}"
 }

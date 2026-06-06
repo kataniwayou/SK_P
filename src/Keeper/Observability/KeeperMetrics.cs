@@ -100,7 +100,7 @@ public static class KeeperMetricTags
     /// <summary>Closed enum: <see cref="OutcomeRecovered"/> / <see cref="OutcomeGaveUp"/>.</summary>
     public const string Outcome = "outcome";
 
-    /// <summary>Closed enum: <see cref="ReasonProbeExhausted"/>.</summary>
+    /// <summary>Closed enum: <see cref="ReasonProbeExhausted"/> / <see cref="ReasonRecoverCap"/>.</summary>
     public const string Reason = "reason";
 
     /// <summary>Bounded id label — value is <c>inner.ProcessorId.ToString("D")</c> at the call site
@@ -124,6 +124,9 @@ public static class KeeperMetricTags
     // ---- reason values ----
     /// <summary>The bounded probe loop exhausted its attempts without a clean read.</summary>
     public const string ReasonProbeExhausted = "probe_exhausted";
+
+    /// <summary>The OUTER recover→reinject cap was hit for this H — a persistent fault parked instead of looping (KHARD-01).</summary>
+    public const string ReasonRecoverCap = "recover_cap";
 
     /// <summary>
     /// DRY tag-builder for the fault-intake counters: <c>fault_type</c> + bounded <c>ProcessorId</c>

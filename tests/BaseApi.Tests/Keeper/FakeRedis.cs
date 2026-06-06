@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using NSubstitute;
 using StackExchange.Redis;
 
@@ -45,6 +46,11 @@ public sealed class FakeRedis
     private volatile int _health;          // boxed RedisHealth; volatile for cross-await visibility
     private int _failuresRemaining;        // when > 0: throw then decrement; auto-flips Up at 0
 
+    // KHARD-01: backs the per-H recover-attempt counter (skp:keeper:attempts:{H}). Independent of the
+    // health flag — the cap counter is always reachable when Redis is Up (the cap-test condition); INCR
+    // returns 1,2,3,... on consecutive calls, DEL removes the key (proving the no-leak park).
+    private readonly ConcurrentDictionary<RedisKey, long> _counters = new();
+
     /// <summary>Constructs the double in the given initial health (default <see cref="RedisHealth.Down"/>).</summary>
     public FakeRedis(RedisHealth initial = RedisHealth.Down)
     {
@@ -61,6 +67,10 @@ public sealed class FakeRedis
 
     /// <summary>The single <see cref="IDatabase"/> returned by <c>GetDatabase()</c>.</summary>
     public IDatabase Database { get; }
+
+    /// <summary>KHARD-01: true while the per-H recover-attempt counter key is live — the cap test asserts
+    /// this is <c>false</c> after the park (the counter was DEL'd, no leak).</summary>
+    public bool CounterKeyExists(RedisKey key) => _counters.ContainsKey(key);
 
     /// <summary>Flip the simulated Redis fully up (read + write succeed).</summary>
     public void BringUp() { _failuresRemaining = 0; _health = (int)RedisHealth.Up; }
@@ -118,10 +128,20 @@ public sealed class FakeRedis
                 Arg.Any<When>(), Arg.Any<CommandFlags>())
             .Returns(_ => Task.FromResult(OnWrite()));
 
+        // KHARD-01: the per-H recover-attempt counter ops (StringIncrement/KeyExpire) are backed by the
+        // independent _counters dictionary — NOT routed through OnRead()/OnWrite()'s Down-throws (the cap
+        // test always runs FakeRedis Up). Consecutive INCRs on the same key return 1,2,3,...
+        db.StringIncrementAsync(Arg.Any<RedisKey>(), Arg.Any<long>(), Arg.Any<CommandFlags>())
+            .Returns(ci => Task.FromResult(_counters.AddOrUpdate((RedisKey)ci[0], (long)ci[1], (_, v) => v + (long)ci[1])));
+
+        db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<ExpireWhen>(), Arg.Any<CommandFlags>())
+            .Returns(Task.FromResult(true));   // TTL set is a no-op success in the double
+
         // The newer StackExchange.Redis StringSetAsync overload (with the extra `keepTtl`/`SetWhen` params)
         // also routes through OnWrite — NSubstitute matches the most-specific configured overload by arg shape.
+        // KeyDeleteAsync ALSO removes the counter key so the cap test can prove the DEL-on-park (no leak).
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(_ => Task.FromResult(OnWrite()));
+            .Returns(ci => { _counters.TryRemove((RedisKey)ci[0], out _); return Task.FromResult(OnWrite()); });
 
         return db;
     }

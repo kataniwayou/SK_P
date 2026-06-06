@@ -9,4 +9,7 @@ public sealed class ProbeOptions
 {
     public int DelaySeconds { get; set; } = 5;
     public int MaxAttempts  { get; set; } = 12;
+
+    // KHARD-01 (D-A2): OUTER recover→reinject cap per H — distinct from MaxAttempts (the INNER probe-loop count). At cap, park the original Fault<T> once.
+    public int RecoverAttemptCap { get; set; } = 3;
 }
