@@ -95,6 +95,11 @@ public sealed class KeeperRecoveryE2ETests
     // (Operators MAY set a small Probe__MaxAttempts on the keeper container to shorten this — see the runbook.)
     private const int DlqParkPollTimeoutMs = 180_000;
 
+    // PHASE-39 (TEST-01/02): the keeper_* Prometheus scrape budget. Prometheus is pull-based (15s scrape) and the
+    // OTel SDK exports on a 60s cadence, so a series can take up to ~75s to appear after the live recover/give-up
+    // flow fires; allow the full SDK-export + scrape budget (mirror MetricsRoundTripE2ETests.cs PromPollTimeoutMs).
+    private const int PromPollTimeoutMs = 120_000;
+
     // Capture bag for the in-test probe bound to queue:orchestrator-result — the re-injected verbatim
     // ExecutionResult the running Keeper container forwards on Recovered (PROBE-03, second type).
     private readonly ConcurrentBag<(string h, Guid corr, Guid step)> _reinjectedResults = new();
@@ -254,6 +259,54 @@ public sealed class KeeperRecoveryE2ETests
         foreach (var key in ScanKeys("keeper:probe:*"))
             if (!probeKeysBefore.Contains(key))
                 factory.L2KeysToCleanup.Add(key);
+
+        // ── PHASE-39 TEST-01 — keeper_* Prometheus scrape assertions (query the SERVER :9090, NOT the collector ─
+        //    exporter — Pitfall 5). The deployed Keeper container's recover flow (Plan 02 instrumentation) emits
+        //    the recover-path keeper_* series for THIS procId; assert each appears in Prometheus with the expected
+        //    fault_type/outcome/ProcessorId labels, a non-empty service_instance_id, and NO workflowId.
+        //
+        //    PROM-SUFFIX (RESEARCH Pitfall 1, the #1 flake risk): Plan 01 created the histogram with unit "s", so
+        //    its Prom name is keeper_recovery_duration_seconds_{count,sum,bucket}; Counters gain _total;
+        //    keeper_in_flight is a bare gauge (UpDownCounter) and TRANSIENT (→ 0 after the loop), so it is asserted
+        //    PRESENCE-best-effort only, never a value (RESEARCH OQ-1). The live stack carried no keeper_* series at
+        //    authoring time (the keeper container predates the new Keeper meter), so the _seconds form is written per
+        //    Plan 01's unit decision and confirmed on the first GREEN gate run in Plan 04 — see 39-03-SUMMARY.
+        using var prom = new PrometheusTestClient();
+
+        // keeper_fault_consumed_total{fault_type=dispatch} — the intake counter for THIS procId.
+        var faultConsumed = await prom.PollPromForQuery(
+            $"keeper_fault_consumed_total{{fault_type=\"dispatch\",ProcessorId=\"{procId:D}\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(faultConsumed);
+        AssertKeeperLabels(faultConsumed!.Value);
+
+        // keeper_recovered_total{fault_type=dispatch} — the recover-branch counter.
+        var recovered = await prom.PollPromForQuery(
+            $"keeper_recovered_total{{fault_type=\"dispatch\",ProcessorId=\"{procId:D}\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(recovered);
+        AssertKeeperLabels(recovered!.Value);
+
+        // keeper_workflow_paused_total — workflow-scoped (no fault_type tag), ProcessorId-filtered.
+        var paused = await prom.PollPromForQuery(
+            $"keeper_workflow_paused_total{{ProcessorId=\"{procId:D}\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(paused);
+        AssertKeeperLabels(paused!.Value);
+
+        // keeper_workflow_resumed_total — emitted in the recover branch alongside resume.
+        var resumed = await prom.PollPromForQuery(
+            $"keeper_workflow_resumed_total{{ProcessorId=\"{procId:D}\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(resumed);
+        AssertKeeperLabels(resumed!.Value);
+
+        // keeper_recovery_duration_seconds_count{outcome=recovered} — histogram (unit "s" → _seconds suffix).
+        var recoveryDuration = await prom.PollPromForQuery(
+            $"keeper_recovery_duration_seconds_count{{outcome=\"recovered\",ProcessorId=\"{procId:D}\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(recoveryDuration);
+        AssertKeeperLabels(recoveryDuration!.Value);
     }
 
     // ====================================================================================================
@@ -331,6 +384,75 @@ public sealed class KeeperRecoveryE2ETests
         foreach (var key in ScanKeys("keeper:probe:*"))
             if (!probeKeysBefore.Contains(key))
                 factory.L2KeysToCleanup.Add(key);
+
+        // ── PHASE-39 TEST-02 — keeper_* Prometheus scrape assertions for the GIVE-UP flow. The synthetic carrier ─
+        //    is a Fault<ExecutionResult> (fault_type=result), and the loop EXHAUSTS MaxAttempts → the deployed
+        //    container parks to keeper-dlq (reason=probe_exhausted) and records recovery_duration{outcome=gave_up},
+        //    while each WRONGTYPE probe iteration increments keeper_l2_probe_failed for this procId. Assert each
+        //    appears in Prometheus with the expected labels, a non-empty service_instance_id, and NO workflowId.
+        //    Prom-suffix per Plan 01's unit "s" decision (_seconds for the histogram); confirmed on the Plan-04 gate.
+        using var prom = new PrometheusTestClient();
+
+        // keeper_dlq_pushed_total{reason=probe_exhausted,fault_type=result} — the give-up park counter.
+        var dlqPushed = await prom.PollPromForQuery(
+            $"keeper_dlq_pushed_total{{reason=\"probe_exhausted\",fault_type=\"result\",ProcessorId=\"{procId:D}\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(dlqPushed);
+        AssertKeeperLabels(dlqPushed!.Value);
+
+        // keeper_recovery_duration_seconds_count{outcome=gave_up} — histogram (unit "s" → _seconds suffix).
+        var recoveryDuration = await prom.PollPromForQuery(
+            $"keeper_recovery_duration_seconds_count{{outcome=\"gave_up\",ProcessorId=\"{procId:D}\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(recoveryDuration);
+        AssertKeeperLabels(recoveryDuration!.Value);
+
+        // keeper_l2_probe_failed_total — incremented per WRONGTYPE probe iteration (carries ProcessorId, Plan 02).
+        var probeFailed = await prom.PollPromForQuery(
+            $"keeper_l2_probe_failed_total{{ProcessorId=\"{procId:D}\"}}",
+            PrometheusTestClient.VectorNonEmpty, PromPollTimeoutMs, ct);
+        Assert.NotNull(probeFailed);
+        AssertKeeperLabels(probeFailed!.Value);
+    }
+
+    // ── PHASE-39 label-shape helper (TEST-01/02): every keeper_* series must carry a non-empty ──────────
+    //    service_instance_id (ambient from the Keeper console's resource) and NO workflowId label (the
+    //    cardinality ban — T-39-03/D-08; mirrors MetricsRoundTripE2ETests.AssertBusinessLabels:243-248). ─
+    private static void AssertKeeperLabels(JsonElement data)
+    {
+        var metric = FirstMetricObject(data);
+
+        Assert.True(
+            TryGetNonEmpty(metric, "service_instance_id", out _),
+            "keeper_* series must carry a non-empty service_instance_id label (ambient from the Keeper resource).");
+
+        // Cardinality constraint (T-39-03): NO workflowId / WorkflowId label on any keeper_* series.
+        foreach (var prop in metric.EnumerateObject())
+        {
+            Assert.False(
+                string.Equals(prop.Name, "workflowId", StringComparison.OrdinalIgnoreCase),
+                "keeper_* series must NOT carry a workflowId label (cardinality DoS mitigation).");
+        }
+    }
+
+    /// <summary>Returns the <c>result[0].metric</c> object from a Prometheus instant-vector data element.</summary>
+    private static JsonElement FirstMetricObject(JsonElement data)
+    {
+        var result = data.GetProperty("result");
+        Assert.True(result.GetArrayLength() > 0, "Prometheus result vector was empty.");
+        return result[0].GetProperty("metric");
+    }
+
+    /// <summary>True when <paramref name="metric"/> has key <paramref name="key"/> with a non-empty string value.</summary>
+    private static bool TryGetNonEmpty(JsonElement metric, string key, out string value)
+    {
+        value = string.Empty;
+        if (!metric.TryGetProperty(key, out var v) || v.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+        value = v.GetString() ?? string.Empty;
+        return !string.IsNullOrEmpty(value);
     }
 
     // ====================================================================================================
