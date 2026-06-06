@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Phase 39 context gathered
-last_updated: "2026-06-06T10:48:20.651Z"
-last_activity: 2026-06-06 -- Phase 39 Plan 02 complete (consumers + probe loop instrumented; hermetic MeterListener proof)
+stopped_at: Completed 39-03-PLAN.md
+last_updated: "2026-06-06T10:59:00.000Z"
+last_activity: 2026-06-06 -- Phase 39 Plan 03 complete (both Keeper RealStack facts extended with keeper_* Prometheus scrape blocks)
 progress:
   total_phases: 42
   completed_phases: 40
@@ -27,9 +27,19 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 6/7 complete — Phase 38 complete (hermetic + live RealStack GREEN); Phase 39 close gate remains)
 Phase: 39 (keeper-observability-real-stack-e2e-close-gate) — EXECUTING
-Plan: 3 of 4
-Status: Executing Phase 39 (Plans 01-02 complete — KeeperMetrics defined + threaded into emission sites)
-Last activity: 2026-06-06 -- Phase 39 Plan 02 complete (consumers + probe loop instrumented; hermetic MeterListener proof)
+Plan: 4 of 4
+Status: Executing Phase 39 (Plans 01-03 complete — KeeperMetrics defined + threaded + keeper_* scrape assertions; only the close gate 39-04 remains)
+Last activity: 2026-06-06 -- Phase 39 Plan 03 complete (both Keeper RealStack facts extended with keeper_* Prometheus scrape blocks)
+
+### Phase 39 Plan 03 — COMPLETE (Wave 3: keeper_* Prometheus scrape assertions on the two RealStack facts; TEST-01/02; 2026-06-06)
+
+- **1 task commit (scoped tests/BaseApi.Tests/Keeper path only — pre-existing untracked items .claude/ / 27-PATTERNS.md / psql-*.txt / launchSettings.json left UNtouched).** `9e938eb` (test: extend both Keeper RealStack facts with keeper_* scrape blocks). NO file deletions (+122 lines, 0 deletions). Wave 3, depends_on [39-02], autonomous:true, type:execute. Extended the two EXISTING Phase-36 facts in place — NO separate test class (D-06).
+- **Recover fact (KeeperRecovery_RecoversBothPaths)** now asserts 5 recover-path series for THIS procId: keeper_fault_consumed_total{fault_type=dispatch}, keeper_recovered_total{fault_type=dispatch}, keeper_workflow_paused_total, keeper_workflow_resumed_total, keeper_recovery_duration_seconds_count{outcome=recovered} — each via PrometheusTestClient.PollPromForQuery + VectorNonEmpty, each followed by AssertKeeperLabels (non-empty service_instance_id + no-workflowId cardinality ban).
+- **Give-up fact (KeeperRecovery_GivesUp_ParksToDlq)** now asserts 3 give-up-path series (synthetic Fault<ExecutionResult> → fault_type=result): keeper_dlq_pushed_total{reason=probe_exhausted,fault_type=result}, keeper_recovery_duration_seconds_count{outcome=gave_up}, keeper_l2_probe_failed_total — all ProcessorId-filtered + AssertKeeperLabels. keeper_in_flight NOT asserted (transient gauge, hermetically covered in Plan 02 — RESEARCH OQ-1).
+- **Wave-0 histogram-suffix gate:** live scrape `curl {__name__=~"keeper_.*"}` → EMPTY vector (deployed keeper container predates the new Keeper meter; not rebuilt yet), so the suffix could NOT be live-confirmed now. Per the plan's explicit fallback, queries written to the unit-"s" `_seconds` form (keeper_recovery_duration_seconds_count) per Plan 01's locked unit decision — **to be CONFIRMED on the first GREEN gate run in Plan 04** (which rebuilds the keeper container, DELTA 1). The 8 locked query strings are recorded in 39-03-SUMMARY for the gate run to match.
+- **PromPollTimeoutMs=120_000** const added (SDK 60s export + 15s scrape budget; mirror MetricsRoundTripE2ETests). All queries go through PollPromForQuery (Uri.EscapeDataString built in) — only the validated {procId:D} GUID interpolated, no raw query-URL concatenation (T-39-05 mitigated; T-39-06 accept).
+- **No deviations** (plan executed exactly as written; the Wave-0 "write _seconds, confirm on Plan 04" path is the plan's documented conditional). No architectural changes, no auth gates, no stubs (the series aren't live yet because the keeper container predates the meter — a Plan-04 rebuild concern, tracked in the Wave-0 gate, not a stub). The Phase-36 outage recipe (ArmWrongTypePoisonAsync), L2KeysToCleanup teardown, and keeper-dlq ACK-drain UNCHANGED (D-07/D-10).
+- **Verification:** `dotnet build tests/BaseApi.Tests/BaseApi.Tests.csproj -c Release` 0 Warning / 0 Error (TreatWarningsAsErrors). Grep gates clean (PrometheusTestClient/PollPromForQuery/PromPollTimeoutMs present; all 7 distinct keeper_*_total/_seconds_count series present across the two facts; AssertKeeperLabels no-workflowId loop present; no raw query-URL concat). No file deletions. SUMMARY: 39-03-SUMMARY.md (Self-Check PASSED). **Phase 39 Wave 3 = 1/1 plan; next is Wave 4 (39-04 close gate: clone phase-33-close.ps1 + DELTA 1 rebuild keeper + DELTA 2 both-DLQ depth==0; the first GREEN run confirms the histogram _seconds suffix and runs these two extended facts live).**
 
 ### Phase 39 Plan 02 — COMPLETE (Wave 2: thread KeeperMetrics into the two fault consumers + L2 probe loop; KMET-01/02/03; 2026-06-06)
 

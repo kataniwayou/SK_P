@@ -59,8 +59,10 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 
 ### Live Proof & Close Gate (TEST)
 
-- [ ] **TEST-01**: A real-stack E2E induces an L2 (Redis) outage that dead-letters **both** an `EntryStepDispatch` (processor) and an `ExecutionResult` (orchestrator), then proves Keeper pauses the workflow, recovers when L2 returns, resumes, and re-injects each to its origin with exactly-once downstream effect (no duplicate) — validating the uniform loop + per-type re-inject.
-- [ ] **TEST-02**: A real-stack E2E proves the give-up path: L2 stays down past max-attempts → the message lands in `keeper-dlq`, the workflow stays paused, and `keeper_dlq_pushed` increments.
+- [x] **TEST-01
+**: A real-stack E2E induces an L2 (Redis) outage that dead-letters **both** an `EntryStepDispatch` (processor) and an `ExecutionResult` (orchestrator), then proves Keeper pauses the workflow, recovers when L2 returns, resumes, and re-injects each to its origin with exactly-once downstream effect (no duplicate) — validating the uniform loop + per-type re-inject.
+- [x] **TEST-02
+**: A real-stack E2E proves the give-up path: L2 stays down past max-attempts → the message lands in `keeper-dlq`, the workflow stays paused, and `keeper_dlq_pushed` increments.
 - [ ] **TEST-03**: A phase-close gate runs 3× consecutive GREEN with the triple-SHA (psql `\l` / redis `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER, including **both DLQ-1 and DLQ-2 (`keeper-dlq`)** + probe scratch-key scan-clean (net-zero), Release+Debug 0-warning.
 
 ## Future Requirements (deferred)
