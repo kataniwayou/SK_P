@@ -1,6 +1,7 @@
 using BaseConsole.Core.Health;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Startup;
 using MassTransit;
 using MassTransit.Testing;
@@ -10,6 +11,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using Xunit;
 
 namespace BaseApi.Tests.Processor;
@@ -66,7 +70,8 @@ public sealed class IdentityResolutionFacts
             });
 
             var orchestrator = new ProcessorStartupOrchestrator(
-                identityClient, schemaClient, sourceHash, context, gate, StubConnector(), options,
+                identityClient, schemaClient, sourceHash, context, gate, StubConnector(),
+                StubMeterProviderHolder(), options,
                 Options.Create(new Messaging.Contracts.Configuration.RetryOptions()), fakeClock,
                 NullLogger<ProcessorStartupOrchestrator>.Instance);
 
@@ -124,6 +129,24 @@ public sealed class IdentityResolutionFacts
             .ConnectReceiveEndpoint(Arg.Any<string>(), Arg.Any<Action<IBusRegistrationContext, IReceiveEndpointConfigurator>>())
             .Returns(handle);
         return connector;
+    }
+
+    /// <summary>
+    /// A real <see cref="MeterProviderHolder"/> over a minimal hermetic host MeterProvider (provider #1
+    /// with the placeholder resource). The orchestrator's Loop-A swap fires the production
+    /// <c>SwapTo</c>/<c>Build</c> path: building provider #2 does NOT open a live OTLP connection (the
+    /// gRPC channel is lazy), and <c>ForceFlush</c>/<c>Dispose</c> on #1 are safe with no collector.
+    /// Shared by every test that drives the orchestrator past identity-resolve (MLBL-03 / Plan 38-03).
+    /// </summary>
+    internal static MeterProviderHolder StubMeterProviderHolder()
+    {
+        var hostProvider = Sdk.CreateMeterProviderBuilder()
+            .ConfigureResource(r => r
+                .AddService(serviceName: "processor-sample_3.5.0", serviceVersion: "3.5.0")
+                .AddAttributes(new[] { new KeyValuePair<string, object>("service.instance.id", "test-instance") }))
+            .AddMeter(BaseProcessor.Core.Observability.ProcessorMetrics.MeterName)
+            .Build();
+        return new MeterProviderHolder(hostProvider, "test-instance", "3.5.0");
     }
 
     private static int GetIdentityCallCount(ProcessorTestHarness.ResponderSequence sequence)

@@ -1,6 +1,7 @@
 using BaseConsole.Core.Health;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Processing;
 using MassTransit;
 using Messaging.Contracts;
@@ -54,6 +55,7 @@ public sealed class ProcessorStartupOrchestrator(
     IProcessorContext context,
     IStartupGate gate,
     IReceiveEndpointConnector endpointConnector,
+    MeterProviderHolder meterProviderHolder,
     IOptions<ProcessorLivenessOptions> options,
     IOptions<RetryOptions> retryOptions,
     TimeProvider clock,
@@ -79,6 +81,12 @@ public sealed class ProcessorStartupOrchestrator(
                 if (resp.Is(out Response<ProcessorIdentityFound>? found))
                 {
                     context.SetIdentity(found!.Message);
+                    // MLBL-03 (ii): swap the metrics MeterProvider to the DB-sourced service_name
+                    // ({db.Name}_{db.Version}) — synchronous, inside Loop A, BEFORE the {id:D} queue-bind /
+                    // MarkHealthy (race-safe: the dispatch counters can't fire until the queue is bound
+                    // post-swap; the heartbeat writes Redis only). Reads Name/Version straight off the
+                    // received message (WR-03 memory-visibility is moot at the call-site).
+                    meterProviderHolder.SwapTo($"{found.Message.Name}_{found.Message.Version}");
                     logger.LogInformation("Identity resolved for hash {Hash}: processor {ProcessorId}",
                         hash, found.Message.Id);
                     break;

@@ -1,3 +1,4 @@
+using BaseConsole.Core.Configuration;
 using BaseConsole.Core.DependencyInjection;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
@@ -121,6 +122,22 @@ public static class BaseProcessorServiceCollectionExtensions
         services.AddSingleton<ProcessorMetrics>();
         services.ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(ProcessorMetrics.MeterName));
 
+        // 6d. MLBL-03 (D-02/D-03, Model A1): the MeterProviderHolder owns the placeholder->DB
+        //     service.name swap. It receives the HOST's shared MeterProvider (provider #1 — built by the
+        //     unchanged AddBaseConsoleObservability path + the additive AddMeter above), the appsettings
+        //     Service:Version (kept as service.version — D-07), and the resolved service.instance.id
+        //     (captured ONCE, reused for provider #2). On identity-resolve in Loop A the orchestrator
+        //     calls SwapTo("{db.Name}_{db.Version}"); the holder builds #2 and disposes #1 (double-dispose
+        //     by DI at shutdown is a safe no-op — A1). MeterProvider is DI-resolvable (the shared path's
+        //     AddOpenTelemetry registers it; see ConsoleObservabilityTests.MeterProvider_Resolvable).
+        services.AddSingleton<MeterProviderHolder>(sp =>
+        {
+            var hostProvider = sp.GetRequiredService<MeterProvider>();   // provider #1 (host-built, placeholder resource — A1)
+            var version      = cfg.Require("Service:Version");           // appsettings placeholder version (D-04/D-07)
+            var instanceId   = ResolveInstanceIdForHolder();            // the holder's single documented IN-03 read (see below)
+            return new MeterProviderHolder(hostProvider, instanceId, version);
+        });
+
         // 7. The two-loop startup orchestrator (identity-by-SourceHash + per-non-null-schema definition).
         services.AddHostedService<ProcessorStartupOrchestrator>();
 
@@ -142,4 +159,23 @@ public static class BaseProcessorServiceCollectionExtensions
 
         return services;
     }
+
+    /// <summary>
+    /// MLBL-03 (Pitfall 4 / Phase 30 D-10) — the MeterProviderHolder's SINGLE read of the per-replica
+    /// <c>service.instance.id</c>, captured once and reused for provider #2 so logs + metrics #1 + #2
+    /// carry the identical value. The shared <c>AddBaseConsoleObservability</c> resolves the id once but
+    /// does not expose it, so this is a documented capture using the IDENTICAL env precedence.
+    /// <para>
+    /// DRIFT GUARD (IN-03) — this precedence expression is now mirrored in FOUR places that MUST change
+    /// in lock-step: (1) <c>BaseConsole.Core/DependencyInjection/BaseConsoleObservabilityExtensions.cs</c>
+    /// (<c>ResolveInstanceId</c>), (2) <c>BaseApi.Core/DependencyInjection/ObservabilityServiceCollectionExtensions.cs</c>
+    /// (<c>ResolveInstanceId</c>), (3) the hermetic mirror <c>tests/BaseApi.Tests/Observability/ResolveInstanceIdFacts.cs</c>
+    /// (<c>Resolve</c>), and (4) HERE. Edit all four together.
+    /// </para>
+    /// </summary>
+    private static string ResolveInstanceIdForHolder() =>
+        Environment.GetEnvironmentVariable("POD_NAME")
+        ?? Environment.GetEnvironmentVariable("HOSTNAME")
+        ?? Environment.MachineName
+        ?? Guid.NewGuid().ToString("N");   // IN-03: mirrors the 3 existing copies — keep in lock-step
 }

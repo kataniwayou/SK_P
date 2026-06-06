@@ -104,7 +104,7 @@ public sealed class SchemaResolutionFacts
 
         var orchestrator = new ProcessorStartupOrchestrator(
             identityClient, schemaClient, sourceHash, context, gate,
-            IdentityResolutionFacts.StubConnector(), options,
+            IdentityResolutionFacts.StubConnector(), IdentityResolutionFacts.StubMeterProviderHolder(), options,
             Options.Create(new Messaging.Contracts.Configuration.RetryOptions()), clock,
             NullLogger<ProcessorStartupOrchestrator>.Instance);
 
