@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: planning
-stopped_at: Phase 39 context gathered
-last_updated: "2026-06-06T08:59:12.007Z"
+stopped_at: Phase 39 planned (4 plans, ready to execute)
+last_updated: "2026-06-06T10:15:54.517Z"
 last_activity: 2026-06-06
 progress:
   total_phases: 42
   completed_phases: 40
-  total_plans: 141
+  total_plans: 145
   completed_plans: 155
   percent: 100
 ---
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 6/7 complete — Phase 38 complete (hermetic + live RealStack GREEN); Phase 39 close gate remains)
-Phase: 39 (next — not started)
-Plan: Not started
-Status: Phase 38 COMPLETE (verified 5/5 must-haves) — ready to plan Phase 39
+Phase: 39 (planned — 4 plans in 4 waves, ready to execute)
+Plan: 4 plans created (39-01 meter, 39-02 instrument sites, 39-03 RealStack E2E scrape, 39-04 close gate); plan-checker PASSED (1st pass, 0 blockers); requirements 6/6 covered
+Status: Phase 39 PLANNED — ready to execute (`/gsd-execute-phase 39`)
 Last activity: 2026-06-06
 
 ### Phase 38 — COMPLETE (all 4 plans; verified 5/5 must-haves; code review 0 critical / 2 warning advisory; 2026-06-06)
@@ -1192,4 +1192,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 38 (metrics-service-instance-labels) — 4 plans — 2026-06-06T06:42:41.323Z
+**Planned Phase:** 39 (keeper-observability-real-stack-e2e-close-gate) — 4 plans — 2026-06-06T10:15:54.499Z
