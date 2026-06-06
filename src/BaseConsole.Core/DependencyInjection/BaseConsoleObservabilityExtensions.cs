@@ -59,17 +59,22 @@ public static class BaseConsoleObservabilityExtensions
             o.AddOtlpExporter();
         });
 
-        // OTel METRICS. ConfigureResource MUST come before WithMetrics so the resource
-        // propagates to the metrics provider. No tracer provider (CONSOLE-02).
+        // OTel METRICS. No tracer provider (CONSOLE-02).
+        //
+        // MLBL-04 FIX (Phase 39): the versioned {name}_{version} service.name is set on the MeterProvider's
+        // OWN resource via SetResourceBuilder — NOT via the shared ConfigureResource. In OTel .NET 1.15 the
+        // shared ConfigureResource OVERRIDES the logs provider's SetResourceBuilder (proven by
+        // LogsResourceBleedFacts), so the versioned name leaked onto LOGS too — emitting
+        // service.name="{name}_{version}" (e.g. keeper_3.7.0) on logs and breaking the Phase-35 bare-name ES
+        // query contract. A per-provider SetResourceBuilder keeps metrics versioned (MLBL-01/D-01) while logs
+        // stay BARE (MLBL-04 / Pitfall 5).
         builder.Services.AddOpenTelemetry()
-            .ConfigureResource(r => r
-                // MLBL-01/D-01: the METRICS resource service.name is the combined {name}_{version}
-                // (e.g. keeper_3.7.0) so every Prom series carries a single human label. service.version
-                // is still set standalone (D-07). The LOGS SetResourceBuilder block above stays BARE
-                // (MLBL-04 / Pitfall 5 — protects the Phase-35 ES service.name="keeper" query contract).
-                .AddService(serviceName: $"{serviceName}_{serviceVersion}", serviceVersion: serviceVersion)
-                .AddAttributes(instanceAttrs))    // Phase 30 METRIC-01/02 — every metric carries service.instance.id; service_name={name}_{version} (MLBL-01)
             .WithMetrics(m => m
+                .SetResourceBuilder(ResourceBuilder.CreateDefault()
+                    // MLBL-01/D-01: combined {name}_{version} (e.g. keeper_3.7.0) so every Prom series
+                    // carries a single human label; service.version still set standalone (D-07).
+                    .AddService(serviceName: $"{serviceName}_{serviceVersion}", serviceVersion: serviceVersion)
+                    .AddAttributes(instanceAttrs))    // Phase 30 METRIC-01/02 — every metric carries service.instance.id; service_name={name}_{version} (MLBL-01)
                 // REMOVED vs the API base library: AspNetCore + HttpClient instrumentation
                 // (the worker host has no inbound HTTP request surface beyond health probes).
                 .AddMeter(InstrumentationOptions.MeterName)   // "MassTransit" (CONSOLE-02)
