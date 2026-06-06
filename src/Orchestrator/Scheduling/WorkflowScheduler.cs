@@ -64,14 +64,26 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
             return; // no future occurrence — business skip
         }
 
+        var triggerKey = TriggerKeyFor(jobId);
         var trigger = TriggerBuilder.Create()
-            .WithIdentity(TriggerKeyFor(jobId))
+            .WithIdentity(triggerKey)
             .ForJob(KeyFor(jobId))
             .StartAt(new DateTimeOffset(nextUtc, TimeSpan.Zero))
             .WithSimpleSchedule(s => s.WithMisfireHandlingInstructionFireNow())
             .Build();
 
-        await scheduler.ScheduleJob(trigger, ct);
+        // Pitfall 4b (deterministic-key edition): the previous one-shot trigger shares this
+        // deterministic TriggerKey and is still in the store while the firing job body runs — Quartz
+        // removes a completed no-repeat trigger only AFTER Execute returns. A blind ScheduleJob (add)
+        // would therefore throw ObjectAlreadyExistsException on the same key. Replace the existing
+        // trigger atomically instead: RescheduleJob removes the old trigger (WITHOUT deleting the
+        // non-durable job) and stores the new one, returning null only when no prior trigger existed —
+        // in which case there is nothing to collide with, so add a fresh one.
+        var replaced = await scheduler.RescheduleJob(triggerKey, trigger, ct);
+        if (replaced is null)
+        {
+            await scheduler.ScheduleJob(trigger, ct);
+        }
     }
 
     /// <summary>
