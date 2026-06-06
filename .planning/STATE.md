@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Phase 39 Plan 01 complete
-last_updated: "2026-06-06T10:32:30.000Z"
-last_activity: 2026-06-06 -- Phase 39 Plan 01 complete (KeeperMetrics meter; Route A locked)
+stopped_at: Phase 39 context gathered
+last_updated: "2026-06-06T10:48:20.651Z"
+last_activity: 2026-06-06 -- Phase 39 Plan 02 complete (consumers + probe loop instrumented; hermetic MeterListener proof)
 progress:
   total_phases: 42
   completed_phases: 40
   total_plans: 145
-  completed_plans: 155
+  completed_plans: 157
   percent: 100
 ---
 
@@ -27,9 +27,17 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 6/7 complete — Phase 38 complete (hermetic + live RealStack GREEN); Phase 39 close gate remains)
 Phase: 39 (keeper-observability-real-stack-e2e-close-gate) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 39 (Plan 01 complete — KeeperMetrics meter authored)
-Last activity: 2026-06-06 -- Phase 39 Plan 01 complete (KeeperMetrics + const-to-AddMeter; Route A locked)
+Plan: 3 of 4
+Status: Executing Phase 39 (Plans 01-02 complete — KeeperMetrics defined + threaded into emission sites)
+Last activity: 2026-06-06 -- Phase 39 Plan 02 complete (consumers + probe loop instrumented; hermetic MeterListener proof)
+
+### Phase 39 Plan 02 — COMPLETE (Wave 2: thread KeeperMetrics into the two fault consumers + L2 probe loop; KMET-01/02/03; 2026-06-06)
+
+- **3 task commits (scoped src/Keeper + tests/BaseApi.Tests/Keeper paths only — pre-existing untracked items left UNtouched).** `047531d` (test RED: wiring facts), `7fe4db4` (feat GREEN: thread KeeperMetrics into both consumers + L2ProbeRecovery), `f347dc8` (test: hermetic faked-flow MeterListener proof). NO file deletions. Wave 2, depends_on [39-01], autonomous:true, type:execute (TDD both tasks).
+- **Both fault consumers instrumented at existing branches (no control-flow change):** keeper_fault_consumed{fault_type,ProcessorId}+Stopwatch at intake; keeper_workflow_paused{ProcessorId} after Publish(Pause); keeper_workflow_resumed{ProcessorId}+keeper_recovered{fault_type,ProcessorId}+keeper_recovery_duration{outcome=recovered,ProcessorId} in Recovered branch; keeper_dlq_pushed{reason=probe_exhausted,fault_type,ProcessorId}+keeper_recovery_duration{outcome=gave_up,ProcessorId} in give-up branch. fault_type=dispatch / result. Duration = sw.Elapsed.TotalSeconds (seconds, NOT ms).
+- **L2ProbeRecovery instrumented:** keeper_in_flight +1/entry -1/finally + keeper_l2_probe_failed per RedisException. **OPEN QUESTION OQ-1 RESOLVED by threading:** RunAsync signature is now `RunAsync(string entryId, string h, string procId, CancellationToken ct)`; BOTH in_flight and l2_probe_failed carry {ProcessorId} (threading touched only the two consumer call sites, so the unlabelled fallback was NOT used).
+- **Deviation (Rule 3 - Blocking):** the RunAsync/ctor signature change rippled to two pre-existing Keeper test files (KeeperProbeLoopTests, KeeperPausePublishTests) — updated their `new L2ProbeRecovery`/`new FaultEntryStepDispatchConsumer`/`RunAsync` call sites + harness DI for the new signatures (no behavioral test change). Committed in 7fe4db4.
+- **Verification:** `dotnet build src/Keeper/Keeper.csproj -c Release` 0 Warning / 0 Error. KeeperMetricsFacts **11/11 GREEN** (6 Plan-01 + 2 wiring + 3 hermetic faked-flow via MeterListener) — the flow facts drive the real consumers/probe and assert exact tags, in_flight +1/-1, and NO workflowId/correlationId on any measurement. Touched classes green (KeeperProbeLoopTests 6/6, KeeperPausePublishTests 2/2). No ElapsedMilliseconds in src/Keeper; no workflowId tag in code. SUMMARY: 39-02-SUMMARY.md (Self-Check PASSED). **Phase 39 Wave 2 = 1/1 plan; next is Wave 3 (39-03 Prometheus live-scrape: expect keeper_*_total counters, keeper_in_flight gauge {ProcessorId}, keeper_recovery_duration_seconds_{bucket,sum,count} {outcome,ProcessorId}).**
 
 ### Phase 39 Plan 01 — COMPLETE (Wave 1: KeeperMetrics meter definition + Wave-0 DiagnosticSource gate; KMET-01/03; 2026-06-06)
 
@@ -773,6 +781,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 36 P02 | ~18 min | 2 tasks | 8 files |
 | Phase 37 P02 | 11min | 2 tasks | 3 files |
 | Phase 37 P03 | ~4min | 2 tasks | 7 files |
+| Phase 39 P02 | 9min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1089,6 +1098,8 @@ Recent decisions affecting current work:
 - D-07: centralize the 5-key execution-scope build in ExecutionLogScope.BuildState (single source of truth shared by the bus-wide filter and the Wave-2 Keeper fault consumers); BuildState adds NO CorrelationId key (owned by CorrelationKeys.LogScope, D-01); refactor is byte-identical and regression-guarded by 6 scope tests run BEFORE and AFTER.
 - 37-02: PauseWorkflow/ResumeWorkflow are sealed records (Guid WorkflowId, string H) : ICorrelated mirroring StartOrchestration — single per-workflow WorkflowId (not array, D-01), H positional & observability-only (D-02)
 - 37-02: WorkflowScheduler stamps deterministic .WithIdentity(TriggerKeyFor(jobId)) on BOTH ScheduleAsync and RescheduleAsync so Quartz GetTriggerState(TriggerKey(jobId)) is the sole Normal/Paused/None source of truth (D-05/D-08); PauseAsync wraps PauseJob (idempotent)
+- Phase 39 OQ-1 resolved: L2ProbeRecovery.RunAsync threads a procId param; both keeper_in_flight and keeper_l2_probe_failed are tagged {ProcessorId} (no unlabelled fallback)
+- Phase 39 recovery_duration recorded as sw.Elapsed.TotalSeconds (unit s) — Plan 03 expects keeper_recovery_duration_seconds_{bucket,sum,count} with {outcome,ProcessorId}
 
 ### Roadmap Milestone Log
 

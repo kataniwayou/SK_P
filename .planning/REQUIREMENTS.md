@@ -52,9 +52,9 @@ Phase numbering continues from 32.1 (this milestone starts at **Phase 33**). REQ
 
 ### Keeper Observability (KMET)
 
-- [ ] **KMET-01**: A code-defined `Keeper` meter is registered following the house pattern (snake_case instruments, no `_total` suffix, inherited `service_instance_id` resource label).
-- [ ] **KMET-02**: Throughput/outcome counters exist — `keeper_fault_consumed`, `keeper_recovered`, `keeper_dlq_pushed{reason}`, `keeper_workflow_paused`, `keeper_workflow_resumed`, `keeper_l2_probe_failed` — labeled by `processorId` where meaningful, with no high-cardinality `workflowId` label.
-- [ ] **KMET-03**: Bottleneck signals exist — `keeper_in_flight` (UpDownCounter of messages currently held in probe loops) and a `keeper_recovery_duration` histogram (intake → terminal) — enabling saturation/latency PromQL.
+- [x] **KMET-01**: A code-defined `Keeper` meter is registered following the house pattern (snake_case instruments, no `_total` suffix, inherited `service_instance_id` resource label).
+- [x] **KMET-02**: Throughput/outcome counters exist — `keeper_fault_consumed`, `keeper_recovered`, `keeper_dlq_pushed{reason}`, `keeper_workflow_paused`, `keeper_workflow_resumed`, `keeper_l2_probe_failed` — labeled by `processorId` where meaningful, with no high-cardinality `workflowId` label.
+- [x] **KMET-03**: Bottleneck signals exist — `keeper_in_flight` (UpDownCounter of messages currently held in probe loops) and a `keeper_recovery_duration` histogram (intake → terminal) — enabling saturation/latency PromQL.
 - [ ] **KMET-04**: Keeper emits OTel logs consistent with the other consoles, carrying the correlationId + execution-scope ids propagated from the faulted message.
 
 ### Live Proof & Close Gate (TEST)
@@ -106,9 +106,9 @@ Every REQ-ID maps to exactly one phase (29 requirements across 6 phases, 33–38
 | PAUSE-03 | 37 — Orchestrator Pause/Resume | Not started |
 | PAUSE-04 | 37 — Orchestrator Pause/Resume | Not started |
 | PAUSE-05 | 37 — Orchestrator Pause/Resume | Not started |
-| KMET-01 | 39 — Metrics + E2E + Close Gate | Not started |
-| KMET-02 | 39 — Metrics + E2E + Close Gate | Not started |
-| KMET-03 | 39 — Metrics + E2E + Close Gate | Not started |
+| KMET-01 | 39 — Metrics + E2E + Close Gate | Complete (39-01/39-02) |
+| KMET-02 | 39 — Metrics + E2E + Close Gate | Complete (39-02) |
+| KMET-03 | 39 — Metrics + E2E + Close Gate | Complete (39-01/39-02) |
 | TEST-01 | 39 — Metrics + E2E + Close Gate | Not started |
 | TEST-02 | 39 — Metrics + E2E + Close Gate | Not started |
 | TEST-03 | 39 — Metrics + E2E + Close Gate | Not started |

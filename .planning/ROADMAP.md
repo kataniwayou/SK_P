@@ -299,7 +299,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   5. The close gate runs 3× consecutive GREEN with triple-SHA (psql `\l` / redis `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER — including both DLQs + probe scratch-key scan-clean (net-zero) — at Release+Debug 0-warning.
 **Plans**: 4 plans (4 waves)
   - [ ] 39-01-PLAN.md — KeeperMetrics meter (6 counters + UpDownCounter + Histogram) + Program.cs AddMeter symmetry + Wave-0 DiagnosticSource version gate (KMET-01/03)
-  - [ ] 39-02-PLAN.md — Instrument both fault consumers + L2ProbeRecovery + hermetic KeeperMetricsFacts (KMET-01/02/03)
+  - [x] 39-02-PLAN.md — Instrument both fault consumers + L2ProbeRecovery + hermetic KeeperMetricsFacts (KMET-01/02/03) (completed 2026-06-06 — 6 increment sites/consumer + in_flight ++/finally-- + l2_probe_failed; RunAsync threads procId; 11/11 hermetic GREEN via MeterListener; SK_P 0/0 Release; 047531d, 7fe4db4, f347dc8)
   - [ ] 39-03-PLAN.md — Extend the two KeeperRecovery RealStack facts with keeper_* Prometheus scrape assertions + Wave-0 histogram-suffix gate (TEST-01/02)
   - [ ] 39-04-PLAN.md — Clone phase-39-close.ps1 (triple-SHA + keeper rebuild + both-DLQ depth==0) + live 3xGREEN gate (TEST-03)
 
