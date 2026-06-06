@@ -53,6 +53,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Phase-39: cap test parallelism (xunit.runner.json maxParallelThreads) to stop the 3x full-suite
+         close-gate run from saturating all 22 cores — CPU starvation under that load intermittently times out
+         in-memory MassTransit harness consumes and amplifies parallel capture races (pre-existing legacy
+         flakes surfaced by the gate). Must be copied next to the test assembly for xunit.v3/MTP to read it. -->
+    <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.v3.assert" />
     <PackageReference Include="xunit.runner.visualstudio">
