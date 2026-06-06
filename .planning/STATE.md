@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 37-03-PLAN.md
-last_updated: "2026-06-06T00:18:53.349Z"
+stopped_at: Completed 37-04-PLAN.md
+last_updated: "2026-06-06T03:40:00.000Z"
 last_activity: 2026-06-06
 progress:
   total_phases: 41
@@ -26,10 +26,18 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
-Phase: 37 (orchestrator-pause-resume-coordination) — EXECUTING
-Plan: 4 of 4 (Wave 0 Plan 01 + Wave 1 Plan 02 + Wave 2 Plan 03 complete; Plan 04 Keeper publish sites next)
-Status: Ready to execute
+Phase: 37 (orchestrator-pause-resume-coordination) — COMPLETE (4/4 plans; hermetic-complete, live round-trip operator-pending for Phase-39 gate)
+Plan: 4 of 4 COMPLETE (Wave 0 Plan 01 RED + Wave 1 Plan 02 contracts/scheduler + Wave 2 Plan 03 orchestrator consumers + Wave 2 Plan 04 Keeper publish sites — all GREEN)
+Status: Phase 37 complete — next is Phase 38 (uniform metric labels)
 Last activity: 2026-06-06
+
+### Phase 37 Plan 04 — COMPLETE (Wave 2 GREEN: Keeper publish sites; KeeperPausePublishTests RED→GREEN 2/2; FULL phase-37 assembly now compiles end-to-end; 2026-06-06)
+
+- **1 task commit (scoped src/ paths only — pre-existing `.planning/` archive items + untracked files left UNtouched).** `bfecd38` (feat: publish Pause-at-intake + Resume-on-Recovered in both Keeper fault consumers). Wave 2, depends_on [37-01, 37-02], autonomous:true, type:execute (TDD GREEN — the FINAL plan of the phase). NO file deletions (git diff --diff-filter=D clean; 24 insertions, 0 deletions).
+- **Task 1 — Keeper publish sites (PAUSE-01 publish half + PAUSE-05/D-09):** both `src/Keeper/Consumers/FaultEntryStepDispatchConsumer.cs` + `FaultExecutionResultConsumer.cs` now `context.Publish(new PauseWorkflow(inner.WorkflowId, inner.H) { CorrelationId = inner.CorrelationId }, ct)` at intake — IMMEDIATELY BEFORE `recovery.RunAsync` (D-03, stop the outage spreading before probing) — and, on `ProbeOutcome.Recovered`, AFTER the existing re-inject `Send` and still inside the Recovered branch, `context.Publish(new ResumeWorkflow(inner.WorkflowId, inner.H) { CorrelationId = inner.CorrelationId }, ct)` (D-04). `Publish` (NOT Send) so MassTransit message-type binding fans the signal out to the orchestrator's per-replica `orchestrator-pauseresume-{instanceId}` endpoint (Plan 03). The GaveUp `else` branch is UNCHANGED in BOTH files — parks the original `Fault<T>` envelope to `keeper-dlq` and publishes nothing (D-09: no re-pin, no reference-count). `L2ProbeRecovery.cs` untouched (publish lives in the consumers, not the probe loop). The Phase-35/36 consumer bodies (double-unwrap, manual CorrelationId scope, BuildState scope, intake log, re-inject/park) preserved verbatim — additive only.
+- **No deviations** — implemented exactly as planned. No auto-fixes, no architectural decisions, no auth gates, no scope creep. No stubs introduced; no new threat surface (the two records travel the existing trusted internal bus; T-37-08/09/10 dispositions hold — structured-only log holes, publish-fail→un-ack→bounded-retry re-publishes Resume, duplicate Pause absorbed by ConcurrentMessageLimit=1 + idempotent PauseJob).
+- **Verification:** `dotnet build src/Keeper/Keeper.csproj -c Release` 0 Warning / 0 Error. `KeeperPausePublishTests` **2/2 GREEN** in isolation via the MTP executable `--filter-class` (Recovered_PublishesPauseThenResume + GaveUp_PublishesPause_ButNoResume). FULL hermetic BaseApi.Tests assembly now **compiles end-to-end** for the first time across phase 37 (all 37-01..04 production symbols exist). Full-suite run: **480 passed / 6 failed of 486**. The 6 reds are ALL out-of-scope for this Keeper-only plan: (a) 2 RealStack/live E2E — `KeeperRecoveryE2ETests.KeeperRecovery_RecoversBothPaths` + `KeeperFaultIntakeE2ETests.LiveWrongTypeTrip_KeeperContainer_EmitsCorrelatedIntakeLog` — operator/live-gate pending per the Phase 35/36 precedent (need live RabbitMQ+Redis+Keeper container; fail with `Connection Failed: rabbitmq://rabbitmq/`); (b) 4 Orchestrator hermetic tests — `FireDispatchTests.{OneMessagePerEntryStep_CorrectFields, CorrelationIdDiffersAcrossTwoFires, LivenessTimestampAdvancesOnFire_NoL2Write}` + `WorkflowFireJobScopeTests.PostMint_FireLogs_Carry_CorrelationId_And_WorkflowId_Scope` — fail with `Quartz.ObjectAlreadyExistsException: Unable to store Trigger: 'DEFAULT.{guid}'`, a PRE-EXISTING cross-class Quartz RAMJobStore collision (these older tests, last touched Phase 31, schedule into the shared DEFAULT trigger group without the per-test unique `instanceName` discipline that the new 37-01 `PauseResumeSchedulingTests` adopt). Reproduces in isolation (3/3), so deterministic not load-flaky — but unrelated to the Keeper consumer change (those tests never reference Keeper). Logged to `37-orchestrator-pause-resume-coordination/deferred-items.md` (D1), NOT fixed (scope boundary), candidate for a 37 cleanup / Phase-38 hygiene pass.
+- SUMMARY: 37-04-SUMMARY.md (Self-Check PASSED). **Phase 37 = 4/4 plans complete** — pause/resume coordination is code-complete + hermetically proven (the orchestrator's `GetTriggerState`-as-truth Quartz Pause/Resume half from Plans 02/03 + the Keeper publish half here). Live bus round-trip (Keeper fault → PauseWorkflow → orchestrator pauses → recovery → ResumeWorkflow → orchestrator resumes) is operator-pending for the Phase-39 close gate. PAUSE-01/05 publish behavior satisfied; full PAUSE-01..05 traceability handled by the verifier/operator on the live GREEN run. Milestone v3.7.0 continues — Phase 38 (uniform metric labels) + Phase 39 (Keeper observability + RealStack close gate) remain.
 
 ### Phase 37 Plan 03 — COMPLETE (Wave 2 GREEN: orchestrator Pause/Resume consumers + ConcurrentMessageLimit=1 definitions; PauseResumeConsumerTests RED→GREEN; 2026-06-06)
 
