@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Phase 37 Plan 01 complete (Wave 0 RED tests)
-last_updated: "2026-06-05T23:55:19Z"
-last_activity: 2026-06-05 -- Phase 37 Plan 01 complete (Wave 0 RED tests authored)
+stopped_at: Completed 37-02-PLAN.md
+last_updated: "2026-06-06T00:10:16.931Z"
+last_activity: 2026-06-06 -- Phase 37 Plan 02 complete (contracts + scheduler GREEN)
 progress:
   total_phases: 41
   completed_phases: 38
   total_plans: 137
-  completed_plans: 147
+  completed_plans: 148
   percent: 100
 ---
 
@@ -27,9 +27,18 @@ See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — started 2026-06-05 (phases 33→39; 4/7 complete — Phase 36 hermetic-complete, live operator-pending)
 Phase: 37 (orchestrator-pause-resume-coordination) — EXECUTING
-Plan: 2 of 4 (Wave 0 Plan 01 complete; Wave 1 Plan 02 next)
+Plan: 3 of 4 (Wave 0 Plan 01 + Wave 1 Plan 02 complete; Plan 03 orchestrator consumers next)
 Status: Executing Phase 37
-Last activity: 2026-06-05 -- Phase 37 Plan 01 complete (Wave 0 RED tests authored)
+Last activity: 2026-06-06 -- Phase 37 Plan 02 complete (contracts + scheduler GREEN)
+
+### Phase 37 Plan 02 — COMPLETE (Wave 1 GREEN: Pause/Resume contracts + deterministic-TriggerKey scheduler; contract + scheduling tests RED→GREEN; 2026-06-06)
+
+- **2 task commits (scoped src/ paths only — pre-existing `.planning/` archive deletions + untracked files left UNtouched).** `63fb4de` (feat: PauseWorkflow + ResumeWorkflow contracts), `8ee43a1` (feat: deterministic TriggerKey stamping + PauseAsync/GetTriggerStateAsync). Wave 1, depends_on [37-01], autonomous:true, type:execute (TDD GREEN). NO file deletions.
+- **Task 1 — contracts (PAUSE-01 contract half):** `src/Messaging.Contracts/PauseWorkflow.cs` + `ResumeWorkflow.cs`, each `sealed record (Guid WorkflowId, string H) : ICorrelated { Guid CorrelationId { get; init; } }` — byte-identical mirror of StartOrchestration, single per-workflow WorkflowId (NOT array, D-01), H positional/observability-only (D-02). PauseResumeContractTests 4/4 GREEN.
+- **Task 2 — scheduler (PAUSE-02/03 mechanism):** `src/Orchestrator/Scheduling/WorkflowScheduler.cs` — added `TriggerKeyFor(jobId) => new(jobId.ToString("D"))`; stamped `.WithIdentity(TriggerKeyFor(jobId))` on BOTH builder sites (ScheduleAsync AND the per-fire RescheduleAsync — grep count == 2) so Quartz answers Normal/Paused/None for `TriggerKey(jobId)` (was a random GUID → None silently); added thin idempotent `PauseAsync` (wraps `PauseJob`) + `GetTriggerStateAsync` (wraps `GetTriggerState(TriggerKeyFor)`). PauseResumeSchedulingTests 3/3 GREEN; pre-existing SchedulingTests 2/2 still GREEN (no regression). No signature/cron-skip-guard changes (reused verbatim by Plan-03 resume path).
+- **No deviations** — implemented exactly as planned. No auto-fixes, no architectural decisions, no auth gates, no scope creep. No stubs, no new threat surface (the two records travel the existing trusted internal bus, T-37-01..03 unchanged).
+- **Verification:** Orchestrator.csproj Build succeeded 0 Error / 0 Warning. Targeted GREEN proof via the MTP executable `--filter-class` (the `dotnet test` MTP MSBuild wrapper crashed with MSB4166/file-create errors — known flaky infra, not a test failure): `PauseResumeContractTests` + `PauseResumeSchedulingTests` = 7/7 passed; `*SchedulingTests` = 5/5 (3 new + 2 pre-existing). Because the test assembly still references Plan-03 (`PauseWorkflowConsumer`/`ResumeWorkflowConsumer`) + Plan-04 (Keeper publish) symbols that do NOT exist yet, the WHOLE BaseApi.Tests assembly cannot compile end-to-end — EXPECTED. The contract+scheduler tests were proven GREEN by TEMPORARILY excluding PauseResumeConsumerTests.cs + KeeperPausePublishTests.cs from compilation (a verification-only `<Compile Remove>`, REVERTED before commit — csproj is byte-unchanged on disk). The consumer/Keeper RED is owned by Plans 03/04.
+- SUMMARY: 37-02-SUMMARY.md (Self-Check PASSED). Plan 03 (orchestrator PauseWorkflowConsumer/ResumeWorkflowConsumer over WorkflowLifecycle) is next — it consumes the PauseAsync/GetTriggerStateAsync wrappers shipped here; Plan 04 wires the Keeper publish sites.
 
 ### Phase 37 Plan 01 — COMPLETE (Wave 0 RED tests for PAUSE-01..05; build fails ONLY on missing production symbols; 2026-06-06)
 
@@ -500,7 +509,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 98%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -695,6 +704,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 34 P03 | 9min | 2 tasks | 7 files |
 | Phase 35 P01 | ~6 min | 2 tasks | 2 files |
 | Phase 36 P02 | ~18 min | 2 tasks | 8 files |
+| Phase 37 P02 | 11min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1009,6 +1019,8 @@ Recent decisions affecting current work:
 - 34-03: keeper compose tier = single-instance tier MINUS container_name PLUS deploy.replicas:2; docker compose config validates
 - 34-03: block-scoped compose negatives use tempered-greedy (?:(?!^  \S).)*? — a plain prefix-glob FALSE-PASSES across tier boundaries (fixed the plan draft)
 - D-07: centralize the 5-key execution-scope build in ExecutionLogScope.BuildState (single source of truth shared by the bus-wide filter and the Wave-2 Keeper fault consumers); BuildState adds NO CorrelationId key (owned by CorrelationKeys.LogScope, D-01); refactor is byte-identical and regression-guarded by 6 scope tests run BEFORE and AFTER.
+- 37-02: PauseWorkflow/ResumeWorkflow are sealed records (Guid WorkflowId, string H) : ICorrelated mirroring StartOrchestration — single per-workflow WorkflowId (not array, D-01), H positional & observability-only (D-02)
+- 37-02: WorkflowScheduler stamps deterministic .WithIdentity(TriggerKeyFor(jobId)) on BOTH ScheduleAsync and RescheduleAsync so Quartz GetTriggerState(TriggerKey(jobId)) is the sole Normal/Paused/None source of truth (D-05/D-08); PauseAsync wraps PauseJob (idempotent)
 
 ### Roadmap Milestone Log
 
@@ -1111,9 +1123,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 37 context gathered
-Resume file: --resume-file
+Last session: 2026-06-06T00:10:16.908Z
+Stopped at: Completed 37-02-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.

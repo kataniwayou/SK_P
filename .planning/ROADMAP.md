@@ -267,7 +267,7 @@ Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, an
   5. (Revised by **D-09**) The orchestrator resumes a workflow on **any** successful recovery regardless of sibling outcomes; a given-up message is parked to `keeper-dlq` and publishes nothing (does NOT re-pin paused). A workflow stays paused only if **no** recovery ever succeeds. Resume acts only when `GetTriggerState == Paused` (None=operator-Stopped and Normal=already-Running are ignored).
 **Plans**: 4 plans
   - [x] 37-01-PLAN.md — Wave 0: four RED test files (contracts, Keeper publish, scheduling Pause/Resume/ignore, consumer idempotency) (completed 2026-06-06 — deliberate RED; build fails only on the 6 missing production symbols plans 02/03 create)
-  - [ ] 37-02-PLAN.md — Contracts + load-bearing deterministic TriggerKey stamping + PauseAsync/GetTriggerStateAsync
+  - [x] 37-02-PLAN.md — Contracts + load-bearing deterministic TriggerKey stamping + PauseAsync/GetTriggerStateAsync (completed 2026-06-06 — PauseResumeContractTests 4/4 + PauseResumeSchedulingTests 3/3 GREEN; SchedulingTests no regression; consumer/Keeper tests remain RED for plans 03/04)
   - [ ] 37-03-PLAN.md — Orchestrator Pause/Resume consumers + lifecycle seams + ConcurrentMessageLimit=1 definitions + Program wiring
   - [ ] 37-04-PLAN.md — Keeper publish sites: PauseWorkflow at intake + ResumeWorkflow on Recovered (GaveUp unchanged)
 
