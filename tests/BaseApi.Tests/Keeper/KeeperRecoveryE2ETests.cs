@@ -519,6 +519,63 @@ public sealed class KeeperRecoveryE2ETests
         catch { /* best-effort terminal-queue drain */ }
     }
 
+    // KHARD-02 (D-A5): read the live keeper-dlq depth via the rabbitmq mgmt API (host port 15673), the same
+    // HttpClient + Basic-auth(guest:guest) shape as PurgeKeeperDlqAsync. GET /api/queues/%2F/keeper-dlq returns
+    // a JSON object with an integer `messages` property. On ANY exception or a missing property we return
+    // int.MaxValue — "can't read" is treated as "not empty" so the drain loop keeps trying rather than
+    // false-passing on a transient mgmt-API hiccup.
+    private static async Task<int> GetKeeperDlqDepthAsync(CancellationToken ct)
+    {
+        using var http = new System.Net.Http.HttpClient { BaseAddress = new Uri("http://localhost:15673") };
+        var auth = Convert.ToBase64String(Encoding.ASCII.GetBytes("guest:guest"));
+        http.DefaultRequestHeaders.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", auth);
+        try
+        {
+            var json = await http.GetStringAsync("/api/queues/%2F/keeper-dlq", ct);
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.GetProperty("messages").GetInt32();
+        }
+        catch
+        {
+            // ANY failure — network/auth error, malformed body, or a MISSING `messages` property
+            // (GetProperty throws KeyNotFoundException) — is treated as "not empty" (int.MaxValue) so the
+            // drain loop keeps trying rather than false-passing on a transient mgmt-API hiccup.
+            return int.MaxValue;
+        }
+    }
+
+    // KHARD-02 (D-A5): poll-until-stably-empty. keeper-dlq is terminal (no prod consumer), so each
+    // late 2-replica park must be actively re-purged; polling alone never reaches 0. The window must
+    // exceed the >10s inter-replica give-up gap. Fails loudly on timeout so a teardown regression
+    // surfaces here, NOT silently (Pitfall 2: the gate stays snapshot-only — no gate-side purge).
+    private static async Task DrainKeeperDlqUntilStablyEmptyAsync(CancellationToken ct)
+    {
+        var pollInterval   = TimeSpan.FromSeconds(2);
+        var stabilityWindow= TimeSpan.FromSeconds(15);   // > the ">10s apart" inter-replica gap
+        var maxTimeout     = TimeSpan.FromSeconds(90);
+        var deadline       = DateTime.UtcNow + maxTimeout;
+        DateTime? emptySince = null;
+
+        while (DateTime.UtcNow < deadline)
+        {
+            await PurgeKeeperDlqAsync(ct);                       // re-purge any late park
+            await Task.Delay(pollInterval, ct);
+            var depth = await GetKeeperDlqDepthAsync(ct);
+            if (depth == 0)
+            {
+                emptySince ??= DateTime.UtcNow;
+                if (DateTime.UtcNow - emptySince.Value >= stabilityWindow)
+                    return;                                      // stably empty for the full window
+            }
+            else
+            {
+                emptySince = null;                              // a late park reset the window
+            }
+        }
+        Assert.Fail($"keeper-dlq did not stay empty for {stabilityWindow.TotalSeconds:F0}s within the {maxTimeout.TotalSeconds:F0}s drain budget (late give-up park likely raced the snapshot).");
+    }
+
     private sealed class KeeperDlqProbe(ConcurrentBag<string> capturedHashes)
         : IConsumer<Fault<ExecutionResult>>
     {
