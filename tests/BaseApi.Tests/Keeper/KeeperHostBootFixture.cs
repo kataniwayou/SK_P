@@ -45,6 +45,8 @@ public sealed class KeeperHostBootFixture : ConsoleTestHostFixture
         });
         builder.Services.Configure<global::Keeper.ProbeOptions>(builder.Configuration.GetSection("Probe"));
         builder.Services.AddSingleton<global::Keeper.Recovery.L2ProbeRecovery>();
+        // KHARD-03 (Phase-40): mirror Program.cs — register the shared recovery body both consumers delegate to.
+        builder.Services.AddSingleton<global::Keeper.Recovery.KeeperRecoveryHandler>();
         builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
         {
             x.AddConsumer<FaultEntryStepDispatchConsumer, FaultEntryStepDispatchConsumerDefinition>();

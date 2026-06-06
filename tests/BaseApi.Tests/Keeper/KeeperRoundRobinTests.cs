@@ -61,6 +61,9 @@ public sealed class KeeperRoundRobinTests
             .AddMetrics()
             .AddSingleton<KeeperMetrics>()
             .AddSingleton<L2ProbeRecovery>()
+            // KHARD-03 (Phase-40): the consumer now ctor-injects the shared KeeperRecoveryHandler; the
+            // harness must register it or the consumer fails to resolve and is never consumed (count==0).
+            .AddSingleton<KeeperRecoveryHandler>()
             .BuildServiceProvider(true);
 
         var harness = provider.GetRequiredService<ITestHarness>();
