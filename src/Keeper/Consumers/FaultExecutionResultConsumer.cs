@@ -45,6 +45,13 @@ public sealed class FaultExecutionResultConsumer(
                 nameof(ExecutionResult), inner.H, ex?.ExceptionType, ex?.Message);
         }
 
+        // PAUSE-01 (D-03): publish PauseWorkflow at intake — BEFORE probing — so the orchestrator pauses
+        // the workflow's Quartz job and the L2 outage stops spreading. Publish (NOT Send) so message-type
+        // binding fans the signal out to the orchestrator's per-replica endpoint; CorrelationId carried.
+        await context.Publish(
+            new PauseWorkflow(inner.WorkflowId, inner.H) { CorrelationId = inner.CorrelationId },
+            context.CancellationToken);
+
         // PROBE-01/05: the bounded probe loop is AWAITED inside Consume — the broker delivery stays
         // un-acked until the loop exits, so ack-after-loop is automatic (no early Task.CompletedTask).
         var outcome = await recovery.RunAsync(inner.EntryId, inner.H, context.CancellationToken);
@@ -55,6 +62,11 @@ public sealed class FaultExecutionResultConsumer(
             // flag[H] gate collapses any duplicate re-inject. ExecutionResult's origin is the orchestrator-result queue.
             var endpoint = await context.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
             await endpoint.Send(inner, context.CancellationToken);
+
+            // PAUSE-05 (D-04): resume on recovery — AFTER the re-inject, still inside the Recovered branch.
+            await context.Publish(
+                new ResumeWorkflow(inner.WorkflowId, inner.H) { CorrelationId = inner.CorrelationId },
+                context.CancellationToken);
         }
         else
         {
