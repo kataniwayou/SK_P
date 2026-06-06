@@ -60,7 +60,8 @@ public static class ProcessorTestHarness
                 await context.RespondAsync(new ProcessorIdentityNotFound(context.Message.SourceHash));
             else
                 await context.RespondAsync(new ProcessorIdentityFound(
-                    sequence.FoundProcessorId, InputSchemaId: null, OutputSchemaId: null, ConfigSchemaId: null));
+                    sequence.FoundProcessorId, InputSchemaId: null, OutputSchemaId: null, ConfigSchemaId: null,
+                    Name: "proc", Version: "1.0.0"));
         }
     }
 

@@ -121,7 +121,7 @@ public sealed class SchemaResolutionFacts
         var inputId = Guid.NewGuid();
         var outputId = Guid.NewGuid();
         var configId = Guid.NewGuid();
-        var identity = new ProcessorIdentityFound(Guid.NewGuid(), inputId, outputId, configId);
+        var identity = new ProcessorIdentityFound(Guid.NewGuid(), inputId, outputId, configId, "proc", "1.0.0");
         var capture = new SchemaCapture();
 
         await using var provider = BuildProvider(identity, capture);
@@ -157,7 +157,7 @@ public sealed class SchemaResolutionFacts
         var outputId = Guid.NewGuid();
         var configId = Guid.NewGuid();
         // InputSchemaId is null (source processor) — no request should be sent for it (SCHEMA-02).
-        var identity = new ProcessorIdentityFound(Guid.NewGuid(), InputSchemaId: null, outputId, configId);
+        var identity = new ProcessorIdentityFound(Guid.NewGuid(), InputSchemaId: null, outputId, configId, "proc", "1.0.0");
         var capture = new SchemaCapture();
 
         await using var provider = BuildProvider(identity, capture);

@@ -23,7 +23,7 @@ public sealed class GetProcessorBySourceHashConsumer(ProcessorService processors
         {
             var p = await processors.GetBySourceHashAsync(context.Message.SourceHash, context.CancellationToken);
             await context.RespondAsync<ProcessorIdentityFound>(
-                new ProcessorIdentityFound(p.Id, p.InputSchemaId, p.OutputSchemaId, p.ConfigSchemaId));
+                new ProcessorIdentityFound(p.Id, p.InputSchemaId, p.OutputSchemaId, p.ConfigSchemaId, p.Name, p.Version));
         }
         catch (NotFoundException)
         {

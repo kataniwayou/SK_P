@@ -109,6 +109,8 @@ public sealed class ProcessorResponderTests
             Assert.Equal(InputSchemaId, found.Message.InputSchemaId);
             Assert.Equal(OutputSchemaId, found.Message.OutputSchemaId);
             Assert.Equal(ConfigSchemaId, found.Message.ConfigSchemaId);
+            Assert.Equal("seed",  found.Message.Name);
+            Assert.Equal("1.0.0", found.Message.Version);
         }
         finally { await harness.Stop(ct); }
     }
