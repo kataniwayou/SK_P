@@ -25,7 +25,7 @@
 
 ### Gap-Closure Phases (v3.7.0 audit — 2026-06-06)
 
-- [ ] **Phase 40: Keeper Recovery Hardening** — Bound the recover→reinject cycle with a config attempt cap (persistent fault parks instead of flooding the stack); make the keeper-dlq give-up-park drain deterministic (poll-until-stably-empty teardown → close-gate `keeper-dlq depth==0` holds); extract the shared fault-consumer recovery logic so the cap lands in one place. (KHARD-01, KHARD-02, KHARD-03)
+- [x] **Phase 40: Keeper Recovery Hardening** (2026-06-06 — KHARD-01/02/03 verified 9/9; live 3×-GREEN close-gate Manual-Only, tracked in 40-HUMAN-UAT.md) — Bound the recover→reinject cycle with a config attempt cap (persistent fault parks instead of flooding the stack); make the keeper-dlq give-up-park drain deterministic (poll-until-stably-empty teardown → close-gate `keeper-dlq depth==0` holds); extract the shared fault-consumer recovery logic so the cap lands in one place. (KHARD-01, KHARD-02, KHARD-03)
 - [ ] **Phase 41: Orchestrator Pause/Resume Diagnostics** — Log on the `ResumeAsync` silent-ignore path (dropped Resume becomes diagnosable); harden `WorkflowScheduler.RescheduleAsync` fallback against a purged non-durable job. (closes 37-REVIEW WR-01, WR-02)
 - [ ] **Phase 42: v3.7.0 Docs & Traceability Reconciliation** — Flip stale REQUIREMENTS.md checkboxes `[ ]→[x]` for satisfied INTAKE/PROBE/DLQ/PAUSE/KMET-04 + fix their traceability rows; add missing MLBL-01..05 rows + correct the footer count; fix ROADMAP Phase-38 progress row; backfill `39-VERIFICATION.md`. (doc-only)
 
@@ -380,7 +380,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 37. Orchestrator Pause/Resume Coordination | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
 | 38. Uniform `service_name` + Instance Labels Across All Metrics | v3.7.0 | 0/? | Not started | — |
 | 39. Keeper Observability + Real-Stack E2E + Close Gate | v3.7.0 | 4/4 | Complete    | 2026-06-06 |
-| 40. Keeper Recovery Hardening (gap closure) | v3.7.0 | 3/3 | Awaiting Verification | — |
+| 40. Keeper Recovery Hardening (gap closure) | v3.7.0 | 3/3 | Complete (live gate Manual-Only) | 2026-06-06 |
 | 41. Orchestrator Pause/Resume Diagnostics (gap closure) | v3.7.0 | 0/? | Not started | — |
 | 42. v3.7.0 Docs & Traceability Reconciliation (gap closure) | v3.7.0 | 0/? | Not started | — |
 

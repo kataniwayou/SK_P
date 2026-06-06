@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 40-03-PLAN.md (KHARD-02 poll-until-stably-empty keeper-dlq drain) — Phase 40 plans 3/3, awaiting verification
-last_updated: "2026-06-06T20:29:27.000Z"
-last_activity: 2026-06-06 -- Phase 40 Plan 03 complete (poll-until-stably-empty keeper-dlq drain; GATE_EXIT=1 flake cleared); Phase 40 plans 3/3 — awaiting verification
+stopped_at: Phase 40 complete (KHARD-01/02/03 verified 9/9; status human_needed → live 3×-GREEN close-gate Manual-Only, tracked in 40-HUMAN-UAT.md) — next is Phase 41
+last_updated: "2026-06-06T20:51:14.000Z"
+last_activity: 2026-06-06 -- Phase 40 verified complete (9/9 must-haves; 493 hermetic tests green; code review 0 critical/3 warning advisory); live close-gate remains Manual-Only
 progress:
   total_phases: 42
   completed_phases: 41
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 40 — keeper-recovery-hardening
+**Current focus:** Phase 41 — orchestrator-pause-resume-diagnostics (next; not started)
 
 ## Current Position
 
 Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
-Phase: 40 (keeper-recovery-hardening) — plans 3/3 COMPLETE, awaiting verification
-Plan: 3 of 3 (all complete)
-Status: Phase 40 plans 3/3 complete (40-01 KHARD-03 keystone + 40-02 KHARD-01 cap + 40-03 KHARD-02 drain landed) — awaiting verification (Manual-Only 3x-GREEN live close-gate run with the 4 rebuilt app containers)
-Last activity: 2026-06-06 -- Phase 40 Plan 03 complete (poll-until-stably-empty keeper-dlq drain; GATE_EXIT=1 flake cleared)
+Phase: 40 (keeper-recovery-hardening) — COMPLETE & VERIFIED (9/9 must-haves; status human_needed — live 3×-GREEN close-gate Manual-Only, tracked in 40-HUMAN-UAT.md)
+Plan: 3 of 3 (all complete) — next phase is 41 (not started)
+Status: Phase 40 verified complete (40-01 KHARD-03 keystone + 40-02 KHARD-01 cap + 40-03 KHARD-02 drain). 493 hermetic tests green, Release 0-warning, code review 0 critical/3 warning advisory (WR-01/02/03 counter-key durability — deferred/advisory). Live multi-replica 3×-GREEN close-gate (4 rebuilt containers) is the one outstanding human-verification item.
+Last activity: 2026-06-06 -- Phase 40 verified complete; next is Phase 41 (orchestrator pause/resume diagnostics, no CONTEXT.md yet)
 
 ### Phase 40 Plan 03 — COMPLETE (Wave 2: KHARD-02 poll-until-stably-empty keeper-dlq drain; the lone GATE_EXIT=1 flake cleared; 2026-06-06)
 
