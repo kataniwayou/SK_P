@@ -8,6 +8,49 @@ A historical log of shipped milestones. Each entry is a frozen snapshot; full ar
 
 ---
 
+## v3.7.0 — Keeper (L2-Outage Dead-Letter Recovery & Workflow Pause/Resume)
+
+**Shipped:** 2026-06-07
+**Tag:** `v3.7.0`
+**Archives:** [milestones/v3.7.0-ROADMAP.md](milestones/v3.7.0-ROADMAP.md) · [milestones/v3.7.0-REQUIREMENTS.md](milestones/v3.7.0-REQUIREMENTS.md) · [milestones/v3.7.0-MILESTONE-AUDIT.md](milestones/v3.7.0-MILESTONE-AUDIT.md)
+
+### Delivered
+
+A dedicated multi-replica `Keeper` console that makes the autonomous execution loop (cron fire → dispatch → process → result → fan-out) **self-heal through transient L2 (Redis) outages without operator intervention.** Keeper reacts to the `Fault<EntryStepDispatch>` / `Fault<ExecutionResult>` events the execution-path consumers publish on retry-budget exhaustion (pub/sub, bind-to-all — never per-`{procId}_error`), double-unwraps the inner message + 6-id correlation + `H`, runs a bounded crash-survivable L2 health-probe loop (read `skp:data:{entryId}` + write-then-delete a scratch key), pauses the affected workflow's cron via the single-replica orchestrator's Quartz scheduler (deterministic `TriggerKey` + `GetTriggerState` as the single source of truth — pause-state never in L2, because L2 is the resource being recovered), re-injects recovered work directly to its origin by type riding the receiver's surviving Phase-31 `flag[H]` idempotency (Keeper holds no dedup of its own), resumes on any successful recovery, and parks the genuinely unrecoverable in `keeper-dlq` for operator triage. A per-`H` attempt cap bounds the recover→reinject cycle so a persistent fault converges to a single park instead of flooding the stack. Transport-exhaustion across all consoles consolidates into one TTL'd `skp-dlq-1`, wired once in `BaseConsole.Core` (two DLQs, split by mechanism). Metrics gained a uniform `service_name = {name}_{version}` + non-empty `service_instance_id` across all four consoles (the processor's name/version DB-sourced via a MeterProvider swap), plus a full `Keeper` meter. Keeper is the automated operator for v3.6.0's accepted "an infra-faulting workflow keeps dead-lettering until an operator intervenes" gap.
+
+The original 33-39 build was delivered + live-proven (Phase-39 close gate); a follow-up audit (2026-06-07) added three gap-closure phases — 40 (recovery hardening: attempt cap, deterministic drain, shared handler), 41 (pause/resume diagnostics: WR-01/WR-02), 42 (docs & traceability reconciliation).
+
+### Stats
+
+| Metric                    | Value                                              |
+| ------------------------- | -------------------------------------------------- |
+| Phases                    | 10 (33-42; incl. gap-closure 40/41/42)             |
+| Plans                     | 32                                                 |
+| Requirements              | 37 satisfied (34 core 33-39 + KHARD-01..03 Phase 40) |
+| C# files                  | 409 (207 src / 202 tests)                          |
+| Lines of code             | ~40,141 (12,424 src / 27,717 tests)                |
+| Code changed              | 75 files, +6,287 / −48 (src + tests, vs v3.6.0 close) |
+| Commits                   | 220 (`v3.6.0..HEAD`; 33 feat / 17 fix / 28 test / 137 docs / 3 refactor) |
+| Timeline                  | 2026-06-05 → 2026-06-07 (~3 days)                  |
+| Final suite               | Phase-39 close gate 3×500 GREEN RealStack + triple-SHA net-zero; hermetic 505/0 (Phase 41), Release+Debug 0-warning |
+| Milestone audit           | tech_debt — 0 functional blockers (safe to ship)  |
+| Known deferred at close   | 23 open artifacts (consolidated into the passed Phase-39 gate) — see STATE.md Deferred Items |
+
+### Key accomplishments
+
+1. New multi-replica `Keeper` console on `BaseConsole.Core` (structural twin of `Orchestrator`, leaner) recovering L2-outage dead-letters off the `Fault<EntryStepDispatch>` / `Fault<ExecutionResult>` pub/sub stream — one durable competing-consumer queue, round-robin across replicas.
+2. Bounded crash-survivable `L2ProbeRecovery` loop (read + write-then-delete scratch key, `catch RedisException` only, ack-after-loop) → re-inject the verbatim inner message to origin by type, riding the receiver's surviving Phase-31 `flag[H]` (Keeper carries no dedup of its own).
+3. Two-DLQ topology split by mechanism — consolidated `skp-dlq-1` (Immediate(N) transport exhaustion across all consoles, 7d TTL, wired once in `BaseConsole.Core` keeping `GenerateFaultFilter`) + `keeper-dlq` (probe/cap give-up park, depth = primary Prometheus alert).
+4. Orchestrator pause/resume coordination via a deterministic Quartz `TriggerKey` three-state model (`PauseJob`/`GetTriggerState` as the single source of truth, no L1 state field), `ConcurrentMessageLimit=1` idempotent consumers; Keeper Publishes Pause-at-intake + Resume-on-Recovered.
+5. Recovery hardening (Phase 40) — per-`H` attempt cap (atomic INCR+PEXPIRE-NX Lua, parks `recover_cap` instead of flooding) + deterministic keeper-dlq drain + one shared `KeeperRecoveryHandler` both consumers delegate to.
+6. Uniform metric labels (Phase 38) — `service_name = {name}_{version}` + non-empty `service_instance_id` across all four consoles (processor DB-sourced via MeterProviderHolder swap; logs `service.name` kept bare) + a full `Keeper` meter (6 counters + UpDownCounter + histogram), live-proven by Prometheus scrape.
+
+### Known deferred items at close
+
+No functional blockers (audit `tech_debt`). 23 open artifacts acknowledged and deferred (recorded in STATE.md Deferred Items): per-phase live HUMAN-UAT smokes (33/34/35/36/37/40) and `human_needed` VERIFICATION statuses — **by design** consolidated into the single authoritative Phase-39 real-stack close gate (passed: 3×500 GREEN, triple-SHA net-zero), not re-run per phase; plus stale older items (Ph 08/09 v3.2.0, 32/32.1 v3.6.0) and a leftover Phase-29 debug session. KHARD-02's live 3× close-gate is Manual-Only (drain fix source-resolved; live re-run operator-pending). Nyquist VALIDATION partial/missing on 8 phases (advisory). FUTURE-KEEPER-SWEEP (auto-resume into recovered L2) deferred to a future milestone. **v3.5.0 formal ROADMAP/MILESTONES/tag archival remains deferred** (prior-milestone housekeeping; snapshot at `milestones/v3.5.0-REQUIREMENTS.md`).
+
+---
+
 ## v3.6.0 — Idempotent Execution (Exactly-Once-Effect Round-Trip)
 
 **Shipped:** 2026-06-05

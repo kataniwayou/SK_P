@@ -7,9 +7,14 @@
 - ✅ **v3.4.0 BaseConsole + Orchestrator Messaging** — Phases 17-24 + 24.1 (shipped 2026-06-01) — see [milestones/v3.4.0-ROADMAP.md](milestones/v3.4.0-ROADMAP.md)
 - ✅ **v3.5.0 Processor Console — Self-Registration, Liveness & Execution Round-Trip** — Phases 25-30 (shipped 2026-06-02)
 - ✅ **v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip** — Phases 31-32.1 (shipped 2026-06-05) — see [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md)
-- 🚧 **v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume** — Phases 33-42 (in progress — milestone delivered + live-proven; gap-closure phases 40-42 from the v3.7.0 audit)
+- ✅ **v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume** — Phases 33-42 (shipped 2026-06-07) — see [milestones/v3.7.0-ROADMAP.md](milestones/v3.7.0-ROADMAP.md)
 
-## 🚧 v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume (In Progress)
+## ✅ v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume (SHIPPED 2026-06-07)
+
+Archived: [milestones/v3.7.0-ROADMAP.md](milestones/v3.7.0-ROADMAP.md) · [REQUIREMENTS](milestones/v3.7.0-REQUIREMENTS.md) · [AUDIT](milestones/v3.7.0-MILESTONE-AUDIT.md). 10 phases / 32 plans / 37 requirements satisfied + live-proven (Phase-39 close gate: 3×500 GREEN, triple-SHA net-zero; audit `tech_debt`, 0 functional blockers). Full milestone detail below (collapsed).
+
+<details>
+<summary>✅ v3.7.0 Keeper (Phases 33-42) — SHIPPED 2026-06-07</summary>
 
 **Milestone Goal:** Make the autonomous execution loop (cron fire → dispatch → process → result → fan-out) **self-heal through transient L2 (Redis) outages without operator intervention.** A new multi-replica `Keeper` console reacts to the `Fault<EntryStepDispatch>` / `Fault<ExecutionResult>` events that the execution-path consumers publish on retry-budget exhaustion, probes L2 health on a bounded loop, pauses the affected workflow's cron (via the single-replica orchestrator's in-memory L1) so the outage stops spreading, re-injects recovered work to its origin (riding the receiver's existing `flag[H]` idempotency), resumes when no recoveries remain pending, and parks the genuinely unrecoverable in `keeper-dlq` for operator triage. Keeper is the automated operator for v3.6.0's accepted "an infra-faulting workflow keeps dead-lettering until an operator intervenes" gap. Operator commands (Start/Stop) are out of scope — a failed Start/Stop is simply re-issued.
 
@@ -28,6 +33,8 @@
 - [x] **Phase 40: Keeper Recovery Hardening** (2026-06-06 — KHARD-01/02/03 verified 9/9; live 3×-GREEN close-gate Manual-Only, tracked in 40-HUMAN-UAT.md) — Bound the recover→reinject cycle with a config attempt cap (persistent fault parks instead of flooding the stack); make the keeper-dlq give-up-park drain deterministic (poll-until-stably-empty teardown → close-gate `keeper-dlq depth==0` holds); extract the shared fault-consumer recovery logic so the cap lands in one place. (KHARD-01, KHARD-02, KHARD-03)
 - [x] **Phase 41: Orchestrator Pause/Resume Diagnostics** — Log on the `ResumeAsync` silent-ignore path (dropped Resume becomes diagnosable); harden `WorkflowScheduler.RescheduleAsync` fallback against a purged non-durable job. (closes 37-REVIEW WR-01, WR-02) (completed 2026-06-07 — 2/2 plans, verifier 2/2 SC, code review clean; LogInformation on ResumeAsync ignore branch (log-only, D-01/D-02), RescheduleAsync threaded workflowId + null-fallback re-creates job+trigger (D-04), RescheduleSchedulingTests asserts re-establishment (D-06); hermetic 505/0, Release 0-warning)
 - [x] **Phase 42: v3.7.0 Docs & Traceability Reconciliation** — Flip stale REQUIREMENTS.md checkboxes `[ ]→[x]` for satisfied INTAKE/PROBE/DLQ/PAUSE/KMET-04 + fix their traceability rows; add missing MLBL-01..05 rows + correct the footer count; fix ROADMAP Phase-38 progress row; backfill `39-VERIFICATION.md`. (doc-only) (completed 2026-06-07 — 3/3 plans, verifier 4/4 SC: SC1 20 checkboxes + 16 traceability rows, SC2 MLBL-01..05 + 34/34 footer, SC3 Phase-38 row 4/4, SC4 39-VERIFICATION.md backfilled; encoding clean, close-gate NOT re-run)
+
+</details>
 
 ## Phases (shipped milestones)
 
@@ -205,6 +212,9 @@
 
 Full phase details (31, 31.1, 32→32.1), success criteria, plans, decisions, and the cancelled-circuit-breaker revert rationale are archived to [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md). Requirements: [milestones/v3.6.0-REQUIREMENTS.md](milestones/v3.6.0-REQUIREMENTS.md). Audit: [milestones/v3.6.0-MILESTONE-AUDIT.md](milestones/v3.6.0-MILESTONE-AUDIT.md).
 
+<details>
+<summary>v3.7.0 Phase Details (Phases 33-42) — SHIPPED, archived to milestones/v3.7.0-ROADMAP.md</summary>
+
 ### Phase 33: Fault-Recovery Spike (De-Risk)
 **Goal**: Prove the load-bearing assumption of the whole milestone — that a published `Fault<EntryStepDispatch>` and `Fault<ExecutionResult>` event can be consumed by an external subscriber, the original message + correlation extracted from `Fault<T>.Message`, re-injected to its origin endpoint by type, and silently collapsed by the receiver's surviving Phase-31 `flag[H]` dedup — before committing to the full Keeper build.
 **Depends on**: — (first phase of the milestone)
@@ -352,6 +362,8 @@ Plans:
 - [x] 42-01-PLAN.md - REQUIREMENTS.md: flip satisfied checkboxes [x] + reconcile traceability rows + add MLBL-01..05 + correct coverage footer (SC1, SC2)
 - [x] 42-02-PLAN.md - ROADMAP.md: fix Progress-table Phase-38 row to 4/4 Complete (SC3)
 - [x] 42-03-PLAN.md - backfill 39-VERIFICATION.md from close-gate evidence (SC4)
+
+</details>
 
 ## Progress
 

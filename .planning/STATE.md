@@ -3,33 +3,54 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: milestone_complete
-stopped_at: Completed 42-03-PLAN.md
+stopped_at: v3.7.0 milestone archived (tag v3.7.0)
 last_updated: "2026-06-07T00:00:00.000Z"
-last_activity: 2026-06-07 -- Phase 42 Plan 03 complete (39-VERIFICATION.md backfilled from close-gate evidence, SC4)
+last_activity: 2026-06-07 -- v3.7.0 milestone closed & archived (ROADMAP/REQUIREMENTS/AUDIT -> milestones/v3.7.0-*; tagged v3.7.0; REQUIREMENTS.md removed for next milestone)
 progress:
   total_phases: 45
-  completed_phases: 44
-  total_plans: 153
+  completed_phases: 45
+  total_plans: 164
   completed_plans: 164
-  percent: 98
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-05 — v3.6.0 shipped)
+See: .planning/PROJECT.md (updated 2026-06-07 — v3.7.0 shipped)
 
-**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), and v3.6.0 (exactly-once-effect idempotency).**
-**Current focus:** Phase 42 — v3.7.0-docs-traceability-reconciliation
+**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
+**Current focus:** Planning next milestone (`/gsd-new-milestone`) — v3.7.0 shipped & archived 2026-06-07.
 
 ## Current Position
 
-Milestone: v3.7.0 (Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume) — phases 33→42; Phase 39 complete (close gate GREEN); gap-closure phases 40-42 added post-milestone (full milestone-counter reconciliation is Phase 42's scope)
-Phase: 42
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-06
+Milestone: v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements satisfied + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md. REQUIREMENTS.md removed (fresh for next milestone).
+Phase: —
+Plan: —
+Status: Milestone complete — awaiting `/gsd-new-milestone`
+Last activity: 2026-06-07 — v3.7.0 archived
+
+## Deferred Items
+
+Items acknowledged and deferred at milestone close on 2026-06-07 (audit `tech_debt`, 0 functional blockers — all consolidated into the passed Phase-39 close gate, or advisory/by-design):
+
+| Category | Item | Status |
+|----------|------|--------|
+| debug | phase29-scopeproof-no-completed-log | verifying (stale, v3.5.0-era; Phase 29 long complete) |
+| uat | Phase 08 HUMAN-UAT (v3.2.0) | partial — 3 pending |
+| uat | Phase 09 HUMAN-UAT (v3.2.0) | partial — 2 pending |
+| uat | Phase 34 HUMAN-UAT | partial — 2 pending (live smoke → Phase-39 gate) |
+| uat | Phase 35 HUMAN-UAT | partial — 1 pending (live → Phase-39 gate) |
+| uat | Phase 36 HUMAN-UAT | partial — 3 pending (live → Phase-39 gate) |
+| uat | Phase 37 HUMAN-UAT | partial — 2 pending (live → Phase-39 gate) |
+| uat | Phase 40 HUMAN-UAT | partial — 1 pending (KHARD-02 live 3× close-gate Manual-Only) |
+| verification | Phases 08, 09, 32, 33, 34, 35, 36, 37, 40 | human_needed — live halves consolidated into the passed Phase-39 close gate |
+| nyquist | VALIDATION partial/missing on 33,34,37,38,39,40,41,42 | advisory (discovery-only); backfill candidate Phase 41 |
+| future | FUTURE-KEEPER-SWEEP (auto-resume into recovered L2 after give-up) | deferred to a future milestone (by design) |
+| housekeeping | v3.5.0 formal ROADMAP/MILESTONES/tag archival | deferred (prior milestone; snapshot at milestones/v3.5.0-REQUIREMENTS.md) |
+
+These are tracked as operator follow-ups, advisory, or by-design — not unsatisfied requirements. Full analysis: `milestones/v3.7.0-MILESTONE-AUDIT.md`.
 
 ### Phase 42 Plan 03 — COMPLETE (Wave 1: backfill 39-VERIFICATION.md from close-gate evidence, SC4; 2026-06-07)
 

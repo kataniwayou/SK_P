@@ -115,6 +115,45 @@ Exactly-once-effect execution idempotency: deterministic identity `H = SHA-256(c
 - Sessions: ~2 days (2026-06-04 → 2026-06-05), 93 commits.
 - Notable: the milestone's net source delta was small (+2,710 / −255 across 56 files) despite 4 phases — much of the work was a build-then-revert (Phase 32 → 32.1).
 
+## Milestone: v3.7.0 — Keeper (L2-Outage Dead-Letter Recovery & Workflow Pause/Resume)
+
+**Shipped:** 2026-06-07
+**Phases:** 10 (33-42, incl. gap-closure 40/41/42) | **Plans:** 32 | **Commits:** 220 | **Timeline:** ~3 days
+
+### What Was Built
+A multi-replica `Keeper` console that self-heals the autonomous execution loop through transient L2 outages: `Fault<T>` pub/sub intake → bounded crash-survivable L2 health-probe loop → orchestrator-coordinated workflow pause (Quartz `GetTriggerState` via deterministic `TriggerKey`) → re-inject-by-type to origin riding the receiver's `flag[H]` → resume on recovery → park the unrecoverable in `keeper-dlq`. A per-`H` attempt cap bounds the recover loop; transport exhaustion across all consoles consolidates into one TTL'd `skp-dlq-1`. Uniform `service_name={name}_{version}` + `service_instance_id` metric labels (processor DB-sourced) + a full Keeper meter. Three gap-closure phases (40/41/42) followed the original 33-39 build off a second audit.
+
+### What Worked
+- **Spike-first de-risking (Phase 33).** The whole milestone rested on one unproven assumption — that a `Fault<T>` event could be consumed via pub/sub, double-unwrapped, re-injected by type, and collapsed by the receiver's `flag[H]`. Proving it LIVE (close gate `GATE_EXIT=0`) in a standing 819-line regression guard before building anything meant Phases 34-39 built on solid ground, not hope.
+- **One consolidated authoritative close gate over per-phase live runs.** Phases 34-37's live halves were deliberately deferred into the single Phase-39 real-stack gate (3×500 GREEN, triple-SHA net-zero) rather than re-run per phase — far cheaper wall-clock, and the gate is the real proof anyway.
+- **Quartz as the single source of pause-state truth.** Using deterministic `TriggerKey` + `GetTriggerState` (no L1 state field, no in-memory pending-recovery set) collapsed PAUSE-02/03/04 into idempotent transitions — and keeping pause-state OUT of L2 was the load-bearing design call (L2 is the thing being recovered).
+- **Audit → gap-closure phases as the close discipline.** The 2026-06-07 audit's functional/code/doc debt became three tightly-scoped phases (40 cap+drain+shared-handler, 41 WR-01/WR-02, 42 doc reconciliation) rather than ad-hoc fixes — clean history, each closed before archival.
+
+### What Was Inefficient
+- **The recover→reinject cap was missing from the original build** (Phases 33-39) and only added in gap-closure Phase 40. A persistent (non-transient) fault would have flooded the stack at ~67 cyc/s/replica — a bound that should have been in the PROBE design from the start, not discovered at audit.
+- **A load-bearing regression shipped inside Phase 37 and was mis-filed.** 37-02's deterministic-key `RescheduleAsync` used `ScheduleJob` (add) instead of `RescheduleJob` (replace) → `ObjectAlreadyExistsException` on every self-reschedule (would have stopped all workflows after their first fire). The 37-04 run initially mis-filed it as pre-existing; execution caught + fixed it (`571498f`), but a Wave-0 "does a second fire actually reschedule?" probe would have caught it at design time.
+- **The keeper-dlq depth==0 close-gate race** (late give-up park races the AFTER snapshot) cost a `GATE_EXIT=1` and a deterministic-drain follow-up (Phase 40 KHARD-02) — a teardown-timing gap in the give-up E2E.
+- **Verification/UAT status drift again.** 6 phases sat `human_needed` and 13 had partial UAT at close — all genuinely consolidated into the Phase-39 gate, but the unreconciled statuses surfaced as 23 audit-open "decisions" at milestone close (the recurring pattern from v3.3.0/v3.4.0/v3.6.0).
+- **`milestone.complete` still broken** (carried from v3.4.0/v3.6.0) — full archival done manually a third time.
+
+### Patterns Established
+- **Spike-as-standing-regression-guard** — the de-risk spike (Phase 33) becomes a permanent RealStack test, not throwaway; later phases clone its rig (`KeeperFaultIntakeE2ETests`, `KeeperRecoveryE2ETests` are siblings of `FaultRecoverySpikeE2ETests`).
+- **Bounded crash-survivable recovery loop** — ack-after-loop so a mid-loop crash redelivers and restarts (at-least-once recovery); `delay × attempts` documented as bounded under the broker's consumer-delivery-ack timeout.
+- **Two DLQs split by mechanism** — transport-exhaustion (Immediate(N) → consolidated TTL'd forensic `skp-dlq-1`) vs. domain give-up (explicit Send-then-ack to `keeper-dlq`, depth = the alert).
+- **Recovery logic in one shared handler** so a bound/cap lands in exactly one place (KHARD-03) — both consumers are thin delegations.
+- **Pause-state in the scheduler, never in the resource being recovered** — Quartz `GetTriggerState` is the source of truth; idempotency via `ConcurrentMessageLimit=1` + idempotent transitions, no bespoke lock.
+
+### Key Lessons
+1. **Bound every recover/retry loop at design time, against a persistent (not just transient) fault.** The probe loop was bounded per-intake but the recover→reinject *cycle* across redeliveries was not — a persistent fault is the adversarial case that exposes a missing cap.
+2. **Add a Wave-0 probe for the second occurrence, not just the first.** The self-reschedule regression only manifests on the *second* cron fire; "does it work once?" passed while "does it keep working?" was broken.
+3. **Reconcile VERIFICATION/UAT status at phase close, every phase.** Four milestones running, the same `human_needed`/partial-UAT drift turns a clean milestone into a 20+-item audit-open decision list. The consolidation-into-one-gate design is sound; the per-phase status hygiene is what lags.
+4. **Drain domain DLQs deterministically in E2E teardown** when a close gate asserts depth==0 — a poll-until-stably-empty strategy beats a single check that can race a late async park.
+
+### Cost Observations
+- Model mix: orchestration/execution on Opus (profile `quality`); audit integration-checker + verifiers on Sonnet.
+- Sessions: ~3 days (2026-06-05 → 2026-06-07), 220 commits (137 docs — heavy planning/artifact churn across 10 phases incl. 3 gap-closure).
+- Notable: small source delta (+6,287 / −48 across 75 src+test files) for a whole new console + recovery engine — most of the new surface is the `Keeper` project + shared handler; the rest reuses v3.4.0/v3.6.0 tiers unchanged.
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -125,6 +164,7 @@ Exactly-once-effect execution idempotency: deterministic identity `H = SHA-256(c
 | v3.3.0 | 1 day | 5 | Added Redis L2 tier; extended close gate with `redis-cli --scan` dual-SHA; doc-first contract amendments |
 | v3.4.0 | ~3 days | 9 | Two-process messaging (RabbitMQ); triple-SHA close gate (+ `rabbitmqctl`); gap-closure decimal phases |
 | v3.6.0 | ~2 days | 4 | Exactly-once-effect dedup; Wave-0 reality probes; build-then-revert (breaker → dead-letter) |
+| v3.7.0 | ~3 days | 10 | Keeper recovery console; spike-first de-risk; consolidated authoritative close gate; audit→gap-closure phases (40/41/42) |
 
 ### Cumulative Quality
 
@@ -134,6 +174,7 @@ Exactly-once-effect execution idempotency: deterministic identity `H = SHA-256(c
 | v3.3.0 | 235 facts × 3 GREEN | + real Redis | Redis soft-dependency (no HEALTH contract change) |
 | v3.4.0 | 335 facts × 3 GREEN | + real RabbitMQ | MassTransit messaging tier |
 | v3.6.0 | 452 facts × 3 GREEN | + induced-redelivery E2E | none (idempotency layer over existing tiers) |
+| v3.7.0 | 500 facts × 3 GREEN | + induced-L2-outage recover/give-up E2E | `Keeper` console (multi-replica recovery tier) |
 
 ### Top Lessons (Verified Across Milestones)
 
