@@ -12,7 +12,7 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 - `entryId` is a **GUID**. `Guid.Empty` = source step → **skip L2 read and skip end-delete**.
 - L2 (Redis projection), two key schemes:
   - **Data key** `L2[entryId]` — per-item payload. **No TTL.**
-  - **Composite backup key** `L2[correlationId:workFlowId:ProcessorId:executionId]` — written by `UPDATE`. **TTL = 2 days, configurable in days.**
+  - **Composite backup key** `L2[correlationId:workFlowId:ProcessorId:executionId]` — written by `UPDATE`, **deleted the moment it is redundant** (processor `CLEANUP` after a successful output write; keeper after a successful `INJECT`). **TTL = 2 days (configurable in days) is a crash-backstop only** — not the cleanup.
 - **infra failure** = an L2 op that fails after its retry loop is exhausted. For a **read**, failure = a Redis exception **or an absent/empty key** (the data isn't there). For **delete/write**, failure = a Redis exception. Anything else that fails = **business failure**.
 - **retry loop** = N immediate attempts, no backoff, shared config `Retry:Limit` (default 3).
 - **`_DLQ1`** = single consolidated dead-letter queue for every terminal send/L2 give-up (processor *and* keeper). No separate `keeper-dlq`.
@@ -42,7 +42,7 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 ### 3 · Post-Process (per item, in order)
 1. If `completed` → validate `data` vs output schema → set `completed` | `failed`.
 2. If `completed` → send Keeper **`UPDATE`** `{corr, wf, step, proc, exec, validatedData}` (keeper writes the composite backup, TTL 2d).
-3. If `completed` → generate `entryId` (GUID), write `L2[entryId]` (no TTL); on Redis exception → retry loop; exhausted → item = `failed (infra)`, else `completed`.
+3. If `completed` → generate `entryId` (GUID), write `L2[entryId]` (no TTL); on Redis exception → retry loop; exhausted → item = `failed (infra)`, else `completed` **and send Keeper `CLEANUP {corr, wf, step, proc, exec}`** to delete the now-redundant composite backup.
 4. If item is **not-infra** (`completed` ∪ business `failed`) → send orchestrator result. A `completed` result carries `entryId` + `executionId`.
 5. If item is **infra** → send Keeper **`INJECT`** `{corr, wf, step, proc, exec}`.
 
@@ -65,12 +65,14 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 - Orchestrator pause/resume-all is **idempotent per job** (pause only if Running, resume only if Paused); job state is known via **Quartz `TriggerState`**.
 
 ### Recovery consumer (messages from processors)
-- Consumes `UPDATE / REINJECT / INJECT / DELETE`.
+- Consumes `UPDATE / REINJECT / INJECT / DELETE / CLEANUP`.
+- **Partitioned by `corr:wf:ProcessorId:executionId`** (per-key ordering — e.g. MassTransit `UsePartitioner`): messages for the **same exec** are processed in arrival order, so `UPDATE` always precedes that exec's `CLEANUP`/`INJECT`; different execs still run in parallel.
 - Performs the L2 op **only when L2 is healthy (BIT gate open)**; gate-closed → the consumer **waits for the gate** (bounded so as not to exceed the broker consumer timeout).
-- **`UPDATE`** → write `validatedData` to `L2[corr:wf:ProcessorId:executionId]`, TTL 2 days (configurable in days).
+- **`UPDATE`** → write `validatedData` to `L2[corr:wf:ProcessorId:executionId]`, TTL 2 days (configurable in days) — the TTL is a crash-backstop; the copy is normally deleted by `CLEANUP`/`INJECT`.
 - **`REINJECT`** → read `L2[entryId]`; if **present** (transient outage — data survived) → re-inject a reconstructed `EntryStepDispatch` to `queue:{ProcessorId}`; if **absent/empty** (data truly gone — redelivery after end-delete, or missing input) → read failure → retry loop → `_DLQ1`.
-- **`INJECT`** → read `L2[corr:wf:ProcessorId:executionId]` → **generate `entryId`** → write `L2[entryId]` (no TTL) → inject a reconstructed `ExecutionResult(Completed, carrying entryId + executionId)` to the orchestrator result queue.
+- **`INJECT`** → read `L2[corr:wf:ProcessorId:executionId]` → **generate `entryId`** → write `L2[entryId]` (no TTL) → inject a reconstructed `ExecutionResult(Completed, carrying entryId + executionId)` to the orchestrator result queue → **delete the composite copy** (now redundant).
 - **`DELETE`** → delete `L2[entryId]`.
+- **`CLEANUP`** → delete the composite copy `L2[corr:wf:ProcessorId:executionId]` (happy-path redundancy cleanup; ordered after this exec's `UPDATE` by the partitioner).
 - Any keeper send that throws → retry loop; exhausted → `_DLQ1`.
 - Any keeper L2 op that throws → retry loop; exhausted → `_DLQ1`.
 
@@ -83,7 +85,8 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 | — | No dedup / idempotency key (v3.x `H` + dedup gate removed); at-least-once; duplicates tolerated. |
 | A2 | A read finding an absent/empty `L2[entryId]` = read failure → **infra(READ)** → `REINJECT`. In the redelivery-after-end-delete (or genuinely-missing-input) case the data is truly gone, so Keeper's `REINJECT` read also misses → `_DLQ1`. |
 | D1 | End-delete uses `finally` semantics over **all** read-succeeded paths (Option A). |
-| — | `entryId` is a GUID; `L2[entryId]` has **no TTL**; composite backup key TTL = **2 days, configurable in days**. |
+| — | `entryId` is a GUID; `L2[entryId]` has **no TTL**; composite backup key TTL = **2 days, configurable in days** — a crash-backstop only. |
+| B / CLEANUP | Keeper owns the composite copy (Model B). The recovery consumer is **partitioned by `corr:wf:ProcessorId:executionId`** for per-key ordering. A 5th state **`CLEANUP`** deletes the redundant copy on the happy path (processor sends it after a successful output write); `INJECT` deletes it on the recovery path. Net-zero on every non-crash path; the 2-day TTL only covers a crash mid-recovery. Per-key ordering also guarantees `UPDATE` precedes `INJECT` (no data-gone-→`_DLQ1` race). |
 | A8/A12 | Author mints `executionId` per item; N completed items → N per-item orchestrator results (no manifest). |
 | A14 | Global pause-all / resume-all to all orchestrators (replaces per-workflow pause). |
 | A4 | Single `_DLQ1` for all terminal give-ups; `keeper-dlq` removed. |
