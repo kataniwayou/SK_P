@@ -13,7 +13,7 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 - L2 (Redis projection), two key schemes:
   - **Data key** `L2[entryId]` — per-item payload. **No TTL.**
   - **Composite backup key** `L2[correlationId:workFlowId:ProcessorId:executionId]` — written by `UPDATE`. **TTL = 2 days, configurable in days.**
-- **infra failure** = an L2 op (read/delete/write) that still throws a Redis exception **after its retry loop is exhausted**. Anything else that fails = **business failure**. A missing/empty key on a *healthy* L2 is **not** infra → **business `Failed`**.
+- **infra failure** = an L2 op that fails after its retry loop is exhausted. For a **read**, failure = a Redis exception **or an absent/empty key** (the data isn't there). For **delete/write**, failure = a Redis exception. Anything else that fails = **business failure**.
 - **retry loop** = N immediate attempts, no backoff, shared config `Retry:Limit` (default 3).
 - **`_DLQ1`** = single consolidated dead-letter queue for every terminal send/L2 give-up (processor *and* keeper). No separate `keeper-dlq`.
 
@@ -24,7 +24,7 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 ### 1 · Pre-Process
 1. Consume `EntryStepDispatch` from orchestrator.
 2. If `entryId == Guid.Empty` → skip read; `validatedData` = empty (no input validation).
-3. Else read `L2[entryId]`; on Redis exception → retry loop; exhausted → **infra(READ)**.
+3. Else read `L2[entryId]`; on Redis exception **or absent/empty key** → retry loop; exhausted → **infra(READ)**.
 4. Validate read data vs input schema; on failure → **business `Failed`**.
 
 **Terminal:**
@@ -68,7 +68,7 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 - Consumes `UPDATE / REINJECT / INJECT / DELETE`.
 - Performs the L2 op **only when L2 is healthy (BIT gate open)**; gate-closed → the consumer **waits for the gate** (bounded so as not to exceed the broker consumer timeout).
 - **`UPDATE`** → write `validatedData` to `L2[corr:wf:ProcessorId:executionId]`, TTL 2 days (configurable in days).
-- **`REINJECT`** → read `L2[entryId]` (still present — pre-process never deleted it) → re-inject a reconstructed `EntryStepDispatch` to `queue:{ProcessorId}`.
+- **`REINJECT`** → read `L2[entryId]`; if **present** (transient outage — data survived) → re-inject a reconstructed `EntryStepDispatch` to `queue:{ProcessorId}`; if **absent/empty** (data truly gone — redelivery after end-delete, or missing input) → read failure → retry loop → `_DLQ1`.
 - **`INJECT`** → read `L2[corr:wf:ProcessorId:executionId]` → **generate `entryId`** → write `L2[entryId]` (no TTL) → inject a reconstructed `ExecutionResult(Completed, carrying entryId + executionId)` to the orchestrator result queue.
 - **`DELETE`** → delete `L2[entryId]`.
 - Any keeper send that throws → retry loop; exhausted → `_DLQ1`.
@@ -81,7 +81,7 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 | Tag | Decision |
 |-----|----------|
 | — | No dedup / idempotency key (v3.x `H` + dedup gate removed); at-least-once; duplicates tolerated. |
-| A2 | Missing/empty key on a healthy L2 → business `Failed` (only Redis exceptions are infra). |
+| A2 | A read finding an absent/empty `L2[entryId]` = read failure → **infra(READ)** → `REINJECT`. In the redelivery-after-end-delete (or genuinely-missing-input) case the data is truly gone, so Keeper's `REINJECT` read also misses → `_DLQ1`. |
 | D1 | End-delete uses `finally` semantics over **all** read-succeeded paths (Option A). |
 | — | `entryId` is a GUID; `L2[entryId]` has **no TTL**; composite backup key TTL = **2 days, configurable in days**. |
 | A8/A12 | Author mints `executionId` per item; N completed items → N per-item orchestrator results (no manifest). |
