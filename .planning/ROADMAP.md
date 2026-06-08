@@ -442,7 +442,12 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   2. `entryId` is a `Guid`; `Guid.Empty` is recognized as the source-step sentinel by a shared helper (so consumers can branch "skip read / skip end-delete" off one predicate, not an ad-hoc check).
   3. Five Keeper message contracts exist — `UPDATE` (carrying validated data), `REINJECT`, `INJECT`, `DELETE`, `CLEANUP` — each carrying its specified id set, defined in `Messaging.Contracts`.
   4. `L2ProjectionKeys` exposes both schemes as single-source-of-truth builders: the per-item GUID **data key** (no TTL) and the composite **backup key** `correlationId:workFlowId:ProcessorId:executionId` (TTL = 2 days, configurable in days); golden tests pin both key strings.
-**Plans**: TBD
+**Plans**: 5 plans (4 waves)
+- [ ] 43-01-PLAN.md — Wave 0: contract/golden/predicate/options test stubs (RED) + delete RETIRE-01/02 machinery tests (MSG-01/02/03)
+- [ ] 43-02-PLAN.md — Wave 1: Messaging.Contracts core reshape — drop H, Guid entryId, four Step* records, SourceStep, five Keeper contracts + IKeeperRecoverable, L2 key builders, BackupOptions; delete ExecutionResult + MessageIdentity (MSG-01/02/03)
+- [ ] 43-03-PLAN.md — Wave 2: straight-through Orchestrator + BaseProcessor consumer adaptation (remove flag[H]/CAS/manifest; Guid entryId) (MSG-01/02)
+- [ ] 43-04-PLAN.md — Wave 2: D-14 dark reactive-path retarget (KeeperRecoveryHandler off inner.H, L2ProbeRecovery to Guid, neutralize Fault<ExecutionResult>, retain Fault<EntryStepDispatch>) (MSG-01/02)
+- [ ] 43-05-PLAN.md — Wave 3: reshape surviving tests + FULL-SUITE-GREEN phase gate + ROADMAP/REQUIREMENTS RETIRE-01/02 reconciliation (MSG-01/02/03)
 
 #### Phase 44: Processor Pre/In/Post-Process Pipeline
 **Goal**: `BaseProcessor` consumes a dispatch and runs an explicit Pre → In → Post pipeline — Pre reads + validates input (skipping on `Guid.Empty`), In is the author-overridden per-item transform that may throw a status-carrying exception, Post validates/writes/routes each item, and a `finally` end-delete reclaims `L2[entryId]` on every read-succeeded path — with a bounded retry loop wrapping every L2 op and every send.
@@ -516,7 +521,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 
 | Phase | Plans Complete | Status | Completed |
 | ----- | -------------- | ------ | --------- |
-| 43. Message Contracts & L2 Key Reshape | 0/? | Not started | - |
+| 43. Message Contracts & L2 Key Reshape | 0/5 | Planned | - |
 | 44. Processor Pre/In/Post-Process Pipeline | 0/? | Not started | - |
 | 45. Keeper BIT Health Gate + Global Pause/Resume | 0/? | Not started | - |
 | 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 0/? | Not started | - |
