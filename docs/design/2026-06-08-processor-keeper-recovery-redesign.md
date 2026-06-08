@@ -1,6 +1,7 @@
 # Processor Pre/In/Post-Process + Keeper Recovery — Redesign Spec
 
 **Status:** LOCKED 2026-06-08 — source of truth. No additions or discrepancies beyond what is stated here.
+**Amended 2026-06-08 (A15):** the processor→orchestrator result is split into **four typed records** (`StepCompleted`/`StepFailed`/`StepCancelled`/`StepProcessing`), replacing the single `ExecutionResult(Outcome)` — see the **Result contract** section and locked-decision **A15**. Every "send orchestrator result" / `ExecutionResult(<status>, …)` phrasing below is read through that section.
 **Delivery model:** at-least-once; **no dedup / idempotency key** (the v3.x `H` + dedup gate are removed); duplicate effects are tolerated downstream.
 
 ---
@@ -16,6 +17,25 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 - **infra failure** = an L2 op that fails after its retry loop is exhausted. For a **read**, failure = a Redis exception **or an absent/empty key** (the data isn't there). For **delete/write**, failure = a Redis exception. Anything else that fails = **business failure**.
 - **retry loop** = N immediate attempts, no backoff, shared config `Retry:Limit` (default 3).
 - **`_DLQ1`** = single consolidated dead-letter queue for every terminal send/L2 give-up (processor *and* keeper). No separate `keeper-dlq`.
+
+---
+
+## Result contract (four typed records) — Amendment A15 (2026-06-08)
+
+> **Supersedes** every "send orchestrator result" / `ExecutionResult(<status>, …)` phrasing in this doc. Where the round-trip and Keeper sections write `ExecutionResult(Completed, …)` etc., read it as **the matching one of the four typed records below**.
+
+The processor→orchestrator result is **four typed records**, not a single `ExecutionResult` carrying a `StepOutcome`:
+
+- **`StepCompleted`** `{ correlationId, workFlowId, stepId, ProcessorId, executionId, entryId }` — carries the **real** per-item data-key `entryId`.
+- **`StepFailed`** `{ …six ids, errorMessage }` — `entryId = Guid.Empty`.
+- **`StepCancelled`** `{ …six ids, cancellationMessage }` — `entryId = Guid.Empty`.
+- **`StepProcessing`** `{ …six ids }` — `entryId = Guid.Empty`.
+
+All four implement `IStepResult : IExecutionCorrelated`, carry the six ids, and drop `H`. **`entryId` seeding is done by the contracts** (`StepCompleted` = the real key; the other three default `Guid.Empty`), so a consumer reads `entryId` uniformly with no branching.
+
+`StepOutcome` (`Processing/Completed/Failed/Cancelled`, int-aligned to `StepEntryCondition.Previous*`) is **no longer a wire field** — it survives only as the orchestrator-internal advancement vocabulary and the per-type consumer knob.
+
+**Why typed (routing rationale):** the orchestrator consumes each result with a typed `TypedResultConsumer<TMessage> where TMessage : IStepResult` whose only per-type knob is its `StepOutcome` — **no status `if`/`switch` anywhere**; routing is by message type, funneling into the same `StepEntryCondition` match. The processor send-side emits the matching record per item (In-Process `completed`→`StepCompleted`, business `failed`→`StepFailed`, author-thrown `processing`/`cancelled`→`StepProcessing`/`StepCancelled`). Keeper `INJECT` reconstructs a `StepCompleted`. All four land on the one orchestrator-result queue.
 
 ---
 
@@ -70,7 +90,7 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 - Performs the L2 op **only when L2 is healthy (BIT gate open)**; gate-closed → the consumer **waits for the gate** (bounded so as not to exceed the broker consumer timeout).
 - **`UPDATE`** → write `validatedData` to `L2[corr:wf:ProcessorId:executionId]`, TTL 2 days (configurable in days) — the TTL is a crash-backstop; the copy is normally deleted by `CLEANUP`/`INJECT`.
 - **`REINJECT`** → read `L2[entryId]`; if **present** (transient outage — data survived) → re-inject a reconstructed `EntryStepDispatch` to `queue:{ProcessorId}`; if **absent/empty** (data truly gone — redelivery after end-delete, or missing input) → read failure → retry loop → `_DLQ1`.
-- **`INJECT`** → read `L2[corr:wf:ProcessorId:executionId]` → **generate `entryId`** → write `L2[entryId]` (no TTL) → inject a reconstructed `ExecutionResult(Completed, carrying entryId + executionId)` to the orchestrator result queue → **delete the composite copy** (now redundant).
+- **`INJECT`** → read `L2[corr:wf:ProcessorId:executionId]` → **generate `entryId`** → write `L2[entryId]` (no TTL) → inject a reconstructed `StepCompleted` (carrying `entryId` + `executionId`; per A15 — was `ExecutionResult(Completed, …)`) to the orchestrator result queue → **delete the composite copy** (now redundant).
 - **`DELETE`** → delete `L2[entryId]`.
 - **`CLEANUP`** → delete the composite copy `L2[corr:wf:ProcessorId:executionId]` (happy-path redundancy cleanup; ordered after this exec's `UPDATE` by the partitioner).
 - Any keeper send that throws → retry loop; exhausted → `_DLQ1`.
@@ -91,6 +111,7 @@ Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executio
 | A14 | Global pause-all / resume-all to all orchestrators (replaces per-workflow pause). |
 | A4 | Single `_DLQ1` for all terminal give-ups; `keeper-dlq` removed. |
 | A3 | Retry loops: N immediate attempts, no backoff, shared `Retry:Limit`. |
+| A15 | Processor→orchestrator result is **four typed records** (`StepCompleted`/`StepFailed`/`StepCancelled`/`StepProcessing : IStepResult : IExecutionCorrelated`), replacing the single `ExecutionResult(Outcome)`. `entryId` seeding is contract-level (`StepCompleted` = real key, the other three `Guid.Empty`); `StepOutcome` is demoted off the wire to internal advancement/consumer vocabulary. Enables no-`if`/`else` typed-consumer routing. See the **Result contract** section. *(Amendment 2026-06-08.)* |
 
 ---
 
