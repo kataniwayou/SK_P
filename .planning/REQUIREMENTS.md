@@ -17,9 +17,12 @@
 - [ ] **PIPE-08**: End-delete (a `finally` over every read-succeeded path) deletes `L2[entryId]` with a bounded retry loop; exhaustion → Keeper `DELETE`.
 
 ### Message Contracts (MSG)
-- [ ] **MSG-01**: `EntryStepDispatch` and `ExecutionResult` carry the six ids (`correlationId, workFlowId, stepId, ProcessorId, executionId, entryId`) and no longer carry `H`.
-- [ ] **MSG-02**: `entryId` is a GUID; `Guid.Empty` is the explicit source-step sentinel (no read, no delete).
-- [ ] **MSG-03**: Five Keeper message contracts exist — `UPDATE` (+ validated data), `REINJECT`, `INJECT`, `DELETE`, `CLEANUP` — each carrying its specified id set.
+- [x] **MSG-01
+**: `EntryStepDispatch` and `ExecutionResult` carry the six ids (`correlationId, workFlowId, stepId, ProcessorId, executionId, entryId`) and no longer carry `H`.
+- [x] **MSG-02
+**: `entryId` is a GUID; `Guid.Empty` is the explicit source-step sentinel (no read, no delete).
+- [x] **MSG-03
+**: Five Keeper message contracts exist — `UPDATE` (+ validated data), `REINJECT`, `INJECT`, `DELETE`, `CLEANUP` — each carrying its specified id set.
 
 ### Orchestrator (ORCH)
 - [ ] **ORCH-01**: Orchestrator consumes per-item `ExecutionResult` messages (no manifest fan-out) and advances workflow steps accordingly; a Keeper-`INJECT`'d completion is indistinguishable from a direct one.
