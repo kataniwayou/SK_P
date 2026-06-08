@@ -18,7 +18,13 @@ public sealed class BitHealthLoop(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        bool? prevHealthy = null;                                   // D-06: null = no prior tick (first probe is always a transition → D-12)
+        // D-06: null = no prior tick, so the first probe is always treated as a transition (D-12). When that first
+        // probe is healthy this opens the (fail-safe-closed) gate AND broadcasts one startup ResumeAll. That startup
+        // ResumeAll is INTENTIONAL and harmless: ResumeAllConsumer is idempotent (it only acts on Paused triggers),
+        // so a Keeper start/restart simply re-asserts a healthy/open posture across replicas with no spurious resumes.
+        // This is locked by the GREEN BitHealthLoopTests "first healthy tick → 1 ResumeAll" assertion — do NOT
+        // suppress it (WR-02: resolved-by-documentation, behavior intentionally unchanged).
+        bool? prevHealthy = null;
         var delay = TimeSpan.FromSeconds(opts.Value.DelaySeconds);  // OQ-2: reuse Probe:DelaySeconds
 
         while (!stoppingToken.IsCancellationRequested)
