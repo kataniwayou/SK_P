@@ -14,6 +14,10 @@ public static class KeeperQueues
     /// </summary>
     public const string FaultRecovery = "keeper-fault-recovery";
 
+    /// <summary>D-13: gate-open-only recovery consumer queue — Phase 46 binds the four Keeper-state
+    /// consumers here. Distinct from the reactive <see cref="FaultRecovery"/> queue (retired 47/48).</summary>
+    public const string Recovery = "keeper-recovery";
+
     /// <summary>
     /// DLQ-2 (D-08): terminal probe give-up queue. Plain durable, NO x-message-ttl — its depth is the
     /// PRIMARY operator alert (Phase 39), so it MUST persist until an operator drains it (contrast DLQ-1's TTL).

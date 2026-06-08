@@ -21,8 +21,8 @@ namespace Messaging.Contracts.Projections;
 ///   <item><description>Root: <c>{Prefix}{workflowId}</c></description></item>
 ///   <item><description>Step: <c>{Prefix}{workflowId}:{stepId}</c></description></item>
 ///   <item><description>Processor: <c>{Prefix}{processorId}</c></description></item>
-///   <item><description>ExecutionData: {Prefix}data:{64hex} — content-addressed (was Guid; D-01). The string overload takes the 64-hex content address directly (no <c>:D</c>); the Guid overload is retained transitionally for the not-yet-migrated Phase-27 callers and is removed in Plan 02.</description></item>
-///   <item><description>Flag: {Prefix}flag:{64hex} — effect-first dedup state (D-05)</description></item>
+///   <item><description>ExecutionData: <c>{Prefix}data:{entryId:D}</c> — the sole GUID-keyed data builder (D-08; the legacy 64-hex content-addressed string overload was removed in v4.0.0).</description></item>
+///   <item><description>CompositeBackup: <c>{Prefix}{corr:D}:{wf:D}:{proc:D}:{exec:D}</c> — the crash-backstop backup key (D-09); the four-GUID shape IS the namespace (no data:/backup: segment).</description></item>
 /// </list>
 /// </summary>
 public static class L2ProjectionKeys
@@ -37,18 +37,14 @@ public static class L2ProjectionKeys
 
     public static string Processor(Guid processorId) => $"{Prefix}{processorId}";
 
-    /// <summary>D-01: content-addressed data key over the 64-hex entryId string (the new canonical path).</summary>
-    public static string ExecutionData(string entryId) => $"{Prefix}data:{entryId}";
-
-    /// <summary>
-    /// Transitional Guid overload retained so the not-yet-migrated Phase-27 callers
-    /// (<c>EntryStepDispatchConsumer</c>) and their golden tests still compile/pass this plan; the
-    /// content address becomes the 64-hex <see cref="ExecutionData(string)"/> in Plan 02. Renders <c>:D</c>.
-    /// </summary>
+    /// <summary>D-08: the sole GUID-keyed L2 data builder — <c>skp:data:{entryId:D}</c> (no TTL baked
+    /// in; caller concern). The legacy 64-hex content-addressed string overload was removed in v4.0.0.</summary>
     public static string ExecutionData(Guid entryId) => $"{Prefix}data:{entryId:D}";
 
-    /// <summary>D-05: effect-first dedup flag key — <c>skp:flag:{64hex}</c>.</summary>
-    public static string Flag(string h) => $"{Prefix}flag:{h}";
+    /// <summary>D-09: composite backup key — <c>skp:{corr:D}:{wf:D}:{proc:D}:{exec:D}</c>. The four-GUID
+    /// shape IS the namespace (no data:/backup: segment — Anti-Pattern). No TTL baked in (caller concern).</summary>
+    public static string CompositeBackup(Guid correlationId, Guid workFlowId, Guid processorId, Guid executionId)
+        => $"{Prefix}{correlationId:D}:{workFlowId:D}:{processorId:D}:{executionId:D}";
 
     /// <summary>D-03: probe scratch key — short-TTL write-then-delete; the TTL is the crash net-zero net.</summary>
     public static string KeeperProbe(string h) => $"{Prefix}keeper:probe:{h}";   // "skp:keeper:probe:{h}"
