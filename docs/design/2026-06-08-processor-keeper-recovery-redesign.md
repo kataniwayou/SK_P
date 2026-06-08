@@ -1,0 +1,96 @@
+# Processor Pre/In/Post-Process + Keeper Recovery — Redesign Spec
+
+**Status:** LOCKED 2026-06-08 — source of truth. No additions or discrepancies beyond what is stated here.
+**Delivery model:** at-least-once; **no dedup / idempotency key** (the v3.x `H` + dedup gate are removed); duplicate effects are tolerated downstream.
+
+---
+
+## Identities & L2
+
+Every message carries: `correlationId, workFlowId, stepId, ProcessorId, executionId, entryId`.
+
+- `entryId` is a **GUID**. `Guid.Empty` = source step → **skip L2 read and skip end-delete**.
+- L2 (Redis projection), two key schemes:
+  - **Data key** `L2[entryId]` — per-item payload. **No TTL.**
+  - **Composite backup key** `L2[correlationId:workFlowId:ProcessorId:executionId]` — written by `UPDATE`. **TTL = 2 days, configurable in days.**
+- **infra failure** = an L2 op (read/delete/write) that still throws a Redis exception **after its retry loop is exhausted**. Anything else that fails = **business failure**. A missing/empty key on a *healthy* L2 is **not** infra → **business `Failed`**.
+- **retry loop** = N immediate attempts, no backoff, shared config `Retry:Limit` (default 3).
+- **`_DLQ1`** = single consolidated dead-letter queue for every terminal send/L2 give-up (processor *and* keeper). No separate `keeper-dlq`.
+
+---
+
+## Processor round trip
+
+### 1 · Pre-Process
+1. Consume `EntryStepDispatch` from orchestrator.
+2. If `entryId == Guid.Empty` → skip read; `validatedData` = empty (no input validation).
+3. Else read `L2[entryId]`; on Redis exception → retry loop; exhausted → **infra(READ)**.
+4. Validate read data vs input schema; on failure → **business `Failed`**.
+
+**Terminal:**
+- **infra(READ)** → send Keeper **`REINJECT`** `{corr, wf, step, proc, exec, entryId}`. End round trip. *(Input left intact for the keeper.)*
+- **business `Failed`** → send orchestrator result `Failed`, then run **End-delete (§4)**.
+- **success** (read + validate OK) → In-Process.
+- Any processor send that throws → retry loop; exhausted → `_DLQ1`.
+
+### 2 · In-Process (author override)
+- Signature: `(validatedData, payload) → List<Item>`, where `Item = { result: "completed" | "failed", data, executionId }` and **`executionId` is author-minted, new per item**.
+- Author deserializes `payload`; may throw a status-carrying exception: `"processing" | "failed" | "cancelled"`.
+- Wrapped in try/catch. **Any exception** → send ONE orchestrator result with Outcome = thrown status (an unexpected / non-status exception ⇒ `"failed"`); whole batch aborted (no Post-Process); then run **End-delete (§4)**.
+- Normal return → per-item list flows to Post-Process.
+
+### 3 · Post-Process (per item, in order)
+1. If `completed` → validate `data` vs output schema → set `completed` | `failed`.
+2. If `completed` → send Keeper **`UPDATE`** `{corr, wf, step, proc, exec, validatedData}` (keeper writes the composite backup, TTL 2d).
+3. If `completed` → generate `entryId` (GUID), write `L2[entryId]` (no TTL); on Redis exception → retry loop; exhausted → item = `failed (infra)`, else `completed`.
+4. If item is **not-infra** (`completed` ∪ business `failed`) → send orchestrator result. A `completed` result carries `entryId` + `executionId`.
+5. If item is **infra** → send Keeper **`INJECT`** `{corr, wf, step, proc, exec}`.
+
+- N completed items → **N separate per-item orchestrator results** (no manifest).
+- Any processor send that throws → retry loop; exhausted → `_DLQ1`.
+
+### 4 · End-delete (`finally` — runs on every path where the read succeeded)
+- **Applies to:** happy path, pre-process business-fail, and In-Process exception.
+- **Skipped only on:** infra(READ)/`REINJECT` (input left intact) and `Guid.Empty` source steps.
+- Delete `L2[entryId]`; on Redis exception → retry loop; exhausted → **infra(DELETE)** → send Keeper **`DELETE`** `{corr, wf, step, proc, exec, entryId}`.
+- End of round trip. *(A delete failure never alters results already sent to the orchestrator; `DELETE` is L2 garbage-collection only.)*
+
+---
+
+## Keeper
+
+### BIT health gate (background)
+- `while` loop with a configurable delay in seconds (`Probe:DelaySeconds`). Each tick runs **BIT** against L2 (read + write-then-delete probe).
+- BIT results are **suppressed** (exceptions never crash the loop). The result fans out a **global** broadcast to **all** orchestrators: **unhealthy → pause all jobs; healthy → resume all jobs.**
+- Orchestrator pause/resume-all is **idempotent per job** (pause only if Running, resume only if Paused); job state is known via **Quartz `TriggerState`**.
+
+### Recovery consumer (messages from processors)
+- Consumes `UPDATE / REINJECT / INJECT / DELETE`.
+- Performs the L2 op **only when L2 is healthy (BIT gate open)**; gate-closed → the consumer **waits for the gate** (bounded so as not to exceed the broker consumer timeout).
+- **`UPDATE`** → write `validatedData` to `L2[corr:wf:ProcessorId:executionId]`, TTL 2 days (configurable in days).
+- **`REINJECT`** → read `L2[entryId]` (still present — pre-process never deleted it) → re-inject a reconstructed `EntryStepDispatch` to `queue:{ProcessorId}`.
+- **`INJECT`** → read `L2[corr:wf:ProcessorId:executionId]` → **generate `entryId`** → write `L2[entryId]` (no TTL) → inject a reconstructed `ExecutionResult(Completed, carrying entryId + executionId)` to the orchestrator result queue.
+- **`DELETE`** → delete `L2[entryId]`.
+- Any keeper send that throws → retry loop; exhausted → `_DLQ1`.
+- Any keeper L2 op that throws → retry loop; exhausted → `_DLQ1`.
+
+---
+
+## Locked decisions (traceability)
+
+| Tag | Decision |
+|-----|----------|
+| — | No dedup / idempotency key (v3.x `H` + dedup gate removed); at-least-once; duplicates tolerated. |
+| A2 | Missing/empty key on a healthy L2 → business `Failed` (only Redis exceptions are infra). |
+| D1 | End-delete uses `finally` semantics over **all** read-succeeded paths (Option A). |
+| — | `entryId` is a GUID; `L2[entryId]` has **no TTL**; composite backup key TTL = **2 days, configurable in days**. |
+| A8/A12 | Author mints `executionId` per item; N completed items → N per-item orchestrator results (no manifest). |
+| A14 | Global pause-all / resume-all to all orchestrators (replaces per-workflow pause). |
+| A4 | Single `_DLQ1` for all terminal give-ups; `keeper-dlq` removed. |
+| A3 | Retry loops: N immediate attempts, no backoff, shared `Retry:Limit`. |
+
+---
+
+## Scope note
+
+This **replaces** large parts of the shipped v3.x execution model — effect-first idempotency (`H`/content-addressing/CAS), the single-`ProcessAsync` seam, the result manifest, and the reactive `Fault<T>` recovery path. It is a **breaking change** and should be planned as the next **major** milestone (v4.0.0).
