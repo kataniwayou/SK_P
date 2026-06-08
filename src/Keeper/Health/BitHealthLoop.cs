@@ -27,19 +27,31 @@ public sealed class BitHealthLoop(
 
             if (prevHealthy != healthy)                                // EDGE: transition (or first tick) only
             {
-                if (healthy)
+                try
                 {
-                    gate.Open();
-                    await bus.Publish(new ResumeAll { CorrelationId = NewId.NextGuid() }, stoppingToken);
-                    logger.LogInformation("L2 healthy — gate OPEN, ResumeAll broadcast");
+                    if (healthy)
+                    {
+                        gate.Open();
+                        await bus.Publish(new ResumeAll { CorrelationId = NewId.NextGuid() }, stoppingToken);
+                        logger.LogInformation("L2 healthy — gate OPEN, ResumeAll broadcast");
+                    }
+                    else
+                    {
+                        gate.Close();
+                        await bus.Publish(new PauseAll { CorrelationId = NewId.NextGuid() }, stoppingToken);
+                        logger.LogWarning("L2 unhealthy — gate CLOSED, PauseAll broadcast");
+                    }
+                    prevHealthy = healthy;                              // advance the edge ONLY after the broadcast actually went out
                 }
-                else
+                catch (OperationCanceledException) { break; }          // graceful shutdown — NOT a publish failure
+                catch (Exception ex)
                 {
-                    gate.Close();
-                    await bus.Publish(new PauseAll { CorrelationId = NewId.NextGuid() }, stoppingToken);
-                    logger.LogWarning("L2 unhealthy — gate CLOSED, PauseAll broadcast");
+                    // WR-01 (D-06): a transient bus.Publish failure (broker blip) must NOT fault ExecuteAsync and
+                    // permanently kill the standing health gate. prevHealthy is intentionally NOT advanced here, so
+                    // the next tick re-broadcasts the same edge. gate.Open()/Close() are idempotent, so a half-applied
+                    // transition (gate moved, broadcast failed) self-corrects on the retry.
+                    logger.LogError(ex, "BIT transition broadcast failed — will retry next tick");
                 }
-                prevHealthy = healthy;
             }
 
             try { await Task.Delay(delay, stoppingToken); }
