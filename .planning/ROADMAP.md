@@ -459,7 +459,10 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   3. Post-Process per `completed` item validates output against the output schema, sends Keeper `UPDATE` (validated data → composite backup), generates a GUID `entryId`, and writes `L2[entryId]` (no TTL) through a bounded retry loop whose exhaustion downgrades the item to `failed (infra)`; on a successful write it sends Keeper `CLEANUP` to delete the now-redundant composite backup.
   4. Post-Process routes each item: not-infra (`completed` ∪ business-`failed`) → one orchestrator result (a `completed` result carries `entryId` + `executionId`); infra → Keeper `INJECT`; N completed items produce N separate per-item orchestrator results (no manifest).
   5. End-delete runs in a `finally` over every read-succeeded path (happy, pre-process business-fail, In-Process exception), is skipped only on `infra(READ)`/`REINJECT` and `Guid.Empty` source steps, deletes `L2[entryId]` through a bounded retry loop, and on exhaustion sends Keeper `DELETE` without altering any result already sent; every L2 op and every send uses the shared `Retry:Limit` immediate-attempt loop.
-**Plans**: TBD
+**Plans**: 3 plans (3 waves — interface-first; clean break in the final wave)
+- [ ] 44-01-PLAN.md — Wave 0 foundation: ProcessOutcome/ProcessItem/ProcessStatusException + RetryLoop/KeyAbsentException + RetryLoopFacts (RESIL-01, PIPE-04/05 type-level)
+- [ ] 44-02-PLAN.md — ProcessorPipeline (Pre→In→Post→end-delete) + thin consumer + Retry reconcile + four pipeline Wave-0 fact files (PIPE-01..08, RESIL-01)
+- [ ] 44-03-PLAN.md — Clean break: migrate Processor.Sample to the new seam + delete ProcessResult.cs + Retry appsettings + full-suite green gate (PIPE-04, RESIL-01)
 
 #### Phase 45: Keeper BIT Health Gate + Global Pause/Resume
 **Goal**: The Keeper runs a suppressed background BIT loop that probes L2 (read + write-then-delete) on a configurable delay and broadcasts a global pause-all (unhealthy) / resume-all (healthy) decision to all orchestrators, and the orchestrator's pause-all/resume-all is idempotent per job via Quartz `TriggerState`.
