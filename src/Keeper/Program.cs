@@ -32,6 +32,10 @@ builder.Services.Configure<ProbeOptions>(builder.Configuration.GetSection("Probe
 // TTL is applied only at the Keeper UPDATE write (Phase 46), never baked into the key builder.
 builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection("Backup"));
 
+// D-03/D-06 — partition count (8) + gate-wait bound (300s) knobs (mirrors Probe/Backup/Retry). PartitionCount
+// drives the keeper-recovery UsePartitioner slot count; GateWaitSeconds bounds the once-at-entry gate await.
+builder.Services.Configure<RecoveryOptions>(builder.Configuration.GetSection("Recovery"));
+
 // PROBE-01 — the shared bounded probe-loop helper (stateless; ctor-injects the singleton multiplexer +
 // IOptions<ProbeOptions>). Both fault consumers depend on it.
 builder.Services.AddSingleton<Keeper.Recovery.L2ProbeRecovery>();
@@ -65,6 +69,18 @@ builder.Services.ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(KeeperMet
 builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
 {
     x.AddConsumer<FaultEntryStepDispatchConsumer, FaultEntryStepDispatchConsumerDefinition>();
+
+    // KEEP-04..09 (D-02/D-06/D-07-additive) — the five gate-open-only recovery consumers co-located on the
+    // shared queue:keeper-recovery endpoint. Additive: the reactive FaultEntryStepDispatchConsumer above
+    // COEXISTS (retired in Phase 48). UpdateConsumerDefinition is the SINGLE OWNER of the endpoint-level
+    // retry + the five UsePartitioner<T> calls; the other four definitions no-op (Pitfalls 1 & 4). The
+    // recovery consumers ctor-inject IConnectionMultiplexer / ISendEndpointProvider (via the bus),
+    // IL2HealthGate (line 40), and IOptions<Retry/Recovery/Backup> (all already bound) — no new AddSingleton.
+    x.AddConsumer<Keeper.Recovery.UpdateConsumer,   Keeper.Recovery.UpdateConsumerDefinition>();
+    x.AddConsumer<Keeper.Recovery.ReinjectConsumer, Keeper.Recovery.ReinjectConsumerDefinition>();
+    x.AddConsumer<Keeper.Recovery.InjectConsumer,   Keeper.Recovery.InjectConsumerDefinition>();
+    x.AddConsumer<Keeper.Recovery.DeleteConsumer,   Keeper.Recovery.DeleteConsumerDefinition>();
+    x.AddConsumer<Keeper.Recovery.CleanupConsumer,  Keeper.Recovery.CleanupConsumerDefinition>();
 });
 
 var host = builder.Build();
