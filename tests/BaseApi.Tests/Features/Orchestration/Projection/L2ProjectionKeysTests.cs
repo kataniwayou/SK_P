@@ -66,4 +66,24 @@ public sealed class L2ProjectionKeysTests
         Assert.NotEqual(L2ProjectionKeys.Root(g), L2ProjectionKeys.ExecutionData(g));
         Assert.NotEqual(L2ProjectionKeys.Processor(g), L2ProjectionKeys.ExecutionData(g));
     }
+
+    // Phase 43 Wave-0 RED (D-08/D-09): the CompositeBackup builder does not exist until Plan 02.
+    [Fact]
+    public void CompositeBackup_Produces_Prefix_Four_HyphenatedGuids_Colon_Joined()
+    {
+        var corr = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var wf = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var proc = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        var exec = Guid.Parse("44444444-4444-4444-4444-444444444444");
+        Assert.Equal(
+            "skp:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222:" +
+            "33333333-3333-3333-3333-333333333333:44444444-4444-4444-4444-444444444444",
+            L2ProjectionKeys.CompositeBackup(corr, wf, proc, exec));
+    }
+
+    // D-08: ExecutionData's sole overload after Plan 02 is the Guid one — pin skp:data:{guid:D}.
+    [Fact]
+    public void ExecutionData_Guid_Overload_Pins_skp_data_HyphenatedGuid()
+        => Assert.Equal("skp:data:55555555-5555-5555-5555-555555555555",
+            L2ProjectionKeys.ExecutionData(Guid.Parse("55555555-5555-5555-5555-555555555555")));
 }
