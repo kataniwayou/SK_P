@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: verifying
+status: milestone_complete
 stopped_at: Completed 44-03-PLAN.md
 last_updated: "2026-06-08T14:56:45.566Z"
 last_activity: 2026-06-08
 progress:
   total_phases: 47
-  completed_phases: 46
+  completed_phases: 47
   total_plans: 161
   completed_plans: 175
   percent: 100
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 ## Current Position
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
-Phase: 44 (processor-pre-in-post-process-pipeline) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
+Phase: 44
+Plan: Not started
+Status: Milestone complete
 Last activity: 2026-06-08
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -695,7 +695,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 149
+- Total plans completed: 152
 - Average duration: —
 - Total execution time: —
 
@@ -742,6 +742,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 41 | 2 | - | - |
 | 42 | 3 | - | - |
 | 43 | 5 | - | - |
+| 44 | 3 | - | - |
 
 **Recent Trend:**
 

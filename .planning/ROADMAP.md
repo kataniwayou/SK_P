@@ -424,7 +424,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | Phase | Name | Goal | Requirements | Success Criteria |
 | ----- | ---- | ---- | ------------ | ---------------- |
 | 43 | Message Contracts & L2 Key Reshape | 5/5 | Complete    | 2026-06-08 |
-| 44 | Processor Pre/In/Post-Process Pipeline | `BaseProcessor` runs an explicit Pre → In → Post pipeline per dispatch with `finally` end-delete, author-minted per-item outcomes, N per-item results, and bounded retry loops on every L2 op and send. | PIPE-01, PIPE-02, PIPE-03, PIPE-04, PIPE-05, PIPE-06, PIPE-07, PIPE-08, RESIL-01 | 5 |
+| 44 | Processor Pre/In/Post-Process Pipeline | 3/3 | Complete    | 2026-06-08 |
 | 45 | Keeper BIT Health Gate + Global Pause/Resume | A suppressed background BIT loop probes L2 and broadcasts global pause-all (unhealthy) / resume-all (healthy); orchestrator pause/resume is idempotent per job via Quartz `TriggerState`. | KEEP-01, KEEP-02, KEEP-03, ORCH-02 | 4 |
 | 46 | Keeper 5-State Recovery + Orchestrator Per-Item Consume | The gate-open-only, per-key-ordered recovery consumer applies `UPDATE`/`REINJECT`/`INJECT`/`DELETE`/`CLEANUP` (composite copy deleted on redundancy; TTL is a crash-backstop), and the orchestrator advances on per-item `ExecutionResult` messages (a Keeper-`INJECT`'d completion is indistinguishable from a direct one). | KEEP-04, KEEP-05, KEEP-06, KEEP-07, KEEP-08, KEEP-09, ORCH-01 | 6 |
 | 47 | DLQ Consolidation + At-Least-Once Semantics | Every processor and Keeper terminal give-up routes to a single consolidated `_DLQ1`; the execution path is at-least-once with no dedup key and duplicates tolerated downstream. | RESIL-02, RESIL-03 | 3 |
@@ -460,8 +460,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   4. Post-Process routes each item: not-infra (`completed` ∪ business-`failed`) → one orchestrator result (a `completed` result carries `entryId` + `executionId`); infra → Keeper `INJECT`; N completed items produce N separate per-item orchestrator results (no manifest).
   5. End-delete runs in a `finally` over every read-succeeded path (happy, pre-process business-fail, In-Process exception), is skipped only on `infra(READ)`/`REINJECT` and `Guid.Empty` source steps, deletes `L2[entryId]` through a bounded retry loop, and on exhaustion sends Keeper `DELETE` without altering any result already sent; every L2 op and every send uses the shared `Retry:Limit` immediate-attempt loop.
 **Plans**: 3 plans (3 waves — interface-first; clean break in the final wave)
-- [ ] 44-01-PLAN.md — Wave 0 foundation: ProcessOutcome/ProcessItem/ProcessStatusException + RetryLoop/KeyAbsentException + RetryLoopFacts (RESIL-01, PIPE-04/05 type-level)
-- [ ] 44-02-PLAN.md — ProcessorPipeline (Pre→In→Post→end-delete) + thin consumer + Retry reconcile + four pipeline Wave-0 fact files (PIPE-01..08, RESIL-01)
+- [x] 44-01-PLAN.md — Wave 0 foundation: ProcessOutcome/ProcessItem/ProcessStatusException + RetryLoop/KeyAbsentException + RetryLoopFacts (RESIL-01, PIPE-04/05 type-level)
+- [x] 44-02-PLAN.md — ProcessorPipeline (Pre→In→Post→end-delete) + thin consumer + Retry reconcile + four pipeline Wave-0 fact files (PIPE-01..08, RESIL-01)
 - [x] 44-03-PLAN.md — Clean break: migrate Processor.Sample to the new seam + delete ProcessResult.cs + Retry appsettings + full-suite green gate (PIPE-04, RESIL-01) ✓ Release 0/0, hermetic 488/0 RealStack-excluded
 
 #### Phase 45: Keeper BIT Health Gate + Global Pause/Resume
