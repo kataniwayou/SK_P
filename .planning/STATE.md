@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Completed 45-01-PLAN.md
-last_updated: "2026-06-08T18:12:02.038Z"
+status: verifying
+stopped_at: Completed 45-02-PLAN.md
+last_updated: "2026-06-08T18:27:54.480Z"
 last_activity: 2026-06-08
 progress:
   total_phases: 48
-  completed_phases: 46
+  completed_phases: 47
   total_plans: 164
-  completed_plans: 177
+  completed_plans: 178
   percent: 100
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 45 (keeper-bit-health-gate-global-pause-resume) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-08
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -880,6 +880,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 44 P03 | 10min | 2 tasks | 4 files |
 | Phase 45 P00 | 9m | 3 tasks | 7 files |
 | Phase 45 P01 | 27min | 3 tasks | 7 files |
+| Phase 45 P02 | ~11min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -1215,6 +1216,8 @@ Recent decisions affecting current work:
 - 45-01 OQ-1: ProbeOnceAsync is sentinel-parameterized (entryId=Guid.Empty, h="bit") so RunAsync stays byte-identical and the BIT loop needs no inbound message
 - 45-01 OQ-2: the BIT loop reuses Probe:DelaySeconds for its tick cadence; ProbeOnceAsync does exactly one probe
 - 45-01: L2HealthGate is a Stephen Toub swappable-TCS AsyncManualResetEvent starting CLOSED (D-12); BitHealthLoop is edge-triggered (prevHealthy != healthy), bus.Publish not Send
+- 45-02: PauseAllConsumer is scheduler-wide (PauseAll seam, idempotent); ResumeAllConsumer is per-job over the L1 WorkflowIds snapshot — NEVER native ResumeAll() (no catch-up herd, T-45-07).
+- 45-02: both global consumers share a NEW per-replica fan-out endpoint orchestrator-global-pauseresume with retry owned ONLY by the PauseAll def (D-08 independence keeps the old per-workflow endpoint untouched for Phase-48 retirement).
 
 ### Roadmap Milestone Log
 
@@ -1317,8 +1320,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-08T18:12:02.014Z
-Stopped at: Completed 45-01-PLAN.md
+Last session: 2026-06-08T18:27:45.382Z
+Stopped at: Completed 45-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
