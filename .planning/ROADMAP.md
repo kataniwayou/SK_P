@@ -462,7 +462,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 **Plans**: 3 plans (3 waves — interface-first; clean break in the final wave)
 - [ ] 44-01-PLAN.md — Wave 0 foundation: ProcessOutcome/ProcessItem/ProcessStatusException + RetryLoop/KeyAbsentException + RetryLoopFacts (RESIL-01, PIPE-04/05 type-level)
 - [ ] 44-02-PLAN.md — ProcessorPipeline (Pre→In→Post→end-delete) + thin consumer + Retry reconcile + four pipeline Wave-0 fact files (PIPE-01..08, RESIL-01)
-- [ ] 44-03-PLAN.md — Clean break: migrate Processor.Sample to the new seam + delete ProcessResult.cs + Retry appsettings + full-suite green gate (PIPE-04, RESIL-01)
+- [x] 44-03-PLAN.md — Clean break: migrate Processor.Sample to the new seam + delete ProcessResult.cs + Retry appsettings + full-suite green gate (PIPE-04, RESIL-01) ✓ Release 0/0, hermetic 488/0 RealStack-excluded
 
 #### Phase 45: Keeper BIT Health Gate + Global Pause/Resume
 **Goal**: The Keeper runs a suppressed background BIT loop that probes L2 (read + write-then-delete) on a configurable delay and broadcasts a global pause-all (unhealthy) / resume-all (healthy) decision to all orchestrators, and the orchestrator's pause-all/resume-all is idempotent per job via Quartz `TriggerState`.
@@ -525,7 +525,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | Phase | Plans Complete | Status | Completed |
 | ----- | -------------- | ------ | --------- |
 | 43. Message Contracts & L2 Key Reshape | 0/5 | Planned | - |
-| 44. Processor Pre/In/Post-Process Pipeline | 0/? | Not started | - |
+| 44. Processor Pre/In/Post-Process Pipeline | 3/3 | Complete | 2026-06-08 |
 | 45. Keeper BIT Health Gate + Global Pause/Resume | 0/? | Not started | - |
 | 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 0/? | Not started | - |
 | 47. DLQ Consolidation + At-Least-Once Semantics | 0/? | Not started | - |
