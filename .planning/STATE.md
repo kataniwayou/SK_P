@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v4.0.0
-milestone_name: Processor Pre/In/Post-Process + Keeper Recovery Redesign
-status: roadmapped
-stopped_at: v4.0.0 roadmap created — phases 43-49 mapped (29/29 requirements), ready to plan Phase 43
-last_updated: "2026-06-08T00:00:00.000Z"
-last_activity: 2026-06-08 -- v4.0.0 roadmap created (7 phases 43-49, 29/29 requirements mapped) from locked design spec docs/design/2026-06-08-processor-keeper-recovery-redesign.md
+milestone: v3.7.0
+milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
+status: planning
+stopped_at: Phase 43 context gathered
+last_updated: "2026-06-08T10:47:36.581Z"
+last_activity: 2026-06-08 — v4.0.0 roadmap created (7 phases 43-49, 29/29 requirements mapped)
 progress:
-  total_phases: 7
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 13
+  completed_phases: 6
+  total_plans: 21
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -1289,7 +1289,7 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: --stopped-at
-Stopped at: Phase 42 context gathered
+Stopped at: Phase 43 context gathered
 Resume file: --resume-file
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
