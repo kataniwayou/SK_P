@@ -8,7 +8,7 @@
 
 Establish the reshaped **shared wire vocabulary** for v4.0.0 — no behavior change beyond what's structurally forced:
 
-- `EntryStepDispatch` / `ExecutionResult` carry exactly the six ids (`correlationId, workFlowId, stepId, ProcessorId, executionId, entryId`) and **drop `H`**.
+- `EntryStepDispatch` (single) and the **four typed result records** (`StepCompleted`/`StepFailed`/`StepCancelled`/`StepProcessing`, replacing the single `ExecutionResult`) carry exactly the six ids (`correlationId, workFlowId, stepId, ProcessorId, executionId, entryId`) and **drop `H`**.
 - `entryId` becomes a `Guid`; `Guid.Empty` is the explicit source-step sentinel (skip read + skip end-delete).
 - Five Keeper-state contracts exist — `UPDATE` / `REINJECT` / `INJECT` / `DELETE` / `CLEANUP`.
 - `L2ProjectionKeys` gains both new key schemes — the GUID **data key** (no TTL) and the **composite backup key** (configurable 2-day TTL).
@@ -25,10 +25,16 @@ The v4 Pre/In/Post pipeline (Phase 44), the BIT gate + global pause/resume (Phas
 - **D-02:** **Phase 48 shrinks** as a consequence — it becomes RETIRE-03 (reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` recovery path + `keeper-dlq`) + a final remnant sweep only. (See Deferred Ideas for the ROADMAP reconciliation this implies.)
 - **D-03:** **Bleed boundary = "dead-machinery removal + straight-through."** Phase 43 removes `flag[H]`/CAS, content-addressing, and the N×M manifest fan-out, then adapts the processor (`EntryStepDispatchConsumer`) and orchestrator (`ResultConsumer`, `StepDispatcher`) to the **simplest compile-and-pass** behavior on the new contracts: single result, no dedup, no manifest. Phase 43 does **NOT** rewrite consumers to v4 behavior — the full Pre/In/Post pipeline stays Phase 44; the 5-state recovery consumer + per-item orchestrator consume stay Phase 46.
 
-### Execution contracts (MSG-01, MSG-02)
-- **D-04:** `EntryStepDispatch` + `ExecutionResult` carry exactly the six ids; `H` removed from **both records and from `IExecutionCorrelated`**. A golden/contract test pins the shape and asserts `H` is absent (SC-1).
-- **D-05:** `entryId` is a `Guid` on both contracts and on `IExecutionCorrelated` (was `string` 64-hex). `Guid.Empty` = source-step sentinel.
-- **D-06:** `ExecutionResult` **keeps** `ErrorMessage` + `CancellationMessage` (business `Failed`/`Cancelled` still need a diagnostic message); only `H` is dropped. The `StepOutcome` enum (`Processing`/`Completed`/`Failed`/`Cancelled`, plain `int`) is reused **unchanged** — the author-throwable `processing` status already has a value.
+### Execution contracts (MSG-01, MSG-02) — four typed result records
+- **D-04:** `EntryStepDispatch` (single, shape unchanged beyond the id reshape) carries exactly the six ids; `H` removed from the record and from `IExecutionCorrelated`. A golden/contract test pins the shape and asserts `H` is absent (SC-1).
+- **D-05:** `entryId` is a `Guid` everywhere — on `EntryStepDispatch`, on all four result records, and on `IExecutionCorrelated` (was `string` 64-hex). `Guid.Empty` = source-step sentinel (D-07 predicate).
+- **D-06 (REVISED 2026-06-08):** The single `ExecutionResult` record is **REPLACED by four typed result records** — `StepCompleted`, `StepFailed`, `StepCancelled`, `StepProcessing` — each `: IStepResult : IExecutionCorrelated`, carrying the six ids. **Deliberate, user-authorized divergence** from the locked design doc's single `ExecutionResult(Outcome)` shape: it lets the orchestrator route by message TYPE with zero status if/else (D-06e). The golden test pins all four shapes + asserts `H` absent. `ExecutionResult.cs` is removed.
+  - **D-06a — `entryId` seeding done BY THE CONTRACTS:** `StepCompleted` carries the real per-item data-key `EntryId`; `StepFailed`/`StepCancelled`/`StepProcessing` hard-default `EntryId = Guid.Empty` (no output data). A consumer reads `m.EntryId` uniformly with zero branching (realizes the "ORT-04" entryId-seeding intent at the contract layer — the `ORT-01..05` label itself is ignored; our requirement ids stay `MSG-*`/`ORCH-*`).
+  - **D-06b — diagnostic fields:** `StepFailed` carries `ErrorMessage`; `StepCancelled` carries `CancellationMessage`; `StepCompleted`/`StepProcessing` carry neither.
+  - **D-06c — `IStepResult` marker:** `public interface IStepResult : IExecutionCorrelated {}` groups the four result types so they co-locate on `OrchestratorQueues.Result` and the existing `InboundExecutionScopeConsumeFilter` (keyed on `IExecutionCorrelated`) covers them unchanged.
+  - **D-06d — `StepOutcome` demoted off the wire:** the enum (`Processing/Completed/Failed/Cancelled`, plain `int`, int-aligned to `StepEntryCondition.Previous*`) is **no longer a wire field**. It survives only as the orchestrator-internal advancement vocab + the per-type consumer knob (D-06e). Stays in `Messaging.Contracts` (Claude's discretion whether it later moves orchestrator-side).
+  - **D-06e — consumer pattern is Phase 46, recorded here as the shape's RATIONALE (NOT built in 43):** `abstract TypedResultConsumer<TMessage> where TMessage : class, IStepResult` with one `protected abstract StepOutcome Outcome { get; }` knob; four sealed one-line subclasses (`StepCompletedConsumer`/`StepFailedConsumer`/`StepCancelledConsumer`/`StepProcessingConsumer`); all four co-located on `OrchestratorQueues.Result` via four thin `ConsumerDefinition`s. Body = retained `ResultConsumed` metric → L1-miss business-ack → `StepAdvancement.SelectNext(Outcome, …)` (pure int-match, already exists) → `DispatchAsync` per matched successor, preserving `correlationId`/`workflowId`/`executionId`, resolving new `ProcessorId`/`payload`/`stepId` from L1, seeding `entryId = m.EntryId`; send via the existing `SendRetry` for-loop, park to **`_DLQ1`** on exhaustion (the "keeper-dlq" in the source design draft is stale — v4 consolidates to `_DLQ1`). One message = one item (processor already did per-item fan-out); fan-out is across the M matched successors only — drop the old stub's `items` array, its `Guid.Empty`→zero-items short-circuit, and the placeholder Redis read (result path is **L1-only**, so `IConnectionMultiplexer` leaves the consumer). Corrects the current stub's fresh-`NewId.NextGuid()`-executionId bug.
+  - **D-06f — Phase 44 ripple (captured, not built in 43):** the processor send-side emits one of the four typed records per item (`completed`→`StepCompleted`, business `failed`→`StepFailed`, author-thrown `processing`/`cancelled`→`StepProcessing`/`StepCancelled`) instead of one `ExecutionResult(Outcome)`. The Keeper `INJECT` path (Phase 46) reconstructs a `StepCompleted`.
 
 ### Guid.Empty source sentinel (MSG-02, SC-2)
 - **D-07:** A **single shared predicate** recognizes the source-step sentinel so every consumer branches "skip read / skip end-delete" off ONE helper, not ad-hoc `== Guid.Empty` checks scattered through the pipeline. Lives in `Messaging.Contracts`.
@@ -66,16 +72,17 @@ The v4 Pre/In/Post pipeline (Phase 44), the BIT gate + global pause/resume (Phas
 
 ### Existing code to reshape (in `Messaging.Contracts` unless noted)
 - `src/Messaging.Contracts/EntryStepDispatch.cs` — drop `H`, `EntryId` string→`Guid`.
-- `src/Messaging.Contracts/ExecutionResult.cs` — drop `H`, `EntryId` string→`Guid`, keep `ErrorMessage`/`CancellationMessage`.
+- `src/Messaging.Contracts/ExecutionResult.cs` — **REMOVED**; replaced by four typed records (D-06).
+- **NEW** `src/Messaging.Contracts/IStepResult.cs` + `StepCompleted.cs` / `StepFailed.cs` / `StepCancelled.cs` / `StepProcessing.cs` (D-06).
 - `src/Messaging.Contracts/IExecutionCorrelated.cs` — drop `H`, `EntryId` string→`Guid`.
-- `src/Messaging.Contracts/StepOutcome.cs` — reused unchanged.
+- `src/Messaging.Contracts/StepOutcome.cs` — kept, but **demoted off the wire** (advancement/consumer vocab only, D-06d).
 - `src/Messaging.Contracts/Projections/L2ProjectionKeys.cs` — new `ExecutionData(Guid)` single builder; new `CompositeBackup(...)`; remove content-addressed string + transitional Guid overloads + `Flag` (H-keyed).
 - `src/Messaging.Contracts/KeeperQueues.cs` — add `Recovery` const.
 - `src/Messaging.Contracts/Hashing/MessageIdentity.cs` — `H` computation; removed as part of the coupled RETIRE-01 bleed.
 
 ### Consumers adapted to "straight-through" in 43 (blast radius — 37 refs / 13 files)
 - `src/BaseProcessor.Core/Processing/EntryStepDispatchConsumer.cs` — remove `flag[H]`/CAS + content-addressing; compile-and-pass on new contracts.
-- `src/Orchestrator/Consumers/ResultConsumer.cs`, `src/Orchestrator/Dispatch/StepDispatcher.cs` — remove dedup + manifest fan-out; single-result behavior.
+- `src/Orchestrator/Consumers/ResultConsumer.cs` — its stub becomes `StepCompletedConsumer`; the four typed consumers + `TypedResultConsumer<T>` base land in **Phase 46** (D-06e), not 43. In 43, adapt it straight-through to compile against the new typed records (remove dedup + manifest + the placeholder Redis read). `src/Orchestrator/Dispatch/StepDispatcher.cs` — remove dedup; single-result behavior.
 - `src/Keeper/Recovery/KeeperRecoveryHandler.cs` — reads `H` (recovery key); affected by the interface change.
 - `src/BaseConsole.Core/Messaging/InboundExecutionScopeConsumeFilter.cs` + `src/Messaging.Contracts/ExecutionLogScope.cs` — read `EntryId` for the log scope; `entryId` `Guid` change ripples here.
 
@@ -106,6 +113,7 @@ The v4 Pre/In/Post pipeline (Phase 44), the BIT gate + global pause/resume (Phas
 
 - The user owns the LOCKED spec; this phase implements its §"Identities & L2" + §"Keeper recovery" vocabulary verbatim. Claude analyzes/refactors within that boundary and does not add scope.
 - The composite backup key is `skp:`-prefixed (D-09) as a deliberate, documented divergence from the design doc's bare `L2[correlationId:workFlowId:ProcessorId:executionId]` notation — chosen for consistency with every other L2 key in `L2ProjectionKeys`.
+- **Result contract = four typed records (D-06), a user-authorized divergence from the LOCKED design doc** (which writes a single `ExecutionResult(Completed, …)`). Confirmed by the user on 2026-06-08 to enable the no-if/else typed-consumer routing. The design doc's `ExecutionResult(Outcome)` references should be read as "the matching one of the four `Step*` records." The `docs/design/2026-06-08-...md` source-of-truth doc may warrant a follow-up amendment to record this (doc update, user-owned).
 
 </specifics>
 

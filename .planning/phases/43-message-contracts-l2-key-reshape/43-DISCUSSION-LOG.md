@@ -88,3 +88,17 @@
 - ROADMAP/REQUIREMENTS reconciliation for the RETIRE-01/02 phase move (doc update).
 - `keeper-fault-recovery` / `keeper-dlq` const removal → Phases 47/48.
 - Durable non-L2 recovery backup → milestone-deferred.
+
+---
+
+## Post-discussion clarification (2026-06-08) — result contract → four typed records
+
+The user surfaced a design (orchestrator uniform entry-condition routing) that assumed the result is **four typed records**, not the single `ExecutionResult(Outcome)` the locked design doc + the initial Phase-43 context assumed. Provenance flagged: not produced in this session; `ORT-01..05` is not our requirement set (we keep `MSG-*`/`ORCH-*`); `keeper-dlq` is stale for `_DLQ1`.
+
+**User confirmed (verbatim intent):**
+1. **Go with four typed records** — update the Phase-43 context. (`ExecutionResult` → `StepCompleted`/`StepFailed`/`StepCancelled`/`StepProcessing : IStepResult : IExecutionCorrelated`.)
+2. **Ignore the `ORT-01..05` label** — keep our requirement ids.
+3. **`keeper-dlq` = stale name** → the v4 consolidated `_DLQ1`.
+4. Wants the **exact** four-typed-record + four-typed-consumer pattern confirmed.
+
+**Resolved into CONTEXT.md:** D-04/D-05/D-06 revised; new D-06a–f added. `entryId` seeding is contract-level (`StepCompleted` real, others `Guid.Empty`); `StepFailed.ErrorMessage` / `StepCancelled.CancellationMessage`; `IStepResult` marker; `StepOutcome` demoted off the wire. The `TypedResultConsumer<T>` base + four subclasses + `DispatchAsync` continuation (preserve corr/wf/exec, resolve new proc/payload/step, seed `entryId = m.EntryId`, send-retry → `_DLQ1`, L1-only, one-message-one-item) are recorded as **Phase 46** rationale, not built in 43. Phase 44 ripple: processor send-side emits the matching typed record per item. This is a **user-authorized divergence from the LOCKED design doc** (single `ExecutionResult`) — noted in CONTEXT specifics for a possible source-doc amendment.
