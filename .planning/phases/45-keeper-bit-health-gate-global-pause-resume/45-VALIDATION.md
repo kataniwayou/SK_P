@@ -18,8 +18,8 @@ created: 2026-06-08
 
 | Property | Value |
 |----------|-------|
-| **Framework** | xUnit (repo standard — `tests/` projects). Confirm exact version in Wave 0 from `Directory.Packages.props`. |
-| **Config file** | Per-project `.csproj` under `tests/` (no central runsettings observed) |
+| **Framework** | xUnit v3 / Microsoft Testing Platform (MTP) — single shared `tests/BaseApi.Tests` project (has `AddMassTransitTestHarness` + NSubstitute). |
+| **Config file** | `tests/BaseApi.Tests/BaseApi.Tests.csproj` |
 | **Quick run command** | `dotnet test --filter "FullyQualifiedName~L2HealthGate\|FullyQualifiedName~BitHealthLoop\|FullyQualifiedName~PauseAll\|FullyQualifiedName~ResumeAll"` |
 | **Full suite command** | `dotnet test` (solution root) |
 | **Estimated runtime** | ~30–60 seconds (unit suite; no live broker/Redis) |
@@ -69,13 +69,14 @@ created: 2026-06-08
 
 ## Wave 0 Requirements
 
-- [ ] `tests/Keeper.Tests/Health/L2HealthGateTests.cs` — stubs for KEEP-03 (CLOSED start, open/close/re-block, CT cancel)
-- [ ] `tests/Keeper.Tests/Health/BitHealthLoopTests.cs` — stubs for KEEP-01 + KEEP-02/SC#2 (probe survival, edge-trigger publish)
-- [ ] `tests/Orchestrator.Tests/Consumers/PauseAllConsumerTests.cs` + `ResumeAllConsumerTests.cs` — stubs for ORCH-02/SC#4
-- [ ] `tests/Orchestrator.Tests/Consumers/ResumeNoBurstTests.cs` — stubs for the no-herd negative (no `ResumeAll()`)
-- [ ] Confirm a fake/mock `IScheduler` + `IWorkflowL1Store` test double exists or add one (shared fixture)
-- [ ] Confirm MassTransit test harness package is referenced in `Orchestrator.Tests` for fan-out/publish assertions
-- [ ] If `Keeper.Tests` project does not yet exist, Wave 0 creates it mirroring existing test-project conventions
+> Test project (grounded by planner): single shared **`tests/BaseApi.Tests`** (xUnit v3 / MTP, already has `AddMassTransitTestHarness` + NSubstitute) — NOT new `Keeper.Tests`/`Orchestrator.Tests` projects.
+
+- [ ] `tests/BaseApi.Tests/Keeper/Health/L2HealthGateTests.cs` — stubs for KEEP-03 (CLOSED start, open/close/re-block, CT cancel)
+- [ ] `tests/BaseApi.Tests/Keeper/Health/BitHealthLoopTests.cs` — stubs for KEEP-01 + KEEP-02/SC#2 (probe survival, edge-trigger publish)
+- [ ] `tests/BaseApi.Tests/Orchestrator/Consumers/PauseAllConsumerTests.cs` + `ResumeAllConsumerTests.cs` — stubs for ORCH-02/SC#4
+- [ ] `tests/BaseApi.Tests/Orchestrator/Consumers/ResumeNoBurstTests.cs` — stubs for the no-herd negative (no `ResumeAll()`)
+- [ ] Confirm/add a fake/mock `IScheduler` + `IWorkflowL1Store` test double (NSubstitute, shared fixture)
+- [ ] MassTransit test harness (`AddMassTransitTestHarness`) already present in `BaseApi.Tests` — use it for fan-out/publish assertions
 
 ---
 
