@@ -28,6 +28,10 @@ builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry
 // registered singleton via AddBaseConsole (line above chains the Redis registration) — do NOT add it again.
 builder.Services.Configure<ProbeOptions>(builder.Configuration.GetSection("Probe"));
 
+// D-10 — bind the composite-backup TTL knob from the "Backup" section (mirrors "Probe"/"Retry"). The
+// TTL is applied only at the Keeper UPDATE write (Phase 46), never baked into the key builder.
+builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection("Backup"));
+
 // PROBE-01 — the shared bounded probe-loop helper (stateless; ctor-injects the singleton multiplexer +
 // IOptions<ProbeOptions>). Both fault consumers depend on it.
 builder.Services.AddSingleton<Keeper.Recovery.L2ProbeRecovery>();
