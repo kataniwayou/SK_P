@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Completed 46-04-PLAN.md
-last_updated: "2026-06-08T21:08:27.015Z"
+status: verifying
+stopped_at: Completed 46-03-PLAN.md
+last_updated: "2026-06-08T21:21:03.683Z"
 last_activity: 2026-06-08
 progress:
   total_phases: 49
-  completed_phases: 47
+  completed_phases: 48
   total_plans: 168
-  completed_plans: 181
+  completed_plans: 182
   percent: 100
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 46 — EXECUTING
 Plan: 4 of 4 (Plan 01 complete: recovery foundation — RetryLoop relocation D-05, KeeperReinject.Payload D-01, 11 RED Phase-46 stubs)
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-08
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -885,6 +885,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 46 P01 | 33min | 3 tasks | 12 files |
 | Phase 46 P02 | 20min | 3 tasks | 15 files |
 | Phase 46 P04 | 8min | 3 tasks | 15 files |
+| Phase 46 P03 | 18min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -1227,6 +1228,8 @@ Recent decisions affecting current work:
 - 46-02 D-03: recovery base awaits IL2HealthGate once at entry under a GateWaitSeconds-bounded linked CTS; transient RecoveryGateTimeoutException on bound (Pattern A)
 - 46-02 D-04: every L2 op + Send via Guard(RetryLoop) re-throwing on exhaustion -> skp-dlq-1; RecoveryDataGoneException is the deliberate data-gone terminal
 - D-07/ORCH-01: TypedResultConsumer<T> family replaces ResultConsumer — abstract Outcome knob, four sealed subclasses, no status if/switch; single-owner UseMessageRetry; INJECT'd StepCompleted indistinguishable from direct
+- 46-03: keeper-recovery wired with single-owner partitioner (UpdateConsumerDefinition owns UseMessageRetry + five shared-Partitioner UsePartitioner; four siblings no-op)
+- 46-03: MassTransit 8.5.5 Partitioner/Murmur3 in namespace MassTransit.Middleware; endpoint overload keys on Guid, so PartitionGuid = deterministic SHA256 over the 4-tuple string
 
 ### Roadmap Milestone Log
 
@@ -1329,8 +1332,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-08T21:08:26.991Z
-Stopped at: Completed 46-04-PLAN.md
+Last session: 2026-06-08T21:21:03.660Z
+Stopped at: Completed 46-03-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
