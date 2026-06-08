@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 46-01-PLAN.md
-last_updated: "2026-06-08T20:44:38.910Z"
-last_activity: 2026-06-08 — Phase 46 Plan 01 complete (f4f1ce5, c9ec1e9, 84b8f91)
+stopped_at: Completed 46-02-PLAN.md
+last_updated: "2026-06-08T20:56:18.800Z"
+last_activity: 2026-06-08
 progress:
   total_phases: 49
   completed_phases: 47
   total_plans: 168
-  completed_plans: 179
+  completed_plans: 180
   percent: 100
 ---
 
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 46 — EXECUTING
-Plan: 2 of 4 (Plan 01 complete: recovery foundation — RetryLoop relocation D-05, KeeperReinject.Payload D-01, 11 RED Phase-46 stubs)
-Status: Executing Phase 46
-Last activity: 2026-06-08 — Phase 46 Plan 01 complete (f4f1ce5, c9ec1e9, 84b8f91)
+Plan: 3 of 4 (Plan 01 complete: recovery foundation — RetryLoop relocation D-05, KeeperReinject.Payload D-01, 11 RED Phase-46 stubs)
+Status: Ready to execute
+Last activity: 2026-06-08
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
@@ -883,6 +883,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 45 P01 | 27min | 3 tasks | 7 files |
 | Phase 45 P02 | ~11min | 3 tasks | 9 files |
 | Phase 46 P01 | 33min | 3 tasks | 12 files |
+| Phase 46 P02 | 20min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -1222,6 +1223,8 @@ Recent decisions affecting current work:
 - 45-02: both global consumers share a NEW per-replica fan-out endpoint orchestrator-global-pauseresume with retry owned ONLY by the PauseAll def (D-08 independence keeps the old per-workflow endpoint untouched for Phase-48 retirement).
 - Phase 46 D-05: RetryLoop + RetryOutcome<T> relocated to BaseConsole.Core.Resilience (one A3 retry helper Keeper can reference past its csproj firewall); KeyAbsentException stays in BaseProcessor.Core
 - Phase 46 D-01: KeeperReinject carries Payload (string init-only); ProcessorPipeline.BuildReinject stamps it; golden contract test pins it — all three atomic in one commit
+- 46-02 D-03: recovery base awaits IL2HealthGate once at entry under a GateWaitSeconds-bounded linked CTS; transient RecoveryGateTimeoutException on bound (Pattern A)
+- 46-02 D-04: every L2 op + Send via Guard(RetryLoop) re-throwing on exhaustion -> skp-dlq-1; RecoveryDataGoneException is the deliberate data-gone terminal
 
 ### Roadmap Milestone Log
 
@@ -1324,8 +1327,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-08T20:43:22.609Z
-Stopped at: Completed 46-01-PLAN.md
+Last session: 2026-06-08T20:56:07.710Z
+Stopped at: Completed 46-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
