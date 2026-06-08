@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Completed 43-04-PLAN.md
-last_updated: "2026-06-08T12:18:43.343Z"
+status: verifying
+stopped_at: Completed 43-05-PLAN.md
+last_updated: "2026-06-08T12:50:38.406Z"
 last_activity: 2026-06-08
 progress:
   total_phases: 46
-  completed_phases: 44
+  completed_phases: 45
   total_plans: 158
-  completed_plans: 171
+  completed_plans: 172
   percent: 100
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 43 (message-contracts-l2-key-reshape) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-08
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -872,6 +872,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 43 P02 | 7min | 3 tasks | 22 files |
 | Phase 43 P03 | 6min | 3 tasks | 5 files |
 | Phase 43 P04 | 4min | 2 tasks | 4 files |
+| Phase 43 P05 | 95min | 3 tasks | 27 files |
 
 ## Accumulated Context
 
@@ -1196,6 +1197,8 @@ Recent decisions affecting current work:
 - 43-03: orchestrator dispatch+result path and processor dispatch consumer adapted to no-H Guid-entryId contracts; flag[H]/CAS dedup + content-addressing + manifest fan-out removed (RETIRE-01/02); ResultConsumer is straight-through IConsumer<StepCompleted>; EntryStepDispatchConsumer emits one Step* record per result; entry-step fire seeds Guid.Empty
 - 43-04: kept reactive Keeper recovery DARK-but-compiling (D-14) — KeeperRecoveryHandler rebound off removed inner.H onto a local CompositeBackup 4-tuple key; L2ProbeRecovery retyped to ExecutionData(Guid)
 - 43-04: neutralize-and-keep (not delete) for FaultExecutionResultConsumer — retargeted onto surviving StepCompleted, file retained, registration dropped; reactive feature survives registered on Fault<EntryStepDispatch>; zero file deletions (D-14 diff guard)
+- Phase 43 closed FULL-SUITE-GREEN: 480 hermetic tests pass against the reshaped contracts; the test-side blast radius (~24 files) far exceeded the plan's listed 4.
+- Deleted 3 obsolete RETIRE-01/02 E2E machinery tests (FaultRecoverySpike/KeeperFaultIntake/KeeperRecovery E2E) — siblings of Plan-01's deleted IdempotentExactlyOnceE2ETests; they prove the retired H/manifest/flag-collapse flow.
 
 ### Roadmap Milestone Log
 
@@ -1298,8 +1301,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-08T12:18:43.327Z
-Stopped at: Completed 43-04-PLAN.md
+Last session: 2026-06-08T12:50:36.855Z
+Stopped at: Completed 43-05-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
