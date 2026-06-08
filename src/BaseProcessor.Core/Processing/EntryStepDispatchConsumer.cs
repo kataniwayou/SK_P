@@ -115,7 +115,10 @@ public sealed class EntryStepDispatchConsumer(
         }
 
         // ---- 2. Invoke the seam (EXEC-04) with framework-owned outcomes (D-09) ----
-        IReadOnlyList<ProcessResult> results;
+        // Phase 44 Task 1 bridge: the seam now returns List<ProcessItem> (author-owned outcome + minted
+        // ExecutionId). This straight-through consumer is FULLY REPLACED by ProcessorPipeline in Task 2 —
+        // here it only reads the per-item Data so BaseProcessor.Core stays 0-warning between Task 1 and 2.
+        IReadOnlyList<ProcessItem> results;
         try
         {
             results = await processor.ExecuteAsync(inputData, dispatch.Payload, ct);
@@ -141,7 +144,7 @@ public sealed class EntryStepDispatchConsumer(
         // whole-dispatch business Failed. Duplicates on retry are tolerated downstream (at-least-once).
         foreach (var r in results)
         {
-            if (!ProcessorJsonSchemaValidator.TryValidate(context.OutputDefinition, r.OutputData, out var outErrors))
+            if (!ProcessorJsonSchemaValidator.TryValidate(context.OutputDefinition, r.Data, out var outErrors))
             {
                 // A blob that fails its definition is a whole-dispatch business Failed: send StepFailed
                 // (EntryId = Guid.Empty) and return. Nothing is written for this dispatch.
@@ -167,7 +170,7 @@ public sealed class EntryStepDispatchConsumer(
                 // whole dispatch retries rather than emitting a Completed with no L2 data behind it.
                 await db.StringSetAsync(
                     L2ProjectionKeys.ExecutionData(newEntryId),
-                    r.OutputData,
+                    r.Data,
                     expiry: TimeSpan.FromSeconds(opts.ExecutionDataTtlSeconds));
 
                 logger.LogInformation(
