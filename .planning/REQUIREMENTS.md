@@ -34,12 +34,12 @@
 
 ### Orchestrator (ORCH)
 - [ ] **ORCH-01**: Orchestrator consumes per-item `ExecutionResult` messages (no manifest fan-out) and advances workflow steps accordingly; a Keeper-`INJECT`'d completion is indistinguishable from a direct one.
-- [ ] **ORCH-02**: Orchestrator's pause-all / resume-all is idempotent per job via Quartz `TriggerState` (pause only if running, resume only if paused).
+- [x] **ORCH-02**: Orchestrator's pause-all / resume-all is idempotent per job via Quartz `TriggerState` (pause only if running, resume only if paused).
 
 ### Keeper Recovery (KEEP)
-- [ ] **KEEP-01**: Keeper runs a background BIT loop at a configurable delay (seconds) that probes L2 health; results are suppressed (never crash the loop).
-- [ ] **KEEP-02**: The BIT result drives a global pause-all (unhealthy) / resume-all (healthy) broadcast to all orchestrators.
-- [ ] **KEEP-03**: The Keeper recovery consumer performs each L2 operation only while the BIT gate is open (waits while closed, bounded under the broker consumer timeout).
+- [x] **KEEP-01**: Keeper runs a background BIT loop at a configurable delay (seconds) that probes L2 health; results are suppressed (never crash the loop).
+- [x] **KEEP-02**: The BIT result drives a global pause-all (unhealthy) / resume-all (healthy) broadcast to all orchestrators.
+- [x] **KEEP-03**: The Keeper recovery consumer performs each L2 operation only while the BIT gate is open (waits while closed, bounded under the broker consumer timeout).
 - [ ] **KEEP-04**: `UPDATE` writes validated data to `L2[corr:wf:ProcessorId:executionId]` with a configurable TTL (default 2 days) that serves as a **crash-backstop only** — the copy is normally deleted the moment it is redundant (`CLEANUP`/`INJECT`).
 - [ ] **KEEP-05**: `REINJECT` reads `L2[entryId]` and re-injects the dispatch to `queue:{ProcessorId}`; if the data is gone, the round terminates at `_DLQ1`.
 - [ ] **KEEP-06**: `INJECT` reads `L2[corr:wf:ProcessorId:executionId]`, generates `entryId`, writes `L2[entryId]`, injects `ExecutionResult(Completed)` to the orchestrator, and deletes the composite copy.
@@ -92,10 +92,10 @@
 | PIPE-07 | Phase 44 | Pending |
 | PIPE-08 | Phase 44 | Pending |
 | RESIL-01 | Phase 44 | Pending |
-| KEEP-01 | Phase 45 | Pending |
-| KEEP-02 | Phase 45 | Pending |
-| KEEP-03 | Phase 45 | Pending |
-| ORCH-02 | Phase 45 | Pending |
+| KEEP-01 | Phase 45 | Complete |
+| KEEP-02 | Phase 45 | Complete |
+| KEEP-03 | Phase 45 | Complete (gate primitive + bounded-wait; consumed in Phase 46) |
+| ORCH-02 | Phase 45 | Complete |
 | KEEP-04 | Phase 46 | Pending |
 | KEEP-05 | Phase 46 | Pending |
 | KEEP-06 | Phase 46 | Pending |
