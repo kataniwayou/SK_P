@@ -473,7 +473,10 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   2. Each BIT result fans out a **global** broadcast to all orchestrators — unhealthy → pause all jobs, healthy → resume all jobs.
   3. The recovery consumer's gate is wired: an L2 op is permitted only while the BIT gate is open, and a gate-closed consumer waits for the gate bounded under the broker consumer timeout (the wait mechanism exists and is honored, exercised by the Phase-46 ops).
   4. Orchestrator pause-all/resume-all is idempotent per job via Quartz `TriggerState` — pause only if Running, resume only if Paused — so a repeated broadcast is a no-op and no job is double-paused or spuriously resumed.
-**Plans**: TBD
+**Plans**: 3 plans (2 waves — Wave 0 contracts+test scaffold; Wave 1 Keeper + Orchestrator in parallel)
+- [ ] 45-00-PLAN.md — Wave 0: PauseAll/ResumeAll no-H contracts + 5 failing test stubs (KEEP-01/02/03, ORCH-02 scaffold)
+- [ ] 45-01-PLAN.md — Keeper: IL2HealthGate (Toub gate) + BitHealthLoop edge-trigger BackgroundService + ProbeOnceAsync extraction (KEEP-01/02/03)
+- [ ] 45-02-PLAN.md — Orchestrator: PauseAllConsumer/ResumeAllConsumer + defs on orchestrator-global-pauseresume + PauseAllAsync seam (ORCH-02)
 
 #### Phase 46: Keeper 5-State Recovery + Orchestrator Per-Item Consume
 **Goal**: The Keeper recovery consumer — **partitioned by `corr:wf:ProcessorId:executionId`** so each exec's messages process in order — applies the five states gate-open-only: `UPDATE` writes the composite backup (TTL = crash-backstop), `REINJECT` re-injects a reconstructed dispatch (or terminates at `_DLQ1` if the data is gone), `INJECT` reconstructs a `Completed` `ExecutionResult` to the orchestrator **then deletes the composite copy**, `DELETE` reclaims the data key, and `CLEANUP` deletes the redundant composite copy on the happy path — and the orchestrator advances workflow steps off per-item `ExecutionResult` messages with no manifest fan-out, a Keeper-`INJECT`'d completion being indistinguishable from a direct one.
