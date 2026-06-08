@@ -1,10 +1,11 @@
 ---
 phase: 43
 slug: message-contracts-l2-key-reshape
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-06-08
+updated: 2026-06-08
 ---
 
 # Phase 43 — Validation Strategy
@@ -39,15 +40,16 @@ created: 2026-06-08
 
 | Req / SC | Behavior | Test Type | Automated Command | File Exists |
 |----------|----------|-----------|-------------------|-------------|
-| SC-1 / MSG-01 | `EntryStepDispatch` carries six ids, no `H` | unit (reflection + round-trip) | `dotnet test … --filter "FullyQualifiedName~EntryStepDispatch"` | ⚠️ reshape `Orchestrator/EntryStepDispatchTests.cs` |
-| SC-1 / MSG-01 | All four `Step*` records carry six ids, no `H`, `: IStepResult` | unit (reflection + round-trip) | `dotnet test … --filter "FullyQualifiedName~StepResult"` | ❌ W0 — `Contracts/StepResultContractTests.cs` |
-| SC-2 / MSG-02 | `entryId` is `Guid`; `StepFailed/Cancelled/Processing` default `Guid.Empty`; `StepCompleted` carries real key | unit | `dotnet test … --filter "FullyQualifiedName~StepResult"` | ❌ W0 |
-| SC-2 / MSG-02 | `SourceStep.IsSource(Guid.Empty)==true`, else false; single predicate | unit | `dotnet test … --filter "FullyQualifiedName~SourceStep"` | ❌ W0 — `Contracts/SourceStepTests.cs` |
-| SC-3 / MSG-03 | Five Keeper records exist, each with id set; all `: IKeeperRecoverable` exposing the 4-tuple; `UPDATE` has `validatedData`; `REINJECT`/`DELETE` have `entryId` | unit (reflection) | `dotnet test … --filter "FullyQualifiedName~Keeper.*Contract"` | ❌ W0 — `Contracts/KeeperContractTests.cs` |
-| SC-4 / MSG-03 | `ExecutionData(Guid) == "skp:data:{guid:D}"` | unit (golden) | `dotnet test … --filter "FullyQualifiedName~L2ProjectionKeys"` | ⚠️ update `Features/Orchestration/Projection/L2ProjectionKeysTests.cs` |
-| SC-4 / MSG-03 | `CompositeBackup(...) == "skp:{corr}:{wf}:{proc}:{exec}"` (`:D` GUIDs, skp-prefixed) | unit (golden) | same | ❌ W0 (add to `L2ProjectionKeysTests`) |
-| D-10 | `BackupOptions` defaults `TtlDays == 2`; binds from config | unit (mirror `ProbeOptionsBoundTests`) | `dotnet test … --filter "FullyQualifiedName~BackupOptions"` | ❌ W0 — `Keeper/BackupOptionsBoundTests.cs` |
-| build-gate | Solution + test project compile against new shapes (straight-through) | build | `dotnet build` then full `dotnet test` | n/a (gate) |
+| SC-1 / MSG-01 | `EntryStepDispatch` carries six ids, no `H` | unit (reflection + round-trip) | `dotnet test … --filter "FullyQualifiedName~EntryStepDispatch"` | ✅ `Orchestrator/EntryStepDispatchTests.cs` (reshaped 43-05) |
+| SC-1 / MSG-01 | All four `Step*` records carry six ids, no `H`, `: IStepResult` | unit (reflection + round-trip) | `dotnet test … --filter "FullyQualifiedName~StepResult"` | ✅ `Contracts/StepResultContractTests.cs` (43-01) |
+| SC-2 / MSG-02 | `entryId` is `Guid`; `StepFailed/Cancelled/Processing` default `Guid.Empty`; `StepCompleted` carries real key | unit | `dotnet test … --filter "FullyQualifiedName~StepResult"` | ✅ `Contracts/StepResultContractTests.cs` |
+| SC-2 / MSG-02 | `SourceStep.IsSource(Guid.Empty)==true`, else false; single predicate | unit | `dotnet test … --filter "FullyQualifiedName~SourceStep"` | ✅ `Contracts/SourceStepTests.cs` (43-01) |
+| SC-3 / MSG-03 | Five Keeper records exist, each with id set; all `: IKeeperRecoverable` exposing the 4-tuple; `UPDATE` has `validatedData`; `REINJECT`/`DELETE` have `entryId` | unit (reflection) | `dotnet test … --filter "FullyQualifiedName~Keeper.*Contract"` | ✅ `Contracts/KeeperContractTests.cs` (43-01) |
+| SC-4 / MSG-03 | `ExecutionData(Guid) == "skp:data:{guid:D}"` | unit (golden) | `dotnet test … --filter "FullyQualifiedName~L2ProjectionKeys"` | ✅ `Features/Orchestration/Projection/L2ProjectionKeysTests.cs` (extended 43-01) |
+| SC-4 / MSG-03 | `CompositeBackup(...) == "skp:{corr}:{wf}:{proc}:{exec}"` (`:D` GUIDs, skp-prefixed) | unit (golden) | same | ✅ `L2ProjectionKeysTests.cs` — CompositeBackup golden (43-01) |
+| D-10 | `BackupOptions` defaults `TtlDays == 2`; binds from config | unit (mirror `ProbeOptionsBoundTests`) | `dotnet test … --filter "FullyQualifiedName~BackupOptions"` | ✅ `Keeper/BackupOptionsBoundTests.cs` (43-01) |
+| RETIRE-01/02 | `H`/`flag[H]`/CAS dedup + content-addressing/manifest/N×M fan-out machinery removed | teardown (test deletion) | full `dotnet test` (machinery proofs gone) | ✅ 11 machinery test files deleted (43-01 + 43-05) |
+| build-gate | Solution + test project compile against new shapes (straight-through) | build + full suite | `dotnet build SK_P.sln -c Release` then `dotnet test -- --filter-not-trait "Category=RealStack"` | ✅ green — 480 passed / 0 failed, Release 0 warnings (43-05) |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -55,14 +57,14 @@ created: 2026-06-08
 
 ## Wave 0 Requirements
 
-- [ ] `Contracts/StepResultContractTests.cs` — SC-1/SC-2 for the four `Step*` records (six ids, no `H`, `IStepResult`, `Guid.Empty` defaults, `ErrorMessage`/`CancellationMessage` placement)
-- [ ] `Contracts/SourceStepTests.cs` — SC-2 single predicate
-- [ ] `Contracts/KeeperContractTests.cs` — SC-3 (five records, id sets, `IKeeperRecoverable` 4-tuple)
-- [ ] `Keeper/BackupOptionsBoundTests.cs` — D-10 (default 2, bound invariant) — mirror `ProbeOptionsBoundTests.cs`
-- [ ] Extend `Features/Orchestration/Projection/L2ProjectionKeysTests.cs` — add `CompositeBackup` golden + update `ExecutionData(Guid)` expectation
-- [ ] Reshape/split `Orchestrator/ExecutionResultContractTests.cs` → four `Step*` contract tests (or fold into `StepResultContractTests`)
-- [ ] DELETE removed-machinery tests (`EffectFirstDedupFacts`, `ManifestFanoutFacts`, `MergeCollapseFacts`, `ResultCheckAndDropFacts`, `CheckAndDropFacts`, `IdempotentExactlyOnceE2ETests`, `HashHelperGoldenFacts`, content-addr write facts) — assert RETIRE-01/02 machinery, cannot survive
-- [ ] Framework install: none — xUnit v3 already wired
+- [x] `Contracts/StepResultContractTests.cs` — SC-1/SC-2 for the four `Step*` records (six ids, no `H`, `IStepResult`, `Guid.Empty` defaults, `ErrorMessage`/`CancellationMessage` placement) — created 43-01
+- [x] `Contracts/SourceStepTests.cs` — SC-2 single predicate — created 43-01
+- [x] `Contracts/KeeperContractTests.cs` — SC-3 (five records, id sets, `IKeeperRecoverable` 4-tuple) — created 43-01
+- [x] `Keeper/BackupOptionsBoundTests.cs` — D-10 (default 2, bound invariant), mirrors `ProbeOptionsBoundTests.cs` — created 43-01
+- [x] Extend `Features/Orchestration/Projection/L2ProjectionKeysTests.cs` — `CompositeBackup` golden + `ExecutionData(Guid)` expectation — extended 43-01
+- [x] Reshape/split `Orchestrator/ExecutionResultContractTests.cs` → four `Step*` contract tests — folded into `StepResultContractTests.cs`; legacy file deleted (43-05)
+- [x] DELETE removed-machinery tests (`EffectFirstDedupFacts`, `ManifestFanoutFacts`, `MergeCollapseFacts`, `ResultCheckAndDropFacts`, `CheckAndDropFacts`, `IdempotentExactlyOnceE2ETests`, `HashHelperGoldenFacts`, content-addr write facts) — 8 deleted in 43-01; 3 additional obsolete E2E machinery tests (`FaultRecoverySpikeE2ETests`, `KeeperFaultIntakeE2ETests`, `KeeperRecoveryE2ETests`) deleted in 43-05
+- [x] Framework install: none — xUnit v3 already wired
 
 ---
 
@@ -78,11 +80,26 @@ created: 2026-06-08
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s (quick)
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s (quick)
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated 2026-06-08 — all 4 success criteria (SC-1..SC-4) + D-10 + RETIRE-01/02 teardown carry green automated coverage; full hermetic suite 480 passed / 0 failed.
+
+---
+
+## Validation Audit 2026-06-08
+
+| Metric | Count |
+|--------|-------|
+| Requirements / SCs audited | 9 (SC-1×2, SC-2×2, SC-3, SC-4×2, D-10, RETIRE-01/02) |
+| COVERED (green automated) | 9 |
+| PARTIAL | 0 |
+| MISSING | 0 |
+| Manual-only (documented) | 1 (D-14 dark-path diff/structure check) |
+| Gaps resolved this audit | 0 (draft strategy reconciled post-execution; all Wave-0 deps satisfied) |
+
+State-A reconciliation of the pre-execution draft strategy: all six Wave-0 test files exist on disk, all eleven RETIRE-01/02 machinery test files are deleted, and the build-gate is green (480 passed / 0 failed, Release 0 warnings — independently confirmed by the phase verifier with SC-1..SC-4 file:line evidence). No nyquist-auditor spawn required — no MISSING/PARTIAL gaps to fill. The single manual-only item (the D-14 reactive-Keeper-path-stays-dark structural check) is a diff/structure assertion, not a behavioral test, and was confirmed present-and-compiling by both the verifier and the security auditor.
