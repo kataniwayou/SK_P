@@ -61,6 +61,11 @@ public sealed class KeeperContractTests
     {
         Assert.NotNull(typeof(KeeperReinject).GetProperty("EntryId"));   // D-11
         Assert.Null(typeof(KeeperReinject).GetProperty("ValidatedData"));
+        // D-01: REINJECT carries Payload (string, init-only) so a recovered run reconstructs a
+        // faithful EntryStepDispatch (the author's step config is not silently lost).
+        var payload = typeof(KeeperReinject).GetProperty("Payload");
+        Assert.NotNull(payload);
+        Assert.Equal(typeof(string), payload!.PropertyType);
     }
 
     [Fact]

@@ -9,4 +9,5 @@ public sealed record KeeperReinject(Guid WorkflowId, Guid StepId, Guid Processor
     public Guid CorrelationId { get; init; }
     public Guid ExecutionId   { get; init; }
     public Guid EntryId       { get; init; }   // D-11: REINJECT-only extra
+    public string Payload     { get; init; } = "";   // D-01: REINJECT carries the step config for faithful EntryStepDispatch reconstruction
 }
