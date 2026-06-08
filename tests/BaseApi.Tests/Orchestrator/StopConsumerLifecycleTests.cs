@@ -153,11 +153,12 @@ public sealed class StopConsumerLifecycleTests
             var executionId = Guid.NewGuid();
             var resultEntryId = Guid.NewGuid();   // the StepCompleted's Guid data key (D-06a)
 
-            // Phase 43 (D-03/D-06e): ResultConsumer is L1-ONLY — no Redis dedup gate, no manifest read. The
+            // Phase 43 (D-03/D-06e): the result path is L1-ONLY — no Redis dedup gate, no manifest read. The
             // late result still fans out exactly one continuation carrying the result's Guid EntryId + a
-            // regenerated executionId.
-            var resultConsumer = new ResultConsumer(
-                store, advancement, dispatcher, OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
+            // regenerated executionId. (D-07: StepCompletedConsumer, the Completed arm of the
+            // TypedResultConsumer<T> family that replaced the retired ResultConsumer.)
+            var resultConsumer = new StepCompletedConsumer(
+                store, advancement, dispatcher, OrchestratorTestStubs.Metrics(), NullLogger<StepCompleted>.Instance);
 
             var result = new StepCompleted(workflowId, entryStepId, entryProcessorId)
             {

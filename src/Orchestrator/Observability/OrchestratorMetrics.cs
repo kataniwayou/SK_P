@@ -27,7 +27,7 @@ public sealed class OrchestratorMetrics
     /// <summary><c>orchestrator_dispatch_sent</c> — incremented AFTER <c>endpoint.Send</c> in StepDispatcher.</summary>
     public Counter<long> DispatchSent { get; }
 
-    /// <summary><c>orchestrator_result_consumed</c> — incremented at the TOP of ResultConsumer.Consume.</summary>
+    /// <summary><c>orchestrator_result_consumed</c> — incremented at the TOP of TypedResultConsumer&lt;T&gt;.Consume.</summary>
     public Counter<long> ResultConsumed { get; }
 
     /// <summary>

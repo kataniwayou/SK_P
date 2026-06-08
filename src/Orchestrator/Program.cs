@@ -57,9 +57,16 @@ builder.Services.AddBaseConsoleMessaging(builder.Configuration,
             .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
         x.AddConsumer<ResumeAllConsumer, ResumeAllConsumerDefinition>()
             .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
-        // ORCH-RESULT-02: shared competing-consumer (NO InstanceId/Temporary) — the inverse of the
-        // Start/Stop fan-out. ResultConsumerDefinition binds the stable "orchestrator-result" endpoint.
-        x.AddConsumer<ResultConsumer, ResultConsumerDefinition>();
+        // ORCH-01 / D-07: the TypedResultConsumer<T> family — four shared competing-consumers (NO
+        // InstanceId/Temporary), the inverse of the Start/Stop fan-out. All four co-locate on the stable
+        // "orchestrator-result" endpoint; StepCompletedConsumerDefinition owns the single endpoint-level
+        // UseMessageRetry, the other three definitions are intentional no-ops (Pitfall 4). Routing is by
+        // message type via each subclass's Outcome knob — no status if/switch. A Keeper-INJECT'd
+        // StepCompleted is processed identically to a direct one by StepCompletedConsumer.
+        x.AddConsumer<StepCompletedConsumer,  StepCompletedConsumerDefinition>();
+        x.AddConsumer<StepFailedConsumer,     StepFailedConsumerDefinition>();
+        x.AddConsumer<StepCancelledConsumer,  StepCancelledConsumerDefinition>();
+        x.AddConsumer<StepProcessingConsumer, StepProcessingConsumerDefinition>();
         // 24.1 / D-24.1-05: the boot gate + scheduled redelivery are removed, so the delayed message
         // scheduler (AddDelayedMessageScheduler / UseDelayedMessageScheduler) and its
         // rabbitmq_delayed_message_exchange plugin dependency are gone. No configureBus needed.

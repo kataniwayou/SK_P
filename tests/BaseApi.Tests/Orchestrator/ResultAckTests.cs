@@ -21,8 +21,10 @@ namespace BaseApi.Tests.Orchestrator;
 /// </list>
 /// <para>
 /// Phase 43 (D-03/D-06e): the result path is L1-ONLY — the effect-first dedup gate (RETIRE-01) and the
-/// content-addressed manifest unbundle (RETIRE-02) are gone, so <see cref="ResultConsumer"/> no longer
-/// takes an <c>IConnectionMultiplexer</c>. One <see cref="StepCompleted"/> = one item.
+/// content-addressed manifest unbundle (RETIRE-02) are gone, so the consumer no longer takes an
+/// <c>IConnectionMultiplexer</c>. One <see cref="StepCompleted"/> = one item. (D-07: exercised via
+/// <see cref="StepCompletedConsumer"/>, the Completed arm of the TypedResultConsumer<T> family that
+/// replaced the retired ResultConsumer.)
 /// </para>
 /// </summary>
 public sealed class ResultAckTests
@@ -40,10 +42,11 @@ public sealed class ResultAckTests
         store.Upsert(workflowId, entry);
     }
 
-    private static ResultConsumer Build(WorkflowL1Store store, IStepDispatcher dispatcher) =>
+    private static StepCompletedConsumer Build(WorkflowL1Store store, IStepDispatcher dispatcher) =>
         // Phase 43: L1-only — no IConnectionMultiplexer ctor param (the dedup gate + manifest read are retired).
+        // D-07: StepCompletedConsumer (Outcome=Completed) — the body that replaced the retired ResultConsumer.
         new(store, new StepAdvancement(), dispatcher, OrchestratorTestStubs.Metrics(),
-            NullLogger<ResultConsumer>.Instance);
+            NullLogger<StepCompleted>.Instance);
 
     // ----- R5: an id ABSENT from L1 acks cleanly, lifecycle-agnostic (no throw, no _error) -------
 

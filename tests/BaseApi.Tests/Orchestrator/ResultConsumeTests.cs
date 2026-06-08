@@ -13,7 +13,8 @@ namespace BaseApi.Tests.Orchestrator;
 
 /// <summary>
 /// ORCH-RESULT-02 / ORCH-ADVANCE-02 goal-backward proof of the result-consume continuation-dispatch
-/// path (ContinuationDispatch). Drives a <see cref="ResultConsumer"/> against a real
+/// path (ContinuationDispatch). Drives a <see cref="StepCompletedConsumer"/> (the D-07 replacement for
+/// the retired ResultConsumer — Outcome=Completed) against a real
 /// <see cref="WorkflowL1Store"/> + a synthetic <see cref="CapturingDispatchConsumer"/> bound to the
 /// short-name endpoint <c>{processorId:D}</c> (the queue a <c>Send</c> to <c>queue:{processorId:D}</c>
 /// lands on — RESEARCH assumption A2). Asserts, from the USER's perspective:
@@ -76,12 +77,13 @@ public sealed class ResultConsumeTests
     }
 
     /// <summary>
-    /// Builds a <see cref="ResultConsumer"/> over the real harness-backed <see cref="StepDispatcher"/>.
-    /// Phase 43 (D-03/D-06e): ResultConsumer is L1-only — no Redis dedup gate, no manifest read.
+    /// Builds a <see cref="StepCompletedConsumer"/> over the real harness-backed <see cref="StepDispatcher"/>.
+    /// Phase 43 (D-03/D-06e): the result path is L1-only — no Redis dedup gate, no manifest read. (D-07: the
+    /// Completed arm of the TypedResultConsumer<T> family; same body as the retired ResultConsumer.)
     /// </summary>
-    private static ResultConsumer Build(WorkflowL1Store store, ISendEndpointProvider sendProvider) =>
+    private static StepCompletedConsumer Build(WorkflowL1Store store, ISendEndpointProvider sendProvider) =>
         new(store, new StepAdvancement(), new StepDispatcher(sendProvider, OrchestratorTestStubs.Metrics()),
-            OrchestratorTestStubs.Metrics(), NullLogger<ResultConsumer>.Instance);
+            OrchestratorTestStubs.Metrics(), NullLogger<StepCompleted>.Instance);
 
     // ----- ContinuationDispatch: one field-copied dispatch per matched next step -----------------
 
