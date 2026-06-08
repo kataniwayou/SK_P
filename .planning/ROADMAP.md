@@ -534,7 +534,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 43. Message Contracts & L2 Key Reshape | 0/5 | Planned | - |
 | 44. Processor Pre/In/Post-Process Pipeline | 3/3 | Complete | 2026-06-08 |
 | 45. Keeper BIT Health Gate + Global Pause/Resume | 3/3 | Complete | 2026-06-08 |
-| 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 0/? | Not started | - |
+| 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 1/4 | In progress | - |
 | 47. DLQ Consolidation + At-Least-Once Semantics | 0/? | Not started | - |
 | 48. v3.x Teardown | 0/? | Not started | - |
 | 49. Live Proof & Close Gate | 0/? | Not started | - |
