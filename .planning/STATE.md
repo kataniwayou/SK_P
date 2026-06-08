@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 43-03-PLAN.md
-last_updated: "2026-06-08T12:13:14.140Z"
+stopped_at: Completed 43-04-PLAN.md
+last_updated: "2026-06-08T12:18:43.343Z"
 last_activity: 2026-06-08
 progress:
   total_phases: 46
   completed_phases: 44
   total_plans: 158
-  completed_plans: 170
+  completed_plans: 171
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 43 (message-contracts-l2-key-reshape) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-06-08
 
@@ -871,6 +871,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 43 P01 | 18min | 3 tasks | 13 files |
 | Phase 43 P02 | 7min | 3 tasks | 22 files |
 | Phase 43 P03 | 6min | 3 tasks | 5 files |
+| Phase 43 P04 | 4min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1193,6 +1194,8 @@ Recent decisions affecting current work:
 - 43-01: Eight RETIRE-01/02 machinery test files deleted so a partial reshape surfaces as compile-red, not hidden behind stale-green tests
 - Phase 43-02: IKeeperRecoverable declares the partition 4-tuple directly (not via : ICorrelated) because C# interface GetProperties() does not surface base-interface members — KeeperContractTests reflects the marker directly
 - 43-03: orchestrator dispatch+result path and processor dispatch consumer adapted to no-H Guid-entryId contracts; flag[H]/CAS dedup + content-addressing + manifest fan-out removed (RETIRE-01/02); ResultConsumer is straight-through IConsumer<StepCompleted>; EntryStepDispatchConsumer emits one Step* record per result; entry-step fire seeds Guid.Empty
+- 43-04: kept reactive Keeper recovery DARK-but-compiling (D-14) — KeeperRecoveryHandler rebound off removed inner.H onto a local CompositeBackup 4-tuple key; L2ProbeRecovery retyped to ExecutionData(Guid)
+- 43-04: neutralize-and-keep (not delete) for FaultExecutionResultConsumer — retargeted onto surviving StepCompleted, file retained, registration dropped; reactive feature survives registered on Fault<EntryStepDispatch>; zero file deletions (D-14 diff guard)
 
 ### Roadmap Milestone Log
 
@@ -1295,8 +1298,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-08T12:13:07.081Z
-Stopped at: Completed 43-03-PLAN.md
+Last session: 2026-06-08T12:18:43.327Z
+Stopped at: Completed 43-04-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
