@@ -49,6 +49,14 @@ The v4 Pre/In/Post pipeline (Phase 44), the BIT gate + global pause/resume (Phas
 - **D-12:** All five implement a shared **marker interface `IKeeperRecoverable`** exposing the **partition 4-tuple** `correlationId / workFlowId / ProcessorId / executionId` — the key the MassTransit `UsePartitioner` uses for per-key ordering (KEEP-09, Phase 46). `stepId` rides as a plain property on each record, NOT part of the partition key (partition key == composite-backup key == 4-tuple, no step).
 - **D-13:** New queue const `KeeperQueues.Recovery = "keeper-recovery"` for the (later, Phase 46) gate-open-only recovery consumer. The v3.7 `KeeperQueues.FaultRecovery` (`keeper-fault-recovery`) and `KeeperQueues.DeadLetter` (`keeper-dlq`) consts are retired in Phases 47/48, **not** here.
 
+### Reactive Keeper path — Q1 resolution (MSG/RETIRE coupling, user-authorized 2026-06-08)
+- **D-14:** The reactive Keeper recovery path (`KeeperRecoveryHandler`, `FaultExecutionResultConsumer`/`Fault*ConsumerDefinition`, `L2ProbeRecovery`, and the `KeeperProbe`/`KeeperRecoverAttempts` `(string h)` helpers) is kept **present but DARK (compiling, not functionally rewritten)** in Phase 43 — its real retirement (RETIRE-03) stays in Phases 47/48 per D-02/D-13. Concretely, to survive the removal of `IExecutionCorrelated.H`, the deletion of `ExecutionResult` (and thus `Fault<ExecutionResult>`), and the removal of `ExecutionData(string)`:
+  - Rebind the generic `KeeperRecoveryHandler<T>` so it no longer depends on `IExecutionCorrelated.H`; bind the reactive consumer on `Fault<EntryStepDispatch>` only and **drop the `Fault<ExecutionResult>` consumer/definition** (its message type no longer exists).
+  - Give the handler a **local identity source** (e.g. a string key derived from the four-tuple `correlationId:workFlowId:ProcessorId:executionId`) wherever it previously read `inner.H`, so it compiles without re-introducing wire `H`.
+  - Point `L2ProbeRecovery` at a Guid-aware lookup (`ExecutionData(Guid)`), not the removed `ExecutionData(string)`.
+  - **No behavior is promised** for this path in 43 — it goes dormant. Do **NOT** delete the files (that would be RETIRE-03 pulled forward, which is explicitly out of scope). The diff must not show `KeeperRecoveryHandler.cs` / `FaultExecutionResultConsumer.cs` disappearing.
+  - This realizes Open Question Q1 / assumption A3 from `43-RESEARCH.md`. The locked build-order (43→44→…→49) and Phase 48 = RETIRE-03 are unchanged.
+
 ### Claude's Discretion
 - Exact naming/shape of the D-07 sentinel helper (e.g. static `SourceStep.IsSource(Guid)` vs an extension method) — only requirement: it is the single referenced predicate.
 - Exact member names on `IKeeperRecoverable`.
