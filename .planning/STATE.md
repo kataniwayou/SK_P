@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v4.0.0
 milestone_name: Processor Pre/In/Post-Process + Keeper Recovery Redesign
-status: defining_requirements
-stopped_at: v4.0.0 milestone started — defining requirements
+status: roadmapped
+stopped_at: v4.0.0 roadmap created — phases 43-49 mapped (29/29 requirements), ready to plan Phase 43
 last_updated: "2026-06-08T00:00:00.000Z"
-last_activity: 2026-06-08 -- v4.0.0 milestone started (defining requirements from locked design spec docs/design/2026-06-08-processor-keeper-recovery-redesign.md)
+last_activity: 2026-06-08 -- v4.0.0 roadmap created (7 phases 43-49, 29/29 requirements mapped) from locked design spec docs/design/2026-06-08-processor-keeper-recovery-redesign.md
 progress:
-  total_phases: 0
+  total_phases: 7
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** v4.0.0 — Processor Pre/In/Post-Process + Keeper recovery redesign (breaking). Defining requirements from the locked design spec `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`.
+**Current focus:** v4.0.0 — Processor Pre/In/Post-Process + Keeper recovery redesign (breaking). Roadmap created: 7 phases (43-49), 29/29 requirements mapped. Source of truth: `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Next: plan Phase 43 (Message Contracts & L2 Key Reshape).
 
 ## Current Position
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
-Phase: Not started (defining requirements)
+Phase: Not started — roadmap created (7 phases 43-49); next is Phase 43 (Message Contracts & L2 Key Reshape)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-08 — v4.0.0 milestone started
+Status: Roadmapped (ready to plan Phase 43)
+Last activity: 2026-06-08 — v4.0.0 roadmap created (7 phases 43-49, 29/29 requirements mapped)
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
