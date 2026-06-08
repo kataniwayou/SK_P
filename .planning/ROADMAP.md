@@ -489,7 +489,11 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   4. `INJECT` reads the composite copy, generates a new `entryId`, writes `L2[entryId]` (no TTL), injects a reconstructed `ExecutionResult(Completed, carrying entryId + executionId)` to the orchestrator result queue, and **deletes the composite copy**; `DELETE` deletes `L2[entryId]` (GC only); `CLEANUP` deletes the redundant composite copy on the happy path.
   5. After a happy-path or recovery completion the composite copy is gone (deleted by `CLEANUP`/`INJECT`, not left to its 2-day TTL) — a multi-item run leaves no composite keys behind.
   6. The orchestrator consumes per-item `ExecutionResult` messages (no manifest fan-out) and advances workflow steps accordingly; a Keeper-`INJECT`'d `Completed` result is processed identically to a direct processor completion (carries the same `entryId` + `executionId`).
-**Plans**: TBD
+**Plans**: 4 plans (3 waves — Wave 0 foundation: RetryLoop relocation + D-01 Payload ripple + RED test stubs; Wave 1 Keeper bodies + Orchestrator typed consumers in parallel; Wave 2 Keeper endpoint partitioner + registration)
+- [ ] 46-01-PLAN.md — Wave 0: RetryLoop→BaseConsole.Core (D-05) + KeeperReinject.Payload ripple (D-01) + 8 RED Phase=46 test stubs (KEEP-04..09, ORCH-01 scaffold)
+- [ ] 46-02-PLAN.md — Wave 1: Keeper 5-state recovery base + UPDATE/REINJECT/INJECT/DELETE/CLEANUP bodies + gate-wait/RetryLoop + RecoveryOptions + data-gone marker (KEEP-04/05/06/07/08)
+- [ ] 46-04-PLAN.md — Wave 1: Orchestrator TypedResultConsumer<T> base + 4 typed subclasses + defs + Program swap (ORCH-01)
+- [ ] 46-03-PLAN.md — Wave 2: 5 recovery ConsumerDefinitions (single-owner UsePartitioner on 4-tuple + retry) + Program/appsettings registration + partition/dead-letter facts (KEEP-09)
 
 #### Phase 47: DLQ Consolidation + At-Least-Once Semantics
 **Goal**: Every terminal give-up across the processor and the Keeper (a send exception with its retry loop exhausted; a Keeper L2 op exhausted) routes to a single consolidated `_DLQ1`, and the whole execution path is at-least-once with no dedup/idempotency key — duplicate effects are tolerated downstream by construction.
