@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Keeper.Observability;
 using Messaging.Contracts.Projections;
@@ -21,7 +22,7 @@ public sealed class L2ProbeRecovery(IConnectionMultiplexer redis, IOptions<Probe
     // OPEN QUESTION (RESEARCH OQ-1) RESOLVED: thread a `procId` param so BOTH keeper_in_flight and
     // keeper_l2_probe_failed carry the bounded {ProcessorId} label (consistent with the consumers; D-03/D-05).
     // Both consumer call sites pass inner.ProcessorId.ToString("D").
-    public async Task<ProbeOutcome> RunAsync(string entryId, string h, string procId, CancellationToken ct)
+    public async Task<ProbeOutcome> RunAsync(Guid entryId, string h, string procId, CancellationToken ct)
     {
         var procTag = new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId);
 

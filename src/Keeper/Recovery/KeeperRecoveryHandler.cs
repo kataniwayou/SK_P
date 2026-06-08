@@ -28,8 +28,8 @@ namespace Keeper.Recovery;
 /// keeper-dlq) branches — is byte-identical to the source consumers (T-40-01).
 /// </para>
 /// <para>
-/// Security (T-40-02, carried verbatim from T-35-04/05): all ids, <c>inner.H</c>, and the exception text are
-/// STRUCTURED PARAMS under fixed template holes / scope keys — never interpolated. Only <c>ExceptionType</c>
+/// Security (T-40-02, carried verbatim from T-35-04/05): all ids, the derived <c>localKey</c>, and the
+/// exception text are STRUCTURED PARAMS under fixed template holes / scope keys — never interpolated. Only <c>ExceptionType</c>
 /// + <c>Message</c> are surfaced; the exception's stack frames are NOT logged at Information.
 /// </para>
 /// </summary>
@@ -54,8 +54,10 @@ public sealed class KeeperRecoveryHandler(
 
     /// <summary>
     /// The shared recovery body. <typeparamref name="T"/> is the verbatim inner faulted message
-    /// (<see cref="IExecutionCorrelated"/>), read through the generic bound — including <c>inner.H</c>
-    /// (hoisted onto the interface in Task 1, D-A6).
+    /// (<see cref="IExecutionCorrelated"/>), read through the generic bound. D-14 (DARK): the wire
+    /// content-hash <c>H</c> was removed from the interface in v4.0.0, so this body now derives a LOCAL
+    /// identity key from the four-tuple (<see cref="L2ProjectionKeys.CompositeBackup"/>) instead of reading
+    /// <c>inner.H</c>; the path is present-and-compiling but dormant (its retirement is Phases 47/48).
     /// </summary>
     /// <param name="context">The <see cref="Fault{T}"/> consume context.</param>
     /// <param name="faultTypeTag">The closed-enum fault_type literal (<see cref="KeeperMetricTags.FaultTypeDispatch"/> | <see cref="KeeperMetricTags.FaultTypeResult"/>).</param>
@@ -71,6 +73,14 @@ public sealed class KeeperRecoveryHandler(
         var inner = context.Message.Message;   // double .Message — verbatim inner IExecutionCorrelated
         var ex    = context.Message.Exceptions is { Length: > 0 } exs ? exs[0] : null;
 
+        // D-14 (DARK path): the wire content-hash `H` was removed from IExecutionCorrelated in v4.0.0
+        // (RETIRE-01). The reactive recovery path stays present-and-compiling but goes dormant — wherever it
+        // formerly keyed off `inner.H` it now derives a LOCAL identity string from the four-tuple, which is
+        // exactly the new CompositeBackup key shape. No wire H is re-introduced; this is purely an internal
+        // probe-attempts / pause-key slot (T-43-10 accepted — no auth/dedup decision depends on it here).
+        var localKey = L2ProjectionKeys.CompositeBackup(
+            inner.CorrelationId, inner.WorkflowId, inner.ProcessorId, inner.ExecutionId);
+
         // KMET-02/03: intake — start the intake→terminal timer and count the consumed fault. ProcessorId is
         // the only bounded id label (no workflowId). fault_type is this consumer's closed enum (passed in).
         var procId = inner.ProcessorId.ToString("D");
@@ -82,20 +92,20 @@ public sealed class KeeperRecoveryHandler(
         {
             logger.LogInformation(
                 "Keeper fault intake: {FaultType} for H={H} — {ExceptionType}: {ExceptionMessage}",
-                typeof(T).Name, inner.H, ex?.ExceptionType, ex?.Message);
+                typeof(T).Name, localKey, ex?.ExceptionType, ex?.Message);
         }
 
         // PAUSE-01 (D-03): publish PauseWorkflow at intake — BEFORE probing — so the orchestrator pauses
         // the workflow's Quartz job and the L2 outage stops spreading. Publish (NOT Send) so message-type
         // binding fans the signal out to the orchestrator's per-replica endpoint; CorrelationId carried.
         await context.Publish(
-            new PauseWorkflow(inner.WorkflowId, inner.H) { CorrelationId = inner.CorrelationId },
+            new PauseWorkflow(inner.WorkflowId, localKey) { CorrelationId = inner.CorrelationId },
             ct);
         metrics.WorkflowPaused.Add(1, new KeyValuePair<string, object?>(KeeperMetricTags.ProcessorId, procId)); // workflow-scoped (no fault_type)
 
         // PROBE-01/05: the bounded probe loop is AWAITED inside Consume — the broker delivery stays
         // un-acked until the loop exits, so ack-after-loop is automatic (no early Task.CompletedTask).
-        var outcome = await recovery.RunAsync(inner.EntryId, inner.H, procId, ct);
+        var outcome = await recovery.RunAsync(inner.EntryId, localKey, procId, ct);
         if (outcome == ProbeOutcome.Recovered)
         {
             // KHARD-01 (D-A1/D-A3): bound the OUTER recover→reinject cycle per H. A persistent fault that the
@@ -103,7 +113,7 @@ public sealed class KeeperRecoveryHandler(
             // atomic INCR is race-free across the 2 keeper replicas; any crossing increment (n >= cap+1) parks
             // — retry-safe (WR-03): a park after a failed Send is re-attempted, never silently dropped.
             var db  = redis.GetDatabase();
-            var key = (RedisKey)L2ProjectionKeys.KeeperRecoverAttempts(inner.H);
+            var key = (RedisKey)L2ProjectionKeys.KeeperRecoverAttempts(localKey);
             // WR-01 (T-40-05): atomic INCR + PEXPIRE-NX in ONE round-trip. The previous INCR-then-EXPIRE pair
             // had a crash window between the two ops that could leave the counter key with NO TTL → permanent
             // leak. The Lua eval makes the key BORN with a TTL the moment it first exists (n==1); the PEXPIRE
@@ -145,7 +155,7 @@ public sealed class KeeperRecoveryHandler(
 
             // PAUSE-05 (D-04): resume on recovery — AFTER the re-inject, still inside the Recovered branch.
             await context.Publish(
-                new ResumeWorkflow(inner.WorkflowId, inner.H) { CorrelationId = inner.CorrelationId },
+                new ResumeWorkflow(inner.WorkflowId, localKey) { CorrelationId = inner.CorrelationId },
                 ct);
 
             // KMET-02/03: recovered terminal — resume + recovered counters + the intake→terminal duration
