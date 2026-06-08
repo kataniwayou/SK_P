@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: completed
-stopped_at: Phase 45 context gathered
-last_updated: "2026-06-08T16:46:33.721Z"
+status: executing
+stopped_at: Completed 45-00-PLAN.md
+last_updated: "2026-06-08T17:26:19.012Z"
 last_activity: 2026-06-08
 progress:
   total_phases: 48
   completed_phases: 46
-  total_plans: 161
-  completed_plans: 175
+  total_plans: 164
+  completed_plans: 176
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 44 — processor-pre-in-post-process-pipeline
+**Current focus:** Phase 45 — keeper-bit-health-gate-global-pause-resume
 
 ## Current Position
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
-Phase: 44
-Plan: Not started
-Status: Milestone complete
+Phase: 45 (keeper-bit-health-gate-global-pause-resume) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-06-08
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -878,6 +878,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 44 P01 | 6min | 3 tasks | 6 files |
 | Phase 44 P02 | 30min | 3 tasks | 9 files |
 | Phase 44 P03 | 10min | 2 tasks | 4 files |
+| Phase 45 P00 | 9m | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1208,6 +1209,8 @@ Recent decisions affecting current work:
 - Phase 44-01: ProcessItem inverts ProcessResult — author owns per-item ProcessOutcome AND mints ExecutionId (D-03)
 - Phase 44-01: ProcessStatusException family mapped by runtime type (no Status property) — pipeline catch type-switches (D-04/D-05)
 - Phase 44 Plan 02: ProcessorPipeline (Pre/In/Post/end-delete) implements the five terminals; BaseProcessor seam retyped to List<ProcessItem>; every L2 op + send RetryLoop-wrapped (Retry:Limit); bus UseMessageRetry reconciled to outer dead-letter latch (D-09)
+- Phase 45-00: PauseAll/ResumeAll carry ONLY a tracing Guid CorrelationId — no H, no WorkflowId, no dedup key (pure broadcast, RETIRE-01 no-H posture).
+- Phase 45-00: Wave-0 test stubs are type-free Assert.Fail placeholders (no reference to not-yet-built Keeper.Health.* / Orchestrator.Consumers.*) so shared BaseApi.Tests compiles now; 45-01/45-02 replace bodies with real assertions.
 
 ### Roadmap Milestone Log
 
@@ -1310,13 +1313,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 45 context gathered
-Resume file: --resume-file
+Last session: 2026-06-08T17:26:18.994Z
+Stopped at: Completed 45-00-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 44 (processor-pre-in-post-process-pipeline) — 3 plans — 2026-06-08T14:02:29.367Z
+**Planned Phase:** 45 (keeper-bit-health-gate-global-pause-resume) — 3 plans — 2026-06-08T17:12:28.818Z
