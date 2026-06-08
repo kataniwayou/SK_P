@@ -1,6 +1,7 @@
+using BaseConsole.Core.Resilience;   // D-05: RetryLoop / RetryOutcome relocated here
 using BaseProcessor.Core.Identity;
 using BaseProcessor.Core.Observability;
-using BaseProcessor.Core.Resilience;
+using BaseProcessor.Core.Resilience;   // KeyAbsentException stays processor-side (Pre-read sentinel)
 using BaseProcessor.Core.Validation;
 using MassTransit;
 using Messaging.Contracts;

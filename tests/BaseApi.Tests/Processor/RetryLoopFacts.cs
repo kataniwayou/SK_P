@@ -1,4 +1,4 @@
-using BaseProcessor.Core.Resilience;
+using BaseConsole.Core.Resilience;
 using Xunit;
 
 namespace BaseApi.Tests.Processor;

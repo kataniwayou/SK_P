@@ -1,4 +1,4 @@
-namespace BaseProcessor.Core.Resilience;
+namespace BaseConsole.Core.Resilience;
 
 /// <summary>D-08 / A3: the shared bounded retry helper. Runs <c>limit</c> IMMEDIATE attempts
 /// (no backoff) and SURFACES exhaustion (returns the last exception in <see cref="RetryOutcome{T}"/>
