@@ -1,5 +1,6 @@
 using MassTransit;
 using Messaging.Contracts;
+using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
 using Orchestrator.Dispatch;
 using Orchestrator.L1;
