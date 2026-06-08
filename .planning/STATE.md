@@ -1,35 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.7.0
-milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: milestone_complete
-stopped_at: v3.7.0 milestone archived (tag v3.7.0)
-last_updated: "2026-06-07T00:00:00.000Z"
-last_activity: 2026-06-07 -- v3.7.0 milestone closed & archived (ROADMAP/REQUIREMENTS/AUDIT -> milestones/v3.7.0-*; tagged v3.7.0; REQUIREMENTS.md removed for next milestone)
+milestone: v4.0.0
+milestone_name: Processor Pre/In/Post-Process + Keeper Recovery Redesign
+status: defining_requirements
+stopped_at: v4.0.0 milestone started — defining requirements
+last_updated: "2026-06-08T00:00:00.000Z"
+last_activity: 2026-06-08 -- v4.0.0 milestone started (defining requirements from locked design spec docs/design/2026-06-08-processor-keeper-recovery-redesign.md)
 progress:
-  total_phases: 45
-  completed_phases: 45
-  total_plans: 164
-  completed_plans: 164
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-07 — v3.7.0 shipped)
+See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Planning next milestone (`/gsd-new-milestone`) — v3.7.0 shipped & archived 2026-06-07.
+**Current focus:** v4.0.0 — Processor Pre/In/Post-Process + Keeper recovery redesign (breaking). Defining requirements from the locked design spec `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`.
 
 ## Current Position
 
-Milestone: v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements satisfied + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md. REQUIREMENTS.md removed (fresh for next milestone).
-Phase: —
+Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
+Phase: Not started (defining requirements)
 Plan: —
-Status: Milestone complete — awaiting `/gsd-new-milestone`
-Last activity: 2026-06-07 — v3.7.0 archived
+Status: Defining requirements
+Last activity: 2026-06-08 — v4.0.0 milestone started
+
+> v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
 ## Deferred Items
 
