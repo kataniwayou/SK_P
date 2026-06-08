@@ -63,14 +63,16 @@ public sealed class UpdateConsumerDefinition : ConsumerDefinition<UpdateConsumer
 
     /// <summary>KEEP-09 / D-12 — the per-key partition key is the <see cref="IKeeperRecoverable"/> 4-tuple
     /// (the composite-backup key shape), deliberately EXCLUDING StepId so all five states for one exec
-    /// serialize together. <c>internal static</c> so <c>RecoveryPartitionFacts</c> can pin the shape.</summary>
-    internal static string PartitionKey(IKeeperRecoverable m) =>
+    /// serialize together. <c>public static</c> (a pure key helper, no DI/state) so <c>RecoveryPartitionFacts</c>
+    /// can pin the shape without InternalsVisibleTo (which would expose Keeper's top-level Program to the
+    /// test assembly and collide with BaseApi.Service's Program).</summary>
+    public static string PartitionKey(IKeeperRecoverable m) =>
         $"{m.CorrelationId:D}:{m.WorkflowId:D}:{m.ProcessorId:D}:{m.ExecutionId:D}";
 
     /// <summary>Deterministic Guid over the canonical <see cref="PartitionKey"/> string for the 8.5.5
     /// Guid-keyed endpoint partitioner overload. Same 4-tuple → same Guid → same partition slot; StepId
     /// excluded by construction (it is never part of <see cref="PartitionKey"/>).</summary>
-    internal static Guid PartitionGuid(IKeeperRecoverable m)
+    public static Guid PartitionGuid(IKeeperRecoverable m)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(PartitionKey(m)));
         return new Guid(hash.AsSpan(0, 16));   // first 128 bits — stable across processes
