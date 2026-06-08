@@ -18,12 +18,11 @@ public interface IStepDispatcher
     /// <c>queue:{processorId:D}</c>. <paramref name="executionId"/>/<paramref name="entryId"/> are
     /// parameterized (NOT forced empty) so the result-continuation path can carry the real values.
     /// <para>
-    /// Phase 31 (D-02/D-06): the deterministic effect identity <c>H</c> is computed INTERNALLY from
-    /// (correlationId, workflowId, stepId, processorId, entryId) — executionId excluded — and stamped on
-    /// the dispatch, and <c>flag[H]="Pending"</c> is pre-written before the Send (the sender-pre-write
-    /// half of the symmetric effect-first dedup). Callers do not supply or see H.
+    /// Phase 43 (D-03): <c>entryId</c> is a <c>Guid</c> (the L2 data key; <c>Guid.Empty</c> = the
+    /// source-step sentinel). The retired <c>H</c>/flag dedup machinery is gone — the dispatch is built
+    /// and Sent straight-through with no deterministic-identity compute and no <c>flag[H]</c> pre-write.
     /// </para>
     /// </summary>
     Task DispatchAsync(Guid workflowId, Guid stepId, Guid processorId, string payload,
-        Guid correlationId, Guid executionId, string entryId, CancellationToken ct);
+        Guid correlationId, Guid executionId, Guid entryId, CancellationToken ct);
 }

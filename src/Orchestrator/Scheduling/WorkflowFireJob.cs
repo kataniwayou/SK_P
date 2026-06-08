@@ -1,7 +1,5 @@
 using MassTransit;
 using Messaging.Contracts;
-using Messaging.Contracts.Hashing;
-using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging;
 using Orchestrator.Dispatch;
 using Orchestrator.L1;
@@ -78,15 +76,13 @@ public sealed class WorkflowFireJob(
                     continue;
                 }
 
-                // D-01: the build-and-Send shape lives in IStepDispatcher (the single owner). req-2:
-                // the entry step carries a non-empty deterministic EntryId = hash(correlationId, stepId)
-                // (two fires -> different per-fire correlationId -> different EntryId -> different H).
-                // executionId stays Guid.Empty (lineage, regenerated downstream); H is computed inside
-                // DispatchAsync over (corr, wf, step, proc, entryId). An infra fault on Send propagates.
-                var entryId = MessageIdentity.EntryEntryId(correlationId, entryStepId);
+                // D-01: the build-and-Send shape lives in IStepDispatcher (the single owner). D-03: the
+                // entry-step fire seeds entryId = Guid.Empty — the source-step sentinel (SourceStep.IsSource)
+                // that replaces the retired deterministic hash. The first Guid.Empty is the (unchanged)
+                // executionId lineage; the second is the new entryId sentinel. An infra fault on Send propagates.
                 await dispatcher.DispatchAsync(
                     workflowId, entryStepId, step.ProcessorId, step.Payload,
-                    correlationId, Guid.Empty, entryId, context.CancellationToken);
+                    correlationId, Guid.Empty, Guid.Empty, context.CancellationToken);
             }
 
             // L1 liveness refresh — in-memory only (NO L2 write). Replace the immutable LivenessProjection
