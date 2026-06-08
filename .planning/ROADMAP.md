@@ -492,7 +492,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 **Plans**: 4 plans (3 waves — Wave 0 foundation: RetryLoop relocation + D-01 Payload ripple + RED test stubs; Wave 1 Keeper bodies + Orchestrator typed consumers in parallel; Wave 2 Keeper endpoint partitioner + registration)
 - [x] 46-01-PLAN.md — Wave 0: RetryLoop→BaseConsole.Core (D-05) + KeeperReinject.Payload ripple (D-01) + 8 RED Phase=46 test stubs (KEEP-04..09, ORCH-01 scaffold) — completed 2026-06-08
 - [x] 46-02-PLAN.md — Wave 1: Keeper 5-state recovery base + UPDATE/REINJECT/INJECT/DELETE/CLEANUP bodies + gate-wait/RetryLoop + RecoveryOptions + data-gone marker (KEEP-04/05/06/07/08) — completed 2026-06-08
-- [ ] 46-04-PLAN.md — Wave 1: Orchestrator TypedResultConsumer<T> base + 4 typed subclasses + defs + Program swap (ORCH-01)
+- [x] 46-04-PLAN.md — Wave 1: Orchestrator TypedResultConsumer<T> base + 4 typed subclasses + defs + Program swap (ORCH-01) — completed 2026-06-08 (abstract Outcome knob replaces hardcoded StepOutcome.Completed; no status if/switch; single-owner UseMessageRetry on shared orchestrator-result endpoint; ResultConsumer(Definition) deleted; TypedResultConsumerFacts 7/7 incl. ORCH-01 indistinguishability; SK_P.sln 0/0; a9d387a, c5b56cb, 4425ef8)
 - [ ] 46-03-PLAN.md — Wave 2: 5 recovery ConsumerDefinitions (single-owner UsePartitioner on 4-tuple + retry) + Program/appsettings registration + partition/dead-letter facts (KEEP-09)
 
 #### Phase 47: DLQ Consolidation + At-Least-Once Semantics
