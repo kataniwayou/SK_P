@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 43-01-PLAN.md
-last_updated: "2026-06-08T11:53:34.749Z"
+stopped_at: Completed 43-02-PLAN.md
+last_updated: "2026-06-08T12:04:02.593Z"
 last_activity: 2026-06-08
 progress:
   total_phases: 46
   completed_phases: 44
   total_plans: 158
-  completed_plans: 168
+  completed_plans: 169
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 43 (message-contracts-l2-key-reshape) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-06-08
 
@@ -869,6 +869,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 37 P03 | ~4min | 2 tasks | 7 files |
 | Phase 39 P02 | 9min | 2 tasks | 6 files |
 | Phase 43 P01 | 18min | 3 tasks | 13 files |
+| Phase 43 P02 | 7min | 3 tasks | 22 files |
 
 ## Accumulated Context
 
@@ -1189,6 +1190,7 @@ Recent decisions affecting current work:
 - Phase 39 recovery_duration recorded as sw.Elapsed.TotalSeconds (unit s) — Plan 03 expects keeper_recovery_duration_seconds_{bucket,sum,count} with {outcome,ProcessorId}
 - 43-01: Wave-0 RED Nyquist proofs authored before Plan-02 symbols exist; build deliberately red on exactly the 14 Plan-02 symbols
 - 43-01: Eight RETIRE-01/02 machinery test files deleted so a partial reshape surfaces as compile-red, not hidden behind stale-green tests
+- Phase 43-02: IKeeperRecoverable declares the partition 4-tuple directly (not via : ICorrelated) because C# interface GetProperties() does not surface base-interface members — KeeperContractTests reflects the marker directly
 
 ### Roadmap Milestone Log
 
@@ -1291,8 +1293,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-08T11:53:27.008Z
-Stopped at: Completed 43-01-PLAN.md
+Last session: 2026-06-08T12:04:02.560Z
+Stopped at: Completed 43-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
