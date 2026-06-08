@@ -48,6 +48,15 @@ builder.Services.AddBaseConsoleMessaging(builder.Configuration,
             .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
         x.AddConsumer<ResumeWorkflowConsumer, ResumeWorkflowConsumerDefinition>()
             .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
+        // ORCH-02 / D-08: global pause/resume on a NEW per-replica fan-out endpoint
+        // "orchestrator-global-pauseresume-{instanceId}" (SAME instanceId → one temp fan-out queue per
+        // replica; ConcurrentMessageLimit=1, single retry ownership held by the PauseAll definition),
+        // independent from "orchestrator-pauseresume" so Phase 48 can drop the old per-workflow endpoint
+        // with zero entanglement.
+        x.AddConsumer<PauseAllConsumer, PauseAllConsumerDefinition>()
+            .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
+        x.AddConsumer<ResumeAllConsumer, ResumeAllConsumerDefinition>()
+            .Endpoint(e => { e.InstanceId = instanceId; e.Temporary = true; });
         // ORCH-RESULT-02: shared competing-consumer (NO InstanceId/Temporary) — the inverse of the
         // Start/Stop fan-out. ResultConsumerDefinition binds the stable "orchestrator-result" endpoint.
         x.AddConsumer<ResultConsumer, ResultConsumerDefinition>();
