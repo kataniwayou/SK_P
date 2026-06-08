@@ -96,11 +96,11 @@
 | ORCH-01 | Phase 46 | Pending |
 | RESIL-02 | Phase 47 | Pending |
 | RESIL-03 | Phase 47 | Pending |
-| RETIRE-01 | Phase 48 | Pending |
-| RETIRE-02 | Phase 48 | Pending |
+| RETIRE-01 | Phase 43 (coupled per D-01) | Pending |
+| RETIRE-02 | Phase 43 (coupled per D-01) | Pending |
 | RETIRE-03 | Phase 48 | Pending |
 | TEST-01 | Phase 49 | Pending |
 | TEST-02 | Phase 49 | Pending |
 | TEST-03 | Phase 49 | Pending |
 
-**Coverage:** 31 / 31 requirements mapped (PIPE ×8, MSG ×3, ORCH ×2, KEEP ×9, RESIL ×3, RETIRE ×3, TEST ×3). No orphans; no requirement mapped to two phases. 7 phases (43-49).
+**Coverage:** 31 / 31 requirements mapped (PIPE ×8, MSG ×3, ORCH ×2, KEEP ×9, RESIL ×3, RETIRE ×3, TEST ×3). No orphans; each requirement maps to exactly one phase. RETIRE-01/02 were pulled forward into Phase 43 (coupled to the field/type reshape per D-01/D-02), where they share the phase with MSG-01/02/03 — an intended coupling, not a double-map; Phase 48 now carries RETIRE-03 + a final remnant sweep. 7 phases (43-49).
