@@ -48,16 +48,18 @@ builder.Services.AddSingleton<Keeper.Recovery.KeeperRecoveryHandler>();
 builder.Services.AddSingleton<KeeperMetrics>();
 builder.Services.ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(KeeperMetrics.MeterName));
 
-// D-02/D-03 — the two REAL fault consumers colocate on the ONE stable shared durable queue
-// keeper-fault-recovery (competing-consumer round-robin, NOT the Start/Stop per-replica fan-out).
-// Plain AddConsumer + the same stable EndpointName on both definitions => one durable queue binding
-// both Fault<T> message-type exchanges, present in BOTH close-gate rabbitmq snapshots (net-zero
-// triple-SHA, Pitfall 1). NO per-replica auto-delete endpoint override anywhere (KEEP-02). The
-// endpoint-level retry is owned solely by FaultEntryStepDispatchConsumerDefinition (Pitfall 3).
+// D-02/D-03/D-14 — the surviving reactive fault consumer binds the stable shared durable queue
+// keeper-fault-recovery (competing-consumer round-robin, NOT the Start/Stop per-replica fan-out). Plain
+// AddConsumer + the stable EndpointName on its definition => one durable queue binding the
+// Fault<EntryStepDispatch> message-type exchange. NO per-replica auto-delete endpoint override (KEEP-02).
+// D-14 (DARK): the former Fault<ExecutionResult> consumer is NO LONGER registered — its wire type was
+// deleted in v4.0.0 (RETIRE-01/D-06); the reactive recovery FEATURE is carried by the
+// Fault<EntryStepDispatch> consumer below (the FaultExecutionResultConsumer file is retained, retargeted,
+// and dormant — its retirement is RETIRE-03, Phases 47/48). The endpoint-level retry is owned solely by
+// FaultEntryStepDispatchConsumerDefinition (Pitfall 3).
 builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
 {
     x.AddConsumer<FaultEntryStepDispatchConsumer, FaultEntryStepDispatchConsumerDefinition>();
-    x.AddConsumer<FaultExecutionResultConsumer,   FaultExecutionResultConsumerDefinition>();
 });
 
 var host = builder.Build();
