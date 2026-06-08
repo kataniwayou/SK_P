@@ -36,6 +36,11 @@ builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection("Back
 // IOptions<ProbeOptions>). Both fault consumers depend on it.
 builder.Services.AddSingleton<Keeper.Recovery.L2ProbeRecovery>();
 
+// KEEP-03 (D-09): the L2 BIT health gate singleton — written by the BIT loop, read by the Phase-46 consumer.
+builder.Services.AddSingleton<Keeper.Health.IL2HealthGate, Keeper.Health.L2HealthGate>();
+// KEEP-01/02 (D-06): the proactive BIT loop hosted service (edge-triggered global pause/resume + gate driver).
+builder.Services.AddHostedService<Keeper.Health.BitHealthLoop>();
+
 // KHARD-03 — the shared recovery body both fault consumers delegate to (ctor-injects L2ProbeRecovery + KeeperMetrics).
 builder.Services.AddSingleton<Keeper.Recovery.KeeperRecoveryHandler>();
 
