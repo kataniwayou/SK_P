@@ -7,16 +7,22 @@
 ## Requirements
 
 ### Processor Pipeline (PIPE)
-- [ ] **PIPE-01**: `BaseProcessor` runs an explicit Pre-Process → In-Process → Post-Process pipeline per consumed dispatch, replacing the single `ProcessAsync` seam.
-- [ ] **PIPE-02**: Pre-Process reads `L2[entryId]` with a bounded retry loop; read failure (Redis exception **or** absent/empty key) after exhaustion → `infra(READ)`. `entryId == Guid.Empty` skips the read with empty validated data.
-- [ ] **PIPE-03**: Pre-Process validates the read data against the input schema; validation failure → business `Failed` (not infra).
+- [x] **PIPE-01
+**: `BaseProcessor` runs an explicit Pre-Process → In-Process → Post-Process pipeline per consumed dispatch, replacing the single `ProcessAsync` seam.
+- [x] **PIPE-02
+**: Pre-Process reads `L2[entryId]` with a bounded retry loop; read failure (Redis exception **or** absent/empty key) after exhaustion → `infra(READ)`. `entryId == Guid.Empty` skips the read with empty validated data.
+- [x] **PIPE-03
+**: Pre-Process validates the read data against the input schema; validation failure → business `Failed` (not infra).
 - [x] **PIPE-04
 **: In-Process is an author-overridden abstract method receiving `(validatedData, payload)` and returning a list of items, each `{ result: completed|failed, data, executionId }` with an author-minted `executionId`.
 - [x] **PIPE-05
 **: In-Process is wrapped in try/catch; the author may throw a status-carrying exception (`processing`/`failed`/`cancelled`); any exception sends one orchestrator result (an unexpected exception ⇒ `failed`) and aborts the batch.
-- [ ] **PIPE-06**: Post-Process per `completed` item validates output against the output schema, generates a GUID `entryId`, and writes `L2[entryId]` (no TTL) with a bounded retry loop (exhaustion → `failed (infra)`); on a successful write it sends Keeper `CLEANUP` to delete the now-redundant composite backup.
-- [ ] **PIPE-07**: Post-Process routes each item — not-infra (`completed` ∪ business-`failed`) → orchestrator result (a `completed` result carries `entryId` + `executionId`); infra → Keeper `INJECT`. N completed items → N per-item orchestrator results (no manifest).
-- [ ] **PIPE-08**: End-delete (a `finally` over every read-succeeded path) deletes `L2[entryId]` with a bounded retry loop; exhaustion → Keeper `DELETE`.
+- [x] **PIPE-06
+**: Post-Process per `completed` item validates output against the output schema, generates a GUID `entryId`, and writes `L2[entryId]` (no TTL) with a bounded retry loop (exhaustion → `failed (infra)`); on a successful write it sends Keeper `CLEANUP` to delete the now-redundant composite backup.
+- [x] **PIPE-07
+**: Post-Process routes each item — not-infra (`completed` ∪ business-`failed`) → orchestrator result (a `completed` result carries `entryId` + `executionId`); infra → Keeper `INJECT`. N completed items → N per-item orchestrator results (no manifest).
+- [x] **PIPE-08
+**: End-delete (a `finally` over every read-succeeded path) deletes `L2[entryId]` with a bounded retry loop; exhaustion → Keeper `DELETE`.
 
 ### Message Contracts (MSG)
 - [x] **MSG-01
