@@ -116,6 +116,9 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
     public Task PauseAsync(Guid jobId, CancellationToken ct) =>
         scheduler.PauseJob(KeyFor(jobId), ct);
 
+    /// <summary>Scheduler-wide pause-all (ORCH-02, D-01). Idempotent — re-pausing already-paused groups is a Quartz no-op.</summary>
+    public Task PauseAllAsync(CancellationToken ct) => scheduler.PauseAll(ct);
+
     /// <summary>Read the deterministic trigger's state (Normal=Running / Paused / None=Stopped) — D-05.
     /// Returns None for an unknown key (RESEARCH §4), never throws.</summary>
     public Task<TriggerState> GetTriggerStateAsync(Guid jobId, CancellationToken ct) =>
