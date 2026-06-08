@@ -146,7 +146,7 @@
     <ProjectReference Include="..\..\src\BaseProcessor.Core\BaseProcessor.Core.csproj" />
     <!-- Phase 28 addition (Plan 28-01): the first concrete Processor.Sample console. The hermetic
          facts reflect the built Processor.Sample.dll to assert the embedded SourceHash attribute
-         (IDENT-02) + prove SampleProcessor's single deterministic ProcessResult (SAMPLE-01). -->
+         (IDENT-02) + prove SampleProcessor's single deterministic ProcessItem (SAMPLE-01). -->
     <ProjectReference Include="..\..\src\Processor.Sample\Processor.Sample.csproj" />
   </ItemGroup>
 

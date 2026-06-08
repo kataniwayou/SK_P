@@ -81,4 +81,18 @@ public sealed class SampleProcessorFacts
         Assert.Equal("processor-sample-ok", only.Data);
         Assert.Single(logger.Entries); // still logs (payload null) — proves the seam always runs
     }
+
+    [Fact]
+    public void ProcessAsync_Fail_Payload_Throws_FailedException()
+    {
+        var logger = new CapturingLogger();
+        var processor = new SampleProcessor(logger);
+
+        // D-07 worked example: the "fail" payload demonstrates the author status-exception path.
+        // The seam throws SYNCHRONOUSLY (before returning the Task), so the reflection invoke
+        // surfaces it wrapped in a TargetInvocationException — assert the inner is FailedException.
+        var outer = Assert.Throws<TargetInvocationException>(
+            () => { _ = InvokeProcessAsync(processor, "any-input", "\"fail\""); });
+        Assert.IsType<FailedException>(outer.InnerException);
+    }
 }
