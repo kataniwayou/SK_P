@@ -19,7 +19,8 @@ public static class ExecutionLogScope
     /// Single source of truth for the 5-key execution-scope dict, shared by the bus-wide inbound
     /// consume filter and (next wave) the Keeper fault consumers that open the scope manually — the
     /// filter does NOT fire on <c>Fault&lt;T&gt;</c> (D-07). Byte-identical skip rules: each Guid is
-    /// skipped when <c>Guid.Empty</c>, the string EntryId when null/empty; no CorrelationId key.
+    /// skipped when <c>Guid.Empty</c>, the Guid EntryId when it is the source-step sentinel
+    /// (<see cref="SourceStep.IsSource"/>, D-07 — never inline <c>== Guid.Empty</c>); no CorrelationId key.
     /// </summary>
     public static Dictionary<string, object> BuildState(IExecutionCorrelated ec)
     {
@@ -28,7 +29,7 @@ public static class ExecutionLogScope
         if (ec.StepId      != Guid.Empty) state[StepId]      = ec.StepId.ToString();
         if (ec.ProcessorId != Guid.Empty) state[ProcessorId] = ec.ProcessorId.ToString();
         if (ec.ExecutionId != Guid.Empty) state[ExecutionId] = ec.ExecutionId.ToString();
-        if (!string.IsNullOrEmpty(ec.EntryId)) state[EntryId] = ec.EntryId;
+        if (!SourceStep.IsSource(ec.EntryId)) state[EntryId] = ec.EntryId.ToString();
         return state;
     }
 }
