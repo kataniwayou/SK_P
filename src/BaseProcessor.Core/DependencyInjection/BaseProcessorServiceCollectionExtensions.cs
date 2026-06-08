@@ -79,6 +79,12 @@ public static class BaseProcessorServiceCollectionExtensions
                 x.AddConsumer<EntryStepDispatchConsumer>().ExcludeFromConfigureEndpoints();
             });
 
+        // 2b. PIPE-01 (Phase 44): the Pre→In→Post→end-delete runner the now-thin EntryStepDispatchConsumer
+        //     delegates to. Scoped per dispatch consume (mirrors the consumer's per-message resolution); its
+        //     collaborators (IConnectionMultiplexer, IProcessorContext, BaseProcessor, ISendEndpointProvider,
+        //     IOptions<RetryOptions>, ILogger) are all already registered by the calls above / step 3b.
+        services.AddScoped<ProcessorPipeline>();
+
         // 3. Liveness/heartbeat knobs (CONFIG-01) — four independent seconds-ints from the "Processor" section.
         services.Configure<ProcessorLivenessOptions>(cfg.GetSection("Processor"));
 

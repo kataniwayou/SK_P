@@ -2,6 +2,7 @@ using System.Diagnostics.Metrics;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Processing;
+using MassTransit;
 using Messaging.Contracts;
 using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Options;

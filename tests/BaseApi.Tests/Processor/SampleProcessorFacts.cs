@@ -7,10 +7,10 @@ using Xunit;
 namespace BaseApi.Tests.Processor;
 
 /// <summary>
-/// Hermetic unit facts for <see cref="SampleProcessor"/> (SAMPLE-01 / D-04): the one concrete
-/// transform deserializes the dispatch <c>config</c> — the per-step assignment payload — logs it,
-/// and echoes it back as the single <see cref="ProcessResult"/>. A blank payload falls back to the
-/// fixed <c>"processor-sample-ok"</c> token.
+/// Hermetic unit facts for <see cref="SampleProcessor"/> (SAMPLE-01 / D-07): the one concrete
+/// In-Process transform deserializes the dispatch <c>payload</c> — the per-step assignment payload —
+/// logs it, and echoes it back as a single completed <see cref="ProcessItem"/>. A blank payload falls
+/// back to the fixed <c>"processor-sample-ok"</c> token.
 ///
 /// <para>
 /// <see cref="SampleProcessor"/> is <c>sealed</c> and its <c>ProcessAsync</c> is <c>protected</c>
@@ -39,14 +39,14 @@ public sealed class SampleProcessorFacts
         }
     }
 
-    private static Task<IReadOnlyList<ProcessResult>> InvokeProcessAsync(
-        SampleProcessor processor, string inputData, string config)
+    private static Task<List<ProcessItem>> InvokeProcessAsync(
+        SampleProcessor processor, string validatedData, string payload)
     {
         var method = typeof(SampleProcessor).GetMethod(
             "ProcessAsync",
             BindingFlags.Instance | BindingFlags.NonPublic)!;
-        return (Task<IReadOnlyList<ProcessResult>>)method.Invoke(
-            processor, new object[] { inputData, config, CancellationToken.None })!;
+        return (Task<List<ProcessItem>>)method.Invoke(
+            processor, new object[] { validatedData, payload, CancellationToken.None })!;
     }
 
     [Fact]
@@ -55,11 +55,13 @@ public sealed class SampleProcessorFacts
         var logger = new CapturingLogger();
         var processor = new SampleProcessor(logger);
 
-        // config is a JSON string — exactly what the assignment payload "\"StepA1\"" looks like on the wire.
+        // payload is a JSON string — exactly what the assignment payload "\"StepA1\"" looks like on the wire.
         var result = await InvokeProcessAsync(processor, "any-input", "\"StepA1\"");
 
         var only = Assert.Single(result);
-        Assert.Equal("StepA1", only.OutputData);
+        Assert.Equal(ProcessOutcome.Completed, only.Result);
+        Assert.Equal("StepA1", only.Data);
+        Assert.NotEqual(Guid.Empty, only.ExecutionId);   // D-03: the author mints the per-item ExecutionId
 
         var logged = Assert.Single(logger.Entries);
         Assert.Equal(LogLevel.Information, logged.Level);
@@ -76,7 +78,7 @@ public sealed class SampleProcessorFacts
         var result = await InvokeProcessAsync(processor, "any-input", "");
 
         var only = Assert.Single(result);
-        Assert.Equal("processor-sample-ok", only.OutputData);
+        Assert.Equal("processor-sample-ok", only.Data);
         Assert.Single(logger.Entries); // still logs (payload null) — proves the seam always runs
     }
 }

@@ -6,14 +6,15 @@ using BaseProcessorBase = BaseProcessor.Core.Processing.BaseProcessor;
 namespace Processor.Sample;
 
 /// <summary>
-/// The one concrete <see cref="BaseProcessorBase"/> (SAMPLE-01 / D-04). It overrides ONLY the
-/// <c>ProcessAsync</c> transform seam; the framework (AddBaseProcessor) owns all id-minting,
-/// validation, L2 read/write, dispatch, and result sending. The transform now consumes the
-/// dispatch <c>config</c> — the per-step assignment payload — by deserializing the JSON string,
-/// logging it, and echoing it back as the single <see cref="ProcessResult"/> so the live
-/// round-trip can prove (via ES logs) that each step received its own assigned payload. An
-/// absent/blank payload falls back to the original fixed <c>"processor-sample-ok"</c> token, so a
-/// no-assignment dispatch still produces a deterministic result.
+/// The one concrete <see cref="BaseProcessorBase"/> (SAMPLE-01 / D-07). It overrides ONLY the Phase-44
+/// In-Process <c>ProcessAsync</c> seam; the framework (<c>ProcessorPipeline</c>) owns the entire
+/// Pre/Post/end-delete pipeline (retry, L2 read/write/delete, all Keeper + Step* sends, the framework
+/// entryId). The transform deserializes the dispatch <c>payload</c> — the per-step assignment payload —
+/// logs it, and echoes it back as a single completed <see cref="ProcessItem"/> (MINTING its own
+/// <c>ExecutionId</c>, D-03) so the live round-trip can prove (via ES logs) that each step received its
+/// own assigned payload. An absent/blank payload falls back to the fixed <c>"processor-sample-ok"</c>
+/// token. A <c>"fail"</c> payload demonstrates the status-exception path (the author may THROW a
+/// <c>ProcessStatusException</c> to abort the batch with a business status).
 /// </summary>
 /// <remarks>
 /// The base type is aliased (<c>BaseProcessorBase</c>) because the unqualified name
@@ -24,17 +25,24 @@ namespace Processor.Sample;
 public sealed class SampleProcessor(ILogger<SampleProcessor> logger) : BaseProcessorBase
 {
     /// <inheritdoc/>
-    protected override Task<IReadOnlyList<ProcessResult>> ProcessAsync(
-        string inputData, string config, CancellationToken ct)
+    protected override Task<List<ProcessItem>> ProcessAsync(
+        string validatedData, string payload, CancellationToken ct)
     {
-        // config IS the dispatch payload (the step's assignment payload), a JSON string e.g. "\"StepA1\"".
-        var payload = string.IsNullOrWhiteSpace(config)
+        // payload IS the dispatch config (the step's assignment payload), a JSON string e.g. "\"StepA1\"".
+        var cfg = string.IsNullOrWhiteSpace(payload)
             ? null
-            : JsonSerializer.Deserialize<string>(config);
+            : JsonSerializer.Deserialize<string>(payload);
 
-        logger.LogInformation("sample payload received: {Payload}", payload);
+        logger.LogInformation("sample payload received: {Payload}", cfg);
 
-        return Task.FromResult<IReadOnlyList<ProcessResult>>(
-            new[] { new ProcessResult(payload ?? "processor-sample-ok") });
+        // Demonstrate the author status-exception path (D-04): a "fail" payload aborts with a business Failed.
+        if (cfg == "fail")
+            throw new FailedException("sample reason");
+
+        // One completed item; the author MINTS the ExecutionId (D-03).
+        return Task.FromResult(new List<ProcessItem>
+        {
+            new(ProcessOutcome.Completed, cfg ?? "processor-sample-ok", Guid.NewGuid()),
+        });
     }
 }

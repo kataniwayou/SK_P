@@ -171,7 +171,13 @@ public sealed class ProcessorStartupOrchestrator(
         var retryLimit = retryOptions.Value.Limit;   // D-10: per-process retry budget from the "Retry" section (default Immediate(3))
         var handle = endpointConnector.ConnectReceiveEndpoint(queueName, (ctx, cfg) =>
         {
-            cfg.UseMessageRetry(r => r.Immediate(retryLimit));        // mirror ResultConsumerDefinition (D-02/D-15); D-10 config-bound Limit
+            // D-09 reconcile (Phase 44, Pitfall 1): the in-code ProcessorPipeline RetryLoop now owns EVERY
+            // per-op retry (L2 read/write/delete + each send), all bounded by this SAME retryLimit
+            // (Retry:Limit). This UseMessageRetry is the OUTER dead-letter LATCH — it fires ONLY when an
+            // in-code send-exhaustion PROPAGATES out of the pipeline (D-10), NOT a second retry of the L2
+            // ops (those are already surfaced-not-thrown inside RunAsync). Do NOT remove it: it is the
+            // _error dead-letter trigger. The shared Limit keeps the two layers from desyncing.
+            cfg.UseMessageRetry(r => r.Immediate(retryLimit));        // outer dead-letter latch (D-09/D-10); D-10 config-bound Limit
             cfg.ConfigureConsumer<EntryStepDispatchConsumer>(ctx);    // DI-resolved consumer attached
         });
         await handle.Ready;                                          // queue declared + consumer attached BEFORE Healthy (D-03)
