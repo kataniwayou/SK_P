@@ -118,6 +118,48 @@ internal static class DispatchTestKit
     }
 
     /// <summary>
+    /// A Redis multiplexer whose <c>StringGetAsync</c> resolves registered keys, and whose
+    /// <c>StringSetAsync</c> (output write) AND <c>KeyDeleteAsync</c> (end-delete) both SUCCEED — the
+    /// happy / business-fail Post + end-delete paths. The write + delete are explicitly stubbed (so a
+    /// <c>Received()</c> assertion can prove the no-TTL write and the end-delete invocation).
+    /// </summary>
+    public static IConnectionMultiplexer PresentReadWriteDeleteOkL2(
+        IReadOnlyDictionary<string, string> values, out IDatabase db)
+    {
+        db = Substitute.For<IDatabase>();
+        db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(ci =>
+            {
+                var key = ((RedisKey)ci[0]).ToString();
+                return values.TryGetValue(key, out var v) ? (RedisValue)v : RedisValue.Null;
+            });
+        db.StringSetAsync(
+                Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
+            .Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+        return mux;
+    }
+
+    /// <summary>
+    /// A Redis multiplexer whose <c>StringGetAsync</c> THROWS <see cref="RedisConnectionException"/> for
+    /// every key (the Pre read-fault path) — the read loop exhausts → <c>KeeperReinject</c>. The mock db is
+    /// returned so a fact can assert <c>db.DidNotReceive().KeyDeleteAsync(...)</c> (end-delete skipped).
+    /// </summary>
+    public static IConnectionMultiplexer ReadFaultL2(out IDatabase db)
+    {
+        db = Substitute.For<IDatabase>();
+        db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns<Task<RedisValue>>(_ => throw new RedisConnectionException(
+                ConnectionFailureType.UnableToConnect, "stub: Redis read unreachable"));
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+        return mux;
+    }
+
+    /// <summary>
     /// A Redis multiplexer whose <c>StringGetAsync</c> returns <see cref="RedisValue.Null"/> for EVERY key
     /// (the A2 absent/empty Pre-read path) — the read closure's <c>IsNullOrEmpty</c> guard throws
     /// <c>KeyAbsentException</c>, the loop exhausts, and the Pre routes to <c>KeeperReinject</c>.
