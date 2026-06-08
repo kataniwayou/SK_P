@@ -103,13 +103,13 @@
 | KEEP-02 | Phase 45 | Complete |
 | KEEP-03 | Phase 45 | Complete (gate primitive + bounded-wait; consumed in Phase 46) |
 | ORCH-02 | Phase 45 | Complete |
-| KEEP-04 | Phase 46 | Pending |
-| KEEP-05 | Phase 46 | Pending |
-| KEEP-06 | Phase 46 | Pending |
-| KEEP-07 | Phase 46 | Pending |
-| KEEP-08 | Phase 46 | Pending |
-| KEEP-09 | Phase 46 | Pending |
-| ORCH-01 | Phase 46 | Pending |
+| KEEP-04 | Phase 46 | Complete |
+| KEEP-05 | Phase 46 | Complete |
+| KEEP-06 | Phase 46 | Complete |
+| KEEP-07 | Phase 46 | Complete |
+| KEEP-08 | Phase 46 | Complete |
+| KEEP-09 | Phase 46 | Complete |
+| ORCH-01 | Phase 46 | Complete |
 | RESIL-02 | Phase 47 | Pending |
 | RESIL-03 | Phase 47 | Pending |
 | RETIRE-01 | Phase 43 (coupled per D-01) | Pending |
