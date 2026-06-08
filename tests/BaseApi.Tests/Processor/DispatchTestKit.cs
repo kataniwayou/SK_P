@@ -13,7 +13,6 @@ using MassTransit.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 using BaseProcessorBase = BaseProcessor.Core.Processing.BaseProcessor;
-using ExecutionResult = Messaging.Contracts.ExecutionResult;
 
 namespace BaseApi.Tests.Processor;
 
@@ -141,11 +140,11 @@ internal static class DispatchTestKit
             Metrics(), NullLogger<EntryStepDispatchConsumer>.Instance);
 
     /// <summary>
-    /// An <see cref="EntryStepDispatch"/> with the given correlation + entry id. <paramref name="entryId"/>
-    /// is now a string content address (Plan 02 Guid->string ripple); default <c>""</c> is the no-input
-    /// source-step sentinel (was <c>Guid.Empty</c>).
+    /// An <see cref="EntryStepDispatch"/> with the given correlation + entry id. Phase 43 (D-04):
+    /// <paramref name="entryId"/> is now a <see cref="Guid"/> (the L2 data key); <see cref="Guid.Empty"/>
+    /// is the no-input source-step sentinel.
     /// </summary>
-    public static EntryStepDispatch Dispatch(string entryId, Guid correlationId, string payload = "{\"cfg\":1}") =>
+    public static EntryStepDispatch Dispatch(Guid entryId, Guid correlationId, string payload = "{\"cfg\":1}") =>
         new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), payload)
         {
             CorrelationId = correlationId,
@@ -154,18 +153,22 @@ internal static class DispatchTestKit
 
     /// <summary>
     /// An <see cref="ISendEndpointProvider"/> whose every resolved endpoint records each
-    /// <see cref="ExecutionResult"/> it is asked to <c>Send</c> into <see cref="Sent"/> (order-preserving).
+    /// <see cref="IStepResult"/> it is asked to <c>Send</c> into <see cref="Sent"/> (order-preserving).
+    /// Phase 43 (D-03): the consumer sends one typed <c>Step*</c> record per result via
+    /// <c>endpoint.Send((object)result)</c>; capture the boxed object as its <see cref="IStepResult"/>.
     /// Used by the NSubstitute/unit facts (the harness is used for the real Send pipeline cases).
     /// </summary>
     public sealed class CapturingSendProvider : ISendEndpointProvider
     {
-        public List<ExecutionResult> Sent { get; } = new();
+        public List<IStepResult> Sent { get; } = new();
 
         public Task<ISendEndpoint> GetSendEndpoint(Uri address)
         {
             var endpoint = Substitute.For<ISendEndpoint>();
-            endpoint.Send(Arg.Any<ExecutionResult>(), Arg.Any<CancellationToken>())
-                .Returns(ci => { Sent.Add((ExecutionResult)ci[0]); return Task.CompletedTask; });
+            // The consumer sends as (object)result so MassTransit routes the runtime Step* type; capture
+            // the object overload and cast back to IStepResult.
+            endpoint.Send(Arg.Any<object>(), Arg.Any<CancellationToken>())
+                .Returns(ci => { Sent.Add((IStepResult)ci[0]); return Task.CompletedTask; });
             return Task.FromResult(endpoint);
         }
 
@@ -174,19 +177,23 @@ internal static class DispatchTestKit
 
     /// <summary>
     /// A synthetic consumer bound to the <c>orchestrator-result</c> endpoint so a real harness <c>Send</c>
-    /// to <c>queue:orchestrator-result</c> is captured (mirrors <c>ResultConsumeTests.CapturingDispatchConsumer</c>).
+    /// to <c>queue:orchestrator-result</c> is captured. Phase 43 (D-03): the consumer emits one
+    /// <see cref="StepCompleted"/> per result on the success path (plus <c>StepFailed</c>/<c>StepCancelled</c>
+    /// on the business-fault paths). The harness's <c>Consumed</c> is read by type.
     /// </summary>
-    public sealed class CapturingResultConsumer : IConsumer<ExecutionResult>
+    public sealed class CapturingResultConsumer :
+        IConsumer<StepCompleted>, IConsumer<StepFailed>, IConsumer<StepCancelled>
     {
-        public Task Consume(ConsumeContext<ExecutionResult> context) => Task.CompletedTask;
+        public Task Consume(ConsumeContext<StepCompleted> context) => Task.CompletedTask;
+        public Task Consume(ConsumeContext<StepFailed> context) => Task.CompletedTask;
+        public Task Consume(ConsumeContext<StepCancelled> context) => Task.CompletedTask;
     }
 
     /// <summary>
     /// Builds an in-memory MassTransit harness binding <see cref="CapturingResultConsumer"/> on the
     /// short-name <c>orchestrator-result</c> endpoint (the queue a <c>Send</c> to
     /// <c>queue:orchestrator-result</c> lands on). The consumer under test uses <c>harness.Bus</c> as its
-    /// <see cref="ISendEndpointProvider"/>; captured <see cref="ExecutionResult"/>s are read via
-    /// <c>harness.Consumed</c>.
+    /// <see cref="ISendEndpointProvider"/>; captured <c>Step*</c> records are read via <c>harness.Consumed</c>.
     /// </summary>
     public static ServiceProvider BuildResultHarness() =>
         new ServiceCollection()

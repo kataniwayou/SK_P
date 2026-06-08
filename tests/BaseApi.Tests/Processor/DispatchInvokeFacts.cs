@@ -1,6 +1,5 @@
 using BaseApi.Tests.Orchestrator;
 using Messaging.Contracts;
-using Messaging.Contracts.Hashing;
 using Messaging.Contracts.Projections;
 using Xunit;
 
@@ -8,9 +7,9 @@ namespace BaseApi.Tests.Processor;
 
 /// <summary>
 /// EXEC-04/06 invoke facts: the consumer invokes the <c>ProcessAsync</c> seam with the L2 input value
-/// and the dispatch <c>Payload</c> as config. Plan 31-03 collapses N result blobs into ONE
-/// content-addressed manifest result (req-3), so the per-result mint is no longer observable on the wire;
-/// instead the single result carries the manifest EntryId = hash(JSON array of blob hashes).
+/// and the dispatch <c>Payload</c> as config. Phase 43 (D-03): straight-through — each result mints a
+/// fresh <see cref="Guid"/> entryId, writes <c>L2[data(entryId)]</c>, and sends ONE
+/// <see cref="StepCompleted"/>; N results send N StepCompleted records (no manifest collapse).
 /// </summary>
 public sealed class DispatchInvokeFacts
 {
@@ -18,7 +17,7 @@ public sealed class DispatchInvokeFacts
     public async Task Invokes_With_InputData_And_ConfigPayload()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
         const string inputJson = "{\"v\":42}";
         var redis = OrchestratorTestStubs.PresentL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = inputJson }, out _);
@@ -35,10 +34,10 @@ public sealed class DispatchInvokeFacts
     }
 
     [Fact]
-    public async Task Collapses_Multiple_Results_Into_One_Manifest_Result()
+    public async Task Sends_One_StepCompleted_Per_Result()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
         var redis = OrchestratorTestStubs.PresentL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = "{}" }, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results("a", "b"));
@@ -49,15 +48,16 @@ public sealed class DispatchInvokeFacts
         await consumer.Consume(OrchestratorTestStubs.Context(
             DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), ct));
 
-        // Plan 31-03 (req-3): two blobs collapse into ONE manifest result whose EntryId = hash of the
-        // JSON array of the two blob hashes (content-addressed, deterministic), with a non-empty H.
-        var sent = Assert.Single(send.Sent);
-        Assert.Equal(StepOutcome.Completed, sent.Outcome);
-        Assert.NotEqual(Guid.Empty, sent.ExecutionId);
-
-        var manifestJson = System.Text.Json.JsonSerializer.Serialize(
-            new[] { MessageIdentity.HashBlob("a"), MessageIdentity.HashBlob("b") });
-        Assert.Equal(MessageIdentity.HashManifest(manifestJson), sent.EntryId);
-        Assert.False(string.IsNullOrEmpty(sent.H));                              // outbound dedup identity carried
+        // D-03 (straight-through): two blobs send TWO StepCompleted records, each carrying a fresh real Guid
+        // EntryId (the L2 data key, D-06a) + a minted lineage ExecutionId. No manifest collapse.
+        Assert.Equal(2, send.Sent.Count);
+        foreach (var s in send.Sent)
+        {
+            var completed = Assert.IsType<StepCompleted>(s);
+            Assert.NotEqual(Guid.Empty, completed.ExecutionId);
+            Assert.NotEqual(Guid.Empty, completed.EntryId);   // real minted data key, not the empty sentinel
+        }
+        // Each result's minted EntryId is distinct (content keys are not collapsed).
+        Assert.Equal(2, send.Sent.Cast<StepCompleted>().Select(c => c.EntryId).Distinct().Count());
     }
 }

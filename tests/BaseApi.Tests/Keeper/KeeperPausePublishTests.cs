@@ -50,8 +50,7 @@ public sealed class KeeperPausePublishTests
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
-            EntryId = Guid.NewGuid().ToString("D"),
-            H = "abc123",
+            EntryId = Guid.NewGuid(),
         };
 
     /// <summary>A ConsumeContext substitute carrying the Fault&lt;T&gt; envelope + a cancellation token.</summary>
@@ -87,14 +86,16 @@ public sealed class KeeperPausePublishTests
 
         await consumer.Consume(context);
 
-        // Pause published at intake, Resume published on Recovered — carrying the inner workflow's id + H.
+        // Pause published at intake, Resume published on Recovered — carrying the inner workflow's id.
+        // Phase 43 (D-14): the removed IExecutionCorrelated.H is replaced by a LOCAL CompositeBackup-derived
+        // key on Pause/Resume's own string H positional, so H is asserted non-empty rather than == inner.H.
         await context.Received(1).Publish(Arg.Any<PauseWorkflow>(), Arg.Any<CancellationToken>());
         await context.Received(1).Publish(Arg.Any<ResumeWorkflow>(), Arg.Any<CancellationToken>());
         await context.Received(1).Publish(
-            Arg.Is<PauseWorkflow>(p => p.WorkflowId == inner.WorkflowId && p.H == inner.H),
+            Arg.Is<PauseWorkflow>(p => p.WorkflowId == inner.WorkflowId && !string.IsNullOrEmpty(p.H)),
             Arg.Any<CancellationToken>());
         await context.Received(1).Publish(
-            Arg.Is<ResumeWorkflow>(r => r.WorkflowId == inner.WorkflowId && r.H == inner.H),
+            Arg.Is<ResumeWorkflow>(r => r.WorkflowId == inner.WorkflowId && !string.IsNullOrEmpty(r.H)),
             Arg.Any<CancellationToken>());
     }
 

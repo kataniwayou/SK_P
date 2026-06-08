@@ -10,7 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using Xunit;
-using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
 namespace BaseApi.Tests.Keeper;
 
@@ -49,8 +48,7 @@ public sealed class KeeperProbeLoopTests
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
-            EntryId = Guid.NewGuid().ToString("D"),
-            H = "abc123",
+            EntryId = Guid.NewGuid(),
         };
 
     // ── Helper-level facts (drive L2ProbeRecovery directly against FakeRedis) ──────────────────────────
@@ -63,7 +61,7 @@ public sealed class KeeperProbeLoopTests
         var sut = new L2ProbeRecovery(fake.Multiplexer, Opts(maxAttempts: 3), NewMetrics());
 
         var inner = SampleInner();
-        var outcome = await sut.RunAsync(inner.EntryId, inner.H, inner.ProcessorId.ToString("D"), TestContext.Current.CancellationToken);
+        var outcome = await sut.RunAsync(inner.EntryId, "probe-h", inner.ProcessorId.ToString("D"), TestContext.Current.CancellationToken);
 
         Assert.Equal(ProbeOutcome.GaveUp, outcome);   // write-failing half-open Redis never counts as recovered (PROBE-02)
     }
@@ -79,7 +77,7 @@ public sealed class KeeperProbeLoopTests
         var sut = new L2ProbeRecovery(fake.Multiplexer, Opts(maxAttempts: maxAttempts), NewMetrics());
 
         var inner = SampleInner();
-        var outcome = await sut.RunAsync(inner.EntryId, inner.H, inner.ProcessorId.ToString("D"), TestContext.Current.CancellationToken);
+        var outcome = await sut.RunAsync(inner.EntryId, "probe-h", inner.ProcessorId.ToString("D"), TestContext.Current.CancellationToken);
 
         Assert.Equal(ProbeOutcome.Recovered, outcome);
         Assert.Equal(FakeRedis.RedisHealth.Up, fake.Health);   // recovered within the budget (did NOT exhaust)
@@ -94,7 +92,7 @@ public sealed class KeeperProbeLoopTests
         var sut = new L2ProbeRecovery(fake.Multiplexer, Opts(maxAttempts: 3), NewMetrics());
 
         var inner = SampleInner();
-        var outcome = await sut.RunAsync(inner.EntryId, inner.H, inner.ProcessorId.ToString("D"), TestContext.Current.CancellationToken);
+        var outcome = await sut.RunAsync(inner.EntryId, "probe-h", inner.ProcessorId.ToString("D"), TestContext.Current.CancellationToken);
 
         Assert.Equal(ProbeOutcome.GaveUp, outcome);
     }
@@ -146,12 +144,13 @@ public sealed class KeeperProbeLoopTests
         finally { await harness.Stop(ct); }
 
         // ── Result: fail-then-up → verbatim re-inject to queue:orchestrator-result ──
-        var resultInner = new ExecutionResult(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), StepOutcome.Failed)
+        // Phase 43 (D-14): FaultExecutionResultConsumer was retargeted off the removed ExecutionResult onto
+        // the surviving result-path contract StepCompleted.
+        var resultInner = new StepCompleted(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
-            EntryId = Guid.NewGuid().ToString("D"),
-            H = "def456",
+            EntryId = Guid.NewGuid(),
         };
         var fakeUp2 = new FakeRedis(FakeRedis.RedisHealth.Up);
 
@@ -161,9 +160,9 @@ public sealed class KeeperProbeLoopTests
         await harness2.Start();
         try
         {
-            await harness2.Bus.Publish<Fault<ExecutionResult>>(new { Message = resultInner }, ct);
-            Assert.True(await harness2.Consumed.Any<Fault<ExecutionResult>>(ct));
-            Assert.True(await harness2.Sent.Any<ExecutionResult>(ct));
+            await harness2.Bus.Publish<Fault<StepCompleted>>(new { Message = resultInner }, ct);
+            Assert.True(await harness2.Consumed.Any<Fault<StepCompleted>>(ct));
+            Assert.True(await harness2.Sent.Any<StepCompleted>(ct));
         }
         finally { await harness2.Stop(ct); }
     }

@@ -29,10 +29,10 @@ public sealed class DispatchInputFacts
         var consumer = DispatchTestKit.Build(redis, context, processor, send);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
-            DispatchTestKit.Dispatch(entryId: Guid.NewGuid().ToString("D"), correlationId: Guid.NewGuid()), ct));
+            DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), ct));
 
         var sent = Assert.Single(send.Sent);
-        Assert.Equal(StepOutcome.Failed, sent.Outcome);
+        Assert.IsType<StepFailed>(sent);                                         // business Failed (D-03)
         Assert.False(processor.Invoked);                                          // ProcessAsync NEVER ran
     }
 
@@ -47,12 +47,12 @@ public sealed class DispatchInputFacts
         var consumer = DispatchTestKit.Build(redis, context, processor, send);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
-            DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
+            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), ct));
 
         Assert.True(processor.Invoked);
         Assert.Equal(string.Empty, processor.LastInputData);                     // invoked with ""
-        // Plan 31-03: an empty EntryId short-circuits the L2 DATA read (a source step has no input key) —
-        // the only StringGet on this path is the effect-first dedup flag gate (flag[dispatch.H]).
+        // D-03/D-07: a Guid.Empty (source-step) EntryId short-circuits the L2 DATA read (SourceStep.IsSource) —
+        // the input-read GET on skp:data:* is never issued. The retired flag[H] dedup gate is gone.
         await db.DidNotReceive().StringGetAsync(
             Arg.Is<StackExchange.Redis.RedisKey>(k => k.ToString().StartsWith(L2ProjectionKeys.Prefix + "data:")),
             Arg.Any<StackExchange.Redis.CommandFlags>());
@@ -62,7 +62,7 @@ public sealed class DispatchInputFacts
     public async Task PresentInput_PassingDefinition_InvokesWithL2Value()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
         const string inputJson = "{\"a\":1}";
         var redis = OrchestratorTestStubs.PresentL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = inputJson }, out _);
@@ -83,7 +83,7 @@ public sealed class DispatchInputFacts
     public async Task PresentInput_FailingDefinition_FailsBeforeProcessAsync()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
         var redis = OrchestratorTestStubs.PresentL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = "{\"a\":1}" }, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results("out"));
@@ -95,7 +95,7 @@ public sealed class DispatchInputFacts
             DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), ct));
 
         var sent = Assert.Single(send.Sent);
-        Assert.Equal(StepOutcome.Failed, sent.Outcome);
+        Assert.IsType<StepFailed>(sent);
         Assert.False(processor.Invoked);
     }
 }

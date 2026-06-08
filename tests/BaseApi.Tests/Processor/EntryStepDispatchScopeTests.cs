@@ -75,17 +75,16 @@ public sealed class EntryStepDispatchScopeTests
             DispatchTestKit.Metrics(), logger);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
-            DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
+            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), ct));
 
-        // Plan 31-03: the per-blob write opens a nested scope carrying that blob's LINEAGE ExecutionId +
-        // its CONTENT-ADDRESSED blob hash (the per-result write key). N blobs collapse into ONE manifest
-        // result, so the scope EntryId is the BLOB hash (not the result's manifest EntryId) and the scope
-        // ExecutionId is the per-blob lineage id (the single manifest result carries its OWN minted
-        // lineage id — independent by design).
+        // D-03/D-06a: the per-result write opens a nested scope carrying the MINTED lineage ExecutionId +
+        // the freshly minted Guid EntryId (the real L2 data key). One result = one StepCompleted carrying
+        // that same Guid EntryId + ExecutionId (straight-through — no manifest, the scoped ids ARE the
+        // sent record's ids).
         var sent = Assert.Single(send.Sent);
-        Assert.Equal(StepOutcome.Completed, sent.Outcome);
-        Assert.NotEqual(Guid.Empty, sent.ExecutionId);
-        Assert.False(string.IsNullOrEmpty(sent.EntryId));
+        var completed = Assert.IsType<StepCompleted>(sent);
+        Assert.NotEqual(Guid.Empty, completed.ExecutionId);
+        Assert.NotEqual(Guid.Empty, completed.EntryId);
 
         var scope = NestedScope(logger);
 
@@ -95,8 +94,9 @@ public sealed class EntryStepDispatchScopeTests
         Assert.True(scope.ContainsKey(ExecutionLogScope.EntryId));
         Assert.True(Guid.TryParse((string)scope[ExecutionLogScope.ExecutionId], out var scopedExec)
             && scopedExec != Guid.Empty);                                                  // a real lineage Guid
-        Assert.Equal(Messaging.Contracts.Hashing.MessageIdentity.HashBlob("out"),
-            scope[ExecutionLogScope.EntryId]);                                             // scoped == blob content address
+        // D-06a: the scoped EntryId is the minted Guid data key (.ToString()), == the sent record's EntryId.
+        Assert.Equal(completed.EntryId.ToString(), scope[ExecutionLogScope.EntryId]);
+        Assert.Equal(completed.ExecutionId.ToString(), scope[ExecutionLogScope.ExecutionId]);
 
         // One entry per key: only ONE captured scope carries these execution keys (no duplicate nesting).
         var carriers = logger.Scopes.Count(s =>
@@ -122,10 +122,10 @@ public sealed class EntryStepDispatchScopeTests
             DispatchTestKit.Metrics(), logger);
 
         await consumer.Consume(OrchestratorTestStubs.Context(
-            DispatchTestKit.Dispatch(entryId: "", correlationId: Guid.NewGuid()), ct));
+            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), ct));
 
         var sent = Assert.Single(send.Sent);
-        Assert.Equal(StepOutcome.Failed, sent.Outcome);
+        Assert.IsType<StepFailed>(sent);
 
         // The Failed branch builds the result OUTSIDE the nested scope — no ExecutionId/EntryId scope opened.
         Assert.Empty(NestedScope(logger));

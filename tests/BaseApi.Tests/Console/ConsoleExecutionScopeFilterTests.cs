@@ -26,14 +26,11 @@ namespace BaseApi.Tests.Console;
 /// </summary>
 public sealed class ConsoleExecutionScopeFilterTests
 {
-    /// <summary>A minimal <see cref="IExecutionCorrelated"/> probe message — carries the five execution ids.</summary>
+    /// <summary>A minimal <see cref="IExecutionCorrelated"/> probe message — carries the five execution ids.
+    /// Phase 43 (D-04): EntryId is now a <see cref="Guid"/> and there is NO H member on the interface.</summary>
     public sealed record ExecProbeMessage(
-        Guid CorrelationId, Guid WorkflowId, Guid StepId, Guid ProcessorId, Guid ExecutionId, string EntryId)
-        : IExecutionCorrelated
-    {
-        // KHARD-03 (Phase-40): IExecutionCorrelated now declares H; this probe record carries an empty one.
-        public string H => "";
-    }
+        Guid CorrelationId, Guid WorkflowId, Guid StepId, Guid ProcessorId, Guid ExecutionId, Guid EntryId)
+        : IExecutionCorrelated;
 
     /// <summary>A non-IExecutionCorrelated message — the filter must pass it through untouched (case c).</summary>
     public sealed record PlainExecMessage(string Text);
@@ -126,7 +123,7 @@ public sealed class ConsoleExecutionScopeFilterTests
         var stepId = Guid.NewGuid();
         var processorId = Guid.NewGuid();
         var executionId = Guid.NewGuid();
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
 
         await using var provider = BuildHarness(capturing, x => x.AddConsumer<ExecProbeConsumer>());
         var harness = provider.GetRequiredService<ITestHarness>();
@@ -144,7 +141,7 @@ public sealed class ConsoleExecutionScopeFilterTests
             Assert.Equal(stepId.ToString(), scope[ExecutionLogScope.StepId]);
             Assert.Equal(processorId.ToString(), scope[ExecutionLogScope.ProcessorId]);
             Assert.Equal(executionId.ToString(), scope[ExecutionLogScope.ExecutionId]);
-            Assert.Equal(entryId, scope[ExecutionLogScope.EntryId]);   // string EntryId stored verbatim (no .ToString())
+            Assert.Equal(entryId.ToString(), scope[ExecutionLogScope.EntryId]);   // D-04: Guid EntryId .ToString()
             Assert.False(scope.ContainsKey("CorrelationId"));   // D-01: execution filter never scopes CorrelationId
         }
         finally
@@ -162,7 +159,7 @@ public sealed class ConsoleExecutionScopeFilterTests
         var workflowId = Guid.NewGuid();
         var stepId = Guid.NewGuid();
         var processorId = Guid.NewGuid();
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
 
         await using var provider = BuildHarness(capturing, x => x.AddConsumer<ExecProbeConsumer>());
         var harness = provider.GetRequiredService<ITestHarness>();
@@ -170,7 +167,7 @@ public sealed class ConsoleExecutionScopeFilterTests
         try
         {
             // ExecutionId == Guid.Empty → its scope key must be ABSENT (D-03 / LOG-03). A non-empty
-            // string EntryId IS present (the EntryId empty-string skip is proven in Case D below).
+            // Guid EntryId IS present (the EntryId Guid.Empty skip is proven in Case D below).
             await harness.Bus.Publish(
                 new ExecProbeMessage(Guid.NewGuid(), workflowId, stepId, processorId, Guid.Empty, entryId), ct);
             Assert.True(await harness.Consumed.Any<ExecProbeMessage>(ct));
@@ -181,7 +178,7 @@ public sealed class ConsoleExecutionScopeFilterTests
             Assert.Equal(workflowId.ToString(), scope[ExecutionLogScope.WorkflowId]);
             Assert.Equal(stepId.ToString(), scope[ExecutionLogScope.StepId]);
             Assert.Equal(processorId.ToString(), scope[ExecutionLogScope.ProcessorId]);
-            Assert.Equal(entryId, scope[ExecutionLogScope.EntryId]);
+            Assert.Equal(entryId.ToString(), scope[ExecutionLogScope.EntryId]);
         }
         finally
         {
@@ -230,14 +227,14 @@ public sealed class ConsoleExecutionScopeFilterTests
         await harness.Start();
         try
         {
-            // EntryId == "" (the new empty sentinel, was Guid.Empty) → its scope key must be ABSENT
-            // (Phase 31 string guard: !string.IsNullOrEmpty(ec.EntryId)). The other four ids are present.
+            // EntryId == Guid.Empty (the source-step sentinel, D-04) → its scope key must be ABSENT
+            // (SourceStep.IsSource guard). The other four ids are present.
             await harness.Bus.Publish(
-                new ExecProbeMessage(Guid.NewGuid(), workflowId, stepId, processorId, executionId, ""), ct);
+                new ExecProbeMessage(Guid.NewGuid(), workflowId, stepId, processorId, executionId, Guid.Empty), ct);
             Assert.True(await harness.Consumed.Any<ExecProbeMessage>(ct));
 
             var scope = ExecutionScope(capturing);
-            Assert.False(scope.ContainsKey(ExecutionLogScope.EntryId));   // "" → no entry
+            Assert.False(scope.ContainsKey(ExecutionLogScope.EntryId));   // Guid.Empty → no entry
             Assert.Equal(4, scope.Count);                                 // the other four present
             Assert.Equal(executionId.ToString(), scope[ExecutionLogScope.ExecutionId]);
         }

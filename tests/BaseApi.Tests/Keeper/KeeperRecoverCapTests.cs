@@ -41,7 +41,15 @@ namespace BaseApi.Tests.Keeper;
 /// </summary>
 public sealed class KeeperRecoverCapTests
 {
-    private const string CapH = "caphash";   // FIXED H so every publish shares the counter key skp:keeper:attempts:caphash
+    // Phase 43 (D-14): the removed wire H is replaced by a LOCAL CompositeBackup(corr,wf,proc,exec) key the
+    // handler derives — so the recover-attempt counter key is keyed off the FOUR-TUPLE, not a wire H. To make
+    // every drive share the same counter, CapInner pins all four ids; CapH is the matching CompositeBackup key.
+    private static readonly Guid CapCorr = Guid.NewGuid();
+    private static readonly Guid CapWf   = Guid.NewGuid();
+    private static readonly Guid CapProc = Guid.NewGuid();
+    private static readonly Guid CapExec = Guid.NewGuid();
+    private static readonly string CapH =
+        L2ProjectionKeys.CompositeBackup(CapCorr, CapWf, CapProc, CapExec);
 
     private static IOptions<ProbeOptions> Opts(int cap) =>
         Options.Create(new ProbeOptions { DelaySeconds = 0, MaxAttempts = 3, RecoverAttemptCap = cap });
@@ -50,14 +58,13 @@ public sealed class KeeperRecoverCapTests
     private static KeeperMetrics NewMetrics() =>
         new(new ServiceCollection().AddMetrics().BuildServiceProvider().GetRequiredService<IMeterFactory>());
 
-    /// <summary>A dispatch fault inner with the FIXED cap H (every drive shares the counter).</summary>
+    /// <summary>A dispatch fault inner with the FIXED four-tuple (every drive shares the derived counter key).</summary>
     private static EntryStepDispatch CapInner(Guid processorId) =>
-        new(Guid.NewGuid(), Guid.NewGuid(), processorId, "payload")
+        new(CapWf, Guid.NewGuid(), CapProc, "payload")
         {
-            CorrelationId = Guid.NewGuid(),
-            ExecutionId = Guid.NewGuid(),
-            EntryId = Guid.NewGuid().ToString("D"),
-            H = CapH,
+            CorrelationId = CapCorr,
+            ExecutionId = CapExec,
+            EntryId = Guid.NewGuid(),
         };
 
     /// <summary>

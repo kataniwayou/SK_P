@@ -12,7 +12,6 @@ using NSubstitute;
 using StackExchange.Redis;
 using Xunit;
 using BaseProcessorBase = BaseProcessor.Core.Processing.BaseProcessor;
-using ExecutionResult = Messaging.Contracts.ExecutionResult;
 
 namespace BaseApi.Tests.Processor;
 
@@ -77,10 +76,10 @@ public sealed class EntryStepDispatchRuntimeScopeTests
         }
     }
 
-    /// <summary>Records the ExecutionResult the consumer Sends to queue:orchestrator-result.</summary>
-    private sealed class RecordingResultConsumer(List<ExecutionResult> received) : IConsumer<ExecutionResult>
+    /// <summary>Records the StepCompleted the consumer Sends to queue:orchestrator-result (D-03).</summary>
+    private sealed class RecordingResultConsumer(List<StepCompleted> received) : IConsumer<StepCompleted>
     {
-        public Task Consume(ConsumeContext<ExecutionResult> context)
+        public Task Consume(ConsumeContext<StepCompleted> context)
         {
             lock (received) received.Add(context.Message);
             return Task.CompletedTask;
@@ -101,7 +100,7 @@ public sealed class EntryStepDispatchRuntimeScopeTests
     {
         var ct = TestContext.Current.CancellationToken;
         var capturing = new RecordCapturingProvider();
-        var received = new List<ExecutionResult>();
+        var received = new List<StepCompleted>();
 
         var workflowId = Guid.NewGuid();
         var stepId = Guid.NewGuid();
@@ -163,11 +162,12 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             });
             await handle.Ready;
 
-            // Send a dispatch carrying the three inbound ids (ExecutionId Guid.Empty / EntryId "" — minted by consumer).
+            // Send a dispatch carrying the three inbound ids (ExecutionId Guid.Empty / EntryId Guid.Empty —
+            // the source-step sentinel; the real Guid EntryId is minted by the consumer per result, D-04/D-06a).
             var dispatch = new EntryStepDispatch(workflowId, stepId, processorId, "{\"cfg\":1}")
             {
                 CorrelationId = Guid.NewGuid(),
-                EntryId = "",
+                EntryId = Guid.Empty,
             };
             var endpoint = await bus.GetSendEndpoint(new Uri($"queue:{queueName}"));
             await endpoint.Send(dispatch, ct);
@@ -180,8 +180,8 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             Assert.True(dispatchCtx is not null && dispatchCtx.Exception is null,
                 "dispatch consumer faulted: " + dispatchCtx?.Exception);
 
-            // The round-trip must produce the Completed ExecutionResult (proves the Completed path ran).
-            Assert.True(await harness.Consumed.Any<ExecutionResult>(ct), "no ExecutionResult produced");
+            // The round-trip must produce the Completed StepCompleted (proves the Completed path ran).
+            Assert.True(await harness.Consumed.Any<StepCompleted>(ct), "no StepCompleted produced");
 
             // Wait until the result reaches the recording consumer (proves the Completed path ran).
             for (var i = 0; i < 100; i++)
@@ -190,7 +190,7 @@ public sealed class EntryStepDispatchRuntimeScopeTests
                     if (received.Count > 0) break;
                 await Task.Delay(50, ct);
             }
-            ExecutionResult sent;
+            StepCompleted sent;
             lock (received)
             {
                 Assert.NotEmpty(received);
@@ -221,15 +221,14 @@ public sealed class EntryStepDispatchRuntimeScopeTests
             Assert.True(completedRecord.ContainsKey(ExecutionLogScope.ExecutionId));
             Assert.True(completedRecord.ContainsKey(ExecutionLogScope.EntryId));
 
-            // Plan 31-03: the nested scope carries the per-blob LINEAGE ExecutionId + the CONTENT-ADDRESSED
-            // blob hash. N blobs collapse into ONE manifest result, so the scope ExecutionId is a real
-            // lineage Guid (independent of the result's own minted ExecutionId) and the scope EntryId is the
-            // blob hash (the sent result carries the MANIFEST EntryId).
-            Assert.Equal(StepOutcome.Completed, sent.Outcome);
+            // D-03/D-06a: the nested scope carries the MINTED lineage ExecutionId + the minted Guid EntryId
+            // (the real L2 data key) — straight-through, so the scoped ids EQUAL the sent StepCompleted's ids.
+            Assert.NotEqual(Guid.Empty, sent.ExecutionId);
+            Assert.NotEqual(Guid.Empty, sent.EntryId);
             Assert.True(Guid.TryParse((string)completedRecord[ExecutionLogScope.ExecutionId], out var scopedExec)
                 && scopedExec != Guid.Empty);
-            Assert.Equal(Messaging.Contracts.Hashing.MessageIdentity.HashBlob("out"),
-                completedRecord[ExecutionLogScope.EntryId]);
+            Assert.Equal(sent.EntryId.ToString(), completedRecord[ExecutionLogScope.EntryId]);
+            Assert.Equal(sent.ExecutionId.ToString(), completedRecord[ExecutionLogScope.ExecutionId]);
 
             // T-18-04: the execution ids are reported ONLY as scope values — never interpolated into the
             // rendered message text. The line references CorrelationId (template), not any execution id.

@@ -1,36 +1,32 @@
 using BaseApi.Tests.Orchestrator;
-using MassTransit;
 using MassTransit.Testing;
 using Messaging.Contracts;
-using Messaging.Contracts.Hashing;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
 using Xunit;
-using ExecutionResult = Messaging.Contracts.ExecutionResult;
 
 namespace BaseApi.Tests.Processor;
 
 /// <summary>
-/// EXEC-07/08 send-discipline facts driven through the real in-memory harness Send pipeline. Plan 31-03
-/// (req-3): the consumer collapses N result blobs into ONE content-addressed manifest result, so it sends
-/// exactly ONE <see cref="ExecutionResult"/> to <c>queue:orchestrator-result</c> on the Completed path —
-/// INCLUDING the empty-result case, which sends a terminal <c>"[]"</c> manifest result (so the
-/// orchestrator observes-and-terminates and acks, Pitfall 4). A token-tripped cancellation sends one
-/// <see cref="StepOutcome.Cancelled"/>; any other transform exception sends one
-/// <see cref="StepOutcome.Failed"/> carrying the message.
+/// EXEC-07/08 send-discipline facts driven through the real in-memory harness Send pipeline. Phase 43
+/// (D-03): the consumer is straight-through — one result = one <see cref="StepCompleted"/> sent to
+/// <c>queue:orchestrator-result</c>; an EMPTY result list sends NOTHING (the orchestrator simply observes
+/// no continuation and the dispatch acks). A token-tripped cancellation sends one
+/// <see cref="StepCancelled"/>; any other transform exception sends one <see cref="StepFailed"/> carrying
+/// the message.
 /// </summary>
 public sealed class DispatchResultSendFacts
 {
-    private static IConnectionMultiplexer PresentInput(string entryId, out IDatabase db) =>
+    private static IConnectionMultiplexer PresentInput(Guid entryId, out IDatabase db) =>
         OrchestratorTestStubs.PresentL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = "{}" }, out db);
 
     [Fact]
-    public async Task EmptyResult_Sends_One_Terminal_Manifest_Result()
+    public async Task EmptyResult_Sends_Nothing()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
         var redis = PresentInput(entryId, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results()); // empty list
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
@@ -44,24 +40,19 @@ public sealed class DispatchResultSendFacts
             await consumer.Consume(OrchestratorTestStubs.Context(
                 DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), ct));
 
-            // Plan 31-03 (req-3, Pitfall 4): an empty result still SENDS one terminal "[]" manifest result
-            // (EntryId = hash("[]"), non-empty H) so the orchestrator observes-and-terminates and acks.
-            Assert.True(await harness.Consumed.Any<ExecutionResult>(ct));
-            var sent = Assert.Single(harness.Consumed.Select<ExecutionResult>(ct));
-            Assert.Equal(StepOutcome.Completed, sent.Context.Message.Outcome);
-            var emptyManifest = MessageIdentity.HashManifest(
-                System.Text.Json.JsonSerializer.Serialize(Array.Empty<string>()));
-            Assert.Equal(emptyManifest, sent.Context.Message.EntryId);
-            Assert.False(string.IsNullOrEmpty(sent.Context.Message.H));
+            // D-03: an empty result list emits NO Step* record (the orchestrator observes no continuation,
+            // the dispatch is acked). Nothing reaches queue:orchestrator-result.
+            Assert.False(await harness.Consumed.Any<StepCompleted>(ct));
+            Assert.False(await harness.Consumed.Any<StepFailed>(ct));
         }
         finally { await harness.Stop(ct); }
     }
 
     [Fact]
-    public async Task Multiple_Results_Collapse_Into_One_Manifest_Send()
+    public async Task Multiple_Results_Send_One_StepCompleted_Each()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
         var redis = PresentInput(entryId, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Results("a", "b", "c"));
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
@@ -75,15 +66,10 @@ public sealed class DispatchResultSendFacts
             await consumer.Consume(OrchestratorTestStubs.Context(
                 DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), ct));
 
-            // Plan 31-03 (req-3): three blobs collapse into ONE manifest result whose EntryId = hash of the
-            // JSON array of the three blob hashes.
-            Assert.True(await harness.Consumed.Any<ExecutionResult>(ct));
-            var consumed = harness.Consumed.Select<ExecutionResult>(ct).ToList();
-            var sent = Assert.Single(consumed);                                   // ONE manifest message
-            Assert.Equal(StepOutcome.Completed, sent.Context.Message.Outcome);
-            var manifest = MessageIdentity.HashManifest(System.Text.Json.JsonSerializer.Serialize(
-                new[] { MessageIdentity.HashBlob("a"), MessageIdentity.HashBlob("b"), MessageIdentity.HashBlob("c") }));
-            Assert.Equal(manifest, sent.Context.Message.EntryId);
+            // D-03 (straight-through): three blobs send THREE StepCompleted records (no manifest collapse).
+            Assert.True(await harness.Consumed.Any<StepCompleted>(ct));
+            var consumed = harness.Consumed.Select<StepCompleted>(ct).ToList();
+            Assert.Equal(3, consumed.Count);
         }
         finally { await harness.Stop(ct); }
     }
@@ -91,7 +77,7 @@ public sealed class DispatchResultSendFacts
     [Fact]
     public async Task Cancelled_Always_Sent()
     {
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
         var redis = PresentInput(entryId, out _);
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -107,9 +93,8 @@ public sealed class DispatchResultSendFacts
             await consumer.Consume(OrchestratorTestStubs.Context(
                 DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), cts.Token));
 
-            Assert.True(await harness.Consumed.Any<ExecutionResult>(TestContext.Current.CancellationToken));
-            var sent = Assert.Single(harness.Consumed.Select<ExecutionResult>(TestContext.Current.CancellationToken));
-            Assert.Equal(StepOutcome.Cancelled, sent.Context.Message.Outcome);
+            Assert.True(await harness.Consumed.Any<StepCancelled>(TestContext.Current.CancellationToken));
+            Assert.Single(harness.Consumed.Select<StepCancelled>(TestContext.Current.CancellationToken));
         }
         finally { await harness.Stop(TestContext.Current.CancellationToken); }
     }
@@ -118,7 +103,7 @@ public sealed class DispatchResultSendFacts
     public async Task CaughtException_Sends_Failed_With_Message()
     {
         var ct = TestContext.Current.CancellationToken;
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
         var redis = PresentInput(entryId, out _);
         var processor = new DispatchTestKit.FakeProcessor(new InvalidOperationException("boom"));
         var context = new FakeProcessorContext { InputDefinition = null };
@@ -132,9 +117,8 @@ public sealed class DispatchResultSendFacts
             await consumer.Consume(OrchestratorTestStubs.Context(
                 DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), ct));
 
-            Assert.True(await harness.Consumed.Any<ExecutionResult>(ct));
-            var sent = Assert.Single(harness.Consumed.Select<ExecutionResult>(ct));
-            Assert.Equal(StepOutcome.Failed, sent.Context.Message.Outcome);
+            Assert.True(await harness.Consumed.Any<StepFailed>(ct));
+            var sent = Assert.Single(harness.Consumed.Select<StepFailed>(ct));
             Assert.Contains("boom", sent.Context.Message.ErrorMessage);
         }
         finally { await harness.Stop(ct); }

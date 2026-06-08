@@ -16,7 +16,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Xunit;
-using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
 namespace BaseApi.Tests.Keeper;
 
@@ -260,8 +259,7 @@ public sealed class KeeperMetricsFacts
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
-            EntryId = Guid.NewGuid().ToString("D"),
-            H = "hermetic-h",
+            EntryId = Guid.NewGuid(),
         };
 
     /// <summary>A ConsumeContext substitute carrying the Fault&lt;EntryStepDispatch&gt; envelope.</summary>
@@ -378,7 +376,7 @@ public sealed class KeeperMetricsFacts
             var metrics = MetricsFor(provider.GetRequiredService<IMeterFactory>());
             var recovery = new L2ProbeRecovery(new FakeRedis(FakeRedis.RedisHealth.Up).Multiplexer, Opts(), metrics);
 
-            await recovery.RunAsync("entry-id", "h", procId, CancellationToken.None);
+            await recovery.RunAsync(Guid.NewGuid(), "h", procId, CancellationToken.None);
 
             // Filter by THIS test's unique procId: KeeperMetricsFacts has no [Collection], so it runs in
             // parallel with other "Keeper"-meter tests; the process-wide MeterListener would otherwise also

@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 using Xunit;
-using ExecutionResult = Messaging.Contracts.ExecutionResult;   // disambiguate from MassTransit.ExecutionResult
 
 namespace BaseApi.Tests.Keeper;
 
@@ -110,14 +109,13 @@ public sealed class KeeperFaultConsumerScopeTests
         var stepId = Guid.NewGuid();
         var processorId = Guid.NewGuid();
         var executionId = Guid.NewGuid();
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
 
         var inner = new EntryStepDispatch(workflowId, stepId, processorId, "payload")
         {
             CorrelationId = correlationId,
             ExecutionId = executionId,
             EntryId = entryId,
-            H = "abc123",
         };
 
         await using var provider = BuildHarness(capturing, x => x.AddConsumer<FaultEntryStepDispatchConsumer>());
@@ -141,7 +139,7 @@ public sealed class KeeperFaultConsumerScopeTests
             Assert.Equal(stepId.ToString(), scope[ExecutionLogScope.StepId]);
             Assert.Equal(processorId.ToString(), scope[ExecutionLogScope.ProcessorId]);
             Assert.Equal(executionId.ToString(), scope[ExecutionLogScope.ExecutionId]);
-            Assert.Equal(entryId, scope[ExecutionLogScope.EntryId]);   // string verbatim
+            Assert.Equal(entryId.ToString(), scope[ExecutionLogScope.EntryId]);   // D-04: Guid EntryId .ToString()
         }
         finally
         {
@@ -160,14 +158,15 @@ public sealed class KeeperFaultConsumerScopeTests
         var stepId = Guid.NewGuid();
         var processorId = Guid.NewGuid();
         var executionId = Guid.NewGuid();
-        var entryId = Guid.NewGuid().ToString("D");
+        var entryId = Guid.NewGuid();
 
-        var inner = new ExecutionResult(workflowId, stepId, processorId, StepOutcome.Failed)
+        // Phase 43 (D-14): FaultExecutionResultConsumer was retargeted off the removed ExecutionResult onto
+        // the surviving result-path contract StepCompleted (IStepResult : IExecutionCorrelated).
+        var inner = new StepCompleted(workflowId, stepId, processorId)
         {
             CorrelationId = correlationId,
             ExecutionId = executionId,
             EntryId = entryId,
-            H = "def456",
         };
 
         await using var provider = BuildHarness(capturing, x => x.AddConsumer<FaultExecutionResultConsumer>());
@@ -175,8 +174,8 @@ public sealed class KeeperFaultConsumerScopeTests
         await harness.Start();
         try
         {
-            await harness.Bus.Publish<Fault<ExecutionResult>>(new { Message = inner }, ct);
-            Assert.True(await harness.Consumed.Any<Fault<ExecutionResult>>(ct));
+            await harness.Bus.Publish<Fault<StepCompleted>>(new { Message = inner }, ct);
+            Assert.True(await harness.Consumed.Any<Fault<StepCompleted>>(ct));
 
             var corr = CorrelationScope(capturing);
             Assert.Equal(correlationId.ToString(), corr[CorrelationKeys.LogScope]);
@@ -187,7 +186,7 @@ public sealed class KeeperFaultConsumerScopeTests
             Assert.Equal(stepId.ToString(), scope[ExecutionLogScope.StepId]);
             Assert.Equal(processorId.ToString(), scope[ExecutionLogScope.ProcessorId]);
             Assert.Equal(executionId.ToString(), scope[ExecutionLogScope.ExecutionId]);
-            Assert.Equal(entryId, scope[ExecutionLogScope.EntryId]);
+            Assert.Equal(entryId.ToString(), scope[ExecutionLogScope.EntryId]);
         }
         finally
         {
@@ -206,13 +205,12 @@ public sealed class KeeperFaultConsumerScopeTests
         var stepId = Guid.NewGuid();
         var processorId = Guid.NewGuid();
 
-        // ExecutionId == Guid.Empty + EntryId == "" → BOTH skipped by BuildState; the 3 non-empty Guids stay.
+        // ExecutionId == Guid.Empty + EntryId == Guid.Empty → BOTH skipped by BuildState; the 3 non-empty Guids stay.
         var inner = new EntryStepDispatch(workflowId, stepId, processorId, "payload")
         {
             CorrelationId = correlationId,
             ExecutionId = Guid.Empty,
-            EntryId = "",
-            H = "xyz789",
+            EntryId = Guid.Empty,
         };
 
         await using var provider = BuildHarness(capturing, x => x.AddConsumer<FaultEntryStepDispatchConsumer>());

@@ -1,7 +1,6 @@
 using MassTransit;
 using MassTransit.Testing;
 using Messaging.Contracts;
-using Messaging.Contracts.Hashing;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -137,7 +136,7 @@ public sealed class FireDispatchTests
                 await workflowScheduler.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
                 var job = new WorkflowFireJob(
                     store,
-                    new StepDispatcher(harness.Bus, OrchestratorTestStubs.NoopRedis(), OrchestratorTestStubs.Metrics()), // IStepDispatcher wrapping the harness bus
+                    new StepDispatcher(harness.Bus, OrchestratorTestStubs.Metrics()), // IStepDispatcher wrapping the harness bus
                     workflowScheduler,
                     fakeTime,
                     NullLogger<WorkflowFireJob>.Instance);
@@ -158,10 +157,9 @@ public sealed class FireDispatchTests
                     Assert.Equal(processorId, msg.ProcessorId);
                     Assert.Equal(payload, msg.Payload);
                     Assert.Equal(Guid.Empty, msg.ExecutionId);
-                    // req-2 (Plan 04): the entry step carries a NON-EMPTY deterministic
-                    // EntryId == hash(correlationId, stepId).
-                    Assert.False(string.IsNullOrEmpty(msg.EntryId));
-                    Assert.Equal(MessageIdentity.EntryEntryId(msg.CorrelationId, stepId), msg.EntryId);
+                    // Phase 43 (D-03/SC-2): the entry-step fire seeds EntryId = Guid.Empty (the source-step
+                    // sentinel) — the deterministic-hash EntryId (RETIRE-01) is gone.
+                    Assert.Equal(Guid.Empty, msg.EntryId);
                     Assert.NotEqual(Guid.Empty, msg.CorrelationId);
                 }
 
@@ -206,7 +204,7 @@ public sealed class FireDispatchTests
                 var workflowScheduler = new WorkflowScheduler(scheduler, fakeTime);
                 await workflowScheduler.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
                 var job = new WorkflowFireJob(
-                    store, new StepDispatcher(harness.Bus, OrchestratorTestStubs.NoopRedis(), OrchestratorTestStubs.Metrics()), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
+                    store, new StepDispatcher(harness.Bus, OrchestratorTestStubs.Metrics()), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
 
                 await job.Execute(FireContext(workflowId, ct));
                 await job.Execute(FireContext(workflowId, ct));
@@ -219,10 +217,9 @@ public sealed class FireDispatchTests
                 Assert.All(msgs, m => Assert.NotEqual(Guid.Empty, m.CorrelationId));
                 Assert.NotEqual(msgs[0].CorrelationId, msgs[1].CorrelationId); // per-fire NewId.NextGuid()
 
-                // req-2: two fires -> different correlationId -> different deterministic entry EntryId.
-                Assert.All(msgs, m => Assert.False(string.IsNullOrEmpty(m.EntryId)));
-                Assert.All(msgs, m => Assert.Equal(MessageIdentity.EntryEntryId(m.CorrelationId, step.stepId), m.EntryId));
-                Assert.NotEqual(msgs[0].EntryId, msgs[1].EntryId);
+                // Phase 43 (D-03/SC-2): both entry-step fires seed EntryId = Guid.Empty (source sentinel) —
+                // the per-fire deterministic-hash entry EntryId (RETIRE-01) is gone.
+                Assert.All(msgs, m => Assert.Equal(Guid.Empty, m.EntryId));
             }
             finally
             {
@@ -269,7 +266,7 @@ public sealed class FireDispatchTests
                 var workflowScheduler = new WorkflowScheduler(scheduler, fakeTime);
                 await workflowScheduler.ScheduleAsync(workflowId, jobId, "*/5 * * * *", ct);
                 var job = new WorkflowFireJob(
-                    store, new StepDispatcher(harness.Bus, OrchestratorTestStubs.NoopRedis(), OrchestratorTestStubs.Metrics()), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
+                    store, new StepDispatcher(harness.Bus, OrchestratorTestStubs.Metrics()), workflowScheduler, fakeTime, NullLogger<WorkflowFireJob>.Instance);
 
                 Assert.True(store.TryGet(workflowId, out var before));
                 Assert.Equal(staleTimestamp, before.Liveness.Timestamp);
