@@ -65,7 +65,8 @@
 ### v3.x Teardown (RETIRE)
 - [ ] **RETIRE-01**: Remove the `H` identity, `flag[H]` dedup gate, and CAS `Pending→Ack` flips from processor and orchestrator.
 - [ ] **RETIRE-02**: Remove content-addressed L2 data, the result manifest, and N×M manifest fan-out.
-- [ ] **RETIRE-03**: Remove the reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` Keeper recovery path and the `keeper-dlq` queue.
+- [x] **RETIRE-03
+**: Remove the reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` Keeper recovery path and the `keeper-dlq` queue.
 
 ### Live Proof & Close Gate (TEST)
 - [ ] **TEST-01**: Real-stack E2E proves the full Pre/In/Post round trip plus each recovery path (`REINJECT` data-present, `REINJECT` data-gone → `_DLQ1`, `INJECT`, `DELETE`).

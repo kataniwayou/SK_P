@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: completed
-stopped_at: Phase 48 context gathered
-last_updated: "2026-06-09T08:23:33.016Z"
+status: executing
+stopped_at: Completed 48-01-PLAN.md
+last_updated: "2026-06-09T08:44:09.515Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 51
   completed_phases: 49
   total_plans: 174
-  completed_plans: 185
+  completed_plans: 186
   percent: 100
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 47 — DLQ Consolidation + At-Least-Once Semantics
+**Current focus:** Phase 48 — v3-x-teardown
 
 ## Current Position
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
-Phase: 47
-Plan: Not started
-Status: Milestone complete
+Phase: 48 (v3-x-teardown) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-06-09
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -891,6 +891,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 47 P01 | 13min | 2 tasks | 2 files |
 | Phase 47 P02 | 13min | 2 tasks | 2 files |
 | Phase 47 P03 | 3min | 2 tasks | 2 files |
+| Phase 48 P01 | 18min | 2 tasks | 23 files |
 
 ## Accumulated Context
 
@@ -1241,6 +1242,7 @@ Recent decisions affecting current work:
 - 47-02: R2 (data-gone) re-tagged additively with [Trait(Phase,47)] alongside Phase-46 — cited, not re-tested
 - Phase 47 plan 03: 47-DLQ-AUDIT.md ledger maps RESIL-02/RESIL-03 + SC-1/2/3 to 8 named green proving tests (file:method) — the verifier's single check surface
 - Design-doc amendment A16 (additive, 1 insertion) names the at-least-once/no-dedup guarantee citing 47-DLQ-AUDIT.md + bundles the deferred Phase-46 KeeperReinject.Payload note; doc-only, build 0/0
+- Phase 48-01: deleted the v3.x reactive Fault<T> Keeper recovery path (consumers + KeeperRecoveryHandler + orphaned KeeperMetrics); L2ProbeRecovery reduced to ProbeOnceAsync only; keeper-dlq/keeper-fault-recovery consts + RecoverAttemptCap + KeeperRecoverAttempts removed; RecoveryOptions/BackupOptions kept (v4-shared); Debug build 0-warning green (RETIRE-03).
 
 ### Roadmap Milestone Log
 
@@ -1343,9 +1345,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 48 context gathered
-Resume file: --resume-file
+Last session: 2026-06-09T08:44:02.377Z
+Stopped at: Completed 48-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
