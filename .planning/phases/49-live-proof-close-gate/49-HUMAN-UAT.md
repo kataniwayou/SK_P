@@ -142,10 +142,10 @@ result: [pending]
 
 total: 1
 passed: 0
-issues: 0
+issues: 1
 pending: 1
 skipped: 0
-blocked: 0
+blocked: 1
 
 ## Gaps
 
@@ -154,4 +154,14 @@ A first operator live run (2026-06-09) executed the gate against a freshly-rebui
 - **GAP-49-1 — RESOLVED (commit `5666fb7`).** `skp-dlq-1` 406 `x-message-ttl` poison-loop in `ConsolidatedErrorTransportFilter` (sent via `queue:` → re-declared the ttl'd queue without args → 4,133× redelivery storm). Fixed by sending via `exchange:skp-dlq-1`. Verified: 0× 406, DLQ depth 0.
 - **GAP-49-2 — RESOLVED (commits `081895f`, `03e0129`, `ddea4df`; plan 49-05, decision D-08 Option A).** Pause-all/resume-all left the orchestrator Quartz scheduler stuck paused for newly-scheduled workflows (`PauseAll()` set `pausedTriggerGroups`; per-job resume never cleared it). Fix: `ResumeAllConsumer` now calls a scheduler-wide group-flag clear (`WorkflowScheduler.ResumeAllGroupsAsync` → `scheduler.ResumeAll()`) exactly once, **after** the per-job reschedule loop — so every trigger is already fresh-from-now `Normal` and no misfire herd fires (`PauseAllConsumer` unchanged). Covered by the `Normal_After_PauseAll_Resume_Cycle` regression (true PauseAll→ResumeAll over a RAM scheduler; post-cycle workflow born `Normal`) + the ordering/no-burst facts. Hermetic suite 508 passed / 0 failed; both build configs 0-warning. Re-verified in `49-VERIFICATION.md` (status `human_needed`, 5/5 must-haves).
 
-The round-trip code itself was always sound (isolated SC1 passes on a clean scheduler). With both defects closed, **re-run Step 1 → Step 2** against the rebuilt v4 stack to capture the GREEN N×3 close run and tick TEST-01/02/03.
+The round-trip code itself was always sound (isolated SC1 passes on a clean scheduler).
+
+### Live Run #2 (2026-06-09 — executed in-session, v4 stack rebuilt)
+
+After the GAP-49-2 fix, the stack was rebuilt and the gate was re-run. **Result: FAILED — Run 1: 512 passed / 3 failed (of 515); exit 1, never reached 3×GREEN.** GAP-49-2 is **proven fixed** (SC1 + SampleRoundTrip now pass live — the scheduler no longer freezes). But **3 new live-proof gaps** surfaced, each reproducing in isolation (not load flakiness):
+
+- **GAP-49-3 (high, root-caused) — SC2 consolidated DLQ.** Data-gone give-ups land in `skp-dlq-1_skipped` (depth 3), not `skp-dlq-1` (depth 0), because `skp-dlq-1` is a consuming MassTransit ReceiveEndpoint and the exchange-forwarded fault (GAP-49-1 fix) has no consumer → MassTransit skips it. Also makes the close-gate `skp-dlq-1 depth==0` check pass trivially while real give-ups pile up in `_skipped`. **Design decision needed** (park-queue vs assert `_skipped`).
+- **GAP-49-4 (medium) — SC3 ES seam.** The `Global PauseAll` orchestrator seam wasn't found in Elasticsearch within 150s, though the orchestrator emits it and ES has otel logs. Not yet root-caused (BIT-gate timing vs ingestion lag vs query shape).
+- **GAP-49-5 (medium) — MetricsRoundTrip Prometheus.** Business metric series empty in Prometheus within the poll window. Not yet root-caused (scrape lag vs missing series).
+
+**The gate is BLOCKED again on GAP-49-3/4/5.** Close them via `/gsd-plan-phase 49 --gaps`, then re-run Step 1 → Step 2. TEST-01/02/03 stay `[ ]`.

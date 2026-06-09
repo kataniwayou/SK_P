@@ -1,8 +1,8 @@
 ---
 phase: 49-live-proof-close-gate
 verified: 2026-06-09T14:00:00Z
-status: human_needed
-score: 5/5 must-haves verified (4 original + 1 GAP-49-2 fix)
+status: gaps_found
+score: 5/5 authored must-haves verified; GAP-49-2 PROVEN FIXED by a live run — but the live N×GREEN close gate FAILED, surfacing 3 NEW live-proof gaps (GAP-49-3/4/5)
 overrides_applied: 1
 overrides:
   - must_have: "src/Orchestrator/Consumers/ResumeNoBurstTests.cs contains 'ResumeTriggers'"
@@ -17,10 +17,32 @@ re_verification:
     - "GAP-49-2: Quartz scheduler stuck PAUSED for new workflows after pause-all/resume-all cycle — closed by plan 49-05 (commits 081895f, 03e0129, ddea4df); WorkflowScheduler.ResumeAllGroupsAsync wraps scheduler.ResumeAll(); ResumeAllConsumer calls it exactly once after the per-job loop; Normal_After_PauseAll_Resume_Cycle regression proves a post-cycle workflow is born Normal"
   gaps_remaining: []
   regressions: []
+live_run:
+  run_by: "Claude (operator gate executed in-session 2026-06-09, v4 stack rebuilt: baseapi-service, orchestrator, processor-sample, keeper)"
+  result: "FAILED — Run 1 of 3: 512 passed / 3 failed (total 515). Gate exited 1 (never reached 3×GREEN). Both build configs 0-warning; triple-SHA machinery worked."
+  gap_49_2_proof: "PROVEN FIXED — SC1RoundTripE2ETests and SampleRoundTripE2ETests (the pure round-trip facts that the scheduler-freeze previously killed) PASS live. The first operator run had all 5 round-trip facts failing on the freeze; now only 3 fail, none from a scheduler freeze. The rebuilt orchestrator logs show Global PauseAll → Global ResumeAll cycling normally."
+  isolation_check: "The 3 failures REPRODUCE in isolation (RealStack-only run: 4 passed / 3 failed) — NOT full-suite load flakiness. Deterministic, distinct downstream-infra failures."
+gaps:
+  - id: GAP-49-3
+    title: "SC2 — consolidated DLQ give-ups land in skp-dlq-1_skipped, not skp-dlq-1"
+    severity: high
+    root_caused: true
+    detail: "SC2 (LiveKeeperRecovery, STATE 2 data-gone REINJECT, SC2RecoveryPathsE2ETests.cs:142) asserts skp-dlq-1 depth 0→1 but it stays 0. Live broker shows TWO queues: skp-dlq-1 (depth 0) AND skp-dlq-1_skipped (depth 3). ROOT CAUSE: skp-dlq-1 is declared as a MassTransit ReceiveEndpoint (MessagingServiceCollectionExtensions.cs:79, BaseConsole.Core) and ConsolidatedErrorTransportFilter forwards exhausted faults to exchange:skp-dlq-1 (the GAP-49-1 406-fix). The ReceiveEndpoint consumes the arriving message, finds NO registered consumer for the forwarded fault type, and MassTransit moves it to skp-dlq-1_skipped. So exhausted give-ups never PARK in skp-dlq-1. This also means the close gate's 'skp-dlq-1 depth==0' net-zero check is satisfied trivially while real give-ups accumulate in _skipped. STATE 1 (data-present REINJECT) passes, proving the bus publish + Keeper recovery path work; only the dead-letter PARKING is wrong."
+    fix_direction: "DESIGN DECISION (touches the GAP-49-1 fix topology — user's spec call): either (a) make skp-dlq-1 a passive parking queue (declared, NOT a consuming ReceiveEndpoint) so forwarded faults stay observable in it, or (b) accept _skipped as the real resting place and re-point SC2 + the close-gate depth assertion at skp-dlq-1_skipped. The design doc calls skp-dlq-1 'the single DLQ where give-ups land' — favoring (a). Needs deliberate spec'ing, not an inline guess."
+  - id: GAP-49-4
+    title: "SC3 — orchestrator 'Global PauseAll' seam not found in Elasticsearch within EsPollTimeoutMs"
+    severity: medium
+    root_caused: false
+    detail: "SC3 (LiveBitGate...DockerStopStart, SC3PauseResumeOutageE2ETests.cs:187) polls ES 150s for the orchestrator 'Global PauseAll' seam log after docker stop sk-redis; pauseSeam comes back null. EVIDENCE BOTH WAYS: the rebuilt orchestrator's docker logs DO emit 'Global PauseAll'/'Global ResumeAll', and ES has the otel log index (.ds-logs-generic.otel-default, 17828 docs) — so the pipeline is alive. NOT yet root-caused: candidates are (1) BIT gate did not flip within OutageSettleMs=20s of the stop in THIS run (probe cadence), (2) otel→ES ingestion lag exceeded 150s under load, or (3) the OrchestratorSeamQuery ES query does not match the live log document shape. Needs a focused SC3-alone re-run with orchestrator-log + ES-query instrumentation to discriminate."
+  - id: GAP-49-5
+    title: "MetricsRoundTrip — business metric series absent from Prometheus within PromPollTimeoutMs"
+    severity: medium
+    root_caused: false
+    detail: "MetricsRoundTripE2ETests.cs:140 (PollPromForQuery for orchestrator_result_consumed_total / processor_dispatch_consumed_total / processor_result_sent_total by ProcessorId) returns an empty vector → Assert.NotNull(JsonElement?) fails. NOT yet root-caused: candidates are Prometheus scrape-interval lag vs PromPollTimeoutMs, a missing/renamed metric on the rebuilt v4 images, or a scrape-target/label mismatch. Needs a focused check of the live Prometheus targets + the actual exposed series on the rebuilt processor/orchestrator."
 human_verification:
-  - test: "After verifying the rebuilt v4 container stack is up, run: pwsh -File scripts/phase-49-close.ps1"
-    expected: "Exit code 0 — both build configs (Release + Debug) 0-warning; all 3 test runs GREEN with identical Passed fact count (508 expected, matching the hermetic +1 from Normal_After_PauseAll_Resume_Cycle); psql SHA BEFORE==AFTER; redis SHA BEFORE==AFTER; rabbitmq SHA BEFORE==AFTER; skp-dlq-1 depth==0. Record the 3 SHA values + Passed count + DLQ depth in 49-HUMAN-UAT.md Step 3 table, then tick TEST-01, TEST-02, TEST-03 in .planning/REQUIREMENTS.md."
-    why_human: "Requires the rebuilt v4 container stack (baseapi-service, orchestrator, processor-sample, keeper rebuilt for v4 breaking contract changes). SC3 invokes docker stop sk-redis against a live redis container. The triple-SHA gate snapshots live postgres/redis/rabbitmq state. None of this is verifiable without the running stack. This is the operator-gate posture per D-03 — matching every prior milestone close (Phase 39/35/36/33). GAP-49-2 is now closed; both prior defects are resolved; no code-level blockers remain."
+  - test: "After GAP-49-3/4/5 are closed: re-run pwsh -File scripts/phase-49-close.ps1 against the rebuilt v4 stack"
+    expected: "Exit 0 — both build configs 0-warning, all 3 runs GREEN with identical Passed count, triple-SHA BEFORE==AFTER, skp-dlq-1 depth==0. Then record the values in 49-HUMAN-UAT.md and tick TEST-01/02/03."
+    why_human: "Requires the rebuilt v4 container stack. NOTE: an in-session live run on 2026-06-09 PROVED GAP-49-2 fixed (SC1 + SampleRoundTrip pass) but surfaced GAP-49-3/4/5. The gate cannot pass until those are resolved."
 ---
 
 # Phase 49: Live Proof & Close Gate — Verification Report (Re-verification)
@@ -28,10 +50,26 @@ human_verification:
 **Phase Goal:** A real-stack E2E proves the full Pre/In/Post round trip plus each recovery path and the BIT-gate global pause-all/resume-all across a transient L2 outage, all sealed behind an N-consecutive-GREEN triple-SHA (psql / redis / rabbitmq) net-zero close gate matching prior-milestone discipline.
 
 **Verified:** 2026-06-09T14:00:00Z
-**Status:** human_needed
+**Status:** gaps_found (GAP-49-2 proven fixed by a live run; live N×GREEN close gate then FAILED with 3 new gaps)
 **Re-verification:** Yes — after GAP-49-2 gap closure (plan 49-05, commits 081895f / 03e0129 / ddea4df)
 
 ---
+
+## Live Run #2 (2026-06-09 — operator gate executed in-session by Claude)
+
+After the GAP-49-2 fix landed, the v4 stack was rebuilt (baseapi-service, orchestrator, processor-sample, keeper) and `pwsh -File scripts/phase-49-close.ps1` was run. **Result: FAILED.** Run 1 of 3 returned **512 passed / 3 failed** (total 515); the gate exited 1 and never reached the 3×GREEN cadence. Both build configs were 0-warning and the triple-SHA machinery worked.
+
+**GAP-49-2 is PROVEN FIXED:** `SC1RoundTripE2ETests` and `SampleRoundTripE2ETests` — the pure round-trip facts the scheduler-freeze previously killed — now PASS live. The first operator run had all 5 round-trip facts failing on the freeze; now only 3 fail and none is a scheduler freeze. The rebuilt orchestrator logs show `Global PauseAll` → `Global ResumeAll` cycling normally.
+
+**The 3 remaining failures reproduce in isolation** (RealStack-only: 4 passed / 3 failed) — so they are deterministic, distinct downstream-infra defects, NOT full-suite load flakiness:
+
+| Gap | Test | Failure | Root-caused? |
+|-----|------|---------|--------------|
+| GAP-49-3 | SC2 `LiveKeeperRecovery` (data-gone REINJECT, :142) | `skp-dlq-1` depth stayed 0 — give-ups land in `skp-dlq-1_skipped` (depth 3) instead | **YES** — `skp-dlq-1` is a consuming ReceiveEndpoint; forwarded faults have no consumer → MassTransit skips them to `_skipped`. Interacts with the GAP-49-1 exchange-routing fix. Also defeats the close-gate `skp-dlq-1 depth==0` net-zero check. |
+| GAP-49-4 | SC3 `LiveBitGate...DockerStopStart` (:187) | `Global PauseAll` seam not found in ES within 150s | No — orchestrator emits the seam + ES has otel logs; needs SC3-alone instrumentation (BIT-gate timing vs ingestion lag vs query shape) |
+| GAP-49-5 | MetricsRoundTrip (:140) | business metric series empty in Prometheus within poll window | No — needs live Prometheus targets + exposed-series check (scrape lag vs missing metric) |
+
+See the `gaps:` frontmatter for full detail and the GAP-49-3 fix-direction design decision. Next: `/gsd-plan-phase 49 --gaps`.
 
 ## Gap Closure Summary
 
