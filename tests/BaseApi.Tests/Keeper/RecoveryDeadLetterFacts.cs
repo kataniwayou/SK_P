@@ -86,6 +86,7 @@ public sealed class RecoveryDeadLetterFacts
 
     [Fact]
     [Trait("Phase", "46")]
+    [Trait("Phase", "47")]   // R2 re-tag: discoverable under --filter-trait "Phase=47" (cited, NOT re-tested)
     public async Task DataGone_reinject_faults_and_routes_to_dead_letter()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -113,5 +114,70 @@ public sealed class RecoveryDeadLetterFacts
             Assert.True(await harness.Consumed.Any<ConsolidatedFault>(ct));
         }
         finally { await harness.Stop(ct); }
+    }
+
+    // ----- RESIL-03 (R3): at-least-once / no-collapse on duplicate KeeperReinject delivery ----------
+
+    /// <summary>An L2 whose StringLengthAsync reports the recovered key PRESENT (non-zero) so REINJECT
+    /// confirms the data and re-injects (the success path — the effect we prove reproduces, not the
+    /// data-gone fault). Mirrors the absent EmptyMux() but for the present case.</summary>
+    private static IConnectionMultiplexer PresentMux()
+    {
+        var db = Substitute.For<IDatabase>();
+        db.StringLengthAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(7L);   // present, non-empty
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+        return mux;
+    }
+
+    /// <summary>
+    /// Phase 47 / RESIL-03: the EntryStepDispatch-family recovery path (REINJECT, the seam available per
+    /// Open Question 1 — DispatchTestKit does not exist) is at-least-once and carries NO dedup, so delivering
+    /// the SAME <see cref="KeeperReinject"/> (identical ids) TWICE into ONE <see cref="ReinjectConsumer"/>
+    /// reproduces its re-injection effect TWICE — the reconstructed <see cref="EntryStepDispatch"/> is sent
+    /// twice (Sent.Count == 2), no collapse, no throw. Uses the documented consumer-level double-Consume +
+    /// <see cref="RecoveryTestKit.CapturingSendProvider"/> fallback (the harness double-publish shape over
+    /// EmptyMux would prove only the data-gone fault, not the success-effect reproduction).
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "47")]
+    public async Task Duplicate_Reinject_reproduces_effect_no_collapse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var send = new RecoveryTestKit.CapturingSendProvider();
+        var consumer = new ReinjectConsumer(
+            PresentMux(), send, OpenGate(),
+            Options.Create(new RetryOptions { Limit = 1 }),
+            Options.Create(new RecoveryOptions { PartitionCount = 8, GateWaitSeconds = 300 }),
+            Options.Create(new BackupOptions { TtlDays = 2 }));
+
+        var msg = new KeeperReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        {
+            CorrelationId = Guid.NewGuid(),
+            ExecutionId = Guid.NewGuid(),
+            EntryId = Guid.NewGuid(),
+            Payload = "step-config",
+        };
+
+        // Deliver the SAME message TWICE into ONE consumer (at-least-once redelivery shape).
+        await consumer.Consume(ContextFor(msg, ct));
+        await consumer.Consume(ContextFor(msg, ct));
+
+        // No collapse: the second identical delivery is NOT deduped — the reconstructed EntryStepDispatch is
+        // re-injected twice, no throw. Both target the SAME origin queue:{ProcessorId:D}.
+        Assert.Equal(2, send.Sent.Count);
+        Assert.All(send.Sent, s => Assert.Equal($"queue:{msg.ProcessorId:D}", s.Uri.ToString()));
+        Assert.All(send.Sent, s => Assert.IsType<EntryStepDispatch>(s.Message));
+    }
+
+    /// <summary>A ConsumeContext substitute carrying <paramref name="message"/> and a cancellation token.</summary>
+    private static ConsumeContext<T> ContextFor<T>(T message, CancellationToken ct)
+        where T : class
+    {
+        var context = Substitute.For<ConsumeContext<T>>();
+        context.Message.Returns(message);
+        context.CancellationToken.Returns(ct);
+        return context;
     }
 }
