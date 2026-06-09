@@ -251,18 +251,21 @@ public sealed class SC3PauseResumeOutageE2ETests
     // ---- Orchestrator seam-log ES query (mirrors SampleRoundTripE2ETests.cs:150-167) ----------------
 
     /// <summary>
-    /// Builds an ES <c>_search</c> body that match_phrases the seam on <c>body.text</c> and terms on the
+    /// Builds an ES <c>_search</c> body that PREFIX-matches the seam on <c>body.text</c> and terms on the
     /// orchestrator service, asserting the distinct seam text in C# on the returned hit (the
     /// <c>PauseAllConsumer</c> / <c>ResumeAllConsumer</c> seam logs are structured templates —
     /// "Global PauseAll CorrelationId={CorrelationId}" / "Global ResumeAll ..." — exactly as the SC1
     /// advance proof does).
     /// <para>
-    /// GAP-49-4 (D-11): the must clause matches <c>body.text</c>, NOT plain <c>body</c>. The otel collector
-    /// maps the log message under the nested <c>body.text</c> object, which is the phrase-searchable field;
-    /// a <c>match_phrase</c> on plain <c>body</c> matches NOTHING (total:0), which is why the seam poll
-    /// previously returned null even though the orchestrator emits + exports the seam. This mirrors the
-    /// proven precedent at <c>LogExportTests.cs:57</c> ("body.text") documented in
-    /// <c>CorrelationPropagationE2ETests.cs:126-129</c>.
+    /// GAP-49-4 (D-11): the must clause uses a <c>prefix</c> on <c>body.text</c>, NOT <c>match_phrase</c>,
+    /// and NOT plain <c>body</c>. The otel collector maps the rendered log message under the nested
+    /// <c>body.text</c> object, but that field is mapped as a <c>keyword</c> (exact-value) type — so a
+    /// <c>match_phrase</c> CANNOT substring-match the seam inside the longer
+    /// "Global PauseAll CorrelationId=&lt;guid&gt;" value (returns total:0, why the poll previously came back
+    /// null even though the orchestrator emits + exports the seam to ES). The seam is an exact PREFIX of the
+    /// body, so a <c>prefix</c> query on the keyword field matches reliably (verified: prefix→8 hits,
+    /// match_phrase→0). SC1/SampleRoundTrip avoid this by terming on the exact <c>attributes.WorkflowId</c>
+    /// keyword rather than a body substring.
     /// </para>
     /// </summary>
     private static string OrchestratorSeamQuery(string seam) => $$"""
@@ -272,7 +275,7 @@ public sealed class SC3PauseResumeOutageE2ETests
         "query": {
           "bool": {
             "must": [
-              { "match_phrase": { "body.text": "{{seam}}" } },
+              { "prefix": { "body.text": "{{seam}}" } },
               { "term": { "resource.attributes.service.name": "orchestrator" } }
             ]
           }
