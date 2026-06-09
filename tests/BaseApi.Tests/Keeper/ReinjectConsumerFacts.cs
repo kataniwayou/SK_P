@@ -35,10 +35,10 @@ public sealed class ReinjectConsumerFacts
             EntryId = Guid.NewGuid(),
             Payload = "{\"cfg\":7}",
         };
-        var db = RecoveryTestKit.Db(new Dictionary<string, string>
-        {
-            [L2ProjectionKeys.ExecutionData(m.EntryId)] = "{\"blob\":1}",   // present
-        });
+        var db = RecoveryTestKit.Db();
+        // IN-04: REINJECT now gates on STRLEN, not a full StringGet. STRLEN > 0 → data present.
+        db.StringLengthAsync(L2ProjectionKeys.ExecutionData(m.EntryId), Arg.Any<CommandFlags>())
+            .Returns(10L);   // present
         var send = new RecoveryTestKit.CapturingSendProvider();
 
         var consumer = new ReinjectConsumer(
@@ -71,7 +71,10 @@ public sealed class ReinjectConsumerFacts
             EntryId = Guid.NewGuid(),
             Payload = "{\"cfg\":7}",
         };
-        var db = RecoveryTestKit.Db();   // no values → StringGetAsync returns RedisValue.Null (absent)
+        // IN-04: REINJECT now gates on STRLEN. STRLEN == 0 covers BOTH a missing key AND an empty value
+        // (the absent-OR-empty data-gone terminal). NSubstitute returns default(long) == 0 unstubbed, so the
+        // un-stubbed key here reads as length 0 → data-gone.
+        var db = RecoveryTestKit.Db();   // StringLengthAsync defaults to 0 → absent/empty
         var send = new RecoveryTestKit.CapturingSendProvider();
 
         var consumer = new ReinjectConsumer(
