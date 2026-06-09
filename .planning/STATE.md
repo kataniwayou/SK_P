@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Completed 49-03-PLAN.md
-last_updated: "2026-06-09T11:10:43.269Z"
+status: verifying
+stopped_at: Completed 49-04-PLAN.md
+last_updated: "2026-06-09T11:18:42.180Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 52
-  completed_phases: 50
+  completed_phases: 51
   total_plans: 178
-  completed_plans: 191
+  completed_plans: 192
   percent: 100
 ---
 
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 49 (live-proof-close-gate) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-09
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -898,6 +898,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 49 P01 | 8min | 1 tasks | 1 files |
 | Phase 49 P02 | 14min | 1 tasks | 1 files |
 | Phase 49 P03 | 30min | 1 tasks | 1 files |
+| Phase 49 P04 | 5min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1257,6 +1258,8 @@ Recent decisions affecting current work:
 - 49-02: RealStackWebAppFactory extended with BrokerQueuesToPurge/BrokerQueuesToDelete so the bounded data-gone DLQ message + the parked per-procId re-inject queue clean to net-zero before the close gate; the 2-day-TTL CompositeBackup is registered into L2KeysToCleanup (D-07).
 - 49-03 (SC3): true transient L2 outage via docker stop/start sk-redis (D-01); isolated in a non-parallel collection RedisOutageSerial + finally-heal (D-02)
 - 49-03: pause/resume read out-of-process via orchestrator ES seam logs (Global PauseAll/ResumeAll); TriggerState idiom mirrored; TEST-02 stays UNTICKED until operator live run (D-03)
+- 49-04: phase-49-close.ps1 authored — v4 triple-SHA close gate clones phase-39 with single skp-dlq-1, seed version 3.5.0, no composite-TTL wait (D-06/D-07); parses clean
+- 49-04: 49-HUMAN-UAT.md authored as the operator runbook; TEST-01/02/03 stay UNTICKED until the operator records a GREEN live N×GREEN run against the rebuilt v4 stack (D-03)
 
 ### Roadmap Milestone Log
 
@@ -1359,8 +1362,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T11:10:32.347Z
-Stopped at: Completed 49-03-PLAN.md
+Last session: 2026-06-09T11:18:33.916Z
+Stopped at: Completed 49-04-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
