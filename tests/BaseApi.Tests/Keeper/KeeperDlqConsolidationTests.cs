@@ -40,6 +40,24 @@ public sealed class KeeperDlqConsolidationTests
             throw new InvalidOperationException("simulated transport exhaustion");
     }
 
+    // ── Throwaway consumer simulating the ProcessorPipeline's send-exhaustion `throw sent.Error!`. ──
+    // ProcessorPipeline (src/BaseProcessor.Core/Processing/ProcessorPipeline.cs:170-184) wraps every
+    // orchestrator-result Send in the shared Retry:Limit immediate loop; on exhaustion it re-surfaces the
+    // failed SendResult via `throw sent.Error!`. That throw propagates OUT of the consumer through the bus
+    // `UseMessageRetry` budget exactly like any other infra fault — so it lands in the SAME inherited
+    // consolidated `_error` move (skp-dlq-1), NOT a dedicated keeper-dlq. We CANNOT boot a real
+    // ProcessorPipeline in this rig (47-RESEARCH "Processor Send-Exhaustion Seam" A2 — it needs
+    // Redis/IDatabase/sendProvider the rig lacks), so this throwaway consumer is the proven hermetic
+    // equivalent: it throws an exception representing the exhausted SendResult, mirroring AlwaysFaultsConsumer.
+    public sealed record ProcessorSendExhausted(string Id);
+
+    public sealed class ProcessorSendExhaustedConsumer : IConsumer<ProcessorSendExhausted>
+    {
+        // Stands in for `throw sent.Error!` — the exhausted-send error the ProcessorPipeline re-throws.
+        public Task Consume(ConsumeContext<ProcessorSendExhausted> context) =>
+            throw new InvalidOperationException("simulated processor send-exhaustion (throw sent.Error!)");
+    }
+
     /// <summary>
     /// Builds an in-memory harness reproducing the BaseConsole.Core consolidated error transport: the
     /// once-per-endpoint <c>AddConfigureEndpointsCallback</c> installing
@@ -67,6 +85,38 @@ public sealed class KeeperDlqConsolidationTests
                     {
                         ep.UseFilter(new GenerateFaultFilter());                  // keep Fault<T> (Keeper rides it)
                         ep.UseFilter(new ConsolidatedErrorTransportFilter());     // move → skp-dlq-1 (consolidated)
+                    });
+                });
+
+                x.UsingInMemory((ctx, cfg) => cfg.ConfigureEndpoints(ctx));
+            })
+            .BuildServiceProvider(true);
+
+    /// <summary>
+    /// Builds the same consolidated-error rig as <see cref="BuildHarness"/> but with the processor
+    /// send-exhaustion throwaway consumer (<see cref="ProcessorSendExhaustedConsumer"/>) registered, so the
+    /// pipeline's `throw sent.Error!` equivalent can be observed routing to the SAME inherited skp-dlq-1.
+    /// </summary>
+    private static ServiceProvider BuildProcessorHarness(int retryLimit) =>
+        new ServiceCollection()
+            .AddLogging()
+            .AddMassTransitTestHarness(x =>
+            {
+                x.AddConsumer<ProcessorSendExhaustedConsumer>();
+
+                // The consolidated forensic sink: a no-op handler bound to skp-dlq-1 so the moved
+                // ConsolidatedFault is observable (production skp-dlq-1 has NO consumer — operator-drained).
+                x.AddHandler((ConsumeContext<ConsolidatedFault> _) => Task.CompletedTask)
+                    .Endpoint(e => e.Name = ConsolidatedErrorTransportFilter.Dlq1);
+
+                // The SUT pipeline — identical to AddBaseConsoleMessaging's wiring (DLQ-04, D-06).
+                x.AddConfigureEndpointsCallback((context, name, e) =>
+                {
+                    e.UseMessageRetry(r => r.Immediate(retryLimit));
+                    e.ConfigureError(ep =>
+                    {
+                        ep.UseFilter(new GenerateFaultFilter());                  // keep Fault<T> (Keeper rides it)
+                        ep.UseFilter(new ConsolidatedErrorTransportFilter());     // move -> skp-dlq-1 (consolidated)
                     });
                 });
 
@@ -155,5 +205,44 @@ public sealed class KeeperDlqConsolidationTests
         // BaseConsole.Core declares skp-dlq-1 with the 7-day TTL (604800000 ms); keeper-dlq carries no TTL.
         // The live SetQueueArgument application is RMQ-only — verified against the broker in Plan 04 / Phase 39.
         Assert.Equal(604_800_000, (int)TimeSpan.FromDays(7).TotalMilliseconds);
+    }
+
+    /// <summary>
+    /// RESIL-02 (R1 explicit framing): the ProcessorPipeline's send-exhaustion path — `throw sent.Error!`
+    /// after the shared Retry:Limit immediate loop exhausts an orchestrator-result Send
+    /// (src/BaseProcessor.Core/Processing/ProcessorPipeline.cs:170-184) — routes the faulted message to the
+    /// ONE consolidated <see cref="ConsolidatedErrorTransportFilter.Dlq1"/> (skp-dlq-1) as a
+    /// <see cref="ConsolidatedFault"/>, NOT a dedicated keeper-dlq. The re-thrown send error propagates out
+    /// of the consumer through the bus <c>UseMessageRetry</c> budget and hits the SAME inherited consolidated
+    /// `_error` move wired once in BaseConsole.Core for every console endpoint — so the processor pipeline's
+    /// give-up lands in skp-dlq-1 exactly like any other transport exhaustion. GenerateFaultFilter is retained,
+    /// so <see cref="Fault{T}"/> still publishes on exhaustion. A real ProcessorPipeline boot is NOT used
+    /// (47-RESEARCH A2 — it needs Redis/IDatabase/sendProvider the rig lacks); a throwing consumer is the
+    /// proven hermetic equivalent of `throw sent.Error!`.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "47")]
+    public async Task ProcessorSendExhaustion_RoutesToDlq1()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var provider = BuildProcessorHarness(retryLimit: 2);
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+        try
+        {
+            // Simulate the processor pipeline reaching `throw sent.Error!` on a send-exhausted result.
+            await harness.Bus.Publish(new ProcessorSendExhausted("proc-send-exhausted"), ct);
+
+            // The send-exhaustion throw exhausts the Immediate(N) budget and faults.
+            Assert.True(await harness.Consumed.Any<ProcessorSendExhausted>(ct));
+
+            // GenerateFaultFilter retained -> Fault<T> still published on exhaustion.
+            Assert.True(await harness.Published.Any<Fault<ProcessorSendExhausted>>(ct));
+
+            // The processor send-exhaustion routes to the ONE consolidated skp-dlq-1 (ConsolidatedFault),
+            // NOT a dedicated keeper-dlq.
+            Assert.True(await harness.Consumed.Any<ConsolidatedFault>(ct));
+        }
+        finally { await harness.Stop(ct); }
     }
 }
