@@ -542,5 +542,5 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 45. Keeper BIT Health Gate + Global Pause/Resume | 3/3 | Complete | 2026-06-08 |
 | 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 1/4 | In progress | - |
 | 47. DLQ Consolidation + At-Least-Once Semantics | 3/3 | Complete | 47-01 ✓ (RESIL-02, RESIL-03 structural guards); 47-02 ✓ (R3 no-collapse facts + R2 Phase-47 re-tag); 47-03 ✓ (47-DLQ-AUDIT.md ledger + design-doc A16 amendment) |
-| 48. v3.x Teardown | 1/3 | In Progress | - |
+| 48. v3.x Teardown | 3/3 | Complete | 2026-06-09 |
 | 49. Live Proof & Close Gate | 0/? | Not started | - |
