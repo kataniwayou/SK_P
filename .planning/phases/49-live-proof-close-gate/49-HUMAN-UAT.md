@@ -142,9 +142,16 @@ result: [pending]
 
 total: 1
 passed: 0
-issues: 0
+issues: 1
 pending: 1
 skipped: 0
-blocked: 0
+blocked: 1
 
 ## Gaps
+
+A first operator live run (2026-06-09) executed the gate against a freshly-rebuilt v4 stack. Pre-flight, 0-warning builds (Release+Debug), and the triple-SHA machinery all worked; the 3×GREEN cadence did not pass (Run 1: 509 passed / 5 failed — the 5 live round-trip facts). Two v4 defects were surfaced:
+
+- **GAP-49-1 — RESOLVED (commit `5666fb7`).** `skp-dlq-1` 406 `x-message-ttl` poison-loop in `ConsolidatedErrorTransportFilter` (sent via `queue:` → re-declared the ttl'd queue without args → 4,133× redelivery storm). Fixed by sending via `exchange:skp-dlq-1`. Verified: 0× 406, DLQ depth 0.
+- **GAP-49-2 — OPEN (blocks this gate).** Pause-all/resume-all leaves the orchestrator Quartz scheduler stuck paused for newly-scheduled workflows (`PauseAll()` pauses trigger groups; per-job `ResumeJob` doesn't clear the group pause). Under full-suite load, a transient `redis:6379` blip flaps the Keeper BIT gate → one `PauseAll` → the scheduler freezes → every round-trip test fails. Proven: isolated SC1 fails while stuck-paused, **passes after an orchestrator restart**. Tracked as a gap in `49-VERIFICATION.md`; close via `/gsd-plan-phase 49 --gaps`.
+
+The round-trip code itself is sound (isolated SC1 passes on a clean scheduler). This gate's GREEN run is blocked on GAP-49-2; re-run after it is fixed.

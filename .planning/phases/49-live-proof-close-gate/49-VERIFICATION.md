@@ -1,13 +1,25 @@
 ---
 phase: 49-live-proof-close-gate
 verified: 2026-06-09T12:00:00Z
-status: human_needed
-score: 4/4 must-haves verified
+status: gaps_found
+score: 4/4 must-haves authored; live run found 2 defects (1 fixed, 1 open)
 overrides_applied: 0
+gaps:
+  - id: GAP-49-1
+    title: "Consolidated DLQ skp-dlq-1 406 x-message-ttl poison-loop"
+    severity: resolved
+    resolved_by: "commit 5666fb7 — ConsolidatedErrorTransportFilter sends via exchange:skp-dlq-1 (not queue:) so the send path no longer re-declares the ttl'd queue with default args"
+    detail: "Live close gate showed ConsolidatedErrorTransportFilter sending to queue:skp-dlq-1 → MassTransit re-declares the queue without x-message-ttl → RabbitMQ 406 PRECONDITION_FAILED → dead-letter never completes → 4,133x poison-loop per Keeper replica. Verified fixed: 0x 406, skp-dlq-1 depth 0, 21 Keeper hermetic tests green."
+  - id: GAP-49-2
+    title: "Pause-all/resume-all leaves the orchestrator Quartz scheduler stuck paused for NEW workflows"
+    severity: high
+    detail: "PauseAllConsumer calls scheduler-wide Quartz PauseAll() (pauses trigger GROUPS, incl. triggers added later). ResumeAllConsumer does per-job ResumeJob only (deliberately never native ResumeAll(), asserted by Native_ResumeAll_Is_Never_Called). Per-job resume does NOT clear the group-level pause, so after ANY pause-all/resume-all cycle, newly-scheduled workflows land in a still-paused group and never fire until the orchestrator restarts. DECISIVE EVIDENCE: isolated SC1 fails while the scheduler is stuck-paused (after the close-gate's pause cycle); PASSES immediately after an orchestrator restart (clean scheduler) — the round-trip code itself is sound. This sinks the live close gate: under heavy full-suite load, containers hit transient redis:6379 ConnectTimeouts → Keeper BIT gate flaps → one PauseAll → scheduler stuck → ALL subsequent round-trip tests (SC1/SC2/SC3 + the 2 pre-existing SampleRoundTrip/MetricsRoundTrip) time out. A transient, recoverable L2 blip is turned into a PERMANENT scheduling freeze — the inverse of the recovery model's promise."
+    fix_direction: "Resume must restore the ability to SCHEDULE+FIRE new workflows after recovery without re-introducing the misfire herd the design guards against (the reason native ResumeAll() was avoided). Candidate: on ResumeAll, ResumeTriggers(GroupMatcher.AnyGroup()) / clear the paused-groups set with a misfire-ignore policy, OR re-architect pause to use per-job PauseJob over the L1 snapshot (symmetric with resume) instead of scheduler-wide PauseAll(). This is a DESIGN decision touching a locked choice (Native_ResumeAll_Is_Never_Called) — needs deliberate spec'ing, not an inline hot-patch."
+    affects: "SC1, SC2, SC3, TEST-01, TEST-02, TEST-03 — blocks the live N-GREEN close gate"
 human_verification:
-  - test: "Run pwsh -File scripts/phase-49-close.ps1 against the rebuilt v4 stack (docker compose up -d --build baseapi-service orchestrator processor-sample keeper)"
+  - test: "After GAP-49-2 is fixed: run pwsh -File scripts/phase-49-close.ps1 against the rebuilt v4 stack"
     expected: "Exit 0 — both build configs 0-warning, all 3 runs GREEN with identical Passed count, all 3 SHA-256 invariants BEFORE==AFTER, skp-dlq-1 depth==0. Record the 3 SHA values + Passed count + DLQ depth in 49-HUMAN-UAT.md and tick TEST-01/02/03."
-    why_human: "The RealStack E2E facts (SC1/SC2/SC3) carry [Trait(\"Category\",\"RealStack\")] and are intentionally excluded from the hermetic suite. They require the rebuilt v4 container stack up, which is an operator-only action (D-03). The SC3 outage test invokes docker stop/start sk-redis against the live stack. These cannot be verified programmatically without the running stack."
+    why_human: "Requires the rebuilt v4 container stack up (operator-only, D-03). NOTE: an attempted live run on 2026-06-09 surfaced GAP-49-1 (fixed, commit 5666fb7) and GAP-49-2 (open, scheduler freeze). The gate cannot pass until GAP-49-2 is resolved. At rest (no full-suite load, clean scheduler) the round trip is proven to work — isolated SC1 passes."
 ---
 
 # Phase 49: Live Proof & Close Gate — Verification Report
@@ -15,8 +27,19 @@ human_verification:
 **Phase Goal:** A real-stack E2E proves the full Pre/In/Post round trip plus each recovery path and the BIT-gate global pause-all/resume-all across a transient L2 outage, all sealed behind an N-consecutive-GREEN triple-SHA (psql / redis / rabbitmq) net-zero close gate matching prior-milestone discipline.
 
 **Verified:** 2026-06-09T12:00:00Z
-**Status:** human_needed
+**Status:** gaps_found (authored-hermetic must-haves all pass; an attempted operator live run found 2 defects)
 **Re-verification:** No — initial verification
+
+---
+
+## Live Run Findings (2026-06-09, operator-gated gate executed)
+
+An operator live run of `scripts/phase-49-close.ps1` was executed against a freshly-rebuilt v4 stack. Pre-flight, both-config 0-warning builds, and the triple-SHA machinery all worked. The 3×GREEN cadence did **not** pass — Run 1 returned 509 passed / 5 failed (all 5 are the live round-trip E2E facts). Two genuine v4 defects were surfaced (exactly the D-03 live-proof purpose):
+
+- **GAP-49-1 (RESOLVED, commit `5666fb7`)** — `skp-dlq-1` 406 `x-message-ttl` poison-loop: `ConsolidatedErrorTransportFilter` sent via `queue:skp-dlq-1`, re-declaring the ttl'd queue without args → RabbitMQ 406 → 4,133× redelivery storm. Fixed by sending via `exchange:skp-dlq-1`. Verified: 0× 406, DLQ depth 0, 21 Keeper hermetic tests green.
+- **GAP-49-2 (OPEN, design-level)** — pause-all/resume-all leaves the orchestrator Quartz scheduler stuck paused for newly-scheduled workflows (scheduler-wide `PauseAll()` pauses trigger groups; per-job `ResumeJob` doesn't clear the group pause). Decisive evidence: isolated SC1 fails while stuck-paused, **passes after an orchestrator restart**. Blocks the live gate. See the `gaps:` frontmatter for the fix direction. This is the gap to close via `/gsd-plan-phase 49 --gaps`.
+
+The round-trip implementation itself is sound — proven by isolated SC1 passing on a clean (restarted) scheduler. TEST-01/02/03 remain unticked until the gate passes 3×GREEN after GAP-49-2 is fixed.
 
 ---
 
