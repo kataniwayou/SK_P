@@ -25,14 +25,15 @@ The retirement *statement* itself is recorded additively in the design doc — s
 | RETIRE-03 | SC-3 | FACT 2 (source-scan): recursive `src/Keeper/` scan (fail-loud `Directory.Exists` guard) finds no `keeper-fault-recovery` / `keeper-dlq` / `KeeperQueues.FaultRecovery` / `KeeperQueues.DeadLetter` literal | `tests/BaseApi.Tests/Resilience/ReactivePathRetiredFacts.cs:No_retired_reactive_literal_under_src_keeper` | new (Plan 02, green) | `dotnet run --project tests/BaseApi.Tests -c Debug -- --filter-method "*No_retired_reactive_literal_under_src_keeper*"` |
 | RETIRE-03 | SC-3 | FACT 3 (const absence): `KeeperQueues` public-static fields — `FaultRecovery` / `DeadLetter` absent, `Recovery` present (the sole surviving Keeper queue) | `tests/BaseApi.Tests/Resilience/ReactivePathRetiredFacts.cs:KeeperQueues_has_only_recovery_const` | new (Plan 02, green) | `dotnet run --project tests/BaseApi.Tests -c Debug -- --filter-method "*KeeperQueues_has_only_recovery_const*"` |
 | RETIRE-01/02/03 | SC-3 | Batch: all four `[Trait("Phase","48")]` retirement guards GREEN and non-empty (the fail-loud `Directory.Exists` guards ensure this is not a silently-empty false pass) | `tests/BaseApi.Tests/Resilience/ReactivePathRetiredFacts.cs` (4 facts) | new (Plan 02, green: 4/4) | `dotnet run --project tests/BaseApi.Tests -c Debug -- --filter-trait "Phase=48"` |
-| RETIRE-01/02/03 | SC-4 | Close gate: full hermetic suite GREEN ×3 consecutive + Release AND Debug builds at 0 warnings on the v4-only path | `dotnet test SK_P.sln` (RealStack-excluded default) ×3 + `dotnet build SK_P.sln -c Release`/`-c Debug` | met (Plan 03, Task 2) — see result below | `dotnet test SK_P.sln` (×3) ; `dotnet build SK_P.sln -c Release` ; `dotnet build SK_P.sln -c Debug` |
+| RETIRE-01/02/03 | SC-4 | Close gate: full hermetic suite GREEN ×3 consecutive + Release AND Debug builds at 0 warnings on the v4-only path | `dotnet run --project tests/BaseApi.Tests -c Debug -- --filter-not-trait Category=RealStack` (×3) + `dotnet build SK_P.sln -c Release`/`-c Debug` | **MET** (Plan 03, Task 2): 507/507 ×3, 0 failed; Release 0 warn; Debug 0 warn — see result below | `dotnet run --project tests/BaseApi.Tests -c Debug -- --filter-not-trait Category=RealStack` (×3) ; `dotnet build SK_P.sln -c Release` ; `dotnet build SK_P.sln -c Debug` |
 
-### SC-4 close-gate result (captured in Task 2)
+### SC-4 close-gate result (captured in Task 2, 2026-06-09)
 
-<!-- Updated by Task 2 once the ×3 suite + both 0-warning builds are run. -->
-- Hermetic suite (`dotnet test SK_P.sln`, RealStack-excluded): _pending Task 2 capture_
-- `dotnet build SK_P.sln -c Release`: _pending Task 2 capture_
-- `dotnet build SK_P.sln -c Debug`: _pending Task 2 capture_
+- **Hermetic suite GREEN ×3 consecutive** (RealStack-excluded, MTP `--filter-not-trait Category=RealStack`): **507 / 507** passed, **0 failed**, 0 skipped — three consecutive runs, each `EXIT=0`. (`dotnet test SK_P.sln`'s VSTest `--filter` is ignored under Microsoft.Testing.Platform — `warning MTP0001` — so the MTP-native `dotnet run ... -- --filter-not-trait` form is the canonical hermetic command; the 2 RealStack E2E tests it excludes are the pre-existing docker-dependent ones — `rabbitmq://rabbitmq/` host-unreachable — documented in 48-01-SUMMARY + PROJECT.md, not v4-path regressions.)
+- **`dotnet build SK_P.sln -c Release`**: Build succeeded — **0 Warning(s), 0 Error(s)**, `EXIT=0`.
+- **`dotnet build SK_P.sln -c Debug`**: Build succeeded — **0 Warning(s), 0 Error(s)**, `EXIT=0`.
+
+The SC-4 hermetic close gate is **met**. The live / real-stack + triple-SHA net-zero close gate is deferred to **Phase 49** (TEST-01..03) per D-03.
 
 ---
 
