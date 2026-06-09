@@ -67,11 +67,17 @@ public sealed class ResumeNoBurstTests
         var ct = TestContext.Current.CancellationToken;
         var (consumer, spy, _) = Build(ct);
 
+        // Build() already issued a hydration-time ScheduleJob on the spy. Baseline the call count so the
+        // ordering assertion below inspects ONLY the Consume-time timeline — otherwise the hydration
+        // ScheduleJob would count as a "per-job reschedule" and the ordering could pass even if the resume
+        // path issued no reschedule at all (WR-01 / IN-01).
+        var callsBefore = spy.ReceivedCalls().Count();
+
         await consumer.Consume(OrchestratorTestStubs.Context(new ResumeAll { CorrelationId = Guid.NewGuid() }, ct));
 
         // The load-bearing ORDERING (T-49-01): every per-job fresh reschedule (ScheduleJob) must occur BEFORE
-        // the single group-level clear (ResumeAll). Walk the spy's received-call timeline in order.
-        var calls = spy.ReceivedCalls().ToList();
+        // the single group-level clear (ResumeAll). Walk ONLY the Consume-time received-call timeline in order.
+        var calls = spy.ReceivedCalls().Skip(callsBefore).ToList();
         var methodNames = calls.Select(c => c.GetMethodInfo().Name).ToList();
 
         var lastScheduleJobIndex = methodNames.FindLastIndex(n => n == nameof(IScheduler.ScheduleJob));
@@ -92,12 +98,19 @@ public sealed class ResumeNoBurstTests
         var ct = TestContext.Current.CancellationToken;
         var (consumer, spy, _) = Build(ct);
 
+        // Build() already issued a hydration-time ScheduleJob (StartAt is also future, so it would pass the
+        // assertion vacuously). Baseline the call count so we inspect ONLY the resume-path reschedules made
+        // during Consume — otherwise a broken ResumeAsync that skips its ScheduleAsync would still pass on the
+        // leftover hydration trigger alone (WR-01).
+        var callsBefore = spy.ReceivedCalls().Count();
+
         var before = DateTimeOffset.UtcNow;
         await consumer.Consume(OrchestratorTestStubs.Context(new ResumeAll { CorrelationId = Guid.NewGuid() }, ct));
 
-        // Capture EVERY fresh ScheduleJob trigger and assert each StartAt >= now (no immediate refire on ANY
-        // reschedule — the no-herd guarantee across all per-job resumes).
+        // Capture EVERY fresh ScheduleJob trigger issued DURING Consume and assert each StartAt >= now (no
+        // immediate refire on ANY reschedule — the no-herd guarantee across all per-job resumes).
         var scheduled = spy.ReceivedCalls()
+            .Skip(callsBefore)
             .Where(c => c.GetMethodInfo().Name == nameof(IScheduler.ScheduleJob))
             .Select(c => c.GetArguments())
             .Where(args => args.Length >= 2 && args[0] is IJobDetail && args[1] is ITrigger)

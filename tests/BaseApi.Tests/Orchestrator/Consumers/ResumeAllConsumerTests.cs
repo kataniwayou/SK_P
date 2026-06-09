@@ -129,7 +129,8 @@ public sealed class ResumeAllConsumerTests
     /// GAP-49-2 regression (D-08 Option A). Drives the TRUE production path over a real RAM scheduler:
     /// <see cref="PauseAllConsumer"/> -> scheduler-wide <c>PauseAll()</c> (adds every group to Quartz's
     /// <c>pausedTriggerGroups</c>) -> <see cref="ResumeAllConsumer"/> -> per-job reschedule THEN the
-    /// group-level <c>ResumeTriggers(AnyGroup())</c> clear. The decisive assertion: a BRAND-NEW workflow
+    /// group-level <c>ResumeAll()</c> clear (the empirically-verified API: <c>ResumeTriggers(AnyGroup())</c>
+    /// does NOT clear <c>pausedTriggerGroups</c> in Quartz 3.18 RAMJobStore). The decisive assertion: a BRAND-NEW workflow
     /// scheduled AFTER the pause/resume cycle is born <c>Normal</c> with a future fire time — NOT
     /// <c>Paused</c>. BEFORE the fix (no group-flag clear) this is <c>Paused</c> and the test FAILS; AFTER
     /// the fix it is <c>Normal</c> and the test PASSES.
