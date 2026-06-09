@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 49-01-PLAN.md
-last_updated: "2026-06-09T10:32:28.091Z"
+stopped_at: Completed 49-02-PLAN.md
+last_updated: "2026-06-09T10:45:36.636Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 52
   completed_phases: 50
   total_plans: 178
-  completed_plans: 189
+  completed_plans: 190
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 49 (live-proof-close-gate) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-06-09
 
@@ -896,6 +896,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 48 P02 | 9min | 2 tasks | 2 files |
 | Phase 48-v3-x-teardown P03 | 23min | 2 tasks | 3 files |
 | Phase 49 P01 | 8min | 1 tasks | 1 files |
+| Phase 49 P02 | 14min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1251,6 +1252,8 @@ Recent decisions affecting current work:
 - Phase 48 RETIRE-01/02/03 satisfied: reactive Fault<T> path + keeper-dlq retired (Plans 01/02), traceability ledger 48-TEARDOWN-AUDIT.md authored + design-doc A17 amendment + REQUIREMENTS flips (Plan 03); SC-4 hermetic close gate met (507/507 x3, Release/Debug 0-warning).
 - Phase 49-01: SC1RoundTripE2ETests.cs authored as a Phase-49-tagged clone of SampleRoundTripE2ETests; kept the ES 'Start reload for WorkflowId=' seam-log as the orchestrator-advance proof per plan.
 - Phase 49-01: TEST-01 stays UNTICKED — SC1 is authored+hermetic-green (Release+Debug 0-warning, 507-fact hermetic suite GREEN), live round-trip run operator-gated (D-03), tracked in 49-HUMAN-UAT.md.
+- 49-02: SC2 RealStack recovery proof direct-publishes the 4 Keeper state contracts to KeeperQueues.Recovery (const); re-inject + data-gone effects asserted on live broker queue depth (queue:{procId:D} / skp-dlq-1 via ConsolidatedErrorTransportFilter.Dlq1).
+- 49-02: RealStackWebAppFactory extended with BrokerQueuesToPurge/BrokerQueuesToDelete so the bounded data-gone DLQ message + the parked per-procId re-inject queue clean to net-zero before the close gate; the 2-day-TTL CompositeBackup is registered into L2KeysToCleanup (D-07).
 
 ### Roadmap Milestone Log
 
@@ -1353,8 +1356,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T10:32:28.070Z
-Stopped at: Completed 49-01-PLAN.md
+Last session: 2026-06-09T10:45:23.710Z
+Stopped at: Completed 49-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.

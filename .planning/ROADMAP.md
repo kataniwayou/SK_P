@@ -532,8 +532,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   3. A real-stack E2E proves the BIT-gate global pause-all/resume-all across a transient L2 outage (outage → pause all → L2 recovers → resume all), with pause/resume idempotent per job.
   4. The close gate runs N consecutive GREEN with triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE==AFTER net-zero — including the composite backup key (proven cleaned by `CLEANUP`/`INJECT`, not lingering on its 2-day TTL), the GUID data keys, and `_DLQ1` — at Release + Debug 0-warning.
 **Plans**: 4 plans
-  - [ ] 49-01-PLAN.md — SC1 RealStack round-trip E2E (Pre->In->Post; output-to-L2; orchestrator-advance)
-  - [ ] 49-02-PLAN.md — SC2 RealStack recovery-paths E2E (REINJECT present/gone, INJECT, DELETE via keeper-recovery direct-publish)
+  - [x] 49-01-PLAN.md — SC1 RealStack round-trip E2E (Pre->In->Post; output-to-L2; orchestrator-advance)
+  - [x] 49-02-PLAN.md — SC2 RealStack recovery-paths E2E (REINJECT present/gone, INJECT, DELETE via keeper-recovery direct-publish)
   - [ ] 49-03-PLAN.md — SC3 RealStack pause-resume-outage E2E (docker stop/start sk-redis; non-parallel collection)
   - [ ] 49-04-PLAN.md — phase-49-close.ps1 triple-SHA close gate + 49-HUMAN-UAT.md operator runbook
 
@@ -547,4 +547,4 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 1/4 | In progress | - |
 | 47. DLQ Consolidation + At-Least-Once Semantics | 3/3 | Complete | 47-01 ✓ (RESIL-02, RESIL-03 structural guards); 47-02 ✓ (R3 no-collapse facts + R2 Phase-47 re-tag); 47-03 ✓ (47-DLQ-AUDIT.md ledger + design-doc A16 amendment) |
 | 48. v3.x Teardown | 3/3 | Complete | 2026-06-09 |
-| 49. Live Proof & Close Gate | 0/4 | Planned | - |
+| 49. Live Proof & Close Gate | 2/4 | In progress | - |
