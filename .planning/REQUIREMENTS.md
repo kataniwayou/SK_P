@@ -117,9 +117,9 @@
 | ORCH-01 | Phase 46 | Complete |
 | RESIL-02 | Phase 47 | Pending |
 | RESIL-03 | Phase 47 | Pending |
-| RETIRE-01 | Phase 43 (coupled per D-01) | Pending |
-| RETIRE-02 | Phase 43 (coupled per D-01) | Pending |
-| RETIRE-03 | Phase 48 | Pending |
+| RETIRE-01 | Phase 43 (coupled per D-01) | Satisfied |
+| RETIRE-02 | Phase 43 (coupled per D-01) | Satisfied |
+| RETIRE-03 | Phase 48 | Satisfied |
 | TEST-01 | Phase 49 | Pending |
 | TEST-02 | Phase 49 | Pending |
 | TEST-03 | Phase 49 | Pending |
