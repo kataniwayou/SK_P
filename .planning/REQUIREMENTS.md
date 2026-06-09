@@ -63,8 +63,10 @@
 **: The execution path is at-least-once with no dedup/idempotency key; duplicate effects are tolerated downstream.
 
 ### v3.x Teardown (RETIRE)
-- [ ] **RETIRE-01**: Remove the `H` identity, `flag[H]` dedup gate, and CAS `Pending→Ack` flips from processor and orchestrator.
-- [ ] **RETIRE-02**: Remove content-addressed L2 data, the result manifest, and N×M manifest fan-out.
+- [x] **RETIRE-01
+**: Remove the `H` identity, `flag[H]` dedup gate, and CAS `Pending→Ack` flips from processor and orchestrator.
+- [x] **RETIRE-02
+**: Remove content-addressed L2 data, the result manifest, and N×M manifest fan-out.
 - [x] **RETIRE-03
 **: Remove the reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` Keeper recovery path and the `keeper-dlq` queue.
 

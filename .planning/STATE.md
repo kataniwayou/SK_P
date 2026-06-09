@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 48-01-PLAN.md
-last_updated: "2026-06-09T08:44:09.515Z"
+stopped_at: Completed 48-02-PLAN.md
+last_updated: "2026-06-09T08:49:51.352Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 51
   completed_phases: 49
   total_plans: 174
-  completed_plans: 186
+  completed_plans: 187
   percent: 100
 ---
 
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 48 (v3-x-teardown) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-09
 
@@ -892,6 +892,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 47 P02 | 13min | 2 tasks | 2 files |
 | Phase 47 P03 | 3min | 2 tasks | 2 files |
 | Phase 48 P01 | 18min | 2 tasks | 23 files |
+| Phase 48 P02 | 9min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1243,6 +1244,7 @@ Recent decisions affecting current work:
 - Phase 47 plan 03: 47-DLQ-AUDIT.md ledger maps RESIL-02/RESIL-03 + SC-1/2/3 to 8 named green proving tests (file:method) — the verifier's single check surface
 - Design-doc amendment A16 (additive, 1 insertion) names the at-least-once/no-dedup guarantee citing 47-DLQ-AUDIT.md + bundles the deferred Phase-46 KeeperReinject.Payload note; doc-only, build 0/0
 - Phase 48-01: deleted the v3.x reactive Fault<T> Keeper recovery path (consumers + KeeperRecoveryHandler + orphaned KeeperMetrics); L2ProbeRecovery reduced to ProbeOnceAsync only; keeper-dlq/keeper-fault-recovery consts + RecoverAttemptCap + KeeperRecoverAttempts removed; RecoveryOptions/BackupOptions kept (v4-shared); Debug build 0-warning green (RETIRE-03).
+- 48-02: anchored ReactivePathRetiredFacts on the surviving global::Keeper.Health.BitHealthLoop assembly (not a deleted Fault* type); SC-2 no-Manifest on the Orchestrator+BaseProcessor.Core pair.
 
 ### Roadmap Milestone Log
 
@@ -1345,8 +1347,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T08:44:02.377Z
-Stopped at: Completed 48-01-PLAN.md
+Last session: 2026-06-09T08:49:45.637Z
+Stopped at: Completed 48-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
