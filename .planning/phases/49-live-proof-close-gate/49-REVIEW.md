@@ -1,194 +1,149 @@
 ---
 phase: 49-live-proof-close-gate
-reviewed: 2026-06-09T00:00:00Z
+reviewed: 2026-06-09T13:23:33Z
 depth: standard
 files_reviewed: 4
 files_reviewed_list:
-  - tests/BaseApi.Tests/Orchestrator/SC1RoundTripE2ETests.cs
-  - tests/BaseApi.Tests/Orchestrator/SC2RecoveryPathsE2ETests.cs
-  - tests/BaseApi.Tests/Orchestrator/SC3PauseResumeOutageE2ETests.cs
-  - scripts/phase-49-close.ps1
+  - src/Orchestrator/Scheduling/WorkflowScheduler.cs
+  - src/Orchestrator/Consumers/ResumeAllConsumer.cs
+  - tests/BaseApi.Tests/Orchestrator/Consumers/ResumeNoBurstTests.cs
+  - tests/BaseApi.Tests/Orchestrator/Consumers/ResumeAllConsumerTests.cs
 findings:
   critical: 0
-  warning: 3
-  info: 6
-  total: 9
+  warning: 1
+  info: 2
+  total: 3
 status: issues_found
 ---
 
-# Phase 49: Code Review Report
+# Phase 49 (plan-49-05 GAP-49-2 fix): Code Review Report
 
-**Reviewed:** 2026-06-09
+**Reviewed:** 2026-06-09T13:23:33Z
 **Depth:** standard
 **Files Reviewed:** 4
 **Status:** issues_found
 
 ## Summary
 
-Reviewed 3 newly-authored RealStack E2E test files plus the Phase-49 triple-SHA close-gate
-PowerShell script. No production code changed. Overall quality is high: the const-vs-literal
-discipline flagged in the phase context is fully honored (no `"keeper-recovery"` /
-`"skp-dlq-1"` literals appear in the new C# — both are referenced via `KeeperQueues.Recovery`
-and `ConsolidatedErrorTransportFilter.Dlq1`, which I verified exist with those values), the
-net-zero key/queue teardown is correct and matches the proven production SREM/SADD member
-format (`workflowId.ToString("D")` against `ParentIndex()` = `"skp:"`), the SC3
-`docker stop`/`start` heal-in-`finally` is correctly guarded by `redisStopped`, and the
-contract ctors + L2 key builders the tests call all line up with `src/Messaging.Contracts`.
+Reviewed the four files changed by plan-49-05 to close GAP-49-2: the new
+`WorkflowScheduler.ResumeAllGroupsAsync` wrapper, the updated `ResumeAllConsumer.Consume`,
+and the two test classes (`ResumeNoBurstTests`, `ResumeAllConsumerTests`) that validate the
+ordering and correctness properties.
 
-The findings below are correctness/robustness risks in the test polling and teardown harness
-plus minor quality items. None are blocking for an authored-and-hermetically-green proof
-posture — they are flagged for the live operator run where flakiness and teardown leaks would
-surface as close-gate SHA mismatches.
+**The fix is correct.** The three key correctness properties from the scope note all hold:
+
+1. **Ordering** — `ResumeAllGroupsAsync` is called at line 47 of `ResumeAllConsumer.Consume`,
+   which is outside and after the `foreach` loop (lines 43-44). No interleaving is possible.
+
+2. **No-herd guarantee** — `WorkflowLifecycle.ResumeAsync` acts on a `Paused` trigger by
+   calling `UnscheduleAsync` (DeleteJob, removes the stale paused trigger entirely) and then
+   `ScheduleAsync` (creates a fresh trigger with `StartAt = next Cronos >= now`). By the time
+   `ResumeAll()` runs, every formerly-Paused trigger has been deleted and replaced with a
+   fresh Normal trigger that fires in the future. There is no Paused trigger remaining for
+   `ResumeAll()` to catch-up-fire.
+
+3. **CancellationToken propagation, idempotency, ack** — `context.CancellationToken` flows to
+   both `ResumeAsync` (line 44) and `ResumeAllGroupsAsync` (line 47). On serial redelivery,
+   per-job `ResumeAsync` skips `Normal` triggers (no-op guard) and Quartz `ResumeAll()` is a
+   no-op when no group is paused — fully idempotent. No try/catch in `Consume`; exceptions
+   propagate to MassTransit for retry, consistent with `PauseAllConsumer`.
+
+The `Normal_After_PauseAll_Resume_Cycle` test (the GAP regression probe) correctly drives the
+full production path over a real Quartz RAM scheduler and its decisive assertion — that a
+brand-new workflow scheduled AFTER the pause/resume cycle is born `Normal` — is the right
+falsification target. It would have been Red before the fix and is Green after.
+
+One warning and two info items are noted below, all in the test layer. No production code issues.
 
 No Critical issues found.
 
 ## Warnings
 
-### WR-01: SC2 broker teardown helpers swallow non-zero docker exit, so a failed DLQ purge silently leaks depth>0
+### WR-01: `Resume_Reschedules_Fresh_From_Now_StartAt_Ge_Now` captures the hydration-time ScheduleJob — the assertion can pass even if the resume path skips rescheduling
 
-**File:** `tests/BaseApi.Tests/Orchestrator/SC2RecoveryPathsE2ETests.cs:379-405`
-**Issue:** `RunRabbitCtlAsync` (used by both `PurgeQueueAsync` and `DeleteQueueAsync`, which run
-in `DisposeAsync`) never inspects `proc.ExitCode`. If the `docker exec ... rabbitmqctl purge_queue skp-dlq-1`
-command fails (container name typo, rabbitmqctl transient error, queue lock), the parked
-data-gone DLQ message is NOT drained, yet teardown reports success. The close gate's separate
-`skp-dlq-1 depth==0` assertion (`scripts/phase-49-close.ps1:360-370`) would then fail on the
-*next* run with no indication the failure originated in this test's teardown. The same applies
-to the `delete_queue` of the re-inject queue feeding the rabbitmq name-SHA invariant. Note
-`ReadQueueDepthAsync` and `DockerAsync` (SC3) DO surface failures (one throws on null start,
-the other throws on non-zero exit) — this teardown path is the inconsistent outlier.
-**Fix:** After `WaitForExitAsync`, when `proc.ExitCode != 0`, surface it loudly enough to be
-diagnosable without failing the (already-green) assertion — e.g. capture stderr and write it via
-`TestContext.Current` / a thrown-then-caught diagnostic, or at minimum read stderr:
+**File:** `tests/BaseApi.Tests/Orchestrator/Consumers/ResumeNoBurstTests.cs:100-109`
+**Issue:** `Build()` calls `lifecycle.HydrateAndScheduleAsync` (line 56), which internally
+calls `scheduler.ScheduleJob` on the spy. The test then collects ALL `ScheduleJob` calls on
+the spy after `consumer.Consume` (line 100-105), so the hydration-time trigger is also included
+in `scheduled`. The assertion `Assert.All(scheduled, t => Assert.True(t.StartTimeUtc >= before, ...))`
+passes for the hydration trigger too (its `StartAt` is also a future Cronos occurrence). As a
+result, if `ResumeAsync` were somehow skipping the reschedule step (e.g. a bug in the Paused
+guard path that made it exit early), the test would still pass because the hydration call
+alone keeps `scheduled` non-empty and future-dated. The test does not exclusively verify that
+the RESUME path contributed a `ScheduleJob`.
+
+In the current codebase this is not a latent bug — the spy is configured to return
+`TriggerState.Paused` (line 46-47), which drives `ResumeAsync` through the
+`UnscheduleAsync + ScheduleAsync` path deterministically. But the test is weaker than it
+looks: it conflates hydration and resume reschedule calls.
+
+**Fix:** Filter the captured `ScheduleJob` calls to only those made AFTER `Consume` starts,
+or record a call-count baseline before `Consume` and assert the post-`Consume` delta is >= 1:
 ```csharp
-using var proc = Process.Start(psi);
-if (proc is null) return;
-var stderr = await proc.StandardError.ReadToEndAsync();
-_ = await proc.StandardOutput.ReadToEndAsync();
-await proc.WaitForExitAsync();
-if (proc.ExitCode != 0)
-    throw new InvalidOperationException(
-        $"rabbitmqctl {string.Join(' ', ctlArgs)} exited {proc.ExitCode}: {stderr}");
-```
-(If the throw-in-DisposeAsync risk is unwanted, route the message to the test output sink instead
-of swallowing it entirely — the current silent swallow is the problem.)
+// Record hydration calls before the resume
+var callsBefore = spy.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IScheduler.ScheduleJob));
 
-### WR-02: SC2 stderr is redirected but never drained — risk of a teardown/read hang on a chatty rabbitmqctl
+var before = DateTimeOffset.UtcNow;
+await consumer.Consume(OrchestratorTestStubs.Context(new ResumeAll { CorrelationId = Guid.NewGuid() }, ct));
 
-**File:** `tests/BaseApi.Tests/Orchestrator/SC2RecoveryPathsE2ETests.cs:333-365, 379-405`
-**Issue:** Both `ReadQueueDepthAsync` and `RunRabbitCtlAsync` set `RedirectStandardError = true`
-but only read `StandardOutput`. If `rabbitmqctl` writes enough to stderr to fill the OS pipe
-buffer (warnings, deprecation notices, broker connection diagnostics), the child process blocks
-on its stderr write while the test blocks on `StandardOutput.ReadToEndAsync()` / `WaitForExitAsync()`
-— a classic deadlock. SC3's `DockerAsync` (`SC3...cs:298-300`) correctly drains BOTH streams; SC2
-should match. This is latent (rabbitmqctl `-q` is usually quiet) but real on the live stack.
-**Fix:** Drain stderr concurrently in both SC2 methods, mirroring `DockerAsync`:
-```csharp
-var stdoutTask = proc.StandardOutput.ReadToEndAsync(ct);
-var stderrTask = proc.StandardError.ReadToEndAsync(ct);
-await Task.WhenAll(stdoutTask, stderrTask);
-await proc.WaitForExitAsync(ct);
-var stdout = await stdoutTask;
-```
+var scheduled = spy.ReceivedCalls()
+    .Where(c => c.GetMethodInfo().Name == nameof(IScheduler.ScheduleJob))
+    .Select(c => c.GetArguments())
+    .Where(args => args.Length >= 2 && args[0] is IJobDetail && args[1] is ITrigger)
+    .Select(args => (ITrigger)args[1]!)
+    .Skip(callsBefore)  // exclude hydration-time calls
+    .ToList();
 
-### WR-03: SC2 REINJECT data-present assertion can pass on a pre-existing queue (no BEFORE baseline) — false green if the procId queue already holds messages
-
-**File:** `tests/BaseApi.Tests/Orchestrator/SC2RecoveryPathsE2ETests.cs:108-113`
-**Issue:** State 1 asserts `depth >= 1` on `queue:{procId:D}` with NO before-baseline read, unlike
-State 2 which correctly reads `dlqBefore` and asserts `>= dlqBefore + 1`. The comment claims the
-queue is fresh ("no consumer is bound to this fresh procId queue"), and `procId = Guid.NewGuid()`
-makes a collision astronomically unlikely — so this is low-probability. But the asymmetry means
-the assertion does not actually prove *the re-inject* landed a message; it proves the queue has
-≥1 message from any source. On a re-run where teardown's `delete_queue` failed (see WR-01), a
-stale message could satisfy `depth >= 1` even if the consumer never re-injected. Make it a
-delta-assert for parity with State 2 and to harden the proof.
-**Fix:** Read a baseline before `endpoint.Send` and assert the increment:
-```csharp
-var originQueue = procId.ToString("D");
-var before = await ReadQueueDepthAsync(originQueue, ct);          // 0 on a truly fresh queue
-await endpoint.Send(new KeeperReinject(...) { ... }, ct);
-var depth = await PollForQueueDepthAsync(originQueue, minDepth: before + 1, ct);
-Assert.True(depth >= before + 1, $"...expected re-inject to climb queue:{originQueue} past {before}...");
+Assert.NotEmpty(scheduled); // proves the resume path actually rescheduled
+Assert.All(scheduled, t => Assert.True(t.StartTimeUtc >= before, "..."));
 ```
 
 ## Info
 
-### IN-01: SC2 `ScanExecutionDataKeys` lacks the RedisException tolerance SC3 added — and SC1 likewise
+### IN-01: `Group_Resume_Runs_After_Per_Job_Reschedules` ordering assertion holds vacuously if the resume loop produces no ScheduleJob
 
-**File:** `tests/BaseApi.Tests/Orchestrator/SC2RecoveryPathsE2ETests.cs:280-300`; `tests/BaseApi.Tests/Orchestrator/SC1RoundTripE2ETests.cs:266-286`
-**Issue:** SC3's `ScanExecutionDataKeys` wraps the connect/scan in `try { } catch (RedisException)`
-(`SC3...cs:412-440`) because its docker-stop window makes redis unreachable. SC1/SC2 do not stop
-redis, so the bare version is functionally correct. This is noted only as a divergence: if any of
-these helpers is ever copied into a context that touches a redis outage, the SC1/SC2 shape would
-throw rather than return a partial set. Not a bug today.
-**Fix:** Optional — none required; consider hoisting the SC3 tolerant variant into a shared test
-helper to remove the three near-duplicate copies (see IN-02).
+**File:** `tests/BaseApi.Tests/Orchestrator/Consumers/ResumeNoBurstTests.cs:77-83`
+**Issue:** `lastScheduleJobIndex` is computed with `FindLastIndex` across ALL spy calls,
+including the hydration-time `ScheduleJob` from `Build()`. If `ResumeAsync` were to exit
+before calling `ScheduleAsync` (due to a hypothetical guard regression), `lastScheduleJobIndex`
+would still be >= 0 (from hydration), and the `resumeAllIndex > lastScheduleJobIndex` assertion
+might still pass depending on relative positions. The test does not prove that the LAST
+`ScheduleJob` it finds belongs to the resume path rather than hydration.
 
-### IN-02: Three near-identical `RealStackWebAppFactory` + scan/poll/seed clones across SC1/SC2/SC3
+This is mitigated in practice: the spy returns `TriggerState.Paused`, so `ResumeAsync`
+definitely calls `ScheduleAsync`, and that call is necessarily later in the call timeline than
+the hydration call (hydration runs first in `Build`, resume runs inside `Consume`). The ordering
+assertion is sound for the current setup, but the test would be tighter if it asserted the
+count of `ScheduleJob` calls increased by exactly 1 during `Consume` (proving the resume path
+contributed its own reschedule and no spurious extras occurred).
 
-**File:** `tests/BaseApi.Tests/Orchestrator/SC1RoundTripE2ETests.cs:362-440`; `SC2RecoveryPathsE2ETests.cs:419-513`; `SC3PauseResumeOutageE2ETests.cs:510-588`
-**Issue:** The nested `RealStackWebAppFactory`, the env-var host overrides, `PollForHealthyLivenessAsync`,
-`PollForNewExecutionDataKeyAsync`, `ScanExecutionDataKeys`, and the three `Seed*Async` helpers are
-copy-pasted (the XML docs say so explicitly: "CLONED WHOLESALE"). This is a deliberate, documented
-proof-phase choice and the per-file divergences (SC2's broker queues, SC3's redis-tolerant scan)
-are real, so consolidation is non-trivial. Flagged as the standing duplication-maintenance cost: a
-fix to the shared liveness/scan logic must be applied in 2-3 places.
-**Fix:** Optional post-proof refactor — extract a shared `RealStackWebAppFactory` base + a
-`RealStackPolls` static helper into the test project; let each SCx subclass only the queue-teardown
-extension it needs. Out of scope for the proof phase.
-
-### IN-03: `delay` exponential-backoff variable in the L2 poll loops never reaches its computed value before being capped
-
-**File:** `tests/BaseApi.Tests/Orchestrator/SC1RoundTripE2ETests.cs:237-251`; `SC2...cs:232-247`; `SC3...cs:355-369`
-**Issue:** Pattern `await Task.Delay(Math.Min(delay, 3_000)); delay = Math.Min(delay * 2, 3_000);`
-starts at 1000 and reaches the 3000 cap after one doubling, so the backoff is effectively
-1s, 2s, 3s, 3s… The `delay = Math.Min(delay*2, 3_000)` and the `Math.Min(delay, 3_000)` at the call
-site are redundant (the stored `delay` is already capped, so the call-site `Math.Min` is a no-op
-after the first cap). Harmless, just slightly confusing dead arithmetic.
-**Fix:** Drop the call-site `Math.Min` since `delay` is already capped on assignment:
-`await Task.Delay(delay, ct); delay = Math.Min(delay * 2, 3_000);`
-
-### IN-04: SC1 net-zero "stop the workflow" runs AFTER all assertions — an early assertion failure leaves the cron firing and churns the close-gate scan
-
-**File:** `tests/BaseApi.Tests/Orchestrator/SC1RoundTripE2ETests.cs:184-186`
-**Issue:** The best-effort `orchestration/stop` is the last statement in the test body, not in
-`DisposeAsync`. If any assertion between Start and that line throws (e.g. the ES advance poll times
-out), the self-rescheduling `* * * * *` workflow keeps firing and minting fresh `skp:data:*` keys,
-which the comment itself warns "churns the close-gate redis --scan name-set." The L2KeysToCleanup
-drain in DisposeAsync deletes the *known* root/step keys but not the unbounded future per-fire keys
-a still-running cron mints. SC3 has the same structure (`SC3...cs:236-237`). The close-gate settle
-loop (`phase-49-close.ps1:280-293`) relies on every E2E "STOPS its workflow in teardown" — an
-assertion-failure path violates that precondition.
-**Fix:** Move the workflow stop into the factory's `DisposeAsync` (register `wfId` into a
-`WorkflowsToStop` list the same way keys are registered), so it runs even when an assertion throws:
+**Fix:** Optional — add a baseline count before `Consume` and assert the increment equals the
+number of workflows enumerated (1 in the single-workflow setup):
 ```csharp
-factory.WorkflowsToStop.Add(wfId);   // stopped in DisposeAsync via the in-process client, best-effort
+var scheduleJobsBefore = spy.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IScheduler.ScheduleJob));
+await consumer.Consume(...);
+var scheduleJobsAfter = spy.ReceivedCalls().Count(c => c.GetMethodInfo().Name == nameof(IScheduler.ScheduleJob));
+Assert.Equal(1, scheduleJobsAfter - scheduleJobsBefore); // exactly one per-job reschedule
 ```
 
-### IN-05: `phase-49-close.ps1` DLQ depth regex assumes a single-token queue name and would silently mis-read a name containing whitespace
+### IN-02: `Normal_After_PauseAll_Resume_Cycle` XML doc comment cites `ResumeTriggers(AnyGroup())` but the implementation uses `ResumeAll()`
 
-**File:** `scripts/phase-49-close.ps1:362-363`
-**Issue:** `^\s*$([regex]::Escape($q))\s+\d+\s*$` matches a `name<whitespace>messages` row. For the
-fixed literal `skp-dlq-1` this is correct. It is noted only because the depth parse falls back to
-`-1` (treated as a violation) if the row format ever shifts (e.g. rabbitmqctl emitting tabs vs
-spaces, or an added column) — a brittle-but-fail-safe parse. The fallback direction is correct
-(unparseable → `-1` → fails the gate, not a false pass), so this is informational.
-**Fix:** None required; the fail-closed fallback is the right call. Optionally split on tabs like the
-C# `ReadQueueDepthAsync` does for consistency.
+**File:** `tests/BaseApi.Tests/Orchestrator/Consumers/ResumeAllConsumerTests.cs:133`
+**Issue:** The XML doc summary on line 133 reads "per-job reschedule THEN the group-level
+`ResumeTriggers(AnyGroup())` clear" — this is the planned approach that was empirically found
+NOT to clear `pausedTriggerGroups` in Quartz 3.18 RAMJobStore. The actual implementation uses
+`scheduler.ResumeAll()` via `WorkflowScheduler.ResumeAllGroupsAsync`. The comment is a stale
+artifact from before the D-08 Option A decision was locked. It does not affect test correctness
+but would mislead a reader investigating how the group-flag clear works.
 
-### IN-06: `phase-49-close.ps1` seeds Processor `version='3.5.0'` from a hard-coded comment-cited appsettings value — a drift risk
-
-**File:** `scripts/phase-49-close.ps1:132-142`
-**Issue:** The create-branch hardcodes `version = '3.5.0'` with a comment citing
-`src/Processor.Sample/appsettings.json:11`. The Version field does NOT participate in the unique
-`uq_processor_source_hash` constraint (the SourceHash does), so a stale version here does not break
-the idempotent GET-or-create or the procId stability — but it is a documentation/accuracy trap: if
-`Processor.Sample`'s version bumps, this seed silently records a wrong version on a fresh-DB first
-run. Low impact (only the first-ever seed on an empty DB, and version is cosmetic for this gate).
-**Fix:** Optional — read the version from the same assembly the hash is read from, or drop the
-version assertion's significance with a comment that it is cosmetic-only for the gate.
+**Fix:** Update the XML doc on line 133 to reference `ResumeAll()` / `ResumeAllGroupsAsync`:
+```
+/// <see cref="ResumeAllConsumer"/> -> per-job reschedule THEN the single
+/// group-level <c>scheduler.ResumeAll()</c> clear (via <see cref="WorkflowScheduler.ResumeAllGroupsAsync"/>).
+```
 
 ---
 
-_Reviewed: 2026-06-09_
+_Reviewed: 2026-06-09T13:23:33Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
