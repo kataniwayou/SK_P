@@ -34,10 +34,15 @@ namespace BaseApi.Tests.Keeper;
 /// </summary>
 public sealed class RecoveryDeadLetterFacts
 {
-    /// <summary>An empty L2 — every StringGetAsync returns RedisValue.Null (the data-gone condition).</summary>
+    /// <summary>
+    /// An empty L2 — the data-gone condition. ReinjectConsumer gates the data-gone terminal on
+    /// StringLengthAsync (STRLEN == 0), so that is the method stubbed here; StringGetAsync is also
+    /// nulled to keep the substitute internally consistent for any incidental reads.
+    /// </summary>
     private static IConnectionMultiplexer EmptyMux()
     {
         var db = Substitute.For<IDatabase>();
+        db.StringLengthAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(0L);
         db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(RedisValue.Null);
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
