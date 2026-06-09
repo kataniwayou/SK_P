@@ -25,7 +25,7 @@ public sealed class PipelineInFacts
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
         var send = new DispatchTestKit.CapturingSendProvider();
         var pipeline = new ProcessorPipeline(redis, context, processor, send, DispatchTestKit.Retry(3),
-            NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
         return (pipeline, send, entryId);
     }
 

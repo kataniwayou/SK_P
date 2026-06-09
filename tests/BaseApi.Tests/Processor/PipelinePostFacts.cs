@@ -28,7 +28,7 @@ public sealed class PipelinePostFacts
         IConnectionMultiplexer redis, IProcessorContext context, BaseProcessorBase processor,
         DispatchTestKit.CapturingSendProvider send) =>
         new(redis, context, processor, send, DispatchTestKit.Retry(3),
-            NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
     [Fact]
     public async Task MultiItem_NCompleted_NResults()
