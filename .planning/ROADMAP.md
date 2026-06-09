@@ -531,11 +531,12 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   2. A real-stack E2E proves each recovery path: `REINJECT` data-present (re-injected to `queue:{ProcessorId}`), `REINJECT` data-gone → `_DLQ1`, `INJECT` (reconstructed `Completed` → orchestrator), and `DELETE`.
   3. A real-stack E2E proves the BIT-gate global pause-all/resume-all across a transient L2 outage (outage → pause all → L2 recovers → resume all), with pause/resume idempotent per job.
   4. The close gate runs N consecutive GREEN with triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE==AFTER net-zero — including the composite backup key (proven cleaned by `CLEANUP`/`INJECT`, not lingering on its 2-day TTL), the GUID data keys, and `_DLQ1` — at Release + Debug 0-warning.
-**Plans**: 4 plans
+**Plans**: 5 plans (4 + 1 gap-closure)
   - [x] 49-01-PLAN.md — SC1 RealStack round-trip E2E (Pre->In->Post; output-to-L2; orchestrator-advance)
   - [x] 49-02-PLAN.md — SC2 RealStack recovery-paths E2E (REINJECT present/gone, INJECT, DELETE via keeper-recovery direct-publish)
   - [x] 49-03-PLAN.md — SC3 RealStack pause-resume-outage E2E (docker stop/start sk-redis; non-parallel collection)
   - [x] 49-04-PLAN.md — phase-49-close.ps1 triple-SHA close gate + 49-HUMAN-UAT.md operator runbook
+  - [ ] 49-05-PLAN.md ΓÇö GAP-49-2 fix: ResumeAll clears pausedTriggerGroups after per-job loop (group-resume wrapper + no-burst/ordering regression)
 
 ### Progress (v4.0.0)
 
