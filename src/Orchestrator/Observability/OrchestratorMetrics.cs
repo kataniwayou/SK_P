@@ -31,8 +31,13 @@ public sealed class OrchestratorMetrics
     public Counter<long> ResultConsumed { get; }
 
     /// <summary>
-    /// Phase 32 (D-10): <c>orchestrator_result_deduped</c> — incremented at the existing
-    /// <c>flag[H]=="Ack"</c> drop gate in ResultConsumer (Plan 04 wires the increment).
+    /// <c>orchestrator_result_deduped</c> — RETAINED-BUT-DORMANT post-RETIRE-01. Originally (Phase 32, D-10)
+    /// incremented at the <c>flag[H]=="Ack"</c> effect-first dedup drop gate in the retired
+    /// <c>ResultConsumer</c>. That gate was removed when <see cref="Consumers.TypedResultConsumer{T}"/>
+    /// replaced it (the typed consumer is dedup-free by design, D-07), so this counter currently has NO
+    /// increment site and emits no series. It is intentionally kept (and still covered by
+    /// <c>BreakerMetricsFacts</c>) as the meter slot for a possible future dedup feature — do NOT expect a
+    /// live series from it today.
     /// </summary>
     public Counter<long> ResultDeduped { get; }
 
