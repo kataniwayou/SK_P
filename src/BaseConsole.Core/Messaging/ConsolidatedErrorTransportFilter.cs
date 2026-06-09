@@ -31,9 +31,13 @@ namespace BaseConsole.Core.Messaging;
 /// <c>TransportHeaders</c>, <c>ExceptionHeaders</c>, and <see cref="ExceptionReceiveContext.Exception"/>.
 /// </para>
 /// <para>
-/// OPERATOR NOTE (Pitfall 2, recorded for Plan 04 / Phase 39 — NOT code): x-message-ttl applies only at
-/// queue-create time; if a skp-dlq-1 ever existed on the broker WITHOUT the TTL, it must be deleted once
-/// before the corrected declaration takes effect.
+/// TOPOLOGY NOTE: the skp-dlq-1 QUEUE is declared exactly ONCE (with x-message-ttl = 7 days) by the
+/// ReceiveEndpoint in MessagingServiceCollectionExtensions. This filter sends to the EXCHANGE
+/// (<see cref="Dlq1Uri"/> = exchange:skp-dlq-1), so the send path never re-declares the queue with
+/// default args — avoiding the RabbitMQ 406 'inequivalent arg x-message-ttl' that a queue: send would
+/// raise against the ttl'd queue (MassTransit #5902). x-message-ttl applies only at queue-create time;
+/// if a skp-dlq-1 ever exists on the broker with DIFFERENT args, delete it once so the ReceiveEndpoint
+/// re-creates it cleanly.
 /// </para>
 /// </summary>
 public sealed class ConsolidatedErrorTransportFilter : IFilter<ExceptionReceiveContext>
@@ -44,7 +48,15 @@ public sealed class ConsolidatedErrorTransportFilter : IFilter<ExceptionReceiveC
     /// </summary>
     public const string Dlq1 = "skp-dlq-1";
 
-    private static readonly Uri Dlq1Uri = new($"queue:{Dlq1}");
+    // Address the consolidated DLQ by its EXCHANGE, not "queue:". The skp-dlq-1 QUEUE is declared exactly
+    // ONCE — authoritatively, with x-message-ttl = 7 days — by the ReceiveEndpoint in
+    // MessagingServiceCollectionExtensions. A "queue:skp-dlq-1" send makes MassTransit RE-declare that queue
+    // on the send path with DEFAULT args (no x-message-ttl), which RabbitMQ rejects with
+    // 406 PRECONDITION_FAILED (inequivalent arg 'x-message-ttl'): the dead-letter move then never completes,
+    // the faulted message is never acked, and it poison-loops on redelivery (MassTransit #5902 — sending to a
+    // custom-configured, consumer-less receive endpoint). Sending to the fanout exchange the ReceiveEndpoint
+    // already created (bound to the ttl'd queue) routes the move into skp-dlq-1 WITHOUT re-declaring the queue.
+    private static readonly Uri Dlq1Uri = new($"exchange:{Dlq1}");
 
     public async Task Send(ExceptionReceiveContext context, IPipe<ExceptionReceiveContext> next)
     {
