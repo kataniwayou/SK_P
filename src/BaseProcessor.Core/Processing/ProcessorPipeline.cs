@@ -55,6 +55,7 @@ public sealed class ProcessorPipeline(
     BaseProcessor processor,
     ISendEndpointProvider sendProvider,
     IOptions<RetryOptions> retryOptions,
+    ProcessorMetrics metrics,
     ILogger<ProcessorPipeline> logger)
 {
     public async Task RunAsync(EntryStepDispatch d, CancellationToken ct)
@@ -173,7 +174,27 @@ public sealed class ProcessorPipeline(
         var sent = await RetryLoop.ExecuteAsync(
             async () => { await ep.Send((object)result, CancellationToken.None); return true; }, limit, ct);
         if (!sent.Succeeded) throw sent.Error!;   // D-10: propagate → UseMessageRetry → _error
+
+        // METRIC-05 / GAP-49-5 (D-10): count EVERY genuinely-sent step result, tagged ProcessorId (same
+        // context.Id!.Value.ToString("D") shape as EntryStepDispatchConsumer.DispatchConsumed) PLUS the
+        // terminal outcome (completed/failed/cancelled/processing — MetricsRoundTripE2ETests asserts
+        // expectOutcome:true). Placed AFTER the success guard so only a confirmed send increments the
+        // counter (a propagated exhaustion above never reaches here).
+        metrics.ResultSent.Add(1,
+            new KeyValuePair<string, object?>("ProcessorId", context.Id!.Value.ToString("D")),
+            new KeyValuePair<string, object?>("outcome", ResultOutcome(result)));
     }
+
+    /// <summary>Maps the concrete <see cref="IStepResult"/> record to a stable lowercase outcome tag value
+    /// (completed/failed/cancelled/processing) for the <c>processor_result_sent_total</c> outcome label.</summary>
+    private static string ResultOutcome(IStepResult result) => result switch
+    {
+        StepCompleted  => "completed",
+        StepFailed     => "failed",
+        StepCancelled  => "cancelled",
+        StepProcessing => "processing",
+        _              => "failed",
+    };
 
     private async Task SendKeeper(IKeeperRecoverable msg, int limit, CancellationToken ct)
     {
