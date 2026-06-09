@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: milestone_complete
-stopped_at: Completed 49-04-PLAN.md
-last_updated: "2026-06-09T11:18:42.180Z"
+status: executing
+stopped_at: Completed 49-05-PLAN.md (GAP-49-2 close)
+last_updated: "2026-06-09T13:19:41.932Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 52
-  completed_phases: 52
-  total_plans: 178
-  completed_plans: 192
+  completed_phases: 51
+  total_plans: 179
+  completed_plans: 193
   percent: 100
 ---
 
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 ## Current Position
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
-Phase: 49
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-09
+Phase: 49 (live-proof-close-gate) — GAP-49-2 CLOSED (orchestrator fix authored + regression-locked); awaiting operator-gated live N×GREEN close run (D-03)
+Plan: 49-05 of 5 complete (gap-closure). Plans 49-01..49-04 DONE in prior sessions; GAP-49-1 fixed (5666fb7); GAP-49-2 fixed (49-05 / 03e0129) — no open defects remain in scope.
+Status: Authored-hermetic complete; live close gate is operator-gated (TEST-01/02/03 tick on the operator's GREEN run against the rebuilt v4 stack, 49-HUMAN-UAT.md)
+Last activity: 2026-06-09 -- 49-05 GAP-49-2 close executed (ResumeAll clears pausedTriggerGroups after per-job loop)
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
@@ -900,6 +900,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 49 P02 | 14min | 1 tasks | 1 files |
 | Phase 49 P03 | 30min | 1 tasks | 1 files |
 | Phase 49 P04 | 5min | 2 tasks | 2 files |
+| Phase 49 P05 | 35 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1261,6 +1262,8 @@ Recent decisions affecting current work:
 - 49-03: pause/resume read out-of-process via orchestrator ES seam logs (Global PauseAll/ResumeAll); TriggerState idiom mirrored; TEST-02 stays UNTICKED until operator live run (D-03)
 - 49-04: phase-49-close.ps1 authored — v4 triple-SHA close gate clones phase-39 with single skp-dlq-1, seed version 3.5.0, no composite-TTL wait (D-06/D-07); parses clean
 - 49-04: 49-HUMAN-UAT.md authored as the operator runbook; TEST-01/02/03 stay UNTICKED until the operator records a GREEN live N×GREEN run against the rebuilt v4 stack (D-03)
+- GAP-49-2 closed (49-05): ResumeAllConsumer clears Quartz pausedTriggerGroups via one scheduler.ResumeAll() AFTER the per-job ResumeAsync loop (load-bearing ordering -> no misfire herd). D-08 Option A; PauseAllConsumer UNCHANGED.
+- 49-05 used scheduler.ResumeAll() NOT ResumeTriggers(GroupMatcher.AnyGroup()): in Quartz 3.18 RAMJobStore the AnyGroup matcher unpauses existing triggers but does NOT clear pausedTriggerGroups, so post-cycle workflows stay Paused; only ResumeAll() clears the set. No-herd preserved by the ordering (Rule-1 deviation, spec-permitted).
 
 ### Roadmap Milestone Log
 
@@ -1363,8 +1366,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T11:18:33.916Z
-Stopped at: Completed 49-04-PLAN.md
+Last session: 2026-06-09T13:19:41.910Z
+Stopped at: Completed 49-05-PLAN.md (GAP-49-2 close)
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
@@ -1372,4 +1375,4 @@ Resume file: None
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 49 (live-proof-close-gate) — 4 plans — 2026-06-09T10:17:53.185Z
+**Planned Phase:** 49 (live-proof-close-gate) — 5 plans — 2026-06-09T13:02:24.367Z
