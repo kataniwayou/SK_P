@@ -69,6 +69,45 @@ public sealed class InjectConsumerFacts
         Assert.Equal(m.CorrelationId, sentMsg.CorrelationId);
     }
 
+    /// <summary>
+    /// WR-01: the trailing composite delete is BEST-EFFORT. After a successful Send, a delete that exhausts
+    /// its RetryLoop (transient Redis fault on the delete only) must NOT surface out of Consume — re-driving
+    /// would emit a SECOND StepCompleted (double-fan, no orchestrator dedup per D-07). This proves Consume
+    /// completes without throwing even when the delete keeps faulting, AND that the Send already happened
+    /// exactly once before the delete failure.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "46")]
+    public async Task Inject_delete_exhaustion_after_send_does_not_throw_or_redrive()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var m = new KeeperInject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        {
+            CorrelationId = Guid.NewGuid(),
+            ExecutionId = Guid.NewGuid(),
+        };
+        var composite = L2ProjectionKeys.CompositeBackup(m.CorrelationId, m.WorkflowId, m.ProcessorId, m.ExecutionId);
+        var db = RecoveryTestKit.Db(new Dictionary<string, string> { [composite] = "{\"blob\":1}" });
+        // The delete always faults — RetryLoop exhausts. Best-effort handling must swallow it.
+        db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns<Task<bool>>(_ => throw new RedisException("transient delete fault"));
+
+        var endpoint = Substitute.For<ISendEndpoint>();
+        endpoint.Send(Arg.Any<StepCompleted>(), Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+        var send = Substitute.For<ISendEndpointProvider>();
+        send.GetSendEndpoint(Arg.Any<Uri>()).Returns(Task.FromResult(endpoint));
+
+        var consumer = new InjectConsumer(
+            RecoveryTestKit.Mux(db), send, RecoveryTestKit.OpenGate(),
+            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery(), RecoveryTestKit.Backup());
+
+        // Must NOT throw despite the delete exhausting — Consume completes (no re-drive).
+        await consumer.Consume(Substitute_Ctx(m, ct));
+
+        // The Send landed exactly once before the failing delete; the completion is not re-driven.
+        await endpoint.Received(1).Send(Arg.Any<StepCompleted>(), Arg.Any<CancellationToken>());
+    }
+
     private static ConsumeContext<KeeperInject> Substitute_Ctx(KeeperInject m, CancellationToken ct)
     {
         var ctx = Substitute.For<ConsumeContext<KeeperInject>>();
