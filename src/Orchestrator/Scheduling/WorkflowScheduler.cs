@@ -1,4 +1,5 @@
 using Quartz;
+using Quartz.Impl.Matchers;
 
 namespace Orchestrator.Scheduling;
 
@@ -118,6 +119,17 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
 
     /// <summary>Scheduler-wide pause-all (ORCH-02, D-01). Idempotent — re-pausing already-paused groups is a Quartz no-op.</summary>
     public Task PauseAllAsync(CancellationToken ct) => scheduler.PauseAll(ct);
+
+    /// <summary>
+    /// Scheduler-wide resume-all GROUP-FLAG CLEAR (GAP-49-2 / D-08 Option A). Clears Quartz's
+    /// <c>pausedTriggerGroups</c> set via <c>ResumeTriggers(AnyGroup())</c> so triggers ADDED AFTER a
+    /// prior <see cref="PauseAllAsync"/> are no longer born <c>Paused</c>. MUST be called only AFTER the
+    /// per-job <c>WorkflowLifecycle.ResumeAsync</c> loop has replaced every paused trigger with a
+    /// fresh-from-now <c>Normal</c> trigger — by then no stale paused trigger remains, so clearing the
+    /// group flag fires NO misfire herd. Idempotent: resuming non-paused groups is a Quartz no-op.
+    /// </summary>
+    public Task ResumeAllGroupsAsync(CancellationToken ct) =>
+        scheduler.ResumeTriggers(GroupMatcher<TriggerKey>.AnyGroup(), ct);
 
     /// <summary>Read the deterministic trigger's state (Normal=Running / Paused / None=Stopped) — D-05.
     /// Returns None for an unknown key (RESEARCH §4), never throws.</summary>
