@@ -503,7 +503,10 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   1. A single consolidated `_DLQ1` receives every terminal send/L2 give-up from the processor and the Keeper — there is no separate `keeper-dlq`, and the routing is wired once across the consoles (same pattern everywhere).
   2. The execution path carries no dedup/idempotency key (no `H`, no `flag[H]` gate); a redelivered or re-injected message reproduces its effect rather than being collapsed, and the system tolerates the duplicate (no lost branch, no crash).
   3. The `REINJECT`-data-gone case (redelivery after end-delete, or genuinely missing input) terminates deterministically at `_DLQ1` for operator triage rather than looping.
-**Plans**: TBD
+**Plans**: 3 plans (2 waves — Wave 1: two independent test plans in parallel [DLQ-consolidation structural guards; at-least-once duplicate-delivery + R2 re-tag]; Wave 2: audit doc + design-doc amendment, gated on Wave-1 facts being green)
+- [ ] 47-01-PLAN.md — Wave 1: processor send-exhaustion -> skp-dlq-1 fact + AtLeastOnceStructuralFacts (reflection no-dedup R4 + source-scan no-keeper-dlq R1) [RESIL-02, RESIL-03]
+- [ ] 47-02-PLAN.md — Wave 1: duplicate-delivery no-collapse facts (StepCompleted + KeeperReinject, R3) + Phase-47 re-tag of the data-gone fact (R2 cited) [RESIL-02, RESIL-03]
+- [ ] 47-03-PLAN.md — Wave 2: 47-DLQ-AUDIT.md traceability ledger (R5) + design-doc at-least-once amendment bundling the Phase-46 KeeperReinject.Payload note (D-02) [RESIL-02, RESIL-03]
 
 #### Phase 48: v3.x Teardown
 **Goal**: The reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` Keeper recovery path + the `keeper-dlq` queue are removed (RETIRE-03), plus a final remnant sweep, leaving the system buildable and running on the v4 path alone. NOTE (D-02): the `H`/`flag[H]`/CAS dedup machinery (RETIRE-01) and the content-addressing + result manifest + N×M fan-out (RETIRE-02) were already removed in Phase 43 — coupled to the field/type reshape (compile-forced per D-01) — so this phase shrinks to RETIRE-03 + the remnant sweep.
