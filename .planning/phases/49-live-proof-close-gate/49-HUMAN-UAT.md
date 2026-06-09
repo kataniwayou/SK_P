@@ -142,16 +142,16 @@ result: [pending]
 
 total: 1
 passed: 0
-issues: 1
+issues: 0
 pending: 1
 skipped: 0
-blocked: 1
+blocked: 0
 
 ## Gaps
 
-A first operator live run (2026-06-09) executed the gate against a freshly-rebuilt v4 stack. Pre-flight, 0-warning builds (Release+Debug), and the triple-SHA machinery all worked; the 3×GREEN cadence did not pass (Run 1: 509 passed / 5 failed — the 5 live round-trip facts). Two v4 defects were surfaced:
+A first operator live run (2026-06-09) executed the gate against a freshly-rebuilt v4 stack. Pre-flight, 0-warning builds (Release+Debug), and the triple-SHA machinery all worked; the 3×GREEN cadence did not pass (Run 1: 509 passed / 5 failed — the 5 live round-trip facts). Two v4 defects were surfaced — **both are now closed**, so the gate is **unblocked** and ready for a re-run:
 
 - **GAP-49-1 — RESOLVED (commit `5666fb7`).** `skp-dlq-1` 406 `x-message-ttl` poison-loop in `ConsolidatedErrorTransportFilter` (sent via `queue:` → re-declared the ttl'd queue without args → 4,133× redelivery storm). Fixed by sending via `exchange:skp-dlq-1`. Verified: 0× 406, DLQ depth 0.
-- **GAP-49-2 — OPEN (blocks this gate).** Pause-all/resume-all leaves the orchestrator Quartz scheduler stuck paused for newly-scheduled workflows (`PauseAll()` pauses trigger groups; per-job `ResumeJob` doesn't clear the group pause). Under full-suite load, a transient `redis:6379` blip flaps the Keeper BIT gate → one `PauseAll` → the scheduler freezes → every round-trip test fails. Proven: isolated SC1 fails while stuck-paused, **passes after an orchestrator restart**. Tracked as a gap in `49-VERIFICATION.md`; close via `/gsd-plan-phase 49 --gaps`.
+- **GAP-49-2 — RESOLVED (commits `081895f`, `03e0129`, `ddea4df`; plan 49-05, decision D-08 Option A).** Pause-all/resume-all left the orchestrator Quartz scheduler stuck paused for newly-scheduled workflows (`PauseAll()` set `pausedTriggerGroups`; per-job resume never cleared it). Fix: `ResumeAllConsumer` now calls a scheduler-wide group-flag clear (`WorkflowScheduler.ResumeAllGroupsAsync` → `scheduler.ResumeAll()`) exactly once, **after** the per-job reschedule loop — so every trigger is already fresh-from-now `Normal` and no misfire herd fires (`PauseAllConsumer` unchanged). Covered by the `Normal_After_PauseAll_Resume_Cycle` regression (true PauseAll→ResumeAll over a RAM scheduler; post-cycle workflow born `Normal`) + the ordering/no-burst facts. Hermetic suite 508 passed / 0 failed; both build configs 0-warning. Re-verified in `49-VERIFICATION.md` (status `human_needed`, 5/5 must-haves).
 
-The round-trip code itself is sound (isolated SC1 passes on a clean scheduler). This gate's GREEN run is blocked on GAP-49-2; re-run after it is fixed.
+The round-trip code itself was always sound (isolated SC1 passes on a clean scheduler). With both defects closed, **re-run Step 1 → Step 2** against the rebuilt v4 stack to capture the GREEN N×3 close run and tick TEST-01/02/03.
