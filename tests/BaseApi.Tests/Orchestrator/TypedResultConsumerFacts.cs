@@ -228,6 +228,68 @@ public sealed class TypedResultConsumerFacts
         Assert.Equal(entryId, d.EntryId);              // entryId = m.EntryId, identical on both
     }
 
+    // ----- RESIL-03 (R3): at-least-once / no-collapse on duplicate StepCompleted delivery ----------
+
+    /// <summary>
+    /// Phase 47 / RESIL-03: the v4 execution path is at-least-once and carries NO dedup/idempotency key,
+    /// so delivering the SAME <see cref="StepCompleted"/> (identical ids) TWICE into ONE
+    /// <see cref="StepCompletedConsumer"/> sharing ONE <see cref="RecordingDispatcher"/> reproduces the
+    /// advancement effect TWICE (no collapse to 1, no throw, no lost branch). This is the no-collapse proof
+    /// distinct from <see cref="Injected_StepCompleted_indistinguishable_from_direct"/> (which uses TWO
+    /// dispatchers + one Consume each to prove indistinguishability — NOT no-collapse). LANDMINE / Pitfall 5:
+    /// ONE dispatcher + double-Consume of the SAME instance, assert Calls.Count == 2.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "47")]
+    public async Task Duplicate_StepCompleted_reproduces_effect_no_collapse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        var workflowId = Guid.NewGuid();
+        var completedStepId = Guid.NewGuid();
+        var completedProcessorId = Guid.NewGuid();
+        var nextStepId = Guid.NewGuid();
+        var nextProcessorId = Guid.NewGuid();
+        const string nextPayload = "{\"next\":true}";
+
+        // Single Completed-gated successor (same fixture shape as the indistinguishability fact).
+        var steps = new Dictionary<Guid, StepProjection>
+        {
+            [completedStepId] = Step(0, completedProcessorId, "{}", nextStepId),
+            [nextStepId] = Step((int)StepOutcome.Completed, nextProcessorId, nextPayload),
+        };
+        var store = new WorkflowL1Store();
+        SeedWorkflow(store, workflowId, steps);
+
+        var correlationId = Guid.NewGuid();
+        var executionId = Guid.NewGuid();
+        var entryId = Guid.NewGuid();
+
+        // ONE message instance, ONE consumer, ONE dispatcher.
+        var msg = new StepCompleted(workflowId, completedStepId, completedProcessorId)
+        { CorrelationId = correlationId, ExecutionId = executionId, EntryId = entryId };
+
+        var dispatcher = new RecordingDispatcher();
+        var consumer = new StepCompletedConsumer(store, new StepAdvancement(), dispatcher,
+            OrchestratorTestStubs.Metrics(), NullLogger<StepCompleted>.Instance);
+
+        // Deliver the SAME message TWICE (broker redelivery / publish-confirm ambiguity at-least-once shape).
+        await consumer.Consume(OrchestratorTestStubs.Context(msg, ct));
+        await consumer.Consume(OrchestratorTestStubs.Context(msg, ct));
+
+        // No collapse: the second identical delivery is NOT deduped — the effect fires twice, no throw.
+        Assert.Equal(2, dispatcher.Calls.Count);
+
+        // No lost branch: BOTH deliveries advanced the SAME matched successor (identical StepId/ProcessorId/
+        // EntryId). ExecutionId is regenerated per dispatch (NewId.NextGuid) so it is deliberately excluded.
+        Assert.Equal(nextStepId, dispatcher.Calls[0].StepId);
+        Assert.Equal(nextStepId, dispatcher.Calls[1].StepId);
+        Assert.Equal(nextProcessorId, dispatcher.Calls[0].ProcessorId);
+        Assert.Equal(nextProcessorId, dispatcher.Calls[1].ProcessorId);
+        Assert.Equal(entryId, dispatcher.Calls[0].EntryId);
+        Assert.Equal(entryId, dispatcher.Calls[1].EntryId);
+    }
+
     /// <summary>
     /// A concrete recording <see cref="IStepDispatcher"/> capturing each <c>DispatchAsync</c> call's args
     /// (mirrors ResultAckTests.RecordingDispatcher) so dispatch assertions are deterministic.
