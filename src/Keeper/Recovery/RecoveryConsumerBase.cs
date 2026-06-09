@@ -40,6 +40,10 @@ public abstract class RecoveryConsumerBase<TMessage>(
     public async Task Consume(ConsumeContext<TMessage> context)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(context.CancellationToken);
+        // WR-02: GateWaitSeconds parks this Consume (holding its broker channel) for up to that bound — it
+        // MUST stay below the deployed RabbitMQ consumer_timeout (broker default 30 min) or the broker
+        // force-closes the parked channel. The two configs live in different systems and cannot be validated
+        // together at build time; see RecoveryOptions.GateWaitSeconds for the operator note.
         cts.CancelAfter(TimeSpan.FromSeconds(recoveryOptions.Value.GateWaitSeconds));
         try
         {
