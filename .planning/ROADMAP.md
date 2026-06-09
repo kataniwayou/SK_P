@@ -505,7 +505,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   3. The `REINJECT`-data-gone case (redelivery after end-delete, or genuinely missing input) terminates deterministically at `_DLQ1` for operator triage rather than looping.
 **Plans**: 3 plans (2 waves — Wave 1: two independent test plans in parallel [DLQ-consolidation structural guards; at-least-once duplicate-delivery + R2 re-tag]; Wave 2: audit doc + design-doc amendment, gated on Wave-1 facts being green)
 - [x] 47-01-PLAN.md — Wave 1: processor send-exhaustion -> skp-dlq-1 fact + AtLeastOnceStructuralFacts (reflection no-dedup R4 + source-scan no-keeper-dlq R1) [RESIL-02, RESIL-03] ✓ 3/3 Phase=47 facts GREEN, 528/528 hermetic, SK_P.sln 0/0 Release; commits 43e4855, 4c771f3
-- [ ] 47-02-PLAN.md — Wave 1: duplicate-delivery no-collapse facts (StepCompleted + KeeperReinject, R3) + Phase-47 re-tag of the data-gone fact (R2 cited) [RESIL-02, RESIL-03]
+- [x] 47-02-PLAN.md — Wave 1: duplicate-delivery no-collapse facts (StepCompleted + KeeperReinject, R3) + Phase-47 re-tag of the data-gone fact (R2 cited) [RESIL-02, RESIL-03] ✓ 6/6 Phase=47 facts GREEN, 530/530 hermetic, SK_P.sln 0/0; commits 29002c9, f6139d7
 - [ ] 47-03-PLAN.md — Wave 2: 47-DLQ-AUDIT.md traceability ledger (R5) + design-doc at-least-once amendment bundling the Phase-46 KeeperReinject.Payload note (D-02) [RESIL-02, RESIL-03]
 
 #### Phase 48: v3.x Teardown
@@ -538,6 +538,6 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 44. Processor Pre/In/Post-Process Pipeline | 3/3 | Complete | 2026-06-08 |
 | 45. Keeper BIT Health Gate + Global Pause/Resume | 3/3 | Complete | 2026-06-08 |
 | 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 1/4 | In progress | - |
-| 47. DLQ Consolidation + At-Least-Once Semantics | 1/3 | In progress | 47-01 ✓ (RESIL-02, RESIL-03 structural guards) |
+| 47. DLQ Consolidation + At-Least-Once Semantics | 2/3 | In progress | 47-01 ✓ (RESIL-02, RESIL-03 structural guards); 47-02 ✓ (R3 no-collapse facts + R2 Phase-47 re-tag) |
 | 48. v3.x Teardown | 0/? | Not started | - |
 | 49. Live Proof & Close Gate | 0/? | Not started | - |
