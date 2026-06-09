@@ -14,8 +14,8 @@ namespace BaseApi.Tests.Resilience;
 ///     <c>H</c>/<c>flag[H]</c>/CAS dedup but left no regression guard; this is it.</item>
 ///   <item>FACT B (R1 structural / RESIL-02) — source-scan guard: no v4 give-up path under
 ///     <c>src/BaseProcessor.Core/Processing/</c> or <c>src/Keeper/Recovery/</c> references the second DLQ
-///     (<see cref="KeeperQueues.DeadLetter"/> / <c>"keeper-dlq"</c>) — the dormant reactive
-///     <c>KeeperRecoveryHandler.cs</c> (retired Phase 48) is the ONLY legitimate sender and is excluded.</item>
+///     (<see cref="KeeperQueues.DeadLetter"/> / <c>"keeper-dlq"</c>). The scan is now unconditional — the
+///     dormant reactive recovery handler was deleted in the Phase-48 teardown (RETIRE-03).</item>
 /// </list>
 /// </summary>
 public sealed class AtLeastOnceStructuralFacts
@@ -65,16 +65,12 @@ public sealed class AtLeastOnceStructuralFacts
     }
 
     /// <summary>
-    /// FACT B (R1 structural, RESIL-02) — SOURCE-SCAN (Pitfall 1 — <c>KeeperRecoveryHandler.cs</c> MUST be
-    /// excluded). Asserts no v4 give-up path under <c>src/BaseProcessor.Core/Processing/</c> or
-    /// <c>src/Keeper/Recovery/</c> references the second DLQ (<see cref="KeeperQueues.DeadLetter"/> symbol OR
-    /// the <c>"keeper-dlq"</c> literal — a re-introduction could use either form).
-    /// <para>
-    /// EXCLUSION (Pitfall 1): <c>KeeperRecoveryHandler.cs</c> is the dormant reactive keeper-dlq sender,
-    /// retired in Phase 48 — it is the ONLY legitimate <c>KeeperQueues.DeadLetter</c> sender and is excluded
-    /// by exact filename. Any OTHER file referencing keeper-dlq is a real RESIL-02 defect (surfaced in the
-    /// assertion message, never silently widened into the exclusion).
-    /// </para>
+    /// FACT B (R1 structural, RESIL-02) — SOURCE-SCAN. Asserts no v4 give-up path under
+    /// <c>src/BaseProcessor.Core/Processing/</c> or <c>src/Keeper/Recovery/</c> references the second DLQ
+    /// (<see cref="KeeperQueues.DeadLetter"/> symbol OR the <c>"keeper-dlq"</c> literal — a re-introduction
+    /// could use either form). The scan is unconditional: the dormant reactive keeper-dlq sender was deleted
+    /// in the Phase-48 teardown (RETIRE-03), so any file now referencing keeper-dlq is a real RESIL-02 defect
+    /// (surfaced in the assertion message).
     /// <para>
     /// FALSE-PASS GUARD (T-47-01): both scoped directories are asserted to EXIST before enumerating — a
     /// silently-empty scan (wrong repo-root anchor) would be a false pass that masks a real re-introduction.
@@ -95,8 +91,6 @@ public sealed class AtLeastOnceStructuralFacts
 
         var offenders = Directory.EnumerateFiles(processingDir, "*.cs")
             .Concat(Directory.EnumerateFiles(recoveryDir, "*.cs"))
-            // MANDATORY (Pitfall 1): the dormant reactive keeper-dlq sender, retired Phase 48.
-            .Where(f => Path.GetFileName(f) != "KeeperRecoveryHandler.cs")
             .Where(f =>
             {
                 var text = File.ReadAllText(f);
