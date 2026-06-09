@@ -52,7 +52,10 @@ public sealed class InjectConsumer(
             EntryId = entryId,
         };
         var ep = await Send.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
-        await Guard(() => ep.Send(completed, ct), ct);
+        // IN-01: the inner broker Send uses CancellationToken.None to match ProcessorPipeline's send
+        // convention ("do not abort a broker send once started"). The outer Guard keeps ct so the
+        // bounded RetryLoop still observes bus shutdown between attempts.
+        await Guard(() => ep.Send(completed, CancellationToken.None), ct);
 
         // WR-01: best-effort GC of the now-redundant composite. Run it through the bounded RetryLoop but do
         // NOT re-throw on exhaustion — the Send above already landed, so faulting here would re-drive the
