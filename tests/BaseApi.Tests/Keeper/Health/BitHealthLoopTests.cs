@@ -1,15 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics.Metrics;
 using System.Threading;
 using System.Threading.Tasks;
 using Keeper;
 using Keeper.Health;
-using Keeper.Observability;
 using Keeper.Recovery;
 using MassTransit;
 using Messaging.Contracts;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -32,9 +29,6 @@ public sealed class BitHealthLoopTests
 {
     private static IOptions<ProbeOptions> ZeroDelay() =>
         Options.Create(new ProbeOptions { DelaySeconds = 0, MaxAttempts = 1 });
-
-    private static KeeperMetrics NewMetrics() =>
-        new(new ServiceCollection().AddMetrics().BuildServiceProvider().GetRequiredService<IMeterFactory>());
 
     private static RedisConnectionException RedisDown() =>
         new(ConnectionFailureType.UnableToConnect, "fake-down");
@@ -116,7 +110,7 @@ public sealed class BitHealthLoopTests
         // unhealthy, then healthy: if the loop did NOT survive the RedisException, the second (healthy)
         // tick — and thus its ResumeAll — would never happen.
         using var redis = new ScriptedRedis([RedisDown(), null]);
-        var probe = new L2ProbeRecovery(redis.Multiplexer, ZeroDelay(), NewMetrics());
+        var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
         using var loop = NewLoop(probe, new L2HealthGate(), bus);
 
@@ -132,7 +126,7 @@ public sealed class BitHealthLoopTests
     {
         var ct = TestContext.Current.CancellationToken;
         using var redis = new ScriptedRedis([new InvalidOperationException("genuine bug")]);
-        var probe = new L2ProbeRecovery(redis.Multiplexer, ZeroDelay(), NewMetrics());
+        var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
         using var loop = NewLoop(probe, new L2HealthGate(), bus);
 
@@ -152,7 +146,7 @@ public sealed class BitHealthLoopTests
         var ct = TestContext.Current.CancellationToken;
         // A steady-healthy script; after it is consumed StopAsync cancels and the loop returns cleanly.
         using var redis = new ScriptedRedis([null, null, null]);
-        var probe = new L2ProbeRecovery(redis.Multiplexer, ZeroDelay(), NewMetrics());
+        var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
         using var loop = NewLoop(probe, new L2HealthGate(), bus);
 
@@ -171,7 +165,7 @@ public sealed class BitHealthLoopTests
         var ct = TestContext.Current.CancellationToken;
         // healthy, healthy, unhealthy: exactly one healthy->unhealthy edge -> one PauseAll.
         using var redis = new ScriptedRedis([null, null, RedisDown()]);
-        var probe = new L2ProbeRecovery(redis.Multiplexer, ZeroDelay(), NewMetrics());
+        var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
         using var loop = NewLoop(probe, new L2HealthGate(), bus);
 
@@ -189,7 +183,7 @@ public sealed class BitHealthLoopTests
         // unhealthy, unhealthy, healthy: one unhealthy->healthy edge -> one ResumeAll (and the first
         // unhealthy tick is a transition -> one PauseAll).
         using var redis = new ScriptedRedis([RedisDown(), RedisDown(), null]);
-        var probe = new L2ProbeRecovery(redis.Multiplexer, ZeroDelay(), NewMetrics());
+        var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
         using var loop = NewLoop(probe, new L2HealthGate(), bus);
 
@@ -207,7 +201,7 @@ public sealed class BitHealthLoopTests
         // Transitions: (null->healthy) Resume #1, (healthy->unhealthy) Pause #1, (unhealthy->healthy) Resume #2.
         // => exactly 1 PauseAll + 2 ResumeAll. A per-tick (non-edge) regression would give 3 Pause + 2 Resume.
         using var redis = new ScriptedRedis([null, null, RedisDown(), RedisDown(), null]);
-        var probe = new L2ProbeRecovery(redis.Multiplexer, ZeroDelay(), NewMetrics());
+        var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
         using var loop = NewLoop(probe, new L2HealthGate(), bus);
 

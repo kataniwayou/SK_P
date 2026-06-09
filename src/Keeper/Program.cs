@@ -5,9 +5,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Keeper;
-using Keeper.Consumers;
-using Keeper.Observability;
-using OpenTelemetry.Metrics;   // ConfigureOpenTelemetryMeterProvider (via OpenTelemetry.Extensions.Hosting)
 
 // Thin-shell composition root (KEEP-01). Generic Host — Host.CreateApplicationBuilder, NOT
 // WebApplication. BaseConsole.Core supplies all infra (metrics-only OTel, Redis soft-dep,
@@ -21,7 +18,7 @@ builder.AddBaseConsoleObservability(builder.Configuration);   // metrics-only OT
 builder.Services.AddBaseConsole(builder.Configuration);       // Redis soft-dep + embedded health + default readiness service (KEPT — D-06)
 
 // DLQ-04 / D-09 — bind the shared Immediate(N) retry budget from the "Retry" section (the single
-// source of truth the fault consumer definition's UseMessageRetry reads). Phase 36 consumers inherit this pattern.
+// source of truth the recovery consumer definition's UseMessageRetry reads).
 builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
 
 // PROBE-01 (D-04) — bind the bounded probe-loop knobs. Redis (IConnectionMultiplexer) is ALREADY a
@@ -36,8 +33,7 @@ builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection("Back
 // drives the keeper-recovery UsePartitioner slot count; GateWaitSeconds bounds the once-at-entry gate await.
 builder.Services.Configure<RecoveryOptions>(builder.Configuration.GetSection("Recovery"));
 
-// PROBE-01 — the shared bounded probe-loop helper (stateless; ctor-injects the singleton multiplexer +
-// IOptions<ProbeOptions>). Both fault consumers depend on it.
+// PROBE-01 — the v4 BitHealthLoop's L2 probe helper (stateless; ctor-injects the singleton multiplexer).
 builder.Services.AddSingleton<Keeper.Recovery.L2ProbeRecovery>();
 
 // KEEP-03 (D-09): the L2 BIT health gate singleton — written by the BIT loop, read by the Phase-46 consumer.
@@ -45,37 +41,13 @@ builder.Services.AddSingleton<Keeper.Health.IL2HealthGate, Keeper.Health.L2Healt
 // KEEP-01/02 (D-06): the proactive BIT loop hosted service (edge-triggered global pause/resume + gate driver).
 builder.Services.AddHostedService<Keeper.Health.BitHealthLoop>();
 
-// KHARD-03 — the shared recovery body both fault consumers delegate to (ctor-injects L2ProbeRecovery + KeeperMetrics).
-builder.Services.AddSingleton<Keeper.Recovery.KeeperRecoveryHandler>();
-
-// KMET-01 — the code-owned "Keeper" meter + its eight instruments. The holder is a DI-singleton
-// (IMeterFactory pattern, no static Meter — D-01); ConfigureOpenTelemetryMeterProvider additively
-// attaches the meter to the shared MeterProvider AddBaseConsoleObservability (line 18) already built —
-// mirrors Orchestrator/Program.cs:72-73, preserving the const-to-AddMeter symmetry. The histogram's
-// second-scale buckets ride on the instrument's InstrumentAdvice (Route A — DiagnosticSource 10.0.0),
-// so no AddView is needed in this lambda.
-builder.Services.AddSingleton<KeeperMetrics>();
-builder.Services.ConfigureOpenTelemetryMeterProvider(mp => mp.AddMeter(KeeperMetrics.MeterName));
-
-// D-02/D-03/D-14 — the surviving reactive fault consumer binds the stable shared durable queue
-// keeper-fault-recovery (competing-consumer round-robin, NOT the Start/Stop per-replica fan-out). Plain
-// AddConsumer + the stable EndpointName on its definition => one durable queue binding the
-// Fault<EntryStepDispatch> message-type exchange. NO per-replica auto-delete endpoint override (KEEP-02).
-// D-14 (DARK): the former Fault<ExecutionResult> consumer is NO LONGER registered — its wire type was
-// deleted in v4.0.0 (RETIRE-01/D-06); the reactive recovery FEATURE is carried by the
-// Fault<EntryStepDispatch> consumer below (the FaultExecutionResultConsumer file is retained, retargeted,
-// and dormant — its retirement is RETIRE-03, Phases 47/48). The endpoint-level retry is owned solely by
-// FaultEntryStepDispatchConsumerDefinition (Pitfall 3).
 builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
 {
-    x.AddConsumer<FaultEntryStepDispatchConsumer, FaultEntryStepDispatchConsumerDefinition>();
-
     // KEEP-04..09 (D-02/D-06/D-07-additive) — the five gate-open-only recovery consumers co-located on the
-    // shared queue:keeper-recovery endpoint. Additive: the reactive FaultEntryStepDispatchConsumer above
-    // COEXISTS (retired in Phase 48). UpdateConsumerDefinition is the SINGLE OWNER of the endpoint-level
+    // shared queue:keeper-recovery endpoint. UpdateConsumerDefinition is the SINGLE OWNER of the endpoint-level
     // retry + the five UsePartitioner<T> calls; the other four definitions no-op (Pitfalls 1 & 4). The
     // recovery consumers ctor-inject IConnectionMultiplexer / ISendEndpointProvider (via the bus),
-    // IL2HealthGate (line 40), and IOptions<Retry/Recovery/Backup> (all already bound) — no new AddSingleton.
+    // IL2HealthGate (line above), and IOptions<Retry/Recovery/Backup> (all already bound) — no new AddSingleton.
     x.AddConsumer<Keeper.Recovery.UpdateConsumer,   Keeper.Recovery.UpdateConsumerDefinition>();
     x.AddConsumer<Keeper.Recovery.ReinjectConsumer, Keeper.Recovery.ReinjectConsumerDefinition>();
     x.AddConsumer<Keeper.Recovery.InjectConsumer,   Keeper.Recovery.InjectConsumerDefinition>();

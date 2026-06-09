@@ -1,6 +1,5 @@
 using BaseApi.Tests.Console;
 using BaseConsole.Core.DependencyInjection;
-using Keeper.Consumers;
 using MassTransit;
 using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Configuration;
@@ -13,7 +12,10 @@ namespace BaseApi.Tests.Keeper;
 /// KEEP-01 boot fixture — subclasses <see cref="ConsoleTestHostFixture"/> (reusing its free-port pick,
 /// DEAD-Redis/unreachable-RabbitMQ in-memory config, and <c>IAsyncLifetime</c> Start/Stop) and OVERRIDES
 /// <c>ConfigureBuilder</c> to compose Keeper's exact runtime seam: the three AddBaseConsole* calls PLUS
-/// the two fault consumer registrations + the <c>RetryOptions</c> binding (mirrors Keeper's Program.cs).
+/// the <c>RetryOptions</c>/<c>ProbeOptions</c> bindings + the <c>L2ProbeRecovery</c> helper registration
+/// (mirrors Keeper's Program.cs). After the Phase-48 v3.x teardown (RETIRE-03) the reactive Fault&lt;T&gt;
+/// consumers no longer exist, so the messaging seam registers no consumers — KeeperHostBootTests only asserts
+/// <c>IBusControl</c> resolves, which the no-reactive-consumers form satisfies.
 /// <para>
 /// Boots against dead Redis + unreachable RabbitMQ; the kept default readiness service flips readiness on
 /// <c>Host.StartAsync</c> (D-06, Keeper has no hydration). <c>IBusControl</c> stays resolvable.
@@ -34,10 +36,9 @@ public sealed class KeeperHostBootFixture : ConsoleTestHostFixture
             ["Retry:Limit"]    = "3",
             ["Retry:Strategy"] = "Immediate",
         });
-        // Bind RetryOptions so FaultEntryStepDispatchConsumerDefinition's IOptions<RetryOptions> ctor resolves.
         builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
-        // Mirror Program.cs Phase-36 additions so the two fault consumers' L2ProbeRecovery ctor-dep resolves:
-        // bind ProbeOptions + register the helper (IConnectionMultiplexer is already a singleton via AddBaseConsole).
+        // Mirror Program.cs — bind ProbeOptions + register the BIT-probe helper (IConnectionMultiplexer is
+        // already a singleton via AddBaseConsole).
         builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
         {
             ["Probe:DelaySeconds"] = "5",
@@ -45,12 +46,6 @@ public sealed class KeeperHostBootFixture : ConsoleTestHostFixture
         });
         builder.Services.Configure<global::Keeper.ProbeOptions>(builder.Configuration.GetSection("Probe"));
         builder.Services.AddSingleton<global::Keeper.Recovery.L2ProbeRecovery>();
-        // KHARD-03 (Phase-40): mirror Program.cs — register the shared recovery body both consumers delegate to.
-        builder.Services.AddSingleton<global::Keeper.Recovery.KeeperRecoveryHandler>();
-        builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
-        {
-            x.AddConsumer<FaultEntryStepDispatchConsumer, FaultEntryStepDispatchConsumerDefinition>();
-            x.AddConsumer<FaultExecutionResultConsumer,   FaultExecutionResultConsumerDefinition>();
-        });
+        builder.Services.AddBaseConsoleMessaging(builder.Configuration, x => { });
     }
 }
