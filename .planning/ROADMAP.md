@@ -517,7 +517,10 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   2. (RETIRE-02 — landed in Phase 43, remnant-sweep verify) Content-addressed L2 data, the result manifest, and the N×M manifest fan-out are removed — the orchestrator no longer fans a manifest, and L2 data is the GUID `entryId` scheme only.
   3. The reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` Keeper recovery path and the `keeper-dlq` queue are removed — Keeper recovers solely via the BIT gate + the four state messages, and there is no `Fault<T>` consumer and no `keeper-dlq` topology left.
   4. The full hermetic suite is GREEN and the solution builds clean (Release + Debug, 0 warnings) on the v4 path with all retired machinery gone (no dead `Ignore<>`/binding/key remnants).
-**Plans**: TBD
+**Plans**: 3 plans (3 waves — Wave 1: atomic teardown [reactive source+metrics delete, L2ProbeRecovery partial-delete, Program.cs unwire, const/config/key sweep, all coupled test deletes/edits — every intermediate builds per research §7]; Wave 2: Phase-48 negative-guard facts + widen the Phase-47 keeper-dlq scan, gated on the deletes landing; Wave 3: D-04 reconciliation [48-TEARDOWN-AUDIT.md + REQUIREMENTS flips + design-doc A17] + the SC-4 hermetic ×3-green + 0-warning close gate)
+- [ ] 48-01-PLAN.md — Wave 1: atomic teardown of the reactive Fault<T> path + KeeperMetrics + const/config/key sweep + coupled test deletes/edits (RETIRE-03; SC-3 + SC-4 build half)
+- [ ] 48-02-PLAN.md — Wave 2: ReactivePathRetiredFacts negative-guard (no Fault<T> consumer / no keeper-dlq literal / const absence / SC-2 ExecutionData-Guid-only) + widen the Phase-47 keeper-dlq scan (RETIRE-03, RETIRE-01/02 remnant-verify; SC-1/SC-2/SC-3)
+- [ ] 48-03-PLAN.md — Wave 3: 48-TEARDOWN-AUDIT.md ledger + REQUIREMENTS RETIRE-01/02/03 satisfied + design-doc A17 amendment + SC-4 close gate (hermetic ×3 GREEN + Release/Debug 0-warning) (RETIRE-01/02/03; SC-4)
 
 #### Phase 49: Live Proof & Close Gate
 **Goal**: A real-stack E2E proves the full Pre/In/Post round trip plus each recovery path and the BIT-gate global pause-all/resume-all across a transient L2 outage, all sealed behind an N-consecutive-GREEN triple-SHA (psql / redis / rabbitmq) net-zero close gate matching prior-milestone discipline.
@@ -539,5 +542,5 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 45. Keeper BIT Health Gate + Global Pause/Resume | 3/3 | Complete | 2026-06-08 |
 | 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 1/4 | In progress | - |
 | 47. DLQ Consolidation + At-Least-Once Semantics | 3/3 | Complete | 47-01 ✓ (RESIL-02, RESIL-03 structural guards); 47-02 ✓ (R3 no-collapse facts + R2 Phase-47 re-tag); 47-03 ✓ (47-DLQ-AUDIT.md ledger + design-doc A16 amendment) |
-| 48. v3.x Teardown | 0/? | Not started | - |
+| 48. v3.x Teardown | 0/3 | Planned | - |
 | 49. Live Proof & Close Gate | 0/? | Not started | - |
