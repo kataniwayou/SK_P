@@ -53,6 +53,11 @@ public sealed class UpdateConsumerDefinition : ConsumerDefinition<UpdateConsumer
         // string: identical 4-tuple → identical PartitionKey string → identical Guid → identical slot, so
         // ordering semantics are exactly the 4-tuple's (StepId still excluded). PartitionGuid wraps
         // PartitionKey, keeping the string the single source of truth the test pins.
+        // IN-02: the Murmur3 layer is REQUIRED by the API shape, not redundant decoration. PartitionGuid
+        // already gives a uniform SHA256-derived Guid, but the 8.5.5 Partitioner ctor takes an IHashGenerator
+        // and re-hashes the key bytes to pick a slot — so the effective slot is murmur3(guid.bytes) %
+        // PartitionCount. Both hashes are deterministic; do NOT "simplify" by dropping the Murmur3 generator
+        // (the ctor needs one) and do NOT drop the SHA256 Guid (the endpoint overload is Guid-keyed).
         var partition = new Partitioner(_recoveryOptions.Value.PartitionCount, new Murmur3UnsafeHashGenerator());
         endpointConfigurator.UsePartitioner<KeeperUpdate>(partition, p => PartitionGuid(p.Message));
         endpointConfigurator.UsePartitioner<KeeperReinject>(partition, p => PartitionGuid(p.Message));
