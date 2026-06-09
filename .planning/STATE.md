@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: executing
-stopped_at: Completed 49-05-PLAN.md (GAP-49-2 close)
-last_updated: "2026-06-09T13:19:41.932Z"
-last_activity: 2026-06-09
+status: completed
+stopped_at: Completed 49-06 Tasks 1-3 (GAP-49-3/4/5 code); Task 4 live close gate deferred to operator gate
+last_updated: "2026-06-09T14:57:42.830Z"
+last_activity: 2026-06-09 -- 49-05 GAP-49-2 close executed (ResumeAll clears pausedTriggerGroups after per-job loop)
 progress:
   total_phases: 52
   completed_phases: 51
-  total_plans: 179
-  completed_plans: 193
+  total_plans: 180
+  completed_plans: 194
   percent: 100
 ---
 
@@ -901,6 +901,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 49 P03 | 30min | 1 tasks | 1 files |
 | Phase 49 P04 | 5min | 2 tasks | 2 files |
 | Phase 49 P05 | 35 | 2 tasks | 4 files |
+| Phase 49 P06 | 5min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1264,6 +1265,9 @@ Recent decisions affecting current work:
 - 49-04: 49-HUMAN-UAT.md authored as the operator runbook; TEST-01/02/03 stay UNTICKED until the operator records a GREEN live N×GREEN run against the rebuilt v4 stack (D-03)
 - GAP-49-2 closed (49-05): ResumeAllConsumer clears Quartz pausedTriggerGroups via one scheduler.ResumeAll() AFTER the per-job ResumeAsync loop (load-bearing ordering -> no misfire herd). D-08 Option A; PauseAllConsumer UNCHANGED.
 - 49-05 used scheduler.ResumeAll() NOT ResumeTriggers(GroupMatcher.AnyGroup()): in Quartz 3.18 RAMJobStore the AnyGroup matcher unpauses existing triggers but does NOT clear pausedTriggerGroups, so post-cycle workflows stay Paused; only ResumeAll() clears the set. No-herd preserved by the ordering (Rule-1 deviation, spec-permitted).
+- GAP-49-3: skp-dlq-1 declared as a PASSIVE queue via publish-topology BindQueue + DeployPublishTopology=true (no consuming ReceiveEndpoint) so forwarded faults park in skp-dlq-1, not _skipped; GAP-49-1 406 fix preserved (filter ZERO-diff, ttl declared once)
+- GAP-49-5: ProcessorPipeline.SendResult increments processor_result_sent_total with ProcessorId + outcome(completed/failed/cancelled/processing) tags after the confirmed-send guard; ProcessorMetrics injected into the pipeline ctor
+- GAP-49-4: SC3 OrchestratorSeamQuery match_phrases body.text (phrase-searchable nested otel field) not plain body; test-only, no src/Orchestrator change
 
 ### Roadmap Milestone Log
 
@@ -1366,9 +1370,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T13:19:41.910Z
-Stopped at: Completed 49-05-PLAN.md (GAP-49-2 close)
-Resume file: None
+Last session: 2026-06-09T14:57:24.988Z
+Stopped at: Completed 49-06 Tasks 1-3 (GAP-49-3/4/5 code); Task 4 live close gate deferred to operator gate
+Resume file: .planning/phases/49-live-proof-close-gate/49-06-PLAN.md
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
