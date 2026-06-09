@@ -23,8 +23,8 @@ namespace BaseApi.Tests.Keeper;
 /// IS installed and routes an exhausted message into the single skp-dlq-1 endpoint as a typed
 /// <see cref="ConsolidatedFault"/> (consolidated — NOT per-{queue}_error), (2) GenerateFaultFilter is
 /// retained so <see cref="Fault{T}"/> still publishes on exhaustion (T-36-10 — no fault silently dropped),
-/// and (3) the topology split — skp-dlq-1 (DLQ-1) is the TTL'd const vs keeper-dlq (DLQ-2) the no-TTL const
-/// — at the configuration/const level (DLQ-03 bridge to VALIDATION.md).
+/// and (3) the surviving single consolidated DLQ-1 (skp-dlq-1) TTL'd const at the configuration/const
+/// level (DLQ-03 bridge to VALIDATION.md). The v3.x DLQ-2 (keeper-dlq) was retired in Phase 48.
 /// </para>
 /// The rig is cloned from <c>KeeperProbeLoopTests</c> (in-memory harness builder) + the Task-1 spike shape.
 /// No RealStack trait — runs in the fast hermetic suite.
@@ -184,25 +184,20 @@ public sealed class KeeperDlqConsolidationTests
     }
 
     /// <summary>
-    /// DLQ-03 topology assertion (bridges VALIDATION.md's DLQ-03 row): the two DLQs are split by mechanism —
-    /// DLQ-1 (skp-dlq-1) is the TTL'd forensic sink declared with x-message-ttl = 7 days in BaseConsole.Core;
-    /// DLQ-2 (keeper-dlq) is the plain durable primary-alert queue with NO TTL (it must persist until drained).
-    /// In-memory transport cannot expose live queue args, so this is a const/configuration-level assertion
-    /// (the live arg proof is Plan 04 / Phase 39).
+    /// DLQ-03 topology assertion (bridges VALIDATION.md's DLQ-03 row): the consolidated DLQ-1 (skp-dlq-1) is
+    /// the TTL'd forensic sink declared with x-message-ttl = 7 days in BaseConsole.Core. The v3.x DLQ-2
+    /// (keeper-dlq) was retired in Phase 48 (RETIRE-03) along with the reactive path that fed it, so this
+    /// fact now asserts only the surviving single consolidated DLQ-1 const + its TTL value. In-memory
+    /// transport cannot expose live queue args, so this is a const/configuration-level assertion (the live
+    /// arg proof is Plan 04 / Phase 39).
     /// </summary>
     [Fact]
     public void Dlq_TopologyArgs()
     {
-        // DLQ-1: the consolidated TTL'd forensic queue const.
+        // DLQ-1: the consolidated TTL'd forensic queue const — the sole DLQ after the Phase-48 teardown.
         Assert.Equal("skp-dlq-1", ConsolidatedErrorTransportFilter.Dlq1);
 
-        // DLQ-2: the plain durable, NO-TTL terminal give-up queue const (the PRIMARY operator alert).
-        Assert.Equal("keeper-dlq", KeeperQueues.DeadLetter);
-
-        // The two are distinct mechanisms (DLQ-02) — never the same queue.
-        Assert.NotEqual(ConsolidatedErrorTransportFilter.Dlq1, KeeperQueues.DeadLetter);
-
-        // BaseConsole.Core declares skp-dlq-1 with the 7-day TTL (604800000 ms); keeper-dlq carries no TTL.
+        // BaseConsole.Core declares skp-dlq-1 with the 7-day TTL (604800000 ms).
         // The live SetQueueArgument application is RMQ-only — verified against the broker in Plan 04 / Phase 39.
         Assert.Equal(604_800_000, (int)TimeSpan.FromDays(7).TotalMilliseconds);
     }
