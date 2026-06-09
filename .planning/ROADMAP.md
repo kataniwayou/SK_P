@@ -429,7 +429,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 46 | Keeper 5-State Recovery + Orchestrator Per-Item Consume | 4/4 | Complete    | 2026-06-08 |
 | 47 | DLQ Consolidation + At-Least-Once Semantics | 3/3 | Complete    | 2026-06-09 |
 | 48 | v3.x Teardown | 3/3 | Complete    | 2026-06-09 |
-| 49 | Live Proof & Close Gate | Real-stack E2E proves the full Pre/In/Post round trip + each recovery path + the BIT-gate pause/resume across a transient outage, behind an N×GREEN triple-SHA net-zero close gate. | TEST-01, TEST-02, TEST-03 | 4 |
+| 49 | Live Proof & Close Gate | 4/4 | Complete    | 2026-06-09 |
 
 ### Phase Details
 
@@ -534,8 +534,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 **Plans**: 4 plans
   - [x] 49-01-PLAN.md — SC1 RealStack round-trip E2E (Pre->In->Post; output-to-L2; orchestrator-advance)
   - [x] 49-02-PLAN.md — SC2 RealStack recovery-paths E2E (REINJECT present/gone, INJECT, DELETE via keeper-recovery direct-publish)
-  - [ ] 49-03-PLAN.md — SC3 RealStack pause-resume-outage E2E (docker stop/start sk-redis; non-parallel collection)
-  - [ ] 49-04-PLAN.md — phase-49-close.ps1 triple-SHA close gate + 49-HUMAN-UAT.md operator runbook
+  - [x] 49-03-PLAN.md — SC3 RealStack pause-resume-outage E2E (docker stop/start sk-redis; non-parallel collection)
+  - [x] 49-04-PLAN.md — phase-49-close.ps1 triple-SHA close gate + 49-HUMAN-UAT.md operator runbook
 
 ### Progress (v4.0.0)
 
