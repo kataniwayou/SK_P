@@ -428,7 +428,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 45 | Keeper BIT Health Gate + Global Pause/Resume | 3/3 | Complete    | 2026-06-08 |
 | 46 | Keeper 5-State Recovery + Orchestrator Per-Item Consume | 4/4 | Complete    | 2026-06-08 |
 | 47 | DLQ Consolidation + At-Least-Once Semantics | 3/3 | Complete    | 2026-06-09 |
-| 48 | v3.x Teardown | The reactive `Fault<T>` recovery path + `keeper-dlq` are removed (RETIRE-03) and a final remnant sweep confirms the system builds and runs on the v4 path alone. RETIRE-01/02 (`H`/`flag[H]`/CAS, content-addressing/manifest/N×M fan-out) already landed in Phase 43 (coupled per D-01/D-02), so this phase shrinks to RETIRE-03. | RETIRE-03 (RETIRE-01/02 coupled-forward to Phase 43) | 4 |
+| 48 | v3.x Teardown | 3/3 | Complete    | 2026-06-09 |
 | 49 | Live Proof & Close Gate | Real-stack E2E proves the full Pre/In/Post round trip + each recovery path + the BIT-gate pause/resume across a transient outage, behind an N×GREEN triple-SHA net-zero close gate. | TEST-01, TEST-02, TEST-03 | 4 |
 
 ### Phase Details
