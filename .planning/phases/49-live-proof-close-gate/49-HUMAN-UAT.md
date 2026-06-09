@@ -1,4 +1,16 @@
+---
+status: partial
+phase: 49-live-proof-close-gate
+source: [49-VERIFICATION.md]
+started: 2026-06-09
+updated: 2026-06-09
+---
+
 # Phase 49 — Live Proof & Close Gate — Operator Runbook (HUMAN-UAT)
+
+## Current Test
+
+[awaiting operator — live N×GREEN close-gate run against the rebuilt v4 stack]
 
 **Phase:** 49-live-proof-close-gate
 **Milestone:** v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign)
@@ -117,3 +129,22 @@ they stay `[ ]` in `.planning/REQUIREMENTS.md`.
 
 When all three are recorded GREEN, the operator flips the corresponding `[ ]` → `[x]` in
 `.planning/REQUIREMENTS.md` and references this GREEN-run record.
+
+---
+
+## Tests
+
+### 1. Live N×GREEN close-gate run — gates TEST-01 / TEST-02 / TEST-03
+expected: After rebuilding the v4 stack (Step 1), `pwsh -File scripts/phase-49-close.ps1` exits `0` — 3 consecutive GREEN runs with identical `Passed` fact count, triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE == AFTER net-zero (including the composite `corr:wf:proc:exec` backup key + GUID data keys), `skp-dlq-1` depth == 0, at Release + Debug 0-warning. The SC1 round-trip, SC2 four recovery paths, and SC3 pause/resume-across-outage RealStack facts all pass live. Record the 3 SHA values + Passed count + DLQ depth in the Step 3 table, then tick TEST-01/02/03 in REQUIREMENTS.md.
+result: [pending]
+
+## Summary
+
+total: 1
+passed: 0
+issues: 0
+pending: 1
+skipped: 0
+blocked: 0
+
+## Gaps
