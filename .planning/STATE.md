@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
 status: executing
-stopped_at: Completed 47-02-PLAN.md
-last_updated: "2026-06-09T07:07:15.913Z"
+stopped_at: Completed 47-03-PLAN.md
+last_updated: "2026-06-09T07:14:07.062Z"
 last_activity: 2026-06-09
 progress:
   total_phases: 50
-  completed_phases: 48
+  completed_phases: 49
   total_plans: 171
-  completed_plans: 184
+  completed_plans: 185
   percent: 100
 ---
 
@@ -27,9 +27,9 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
 Phase: 47 (DLQ Consolidation + At-Least-Once Semantics) — EXECUTING
-Plan: 2 of 3 complete (47-01 ✓, 47-02 ✓; next 47-03)
-Status: Executing Phase 47 — plan 47-02 complete
-Last activity: 2026-06-09 -- Phase 47 plan 47-02 complete (RESIL-02 re-tag, RESIL-03 no-collapse facts)
+Plan: 3 of 3 complete (47-01 ✓, 47-02 ✓; next 47-03)
+Status: Ready to execute
+Last activity: 2026-06-09
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
@@ -889,6 +889,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 46 P03 | 18min | 3 tasks | 9 files |
 | Phase 47 P01 | 13min | 2 tasks | 2 files |
 | Phase 47 P02 | 13min | 2 tasks | 2 files |
+| Phase 47 P03 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1237,6 +1238,8 @@ Recent decisions affecting current work:
 - Phase 47-01: processor send-exhaustion fact uses a throwaway throwing consumer (hermetic equivalent of throw sent.Error!) rather than booting a real ProcessorPipeline (rig lacks Redis/sendProvider)
 - 47-02: no-collapse facts use ONE dispatcher/consumer + double-Consume of the SAME instance + count==2 (not the two-dispatcher indistinguishability shape)
 - 47-02: R2 (data-gone) re-tagged additively with [Trait(Phase,47)] alongside Phase-46 — cited, not re-tested
+- Phase 47 plan 03: 47-DLQ-AUDIT.md ledger maps RESIL-02/RESIL-03 + SC-1/2/3 to 8 named green proving tests (file:method) — the verifier's single check surface
+- Design-doc amendment A16 (additive, 1 insertion) names the at-least-once/no-dedup guarantee citing 47-DLQ-AUDIT.md + bundles the deferred Phase-46 KeeperReinject.Payload note; doc-only, build 0/0
 
 ### Roadmap Milestone Log
 
@@ -1339,8 +1342,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T07:07:08.409Z
-Stopped at: Completed 47-02-PLAN.md
+Last session: 2026-06-09T07:13:59.061Z
+Stopped at: Completed 47-03-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
