@@ -65,16 +65,13 @@ public sealed class ResumeAllConsumerTests
             await lifecycle.HydrateAndScheduleAsync(w2.id, ct);
 
             // Pause BOTH per-job (the Paused precondition the resume guard acts on — mirrors the proven
-            // PauseResumeSchedulingTests cycle). NOTE: scheduler-wide PauseAll() pauses the trigger GROUP,
-            // so a fresh trigger added by the resume reschedule would inherit the paused group — the real
-            // round trip is exercised end-to-end in the live RealStack gate; here we isolate the
-            // enumerate-and-resume-each behavior this consumer owns from PauseAll's group semantics.
+            // PauseResumeSchedulingTests cycle).
             await workflowScheduler.PauseAsync(w1.job, ct);
             await workflowScheduler.PauseAsync(w2.job, ct);
             Assert.Equal(TriggerState.Paused, await scheduler.GetTriggerState(new TriggerKey(w1.job.ToString("D")), ct));
             Assert.Equal(TriggerState.Paused, await scheduler.GetTriggerState(new TriggerKey(w2.job.ToString("D")), ct));
 
-            var consumer = new ResumeAllConsumer(store, lifecycle, NullLogger<ResumeAllConsumer>.Instance);
+            var consumer = new ResumeAllConsumer(store, lifecycle, workflowScheduler, NullLogger<ResumeAllConsumer>.Instance);
             await consumer.Consume(OrchestratorTestStubs.Context(new ResumeAll { CorrelationId = Guid.NewGuid() }, ct));
 
             // Per-job ResumeAsync ran for EACH enumerated id: every paused trigger is back to Normal.
@@ -114,13 +111,72 @@ public sealed class ResumeAllConsumerTests
             Assert.Equal(TriggerState.Normal, await scheduler.GetTriggerState(triggerKey, ct));
             var beforeNextFire = (await scheduler.GetTrigger(triggerKey, ct))!.GetNextFireTimeUtc();
 
-            var consumer = new ResumeAllConsumer(store, lifecycle, NullLogger<ResumeAllConsumer>.Instance);
+            var consumer = new ResumeAllConsumer(store, lifecycle, workflowScheduler, NullLogger<ResumeAllConsumer>.Instance);
             await consumer.Consume(OrchestratorTestStubs.Context(new ResumeAll { CorrelationId = Guid.NewGuid() }, ct));
 
             // Non-Paused -> ignored (no spurious resume): still Normal, same trigger (no delete/reschedule churn).
             Assert.Equal(TriggerState.Normal, await scheduler.GetTriggerState(triggerKey, ct));
             var afterNextFire = (await scheduler.GetTrigger(triggerKey, ct))!.GetNextFireTimeUtc();
             Assert.Equal(beforeNextFire, afterNextFire); // untouched — the resume guard short-circuited
+        }
+        finally
+        {
+            await scheduler.Shutdown(waitForJobsToComplete: false, ct);
+        }
+    }
+
+    /// <summary>
+    /// GAP-49-2 regression (D-08 Option A). Drives the TRUE production path over a real RAM scheduler:
+    /// <see cref="PauseAllConsumer"/> -> scheduler-wide <c>PauseAll()</c> (adds every group to Quartz's
+    /// <c>pausedTriggerGroups</c>) -> <see cref="ResumeAllConsumer"/> -> per-job reschedule THEN the
+    /// group-level <c>ResumeTriggers(AnyGroup())</c> clear. The decisive assertion: a BRAND-NEW workflow
+    /// scheduled AFTER the pause/resume cycle is born <c>Normal</c> with a future fire time — NOT
+    /// <c>Paused</c>. BEFORE the fix (no group-flag clear) this is <c>Paused</c> and the test FAILS; AFTER
+    /// the fix it is <c>Normal</c> and the test PASSES.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "49")]
+    public async Task Normal_After_PauseAll_Resume_Cycle()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var scheduler = await NewRamSchedulerAsync(ct);
+        try
+        {
+            var store = new WorkflowL1Store();
+            var workflowScheduler = new WorkflowScheduler(scheduler, TimeProvider.System);
+
+            // W1 exists at pause time; W2 is the brand-new workflow scheduled AFTER recovery (the GAP probe).
+            var w1 = (id: Guid.NewGuid(), job: Guid.NewGuid(), step: Guid.NewGuid(), proc: Guid.NewGuid());
+            var w2 = (id: Guid.NewGuid(), job: Guid.NewGuid(), step: Guid.NewGuid(), proc: Guid.NewGuid());
+            var values = OrchestratorTestStubs.RootWithStep(w1.id, w1.job, w1.step, w1.proc, EveryFiveMinutes)
+                .Concat(OrchestratorTestStubs.RootWithStep(w2.id, w2.job, w2.step, w2.proc, EveryFiveMinutes))
+                .ToDictionary(kv => kv.Key, kv => kv.Value);
+            var mux = OrchestratorTestStubs.PresentL2(values, out _);
+            var lifecycle = new WorkflowLifecycle(
+                mux, store, workflowScheduler, TimeProvider.System, NullLogger<WorkflowLifecycle>.Instance);
+
+            // Seed W1 into L1 + Quartz (Normal).
+            await lifecycle.HydrateAndScheduleAsync(w1.id, ct);
+            Assert.Equal(TriggerState.Normal, await scheduler.GetTriggerState(new TriggerKey(w1.job.ToString("D")), ct));
+
+            // TRUE pause path: scheduler-wide PauseAll() sets pausedTriggerGroups -> W1 Paused.
+            var pause = new PauseAllConsumer(workflowScheduler, NullLogger<PauseAllConsumer>.Instance);
+            await pause.Consume(OrchestratorTestStubs.Context(new PauseAll { CorrelationId = Guid.NewGuid() }, ct));
+            Assert.Equal(TriggerState.Paused, await scheduler.GetTriggerState(new TriggerKey(w1.job.ToString("D")), ct));
+
+            // TRUE resume path: per-job fresh reschedule THEN group-flag clear -> W1 back to Normal.
+            var resume = new ResumeAllConsumer(store, lifecycle, workflowScheduler, NullLogger<ResumeAllConsumer>.Instance);
+            await resume.Consume(OrchestratorTestStubs.Context(new ResumeAll { CorrelationId = Guid.NewGuid() }, ct));
+            Assert.Equal(TriggerState.Normal, await scheduler.GetTriggerState(new TriggerKey(w1.job.ToString("D")), ct));
+
+            // THE GAP-49-2 ASSERTION: a brand-new workflow scheduled AFTER the cycle must be born Normal
+            // (pausedTriggerGroups was cleared), with a future fire time — not stuck Paused until restart.
+            await lifecycle.HydrateAndScheduleAsync(w2.id, ct);
+            var w2Key = new TriggerKey(w2.job.ToString("D"));
+            Assert.Equal(TriggerState.Normal, await scheduler.GetTriggerState(w2Key, ct));
+            var w2NextFire = (await scheduler.GetTrigger(w2Key, ct))!.GetNextFireTimeUtc();
+            Assert.NotNull(w2NextFire);
+            Assert.True(w2NextFire > DateTimeOffset.UtcNow, "post-cycle workflow must have a future fire time");
         }
         finally
         {

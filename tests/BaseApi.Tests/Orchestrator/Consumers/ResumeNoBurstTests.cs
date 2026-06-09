@@ -15,12 +15,16 @@ using Xunit;
 namespace BaseApi.Tests.Orchestrator.Consumers;
 
 /// <summary>
-/// THE load-bearing negative (ORCH-02 / D-02 / T-45-07 / Pitfall 2). <see cref="ResumeAllConsumer"/> must
-/// resume PER-JOB and MUST NEVER call native <c>scheduler.ResumeAll()</c> — a global unpause would fire the
-/// cross-workflow catch-up herd. Driven over an NSubstitute <see cref="IScheduler"/> spy (so the native
-/// <c>ResumeAll</c> can be negatively asserted) whose <c>GetTriggerState</c> returns <c>Paused</c> (the
-/// resume precondition) and whose <c>ScheduleJob</c> capture proves the fresh trigger's <c>StartAt</c> is
-/// ≥ now (skip-to-next, no immediate refire). EVERY Quartz call carries
+/// THE load-bearing no-herd contract (ORCH-02 / D-02 / GAP-49-2 / D-08 Option A / T-49-01).
+/// <see cref="ResumeAllConsumer"/> resumes PER-JOB first (delete-stale + fresh-from-now reschedule, no
+/// immediate refire), THEN calls ONE group-level <c>scheduler.ResumeAll()</c> to clear Quartz's
+/// <c>pausedTriggerGroups</c> so post-recovery workflows are born <c>Normal</c> again. The binding guarantee
+/// is now "no immediate-refire herd," NOT "no group-level resume call ever": (a) the group-level resume runs
+/// strictly AFTER all per-job reschedules, and (b) EVERY resulting fresh trigger has <c>StartAt &gt;= now</c>.
+/// Driven over an NSubstitute <see cref="IScheduler"/> spy (so the ordering + the single <c>ResumeAll</c>
+/// can be asserted via <c>ReceivedCalls()</c>) whose <c>GetTriggerState</c> returns
+/// <c>Paused</c> (the resume precondition) and whose <c>ScheduleJob</c> captures prove each fresh trigger's
+/// <c>StartAt</c> is ≥ now (skip-to-next, no immediate refire). EVERY Quartz call carries
 /// <c>TestContext.Current.CancellationToken</c>.
 /// </summary>
 public sealed class ResumeNoBurstTests
@@ -52,20 +56,34 @@ public sealed class ResumeNoBurstTests
         lifecycle.HydrateAndScheduleAsync(workflowId, ct).GetAwaiter().GetResult();
         Assert.Contains(workflowId, store.WorkflowIds);
 
-        var consumer = new ResumeAllConsumer(store, lifecycle, NullLogger<ResumeAllConsumer>.Instance);
+        var consumer = new ResumeAllConsumer(
+            store, lifecycle, workflowScheduler, NullLogger<ResumeAllConsumer>.Instance);
         return (consumer, spy, jobId);
     }
 
     [Fact]
-    public async Task Native_ResumeAll_Is_Never_Called()
+    public async Task Group_Resume_Runs_After_Per_Job_Reschedules()
     {
         var ct = TestContext.Current.CancellationToken;
         var (consumer, spy, _) = Build(ct);
 
         await consumer.Consume(OrchestratorTestStubs.Context(new ResumeAll { CorrelationId = Guid.NewGuid() }, ct));
 
-        // The load-bearing negative: per-job reschedule only — never a native global unpause burst (T-45-07).
-        await spy.DidNotReceive().ResumeAll(Arg.Any<CancellationToken>());
+        // The load-bearing ORDERING (T-49-01): every per-job fresh reschedule (ScheduleJob) must occur BEFORE
+        // the single group-level clear (ResumeAll). Walk the spy's received-call timeline in order.
+        var calls = spy.ReceivedCalls().ToList();
+        var methodNames = calls.Select(c => c.GetMethodInfo().Name).ToList();
+
+        var lastScheduleJobIndex = methodNames.FindLastIndex(n => n == nameof(IScheduler.ScheduleJob));
+        var resumeAllIndex = methodNames.FindIndex(n => n == nameof(IScheduler.ResumeAll));
+
+        Assert.True(lastScheduleJobIndex >= 0, "expected at least one per-job ScheduleJob (fresh reschedule)");
+        Assert.True(resumeAllIndex >= 0, "expected the group-level ResumeAll() clear");
+        Assert.True(resumeAllIndex > lastScheduleJobIndex,
+            "group-level ResumeAll MUST run AFTER the last per-job ScheduleJob (no stale paused trigger to herd)");
+
+        // Exactly one group-level clear (one ResumeAll message -> one pausedTriggerGroups clear).
+        await spy.Received(1).ResumeAll(Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -77,7 +95,8 @@ public sealed class ResumeNoBurstTests
         var before = DateTimeOffset.UtcNow;
         await consumer.Consume(OrchestratorTestStubs.Context(new ResumeAll { CorrelationId = Guid.NewGuid() }, ct));
 
-        // Capture the trigger from the fresh (post-resume) ScheduleJob call and assert StartAt >= now (skip-to-next).
+        // Capture EVERY fresh ScheduleJob trigger and assert each StartAt >= now (no immediate refire on ANY
+        // reschedule — the no-herd guarantee across all per-job resumes).
         var scheduled = spy.ReceivedCalls()
             .Where(c => c.GetMethodInfo().Name == nameof(IScheduler.ScheduleJob))
             .Select(c => c.GetArguments())
@@ -86,8 +105,7 @@ public sealed class ResumeNoBurstTests
             .ToList();
 
         Assert.NotEmpty(scheduled);
-        var freshTrigger = scheduled[^1]; // the resume's fresh-from-now trigger (last ScheduleJob)
-        Assert.True(freshTrigger.StartTimeUtc >= before,
-            "resumed trigger must start at-or-after now (fresh-from-now, no immediate refire)");
+        Assert.All(scheduled, t => Assert.True(t.StartTimeUtc >= before,
+            "every resumed trigger must start at-or-after now (fresh-from-now, no immediate refire)"));
     }
 }

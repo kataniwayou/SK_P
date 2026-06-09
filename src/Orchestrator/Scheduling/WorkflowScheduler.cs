@@ -1,5 +1,4 @@
 using Quartz;
-using Quartz.Impl.Matchers;
 
 namespace Orchestrator.Scheduling;
 
@@ -122,14 +121,25 @@ public sealed class WorkflowScheduler(IScheduler scheduler, TimeProvider timePro
 
     /// <summary>
     /// Scheduler-wide resume-all GROUP-FLAG CLEAR (GAP-49-2 / D-08 Option A). Clears Quartz's
-    /// <c>pausedTriggerGroups</c> set via <c>ResumeTriggers(AnyGroup())</c> so triggers ADDED AFTER a
-    /// prior <see cref="PauseAllAsync"/> are no longer born <c>Paused</c>. MUST be called only AFTER the
+    /// <c>pausedTriggerGroups</c> set via <c>ResumeAll()</c> so triggers ADDED AFTER a prior
+    /// <see cref="PauseAllAsync"/> are no longer born <c>Paused</c>. MUST be called only AFTER the
     /// per-job <c>WorkflowLifecycle.ResumeAsync</c> loop has replaced every paused trigger with a
-    /// fresh-from-now <c>Normal</c> trigger — by then no stale paused trigger remains, so clearing the
-    /// group flag fires NO misfire herd. Idempotent: resuming non-paused groups is a Quartz no-op.
+    /// fresh-from-now <c>Normal</c> trigger — by then no stale paused trigger remains, so this global
+    /// resume fires NO misfire herd (every trigger's <c>StartAt</c> is already in the future).
+    /// <para>
+    /// <b>Why <c>ResumeAll()</c> and not <c>ResumeTriggers(GroupMatcher.AnyGroup())</c>:</b> in Quartz
+    /// 3.18 RAMJobStore, <c>ResumeTriggers(matcher)</c> unpauses the EXISTING matched triggers but does
+    /// NOT remove the "pause future groups" flag from <c>pausedTriggerGroups</c> for an Anything matcher
+    /// — so a workflow scheduled AFTER the call is STILL born <c>Paused</c> (the GAP-49-2 freeze persists).
+    /// Only <c>ResumeAll()</c> clears <c>pausedTriggerGroups</c> wholesale, which is what makes
+    /// post-recovery workflows born <c>Normal</c> again. The original "no native ResumeAll" lock is
+    /// superseded by D-08: the binding guarantee is the no-herd ORDERING (this runs after every
+    /// fresh-from-now reschedule), NOT the avoidance of the global call. Idempotent — a no-op when no
+    /// group is paused.
+    /// </para>
     /// </summary>
     public Task ResumeAllGroupsAsync(CancellationToken ct) =>
-        scheduler.ResumeTriggers(GroupMatcher<TriggerKey>.AnyGroup(), ct);
+        scheduler.ResumeAll(ct);
 
     /// <summary>Read the deterministic trigger's state (Normal=Running / Paused / None=Stopped) — D-05.
     /// Returns None for an unknown key (RESEARCH §4), never throws.</summary>
