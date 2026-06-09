@@ -57,8 +57,10 @@
 ### Resilience & Semantics (RESIL)
 - [x] **RESIL-01
 **: Every L2 op and every message send is wrapped in a bounded retry loop (N immediate attempts, shared `Retry:Limit`).
-- [ ] **RESIL-02**: Processor and Keeper terminal give-ups (send exception exhausted; Keeper L2 op exhausted) route to a single consolidated `_DLQ1`.
-- [ ] **RESIL-03**: The execution path is at-least-once with no dedup/idempotency key; duplicate effects are tolerated downstream.
+- [x] **RESIL-02
+**: Processor and Keeper terminal give-ups (send exception exhausted; Keeper L2 op exhausted) route to a single consolidated `_DLQ1`.
+- [x] **RESIL-03
+**: The execution path is at-least-once with no dedup/idempotency key; duplicate effects are tolerated downstream.
 
 ### v3.x Teardown (RETIRE)
 - [ ] **RETIRE-01**: Remove the `H` identity, `flag[H]` dedup gate, and CAS `Pending→Ack` flips from processor and orchestrator.

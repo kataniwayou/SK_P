@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v3.7.0
 milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
-status: completed
-stopped_at: Phase 47 context gathered
-last_updated: "2026-06-09T06:13:14.706Z"
-last_activity: 2026-06-08
+status: executing
+stopped_at: Completed 47-01-PLAN.md
+last_updated: "2026-06-09T06:50:42.978Z"
+last_activity: 2026-06-09 -- Phase --phase execution started
 progress:
   total_phases: 50
   completed_phases: 48
-  total_plans: 168
-  completed_plans: 182
+  total_plans: 171
+  completed_plans: 183
   percent: 100
 ---
 
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase --phase — 46
+**Current focus:** Phase 47 — DLQ Consolidation + At-Least-Once Semantics
 
 ## Current Position
 
 Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
-Phase: 46
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-08
+Phase: 47 (DLQ Consolidation + At-Least-Once Semantics) — EXECUTING
+Plan: 1 of 3 complete (47-01 ✓; next 47-02)
+Status: Executing Phase 47 — plan 47-01 complete
+Last activity: 2026-06-09 -- Phase 47 plan 47-01 complete (RESIL-02, RESIL-03 structural guards)
 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
@@ -887,6 +887,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 46 P02 | 20min | 3 tasks | 15 files |
 | Phase 46 P04 | 8min | 3 tasks | 15 files |
 | Phase 46 P03 | 18min | 3 tasks | 9 files |
+| Phase 47 P01 | 13min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1231,6 +1232,8 @@ Recent decisions affecting current work:
 - D-07/ORCH-01: TypedResultConsumer<T> family replaces ResultConsumer — abstract Outcome knob, four sealed subclasses, no status if/switch; single-owner UseMessageRetry; INJECT'd StepCompleted indistinguishable from direct
 - 46-03: keeper-recovery wired with single-owner partitioner (UpdateConsumerDefinition owns UseMessageRetry + five shared-Partitioner UsePartitioner; four siblings no-op)
 - 46-03: MassTransit 8.5.5 Partitioner/Murmur3 in namespace MassTransit.Middleware; endpoint overload keys on Guid, so PartitionGuid = deterministic SHA256 over the 4-tuple string
+- Phase 47-01: no-dedup guard is reflection (type/member-name absence over execution-path assemblies), NOT a string-scan, to sidestep the legitimate BIT-gate string H on PauseWorkflow/ResumeWorkflow
+- Phase 47-01: processor send-exhaustion fact uses a throwaway throwing consumer (hermetic equivalent of throw sent.Error!) rather than booting a real ProcessorPipeline (rig lacks Redis/sendProvider)
 
 ### Roadmap Milestone Log
 
@@ -1333,13 +1336,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 47 context gathered
-Resume file: --resume-file
+Last session: 2026-06-09T06:50:42.959Z
+Stopped at: Completed 47-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 46 (keeper-5-state-recovery-orchestrator-per-item-consume) — 4 plans — 2026-06-08T20:06:45.996Z
+**Planned Phase:** 47 (dlq-consolidation-at-least-once-semantics) — 3 plans — 2026-06-09T06:31:43.196Z
