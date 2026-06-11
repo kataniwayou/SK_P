@@ -53,7 +53,8 @@
 **: The composite backup key `L2[corr:wf:ProcessorId:executionId]` + its `BackupOptions` TTL are removed.
 - [x] **RETIRE-02
 **: The `UPDATE` and `CLEANUP` keeper-state contracts + consumers are removed.
-- [ ] **RETIRE-03**: The 5-state recovery consumer collapses to the 3 surviving states (`REINJECT`/`INJECT`/`DELETE`); no Model-B remnants survive a source/reflection sweep.
+- [x] **RETIRE-03
+**: The 5-state recovery consumer collapses to the 3 surviving states (`REINJECT`/`INJECT`/`DELETE`); no Model-B remnants survive a source/reflection sweep.
 
 ### Live Proof & Close Gate (TEST)
 - [ ] **TEST-01**: A RealStack E2E proves the forward pass + the recovery pass + each keeper state (`REINJECT` present/absent, `INJECT`, `DELETE`) under the new model.

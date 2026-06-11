@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
-status: planning
-stopped_at: Phase 53 context gathered
-last_updated: "2026-06-11T19:37:03.376Z"
+status: executing
+stopped_at: Completed 53-01-PLAN.md
+last_updated: "2026-06-11T19:57:39.317Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 11
-  completed_plans: 8
-  percent: 73
+  completed_plans: 9
+  percent: 82
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 52 (Three-State Keeper) — ALL 3 plans complete (01 A18 bodies, 02 endpoint pause/resume mechanism, 03 BIT-edge Stop/Start driver); phase ready for verification
+**Current focus:** Phase 53 — model-b-teardown
 
 ## Current Position
 
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
-Phase: 53
-Plan: Not started
-Status: Ready to plan
+Phase: 53 (model-b-teardown) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-06-11
 
 ### Roadmap Evolution
@@ -671,7 +671,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████████░] 88%
+Progress: [████████░░] 82%
 
 ### Milestone Phases (v3.4.0)
 
@@ -918,6 +918,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 52 P01 | 30min | 3 tasks | 12 files |
 | Phase 52 P02 | 21min | 3 tasks | 6 files |
 | Phase 52 P03 | 25min | 3 tasks | 2 files |
+| Phase 53 P01 | 13min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1296,6 +1297,8 @@ Recent decisions affecting current work:
 - 52-02: keeper-recovery runtime-bound via ConnectReceiveEndpoint (RecoveryEndpointBinder) + handle singleton — the only 8.5.5 runtime-pausable shape (KEEP-04 mechanism)
 - 52-02: SustainedOutage = large-but-finite interval retry (NOT int.MaxValue, which OOMs MassTransit's pre-allocated TimeSpan[count]); a real outage is handled by KEEP-04 endpoint pause, not the retry loop (D-03/OQ-2)
 - 52-03: BitHealthLoop drives keeper-recovery ReceiveEndpoint.Stop (unhealthy edge) / Start(...).Ready (healthy edge) additively alongside gate.Open/Close + PauseAll/ResumeAll, under the existing WR-01 try; null-guarded for the startup window (T-52-11). IReceiveEndpoint.Start(ct) returns a ReceiveEndpointHandle (await .Ready), Stop(ct) returns a Task (verified 8.5.5) — completes KEEP-04 end to end.
+- Phase 53-01: landed RED-first Wave-0 negative guards — FACT 5 (5->3 reflection) GREEN, FACTS 6/7/8 (D-01/D-03/D-07 source-scans) intentionally RED until Wave-1 removal (RED=success here)
+- Phase 53-01: FACT 6 uses CALL-pattern scan (endpointConfigurator/cfg.UseMessageRetry(, .ConfigureError() not bare word, to exclude ~9 doc-comment false-positives
 
 ### Roadmap Milestone Log
 
@@ -1398,9 +1401,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 53 context gathered
-Resume file: --resume-file
+Last session: 2026-06-11T19:57:39.302Z
+Stopped at: Completed 53-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
