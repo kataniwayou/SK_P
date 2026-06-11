@@ -59,7 +59,7 @@
 **Plans**: 3 plans
 - [x] 52-01-PLAN.md — Three recovery-state bodies (REINJECT drop-flip, INJECT forward-only, DELETE verify) + base gate-wait strip + KeeperMetrics drop counter (Wave 1) ✓ completed 2026-06-11; KEEP-01/02/03; 16/16 Keeper facts, 518/518 hermetic, Release 0/0
 - [x] 52-02-PLAN.md — keeper-recovery static→ConnectReceiveEndpoint conversion + handle singleton + configurable exhaustion policy (Dlq1 vs SustainedOutage) + integration facts (Wave 2) ✓ completed 2026-06-11; KEEP-04/05; 18/18 Keeper facts, 520/520 hermetic, Release 0/0; commits fd72d9d, 266b80c, 5f24bb9
-- [ ] 52-03-PLAN.md — BitHealthLoop endpoint Stop/Start driver on BIT health edges + driver facts + full keeper-suite green gate (Wave 3)
+- [x] 52-03-PLAN.md — BitHealthLoop endpoint Stop/Start driver on BIT health edges + driver facts + full keeper-suite green gate (Wave 3) ✓ completed 2026-06-11; KEEP-04 (end-to-end); BitHealthLoop now Stops the recovery endpoint on the unhealthy edge / Starts it on the healthy edge (additive to gate.Open/Close + PauseAll/ResumeAll, under WR-01); BitHealthLoopTests 8/8, Keeper namespace 32/32, solution Debug 0/0; commits 63bff7a, fed352e
 
 #### Phase 53: Model-B Teardown
 **Goal**: The v4.0.0 Model-B recovery surface is fully removed — composite backup key, `UPDATE`/`CLEANUP` consumers, and the 5-state consumer collapsed to the 3 surviving states — leaving the system buildable on the slot-array path alone.
@@ -489,7 +489,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 49. Live-Proof Close Gate | v4.0.0 | 6/6 | In Progress (live gate operator-gated) | — |
 | 50. Contracts & Slot-Array L2 Key Reshape | v5.0.0 | 2/2 | Complete    | 2026-06-11 |
 | 51. Processor Forward + Recovery Pipeline | v5.0.0 | 3/3 | Complete    | 2026-06-11 |
-| 52. 3-State Keeper | v5.0.0 | 2/3 | In progress | — |
+| 52. 3-State Keeper | v5.0.0 | 3/3 | Complete | KEEP-01..05 |
 | 53. Model-B Teardown | v5.0.0 | 0/? | Not planned | — |
 | 54. Live Proof & Close Gate | v5.0.0 | 0/? | Not planned | — |
 

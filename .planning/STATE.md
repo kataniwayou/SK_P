@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
-status: executing
-stopped_at: Completed 52-02-PLAN.md
-last_updated: "2026-06-11T16:51:49.405Z"
-last_activity: 2026-06-11
+status: verifying
+stopped_at: Completed 52-03-PLAN.md
+last_updated: "2026-06-11T17:22:41.910Z"
+last_activity: 2026-06-11 -- Completed 52-03-PLAN.md (FINAL plan of Phase 52)
 progress:
   total_phases: 5
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 8
-  completed_plans: 7
-  percent: 88
+  completed_plans: 8
+  percent: 100
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 52 (Three-State Keeper) — Plans 01 + 02 complete; Plan 03 (KEEP-04 BIT-edge driver) next
+**Current focus:** Phase 52 (Three-State Keeper) — ALL 3 plans complete (01 A18 bodies, 02 endpoint pause/resume mechanism, 03 BIT-edge Stop/Start driver); phase ready for verification
 
 ## Current Position
 
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
-Phase: 52 (Three-State Keeper) — EXECUTING
-Plan: 2 of 2 complete (52-01 = A18 three-state bodies; 52-02 = KEEP-04 endpoint pause/resume mechanism via ConnectReceiveEndpoint + handle singleton, KEEP-05 ExhaustionPolicy branch (Dlq1/SustainedOutage), KeeperMetrics DI registration). Plan 03 (BIT-edge Stop/Start driver wiring the handle into BitHealthLoop) is next.
-Status: 52-02 complete — keeper-recovery runtime-bound + pausable; 18/18 Keeper facts, 520/520 hermetic, solution Release 0-warning. KEEP-04 + KEEP-05 marked complete in REQUIREMENTS.md.
-Last activity: 2026-06-11 -- Completed 52-02-PLAN.md
+Phase: 52 (Three-State Keeper) — ALL PLANS COMPLETE
+Plan: 3 of 3 complete (52-01 = A18 three-state bodies; 52-02 = KEEP-04 endpoint pause/resume mechanism via ConnectReceiveEndpoint + handle singleton, KEEP-05 ExhaustionPolicy branch (Dlq1/SustainedOutage), KeeperMetrics DI registration; 52-03 = BIT-edge Stop/Start driver — BitHealthLoop now Stops the recovery endpoint on the unhealthy edge / Starts it on the healthy edge, additive to gate.Open/Close + PauseAll/ResumeAll, completing KEEP-04 end to end).
+Status: Phase complete — ready for verification. BitHealthLoopTests 8/8, Keeper namespace 32/32, solution Debug build 0-warning. (5 RealStack/E2E tests fail without a live RabbitMQ/Postgres stack — operator-gated live close, not a code gap.)
+Last activity: 2026-06-11 -- Completed 52-03-PLAN.md (FINAL plan of Phase 52)
 
 ### Roadmap Evolution
 
@@ -916,6 +916,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 51 P03 | single-session | 2 tasks | 4 files |
 | Phase 52 P01 | 30min | 3 tasks | 12 files |
 | Phase 52 P02 | 21min | 3 tasks | 6 files |
+| Phase 52 P03 | 25min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1293,6 +1294,7 @@ Recent decisions affecting current work:
 - Phase 52-01: A18 three-state keeper bodies landed — REINJECT drops-on-absent (counter+log, D-06/D-07), INJECT forward-only write->send->delete (KEEP-02), DELETE verify (KEEP-03); base gate-wait stripped (D-09), KeeperMetrics created, ExhaustionPolicy enum added (D-01).
 - 52-02: keeper-recovery runtime-bound via ConnectReceiveEndpoint (RecoveryEndpointBinder) + handle singleton — the only 8.5.5 runtime-pausable shape (KEEP-04 mechanism)
 - 52-02: SustainedOutage = large-but-finite interval retry (NOT int.MaxValue, which OOMs MassTransit's pre-allocated TimeSpan[count]); a real outage is handled by KEEP-04 endpoint pause, not the retry loop (D-03/OQ-2)
+- 52-03: BitHealthLoop drives keeper-recovery ReceiveEndpoint.Stop (unhealthy edge) / Start(...).Ready (healthy edge) additively alongside gate.Open/Close + PauseAll/ResumeAll, under the existing WR-01 try; null-guarded for the startup window (T-52-11). IReceiveEndpoint.Start(ct) returns a ReceiveEndpointHandle (await .Ready), Stop(ct) returns a Task (verified 8.5.5) — completes KEEP-04 end to end.
 
 ### Roadmap Milestone Log
 
@@ -1395,8 +1397,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T16:51:49.390Z
-Stopped at: Completed 52-02-PLAN.md
+Last session: 2026-06-11T17:22:35.591Z
+Stopped at: Completed 52-03-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
