@@ -19,7 +19,19 @@ namespace Keeper.Recovery;
 /// </summary>
 public sealed class RecoveryEndpointHandle
 {
+    // volatile backing field: the handle is written ONCE by RecoveryEndpointBinder.ExecuteAsync (one
+    // hosted-service thread) and read on every L2-health edge by BitHealthLoop.ExecuteAsync (a different
+    // hosted-service thread). Without a memory barrier the .NET memory model (ECMA CLI) does not guarantee
+    // cross-thread visibility of the store, so on a relaxed-memory architecture the BIT loop could observe
+    // null long after the binder set it — lengthening the startup window past T-52-11. volatile establishes
+    // the acquire/release fence on read/write so the set is promptly visible to the reader thread.
+    private volatile HostReceiveEndpointHandle? _handle;
+
     /// <summary>The connected keeper-recovery endpoint handle. Null until <see cref="RecoveryEndpointBinder"/>
     /// completes the runtime connect; thereafter <c>Handle.ReceiveEndpoint.Stop/Start</c> drives pause/resume.</summary>
-    public HostReceiveEndpointHandle? Handle { get; set; }
+    public HostReceiveEndpointHandle? Handle
+    {
+        get => _handle;
+        set => _handle = value;
+    }
 }
