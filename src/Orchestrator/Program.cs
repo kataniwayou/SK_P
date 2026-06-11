@@ -1,6 +1,5 @@
 using BaseConsole.Core.DependencyInjection;
 using MassTransit;
-using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -22,11 +21,6 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.AddBaseConsoleObservability(builder.Configuration);   // metrics-only OTel (no tracer — Pitfall 4)
 builder.Services.AddBaseConsole(builder.Configuration);       // Redis soft-dep + embedded health
-
-// D-10: bind the retry budget per process from the "Retry" section (single source of truth for the
-// retry Limit so Phase 32's final-attempt check cannot desync from UseMessageRetry). Absent section →
-// RetryOptions defaults (Immediate(3)). The 3 orchestrator ConsumerDefinitions inject IOptions<RetryOptions>.
-builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
 
 // D-06: a stable instance id per replica (fall back to a fresh GUID when unset). Captured by the
 // closure below so BOTH consumers share the SAME instance id → one temporary/auto-delete fan-out
