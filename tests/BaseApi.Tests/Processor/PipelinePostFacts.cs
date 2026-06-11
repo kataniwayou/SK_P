@@ -11,11 +11,13 @@ using BaseProcessorBase = BaseProcessor.Core.Processing.BaseProcessor;
 namespace BaseApi.Tests.Processor;
 
 /// <summary>
-/// PIPE-06/07 — the Post stage of <see cref="ProcessorPipeline"/>: per completed item, UPDATE → write
-/// <c>L2[entryId]</c> with the bounded <c>ExecutionDataTtl</c> (CONFIG-02/D-17) → CLEANUP on write-success → <see cref="StepCompleted"/> carrying the
-/// framework entryId + author executionId. N completed items → N results. A write-exhaust becomes
-/// failed(infra) → <see cref="KeeperInject"/> (no StepCompleted, no CLEANUP). A per-item business-failed
+/// PIPE-06/07 — the Post stage of <see cref="ProcessorPipeline"/>: per completed item, write
+/// <c>L2[entryId]</c> with the bounded <c>ExecutionDataTtl</c> (CONFIG-02/D-17) → <see cref="StepCompleted"/>
+/// carrying the framework entryId + author executionId. N completed items → N results. A write-exhaust
+/// becomes failed(infra) → <see cref="KeeperInject"/> (no StepCompleted). A per-item business-failed
 /// (author Failed OR output-validation fail) → one <see cref="StepFailed"/> and does NOT abort the batch (A3).
+/// Phase-50 (D-01) removed the Model-B UPDATE/CLEANUP keeper sends + their composite backup key; the real
+/// A18 slot-array forward/recovery pass is proven in Phase 51.
 /// </summary>
 public sealed class PipelinePostFacts
 {
@@ -47,7 +49,7 @@ public sealed class PipelinePostFacts
     }
 
     [Fact]
-    public async Task PostCompleted_UpdateCleanup()
+    public async Task PostCompleted_WritesWithTtl_AndSendsStepCompleted()
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
@@ -59,10 +61,9 @@ public sealed class PipelinePostFacts
         await Build(redis, Ctx(), processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
 
-        var update = Assert.Single(send.SentKeeper.OfType<KeeperUpdate>());
-        var cleanup = Assert.Single(send.SentKeeper.OfType<KeeperCleanup>());
-        // UPDATE precedes CLEANUP (UPDATE → write → CLEANUP order).
-        Assert.True(send.SentKeeper.IndexOf(update) < send.SentKeeper.IndexOf(cleanup));
+        // Phase-50 (D-01): the Model-B UPDATE/CLEANUP keeper sends are retired — a completed item now goes
+        // straight write → StepCompleted with NO keeper send on the happy path.
+        Assert.Empty(send.SentKeeper);
         Assert.Single(send.Sent.OfType<StepCompleted>());
 
         // The Post write applies the bounded ExecutionDataTtl (CONFIG-02/D-17) so a terminal step's output
@@ -107,10 +108,10 @@ public sealed class PipelinePostFacts
         await Build(redis, Ctx(), processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
 
-        var update = Assert.Single(send.SentKeeper.OfType<KeeperUpdate>());
-        var inject = Assert.Single(send.SentKeeper.OfType<KeeperInject>());   // write-exhaust → KeeperInject
-        Assert.True(send.SentKeeper.IndexOf(update) < send.SentKeeper.IndexOf(inject));  // UPDATE then INJECT
-        Assert.Empty(send.SentKeeper.OfType<KeeperCleanup>());               // NO cleanup on write-fault
+        // Phase-50 (D-01): UPDATE/CLEANUP retired — a write-exhaust on a completed item is the sole keeper
+        // send (KeeperInject, the infra route), with NO StepCompleted for that item.
+        Assert.Single(send.SentKeeper.OfType<KeeperInject>());               // write-exhaust → KeeperInject
+        Assert.Single(send.SentKeeper);                                       // KeeperInject is the only keeper send
         Assert.Empty(send.Sent.OfType<StepCompleted>());                     // NO StepCompleted for that item
     }
 

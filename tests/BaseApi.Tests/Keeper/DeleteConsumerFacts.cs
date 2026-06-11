@@ -23,7 +23,7 @@ public sealed class DeleteConsumerFacts
 
         var consumer = new DeleteConsumer(
             RecoveryTestKit.Mux(db), send, RecoveryTestKit.OpenGate(),
-            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery(), RecoveryTestKit.Backup());
+            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery());
 
         var m = new KeeperDelete(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {

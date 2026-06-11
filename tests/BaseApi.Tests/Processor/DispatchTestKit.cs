@@ -247,8 +247,8 @@ internal static class DispatchTestKit
     /// An <see cref="ISendEndpointProvider"/> whose every resolved endpoint records each boxed message it is
     /// asked to <c>Send</c>: an <see cref="IStepResult"/> lands in <see cref="Sent"/> (orchestrator results),
     /// an <see cref="IKeeperRecoverable"/> lands in <see cref="SentKeeper"/> (Keeper-state messages). Both
-    /// lists are order-preserving so a fact can assert e.g. <c>SentKeeper.OfType&lt;KeeperUpdate&gt;()</c>
-    /// precedes <c>OfType&lt;KeeperCleanup&gt;()</c>.
+    /// lists are order-preserving so a fact can assert e.g. the relative order of
+    /// <c>SentKeeper.OfType&lt;KeeperInject&gt;()</c> vs <c>OfType&lt;KeeperDelete&gt;()</c>.
     /// </summary>
     public sealed class CapturingSendProvider : ISendEndpointProvider
     {

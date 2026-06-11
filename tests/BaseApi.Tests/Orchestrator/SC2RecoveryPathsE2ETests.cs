@@ -30,11 +30,11 @@ namespace BaseApi.Tests.Orchestrator;
 ///   the deliberate <see cref="RecoveryDataGoneException"/> terminal → consolidated error transport →
 ///   <see cref="ConsolidatedErrorTransportFilter.Dlq1"/> (skp-dlq-1). Asserted on the DLQ depth, then the
 ///   one parked message is drained in teardown so the close gate's skp-dlq-1 depth==0 holds.</item>
-///   <item><b>INJECT</b> (<c>InjectConsumer</c>) — PRE-SEED the composite backup
-///   (<see cref="L2ProjectionKeys.CompositeBackup"/>) → the consumer reads it, mints an entryId, writes
-///   <c>skp:data:{entryId}</c>, sends a reconstructed <see cref="StepCompleted"/> to
-///   <c>queue:{OrchestratorQueues.Result}</c>, and DELETES the composite. Asserted on a NEW data key
-///   appearing + the composite being gone.</item>
+///   <item><b>INJECT</b> (<c>InjectConsumer</c>) — Phase-50 (D-01) RETIRED the Model-B composite-backup
+///   read body; the INJECT consumer is a compile-only no-op stub here (the real A18 forward-only INJECT —
+///   write <c>L2[m.EntryId]=m.Data</c>, send a reconstructed <see cref="StepCompleted"/>, delete
+///   <c>m.DeleteEntryId</c> — lands in Phase 52). This block is kept COMPILING only (RealStack, excluded
+///   hermetically); its A18 behavioral proof is Phase 54.</item>
 ///   <item><b>DELETE</b> (<c>DeleteConsumer</c>) — PRE-SEED <c>skp:data:{entryId}</c> → the consumer
 ///   deletes it. Asserted on the data key being gone.</item>
 /// </list>
@@ -150,7 +150,10 @@ public sealed class SC2RecoveryPathsE2ETests
         }
 
         // =========================================================================================
-        // STATE 3 — INJECT → read composite → write skp:data:{entryId} → StepCompleted → delete composite
+        // STATE 3 — INJECT — Phase-50 (D-01) compile-only: the Model-B composite read/write/send/delete is
+        // retired. The A18 forward-only INJECT (write L2[m.EntryId]=m.Data, send StepCompleted, delete
+        // m.DeleteEntryId) + its behavioral proof land in Phases 52/54. This block only publishes the
+        // reshaped KeeperInject (carrying its A18 id-set) so the file COMPILES under 0-warning.
         // =========================================================================================
         {
             var wfId = Guid.NewGuid();
@@ -158,41 +161,19 @@ public sealed class SC2RecoveryPathsE2ETests
             var procId = Guid.NewGuid();
             var corr = Guid.NewGuid();
             var execId = Guid.NewGuid();
-
-            // PRE-SEED the composite backup key. Register it for net-zero teardown: INJECT actively DELETES
-            // it, but its 2-day TTL CANNOT be waited out (D-07) — registering it means a leak (the delete
-            // not happening) surfaces as a redis SHA mismatch at the close gate.
-            var composite = L2ProjectionKeys.CompositeBackup(corr, wfId, procId, execId);
-            await db.StringSetAsync(composite, "composite-backup-payload");
-            factory.L2KeysToCleanup.Add(composite);
-
-            var dataKeysBefore = ScanExecutionDataKeys();
+            var entryId = Guid.NewGuid();
 
             await endpoint.Send(new KeeperInject(wfId, stepId, procId)
             {
                 CorrelationId = corr,
                 ExecutionId = execId,
+                EntryId = entryId,
+                Data = "inject-payload",
+                DeleteEntryId = Guid.NewGuid(),
             }, ct);
 
-            // EFFECT (a): a NEW skp:data:{entryId} key is written (the consumer mints the entryId via
-            // NewId.NextGuid(), so the name is unknown a priori — poll for a new member of the family, as
-            // SC1 does). Register the minted key for net-zero teardown.
-            var newDataKey = await PollForNewExecutionDataKeyAsync(dataKeysBefore, ct);
-            Assert.NotNull(newDataKey);
-            factory.L2KeysToCleanup.Add(newDataKey!.Value);
-
-            // EFFECT (b): a reconstructed StepCompleted reaches queue:{OrchestratorQueues.Result} — the
-            // orchestrator-advance proof. The live orchestrator competes on that queue; assert the
-            // per-item ExecutionResult landed by confirming the result queue exists + saw traffic (depth
-            // may already be drained by the live orchestrator consumer, so assert >=0 with the queue
-            // present — the load-bearing INJECT proofs are the L2 write (a) + the composite delete (c)).
-            _ = await ReadQueueDepthAsync(OrchestratorQueues.Result, ct);
-
-            // EFFECT (c): the now-redundant composite backup is DELETED (net-zero). Poll until gone.
-            var compositeGone = await PollForKeyAbsentAsync(db, composite, ct);
-            Assert.True(compositeGone,
-                $"INJECT: expected the composite backup {composite} to be deleted after the reconstructed " +
-                $"StepCompleted was sent, but it still exists.");
+            // No behavioral assertion in Phase 50 — the INJECT consumer is a no-op stub (the A18 effect is
+            // proven in Phase 54). The reshaped contract publishing above is the load-bearing compile gate.
         }
 
         // =========================================================================================
@@ -226,33 +207,6 @@ public sealed class SC2RecoveryPathsE2ETests
 
     // ---- L2 polls (mirror SampleRoundTripE2ETests' scan/poll shapes) -------------------------------
 
-    private static async Task<RedisKey?> PollForNewExecutionDataKeyAsync(
-        HashSet<string> before, CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow.AddMilliseconds(EffectPollTimeoutMs);
-        var delay = 1_000;
-        while (DateTime.UtcNow < deadline)
-        {
-            ct.ThrowIfCancellationRequested();
-            foreach (var key in ScanExecutionDataKeys())
-            {
-                if (!before.Contains(key))
-                {
-                    return key;   // INJECT wrote a fresh skp:data:{entryId}.
-                }
-            }
-
-            await Task.Delay(Math.Min(delay, 3_000), ct);
-            delay = Math.Min(delay * 2, 3_000);
-        }
-
-        Assert.Fail(
-            $"No new skp:data:* key appeared within {EffectPollTimeoutMs}ms — the INJECT recovery state " +
-            $"(composite read → L2 write) did not complete. Confirm the keeper container is up healthy and " +
-            $"the L2 health gate is open.");
-        return null;   // unreachable (Assert.Fail throws) — keeps the compiler happy.
-    }
-
     private static async Task<bool> PollForKeyAbsentAsync(IDatabase db, string key, CancellationToken ct)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(EffectPollTimeoutMs);
@@ -270,33 +224,6 @@ public sealed class SC2RecoveryPathsE2ETests
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// SCAN host Redis for all keys under the execution-data discriminator
-    /// (<c>skp:data:*</c> = <see cref="L2ProjectionKeys.ExecutionData"/>). The entryId is consumer-minted
-    /// (<c>NewId.NextGuid()</c>), so we cannot address the key directly — enumerate the family.
-    /// </summary>
-    private static HashSet<string> ScanExecutionDataKeys()
-    {
-        using var mux = ConnectionMultiplexer.Connect(HostRedis);
-        var endpoints = mux.GetEndPoints();
-        var keys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var ep in endpoints)
-        {
-            var server = mux.GetServer(ep);
-            if (!server.IsConnected || server.IsReplica)
-            {
-                continue;
-            }
-
-            foreach (var key in server.Keys(pattern: $"{L2ProjectionKeys.Prefix}data:*"))
-            {
-                keys.Add(key.ToString());
-            }
-        }
-
-        return keys;
     }
 
     // ---- Broker queue-depth helpers (live RabbitMQ via docker exec rabbitmqctl) --------------------

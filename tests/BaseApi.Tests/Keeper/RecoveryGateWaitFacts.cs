@@ -34,21 +34,24 @@ public sealed class RecoveryGateWaitFacts
         }
     }
 
-    /// <summary>Trivial subclass exposing whether the body ran (and capturing the message it saw).</summary>
+    /// <summary>Trivial subclass exposing whether the body ran (and capturing the message it saw). Uses a
+    /// SURVIVING contract (<see cref="KeeperDelete"/>) purely as the gate-wait vehicle — this fact exercises
+    /// the base D-03 gate-wait, not DELETE semantics (the deleted Model-B CLEANUP vehicle was re-pointed in
+    /// Phase 50).</summary>
     private sealed class ProbeConsumer(
         IConnectionMultiplexer redis, ISendEndpointProvider send, IL2HealthGate gate,
-        IOptions<RetryOptions> retry, IOptions<RecoveryOptions> recovery, IOptions<BackupOptions> backup)
-        : RecoveryConsumerBase<KeeperCleanup>(redis, send, gate, retry, recovery, backup)
+        IOptions<RetryOptions> retry, IOptions<RecoveryOptions> recovery)
+        : RecoveryConsumerBase<KeeperDelete>(redis, send, gate, retry, recovery)
     {
         public bool BodyRan { get; private set; }
-        protected override Task HandleAsync(KeeperCleanup m, CancellationToken ct)
+        protected override Task HandleAsync(KeeperDelete m, CancellationToken ct)
         {
             BodyRan = true;
             return Task.CompletedTask;
         }
     }
 
-    private static ProbeConsumer Build(IL2HealthGate gate, int gateWaitSeconds, out ConsumeContext<KeeperCleanup> ctx)
+    private static ProbeConsumer Build(IL2HealthGate gate, int gateWaitSeconds, out ConsumeContext<KeeperDelete> ctx)
     {
         var redis = Substitute.For<IConnectionMultiplexer>();
         redis.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(Substitute.For<IDatabase>());
@@ -56,14 +59,14 @@ public sealed class RecoveryGateWaitFacts
         var consumer = new ProbeConsumer(
             redis, send, gate,
             Options.Create(new RetryOptions { Limit = 3 }),
-            Options.Create(new RecoveryOptions { GateWaitSeconds = gateWaitSeconds }),
-            Options.Create(new BackupOptions { TtlDays = 2 }));
+            Options.Create(new RecoveryOptions { GateWaitSeconds = gateWaitSeconds }));
 
-        ctx = Substitute.For<ConsumeContext<KeeperCleanup>>();
-        ctx.Message.Returns(new KeeperCleanup(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        ctx = Substitute.For<ConsumeContext<KeeperDelete>>();
+        ctx.Message.Returns(new KeeperDelete(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
+            EntryId = Guid.NewGuid(),
         });
         ctx.CancellationToken.Returns(CancellationToken.None);
         return consumer;

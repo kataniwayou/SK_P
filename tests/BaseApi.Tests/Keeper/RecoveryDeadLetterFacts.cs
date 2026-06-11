@@ -63,7 +63,6 @@ public sealed class RecoveryDeadLetterFacts
             .AddSingleton(OpenGate())
             .AddSingleton(Options.Create(new RetryOptions { Limit = retryLimit }))
             .AddSingleton(Options.Create(new RecoveryOptions { PartitionCount = 8, GateWaitSeconds = 300 }))
-            .AddSingleton(Options.Create(new BackupOptions { TtlDays = 2 }))
             .AddMassTransitTestHarness(x =>
             {
                 x.AddConsumer<ReinjectConsumer>();
@@ -154,8 +153,7 @@ public sealed class RecoveryDeadLetterFacts
         var consumer = new ReinjectConsumer(
             PresentMux(), send, OpenGate(),
             Options.Create(new RetryOptions { Limit = 1 }),
-            Options.Create(new RecoveryOptions { PartitionCount = 8, GateWaitSeconds = 300 }),
-            Options.Create(new BackupOptions { TtlDays = 2 }));
+            Options.Create(new RecoveryOptions { PartitionCount = 8, GateWaitSeconds = 300 }));
 
         var msg = new KeeperReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {

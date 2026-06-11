@@ -12,7 +12,7 @@ namespace BaseApi.Tests.Keeper;
 /// <summary>
 /// Shared kit for the Phase-46 Keeper recovery-consumer facts: an already-open <see cref="IL2HealthGate"/>
 /// (so the body runs immediately past the base D-03 gate-wait), the <see cref="RetryOptions"/>/
-/// <see cref="RecoveryOptions"/>/<see cref="BackupOptions"/> option helpers, a fake <see cref="IDatabase"/>
+/// <see cref="RecoveryOptions"/> option helpers, a fake <see cref="IDatabase"/>
 /// behind a substituted <see cref="IConnectionMultiplexer"/>, and a <see cref="CapturingSendProvider"/>
 /// recording boxed <see cref="IStepResult"/> / <see cref="IKeeperRecoverable"/> / <see cref="EntryStepDispatch"/>
 /// sends with the endpoint URI each was sent to.
@@ -32,9 +32,6 @@ internal static class RecoveryTestKit
 
     public static IOptions<RecoveryOptions> Recovery(int gateWaitSeconds = 300) =>
         Options.Create(new RecoveryOptions { GateWaitSeconds = gateWaitSeconds });
-
-    public static IOptions<BackupOptions> Backup(int ttlDays = 2) =>
-        Options.Create(new BackupOptions { TtlDays = ttlDays });
 
     /// <summary>A multiplexer over a caller-supplied (or default) substituted <see cref="IDatabase"/>.</summary>
     public static IConnectionMultiplexer Mux(IDatabase db)

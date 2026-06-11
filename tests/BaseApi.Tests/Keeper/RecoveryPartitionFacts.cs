@@ -7,8 +7,8 @@ namespace BaseApi.Tests.Keeper;
 /// <summary>
 /// KEEP-09 / D-12: the keeper-recovery endpoint partitions per-key on the IKeeperRecoverable 4-tuple
 /// (corr:wf:ProcessorId:executionId), deliberately EXCLUDING StepId. These facts pin the single-owner
-/// <see cref="UpdateConsumerDefinition.PartitionKey"/> (the canonical string the partitioner keys on) and
-/// the derived <see cref="UpdateConsumerDefinition.PartitionGuid"/> used by the 8.5.5 Guid-keyed endpoint
+/// <see cref="ReinjectConsumerDefinition.PartitionKey"/> (the canonical string the partitioner keys on) and
+/// the derived <see cref="ReinjectConsumerDefinition.PartitionGuid"/> used by the 8.5.5 Guid-keyed endpoint
 /// overload: two messages with the SAME 4-tuple but DIFFERENT StepId collide into the same slot (proving
 /// StepId is excluded), while a different ExecutionId yields a different key.
 /// <para>
@@ -36,20 +36,20 @@ public sealed class RecoveryPartitionFacts
 
         // The canonical key is exactly the 4-tuple in :D format — no StepId, no EntryId.
         var m = Reinject(corr, wf, proc, exec, step: NewGuid());
-        Assert.Equal($"{corr:D}:{wf:D}:{proc:D}:{exec:D}", UpdateConsumerDefinition.PartitionKey(m));
+        Assert.Equal($"{corr:D}:{wf:D}:{proc:D}:{exec:D}", ReinjectConsumerDefinition.PartitionKey(m));
 
         // Same 4-tuple, DIFFERENT StepId → SAME key (StepId is excluded by construction).
         var sameTupleOtherStep = Reinject(corr, wf, proc, exec, step: NewGuid());
         Assert.Equal(
-            UpdateConsumerDefinition.PartitionKey(m),
-            UpdateConsumerDefinition.PartitionKey(sameTupleOtherStep));
+            ReinjectConsumerDefinition.PartitionKey(m),
+            ReinjectConsumerDefinition.PartitionKey(sameTupleOtherStep));
         Assert.NotEqual(m.StepId, sameTupleOtherStep.StepId);   // guard: the StepIds really do differ
 
         // Different ExecutionId → DIFFERENT key (different exec → different partition group).
         var otherExec = Reinject(corr, wf, proc, exec: NewGuid(), step: m.StepId);
         Assert.NotEqual(
-            UpdateConsumerDefinition.PartitionKey(m),
-            UpdateConsumerDefinition.PartitionKey(otherExec));
+            ReinjectConsumerDefinition.PartitionKey(m),
+            ReinjectConsumerDefinition.PartitionKey(otherExec));
     }
 
     [Fact]
@@ -66,13 +66,13 @@ public sealed class RecoveryPartitionFacts
         // The derived Guid is deterministic over the key, so the same 4-tuple (any StepId) → same slot Guid.
         var sameTupleOtherStep = Reinject(corr, wf, proc, exec, step: NewGuid());
         Assert.Equal(
-            UpdateConsumerDefinition.PartitionGuid(m),
-            UpdateConsumerDefinition.PartitionGuid(sameTupleOtherStep));
+            ReinjectConsumerDefinition.PartitionGuid(m),
+            ReinjectConsumerDefinition.PartitionGuid(sameTupleOtherStep));
 
         // Different ExecutionId → different slot Guid.
         var otherExec = Reinject(corr, wf, proc, exec: NewGuid(), step: m.StepId);
         Assert.NotEqual(
-            UpdateConsumerDefinition.PartitionGuid(m),
-            UpdateConsumerDefinition.PartitionGuid(otherExec));
+            ReinjectConsumerDefinition.PartitionGuid(m),
+            ReinjectConsumerDefinition.PartitionGuid(otherExec));
     }
 }

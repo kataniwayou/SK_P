@@ -43,7 +43,7 @@ public sealed class ReinjectConsumerFacts
 
         var consumer = new ReinjectConsumer(
             RecoveryTestKit.Mux(db), send, RecoveryTestKit.OpenGate(),
-            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery(), RecoveryTestKit.Backup());
+            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery());
 
         await consumer.Consume(Ctx(m, ct));
 
@@ -79,7 +79,7 @@ public sealed class ReinjectConsumerFacts
 
         var consumer = new ReinjectConsumer(
             RecoveryTestKit.Mux(db), send, RecoveryTestKit.OpenGate(),   // gate already open → throw is the data-gone path
-            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery(), RecoveryTestKit.Backup());
+            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery());
 
         await Assert.ThrowsAsync<RecoveryDataGoneException>(() => consumer.Consume(Ctx(m, ct)));
         Assert.Empty(send.Sent);   // nothing re-injected when the data is gone

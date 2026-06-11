@@ -5,28 +5,25 @@ using Xunit;
 namespace BaseApi.Tests.Contracts;
 
 /// <summary>
-/// Phase 43 Wave-0 RED Nyquist proof for SC-3 (D-11/D-12): the five Keeper-state records
-/// (KeeperUpdate/KeeperReinject/KeeperInject/KeeperDelete/KeeperCleanup), each implementing the
-/// IKeeperRecoverable marker that exposes EXACTLY the partition 4-tuple (corr/wf/proc/exec) and
-/// deliberately NOT StepId. StepId rides as a plain property on each record (the 5-id base);
-/// KeeperUpdate adds ValidatedData; KeeperReinject/KeeperDelete add EntryId.
-///
-/// References IKeeperRecoverable + the five records, none of which exist until Plan 02 —
-/// deliberately RED until then.
+/// SC-3 (A18 / D-08/D-09): the THREE surviving Keeper-state records
+/// (KeeperReinject/KeeperInject/KeeperDelete) after the Phase-50 Model-B retirement
+/// (UPDATE/CLEANUP deleted). Each implements the IKeeperRecoverable marker that exposes EXACTLY the
+/// partition 4-tuple (corr/wf/proc/exec) and deliberately NOT StepId. StepId rides as a plain property
+/// on each record (the 5-id base). REINJECT carries EntryId + Payload; DELETE carries EntryId; INJECT
+/// carries the A18 id-set EntryId + Data + DeleteEntryId (D-08).
 /// </summary>
-[Trait("Phase", "43")]
+[Trait("Phase", "50")]
 public sealed class KeeperContractTests
 {
-    private static readonly Type[] AllFive =
+    private static readonly Type[] AllThree =
     {
-        typeof(KeeperUpdate), typeof(KeeperReinject), typeof(KeeperInject),
-        typeof(KeeperDelete), typeof(KeeperCleanup),
+        typeof(KeeperReinject), typeof(KeeperInject), typeof(KeeperDelete),
     };
 
     [Fact]
-    public void All_five_records_implement_IKeeperRecoverable()
+    public void All_three_records_implement_IKeeperRecoverable()
     {
-        foreach (var t in AllFive)
+        foreach (var t in AllThree)
             Assert.True(typeof(IKeeperRecoverable).IsAssignableFrom(t), $"{t.Name} must implement IKeeperRecoverable");
     }
 
@@ -43,24 +40,16 @@ public sealed class KeeperContractTests
     [Fact]
     public void Every_record_carries_StepId_as_a_plain_property()
     {
-        // D-11: all five carry the 5-id base {corr, wf, step, proc, exec}; StepId is a record property
+        // D-11: all three carry the 5-id base {corr, wf, step, proc, exec}; StepId is a record property
         // even though it is not on the IKeeperRecoverable partition marker.
-        foreach (var t in AllFive)
+        foreach (var t in AllThree)
             Assert.NotNull(t.GetProperty("StepId"));
     }
 
     [Fact]
-    public void KeeperUpdate_carries_ValidatedData_and_no_EntryId()
+    public void KeeperReinject_carries_EntryId_and_Payload()
     {
-        Assert.NotNull(typeof(KeeperUpdate).GetProperty("ValidatedData"));   // D-11 UPDATE-only extra
-        Assert.Null(typeof(KeeperUpdate).GetProperty("EntryId"));
-    }
-
-    [Fact]
-    public void KeeperReinject_carries_EntryId_and_no_ValidatedData()
-    {
-        Assert.NotNull(typeof(KeeperReinject).GetProperty("EntryId"));   // D-11
-        Assert.Null(typeof(KeeperReinject).GetProperty("ValidatedData"));
+        Assert.NotNull(typeof(KeeperReinject).GetProperty("EntryId"));   // D-09
         // D-01: REINJECT carries Payload (string, init-only) so a recovered run reconstructs a
         // faithful EntryStepDispatch (the author's step config is not silently lost).
         var payload = typeof(KeeperReinject).GetProperty("Payload");
@@ -69,23 +58,25 @@ public sealed class KeeperContractTests
     }
 
     [Fact]
-    public void KeeperDelete_carries_EntryId_and_no_ValidatedData()
+    public void KeeperDelete_carries_EntryId()
     {
-        Assert.NotNull(typeof(KeeperDelete).GetProperty("EntryId"));   // D-11
-        Assert.Null(typeof(KeeperDelete).GetProperty("ValidatedData"));
+        Assert.NotNull(typeof(KeeperDelete).GetProperty("EntryId"));   // D-09
     }
 
     [Fact]
-    public void KeeperInject_carries_neither_EntryId_nor_ValidatedData()
+    public void KeeperInject_carries_the_A18_id_set_EntryId_Data_DeleteEntryId()
     {
-        Assert.Null(typeof(KeeperInject).GetProperty("EntryId"));
-        Assert.Null(typeof(KeeperInject).GetProperty("ValidatedData"));
-    }
+        // D-08: INJECT is forward-only — it carries its own data on the envelope (no composite read).
+        var entryId = typeof(KeeperInject).GetProperty("EntryId");
+        Assert.NotNull(entryId);
+        Assert.Equal(typeof(Guid), entryId!.PropertyType);
 
-    [Fact]
-    public void KeeperCleanup_carries_neither_EntryId_nor_ValidatedData()
-    {
-        Assert.Null(typeof(KeeperCleanup).GetProperty("EntryId"));
-        Assert.Null(typeof(KeeperCleanup).GetProperty("ValidatedData"));
+        var data = typeof(KeeperInject).GetProperty("Data");
+        Assert.NotNull(data);
+        Assert.Equal(typeof(string), data!.PropertyType);
+
+        var deleteEntryId = typeof(KeeperInject).GetProperty("DeleteEntryId");
+        Assert.NotNull(deleteEntryId);
+        Assert.Equal(typeof(Guid), deleteEntryId!.PropertyType);
     }
 }
