@@ -1,7 +1,6 @@
 using BaseConsole.Core.Configuration;
 using BaseConsole.Core.Messaging;
 using MassTransit;
-using MassTransit.Middleware;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -47,20 +46,11 @@ public static class MessagingServiceCollectionExtensions
         {
             configureConsumers(x);   // concrete seam — EMPTY this phase (Phase 19 adds consumers)
 
-            // DLQ-04 (D-06): consolidate the post-exhaustion _error MOVE to ONE shared skp-dlq-1 across ALL
-            // consoles (processor + orchestrator + Keeper). Lives in the once-per-endpoint, framework-deduped
-            // AddConfigureEndpointsCallback (Pitfall 3 — error middleware is PER-ENDPOINT; it does NOT
-            // double-register with the existing per-consumer UseMessageRetry). KEEP the fault-generation
-            // filter upstream — Keeper's whole recovery model rides the Fault<T> pub/sub stream (removing it
-            // would break Phases 33-35). Only the default move TARGET is replaced with the consolidated dest.
-            x.AddConfigureEndpointsCallback((context, name, e) =>
-            {
-                e.ConfigureError(ep =>
-                {
-                    ep.UseFilter(new GenerateFaultFilter());                  // keep Fault<T> publication (Keeper rides it)
-                    ep.UseFilter(new ConsolidatedErrorTransportFilter());     // move exhausted msg → skp-dlq-1 (replaces {queue}_error)
-                });
-            });
+            // A18 / Phase-53 D-03: the global per-endpoint error-transport move (GenerateFaultFilter +
+            // ConsolidatedErrorTransportFilter → skp-dlq-1) is REMOVED. Post-Model-B the only producer into
+            // skp-dlq-1 is the keeper recovery endpoint (Dlq1 mode), which applies the filter pair keeper-local
+            // in RecoveryEndpointBinder. The skp-dlq-1 topology declaration below is KEPT (Pitfall 5) — the
+            // exchange/queue must still exist for the keeper to send to it.
 
             x.UsingRabbitMq((ctx, c) =>
             {

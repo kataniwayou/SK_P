@@ -1,5 +1,6 @@
+using BaseConsole.Core.Messaging;   // ConsolidatedErrorTransportFilter (Phase-53 D-03 keeper-local error move)
 using MassTransit;
-using MassTransit.Middleware;   // Partitioner + Murmur3UnsafeHashGenerator (8.5.5 namespace — RESEARCH A1/A2)
+using MassTransit.Middleware;   // Partitioner + Murmur3UnsafeHashGenerator (8.5.5 namespace — RESEARCH A1/A2) + GenerateFaultFilter
 using Messaging.Contracts;
 using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -94,9 +95,21 @@ public sealed class RecoveryEndpointBinder(
             else
             {
                 // D-02 (default): the existing dead-letter latch. On exhaustion the give-up re-throws →
-                // inherited ConsolidatedErrorTransportFilter → skp-dlq-1.
+                // the keeper-local ConsolidatedErrorTransportFilter (below) → skp-dlq-1.
                 cfg.UseMessageRetry(r => r.Immediate(retryLimit));
             }
+
+            // Phase-53 D-03: the error filter pair, MOVED here verbatim from BaseConsole.Core's deleted global
+            // AddConfigureEndpointsCallback. Post-Model-B this is the SOLE producer into skp-dlq-1 — the
+            // consolidated error MOVE is now keeper-local (Dlq1 mode). On a Dlq1-mode give-up the thrown
+            // delivery exhausts the retry above → GenerateFaultFilter publishes Fault<T> → the consolidated
+            // transport filter sends the exhausted message to skp-dlq-1. (SustainedOutage mode never exhausts,
+            // so this filter pair is never reached there — the accepted poison-op spin, no dead-letter.)
+            cfg.ConfigureError(ep =>
+            {
+                ep.UseFilter(new GenerateFaultFilter());                  // Fault<T> publication — keeper-only post-Phase-53
+                ep.UseFilter(new ConsolidatedErrorTransportFilter());     // exhausted → skp-dlq-1 (Dlq1 mode)
+            });
 
             cfg.UsePartitioner<KeeperReinject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
             cfg.UsePartitioner<KeeperInject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
