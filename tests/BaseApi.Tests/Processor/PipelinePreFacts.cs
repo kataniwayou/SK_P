@@ -103,7 +103,7 @@ public sealed class PipelinePreFacts
         var sent = Assert.Single(send.Sent);
         Assert.IsType<StepFailed>(sent);
         Assert.False(processor.Invoked);                                 // failed before the seam ran
-        await db.Received().KeyDeleteAsync(L2ProjectionKeys.ExecutionData(entryId));  // end-delete STILL runs
+        await db.Received(1).KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());  // A19: end-delete (array DEL) STILL runs
         Assert.Empty(send.SentKeeper.OfType<KeeperDelete>());            // delete succeeded → no KeeperDelete
     }
 }

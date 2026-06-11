@@ -187,7 +187,14 @@ public sealed class PipelineForwardFacts
 
         await Build(redis, Ctx(), processor, send).RunAsync(d, messageId, ct);
 
-        await db.Received().KeyDeleteAsync(L2ProjectionKeys.ExecutionData(d.EntryId));  // inline tail deletes source
+        // A19/GC-01: ONE atomic two-key DEL containing BOTH the source data key and the index, zero scalar deletes.
+        await db.Received(1).KeyDeleteAsync(
+            Arg.Is<RedisKey[]>(ks => ks.Length == 2
+                && ks.Contains((RedisKey)L2ProjectionKeys.ExecutionData(d.EntryId))
+                && ks.Contains((RedisKey)L2ProjectionKeys.MessageIndex(messageId))),
+            Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());
         Assert.Empty(send.SentKeeper.OfType<KeeperDelete>());                          // delete succeeded → no DELETE
     }
 
