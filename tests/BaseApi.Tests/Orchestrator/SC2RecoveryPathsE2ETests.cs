@@ -41,8 +41,11 @@ namespace BaseApi.Tests.Orchestrator;
 /// Net-zero (D-04 + D-07): EVERY minted key — including the composite backup whose 2-day TTL CANNOT be
 /// waited out — is registered into <c>factory.L2KeysToCleanup</c>, so a leak surfaces as a close-gate
 /// redis SHA mismatch rather than a silent TTL pass. The data-gone DLQ message is bounded (exactly one)
-/// and self-cleaning (drained in teardown). Gate-open precondition: a healthy RealStack keeps the L2
-/// health gate OPEN (<c>RecoveryConsumerBase.Consume</c> awaits <c>gate.WaitForOpenAsync</c> at entry).
+/// and self-cleaning (drained in teardown). Gate-open precondition: a healthy RealStack keeps the BIT loop
+/// from <c>Stop()</c>ing the <c>keeper-recovery</c> endpoint (D-04/D-09, Phase 52). When the endpoint is
+/// running, the three recovery consumers (REINJECT, INJECT, DELETE) process at entry with NO Consume-level
+/// gate-wait — the per-<c>Consume</c> <c>gate.WaitForOpenAsync</c> was removed in Phase 52; gating is now at
+/// the endpoint level via <c>Stop</c>/<c>Start</c>.
 /// </para>
 /// <para>
 /// Tagged <c>Category=RealStack</c> + <c>Phase=49</c>: the hermetic filter (<c>Category!=RealStack</c>)
@@ -69,8 +72,10 @@ public sealed class SC2RecoveryPathsE2ETests
         await factory.InitializeAsync();
 
         // D-05: resolve the bus and address the gate-open recovery queue by the CONST name (never the
-        // literal queue string). In a healthy RealStack the L2 health gate is OPEN, so the five-state
-        // recovery consumers process at entry (RecoveryConsumerBase awaits gate.WaitForOpenAsync).
+        // literal queue string). In a healthy RealStack the BIT loop leaves the keeper-recovery endpoint
+        // RUNNING, so the three recovery consumers (REINJECT, INJECT, DELETE) process at entry with no
+        // Consume-level gate-wait (the per-Consume gate.WaitForOpenAsync was removed in Phase 52, D-04/D-09 —
+        // gating is now endpoint Stop/Start).
         var bus = factory.Services.GetRequiredService<IBus>();
         var endpoint = await bus.GetSendEndpoint(new Uri($"queue:{KeeperQueues.Recovery}"));
 
