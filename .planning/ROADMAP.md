@@ -42,7 +42,10 @@
   3. `NOT exist L2[messageId]` runs the forward pass; existence-check/source-read exhaustion → `REINJECT` (input intact).
   4. `exist L2[messageId]` runs the recovery pass — temp-list per slot, `completed`→re-send+retire(`guid.empty`), not-exist→drop, `infra_entryId`→preserve slot; any `infra_entryId`→`REINJECT` without deleting source, else delete source.
   5. Hermetic facts prove forward + recovery flows; solution 0-warning.
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 51-01-PLAN.md — SlotArrayOptions (TTL random) record + DI bind + bind facts (Wave 0)
+- [ ] 51-02-PLAN.md — Pipeline dispatcher + FORWARD pass, BuildInject fix, WR-01 finally removal, messageId seam, forward facts (Wave 1)
+- [ ] 51-03-PLAN.md — RECOVERY pass (temp-list, send-before-retire, REINJECT-no-source-delete), recovery + consumer facts (Wave 2)
 
 #### Phase 52: 3-State Keeper
 **Goal**: The Keeper recovery consumer applies the three surviving states gate-open-only — `REINJECT` (read source / re-inject with payload), `INJECT` (forward-only write→send→delete), `DELETE` — with gate-closed non-destructive consume and a configurable DLQ1-vs-sustained-outage exhaustion policy.
