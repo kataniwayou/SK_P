@@ -26,7 +26,9 @@ public abstract class RecoveryConsumerBase<TMessage>(
     IOptions<RecoveryOptions> recoveryOptions) : IConsumer<TMessage>
     where TMessage : class, IKeeperRecoverable
 {
-    protected IDatabase Db => redis.GetDatabase();
+    // IN-02: resolve the logical database once per consumer lifetime (redis is a DI singleton, so the
+    // GetDatabase() wrapper is stable) rather than re-invoking GetDatabase() on every property access.
+    protected IDatabase Db { get; } = redis.GetDatabase();
     protected ISendEndpointProvider Send => sendProvider;
     protected int RetryLimit => retryOptions.Value.Limit;
 
