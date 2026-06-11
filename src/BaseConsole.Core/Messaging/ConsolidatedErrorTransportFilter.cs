@@ -49,13 +49,13 @@ public sealed class ConsolidatedErrorTransportFilter : IFilter<ExceptionReceiveC
     public const string Dlq1 = "skp-dlq-1";
 
     // Address the consolidated DLQ by its EXCHANGE, not "queue:". The skp-dlq-1 QUEUE is declared exactly
-    // ONCE — authoritatively, with x-message-ttl = 7 days — by the ReceiveEndpoint in
-    // MessagingServiceCollectionExtensions. A "queue:skp-dlq-1" send makes MassTransit RE-declare that queue
-    // on the send path with DEFAULT args (no x-message-ttl), which RabbitMQ rejects with
+    // ONCE — authoritatively, with x-message-ttl = 7 days — as a passive publish-topology BindQueue (NOT a
+    // ReceiveEndpoint) in MessagingServiceCollectionExtensions. A "queue:skp-dlq-1" send makes MassTransit
+    // RE-declare that queue on the send path with DEFAULT args (no x-message-ttl), which RabbitMQ rejects with
     // 406 PRECONDITION_FAILED (inequivalent arg 'x-message-ttl'): the dead-letter move then never completes,
     // the faulted message is never acked, and it poison-loops on redelivery (MassTransit #5902 — sending to a
-    // custom-configured, consumer-less receive endpoint). Sending to the fanout exchange the ReceiveEndpoint
-    // already created (bound to the ttl'd queue) routes the move into skp-dlq-1 WITHOUT re-declaring the queue.
+    // custom-configured, consumer-less receive endpoint). Sending to the fanout exchange the publish-topology
+    // BindQueue already created (bound to the ttl'd queue) routes the move into skp-dlq-1 WITHOUT re-declaring it.
     private static readonly Uri Dlq1Uri = new($"exchange:{Dlq1}");
 
     public async Task Send(ExceptionReceiveContext context, IPipe<ExceptionReceiveContext> next)
