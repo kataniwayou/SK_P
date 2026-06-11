@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v3.7.0
-milestone_name: Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume
+milestone: v4.0.0
+milestone_name: Processor Pre/In/Post-Process + Keeper Recovery Redesign
 status: completed
 stopped_at: Completed 49-06 Tasks 1-3 (GAP-49-3/4/5 code); Task 4 live close gate deferred to operator gate
-last_updated: "2026-06-09T14:57:42.830Z"
-last_activity: 2026-06-09 -- 49-05 GAP-49-2 close executed (ResumeAll clears pausedTriggerGroups after per-job loop)
+last_updated: "2026-06-11T09:31:06.019Z"
+last_activity: 2026-06-11
 progress:
-  total_phases: 52
-  completed_phases: 51
-  total_plans: 180
-  completed_plans: 194
+  total_phases: 7
+  completed_phases: 7
+  total_plans: 27
+  completed_plans: 27
   percent: 100
 ---
 
@@ -29,9 +29,10 @@ Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) —
 Phase: 49 (live-proof-close-gate) — GAP-49-2 CLOSED (orchestrator fix authored + regression-locked); awaiting operator-gated live N×GREEN close run (D-03)
 Plan: 49-05 of 5 complete (gap-closure). Plans 49-01..49-04 DONE in prior sessions; GAP-49-1 fixed (5666fb7); GAP-49-2 fixed (49-05 / 03e0129) — no open defects remain in scope.
 Status: Authored-hermetic complete; live close gate is operator-gated (TEST-01/02/03 tick on the operator's GREEN run against the rebuilt v4 stack, 49-HUMAN-UAT.md)
-Last activity: 2026-06-09 -- 49-05 GAP-49-2 close executed (ResumeAll clears pausedTriggerGroups after per-job loop)
+Last activity: 2026-06-11
 
 ### Roadmap Evolution
+
 - 2026-06-11 — ROADMAP.md reconciled: v4.0.0 milestone + phases 43-49 backfilled into the Milestones list, a v4.0.0 section, the Progress table, and the execution-order line (the table had drifted, stopping at Phase 42 despite 43-49 having shipped). Documentation only — no phase content changed.
 - 2026-06-11 — Phase 50 added (`50-recovery-rearchitecture-slot-array-3-state-keeper`): a recovery re-architecture that **supersedes v4.0.0 Model B** — processor-owned `messageId` slot-array recovery + a 3-state keeper (`REINJECT`/`INJECT`/`DELETE`), split infra taxonomy (`infra_messageId`/`infra_entryId`), configurable DLQ1-vs-outage exhaustion, gate-closed non-destructive consume. Source of truth: design-doc Amendment **A18** (`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`). **Breaking — likely warrants its own milestone (`/gsd-new-milestone`); not yet planned.**
 
