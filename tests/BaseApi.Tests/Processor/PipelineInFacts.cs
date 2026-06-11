@@ -25,7 +25,7 @@ public sealed class PipelineInFacts
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
         var send = new DispatchTestKit.CapturingSendProvider();
         var pipeline = new ProcessorPipeline(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
-            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
         return (pipeline, send, entryId);
     }
 
@@ -36,7 +36,7 @@ public sealed class PipelineInFacts
         var processor = new DispatchTestKit.FakeProcessor(new FailedException("x"));
         var (pipeline, send, entryId) = Build(processor);
 
-        await pipeline.RunAsync(DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+        await pipeline.RunAsync(DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
         var sent = Assert.Single(send.Sent);
         var failed = Assert.IsType<StepFailed>(sent);
@@ -51,7 +51,7 @@ public sealed class PipelineInFacts
         var processor = new DispatchTestKit.FakeProcessor(new CancelledException("c"));
         var (pipeline, send, entryId) = Build(processor);
 
-        await pipeline.RunAsync(DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+        await pipeline.RunAsync(DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
         var sent = Assert.Single(send.Sent);
         var cancelled = Assert.IsType<StepCancelled>(sent);
@@ -66,7 +66,7 @@ public sealed class PipelineInFacts
         var processor = new DispatchTestKit.FakeProcessor(new ProcessingException("p"));
         var (pipeline, send, entryId) = Build(processor);
 
-        await pipeline.RunAsync(DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+        await pipeline.RunAsync(DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
         var sent = Assert.Single(send.Sent);
         Assert.IsType<StepProcessing>(sent);               // message is logged only (no wire field, D-05)
@@ -80,7 +80,7 @@ public sealed class PipelineInFacts
         var processor = new DispatchTestKit.FakeProcessor(new InvalidOperationException("boom"));
         var (pipeline, send, entryId) = Build(processor);
 
-        await pipeline.RunAsync(DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+        await pipeline.RunAsync(DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
         var sent = Assert.Single(send.Sent);
         var failed = Assert.IsType<StepFailed>(sent);      // unexpected ⇒ StepFailed

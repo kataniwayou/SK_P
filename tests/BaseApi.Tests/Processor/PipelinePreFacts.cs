@@ -23,7 +23,7 @@ public sealed class PipelinePreFacts
         IConnectionMultiplexer redis, IProcessorContext context, BaseProcessorBase processor,
         DispatchTestKit.CapturingSendProvider send) =>
         new(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
-            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
     [Fact]
     public async Task SourceStep_Skip_EmptyData_NoEndDelete()
@@ -35,7 +35,7 @@ public sealed class PipelinePreFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
 
         Assert.True(processor.Invoked);                                   // ran with empty validatedData
         Assert.Equal(string.Empty, processor.LastInputData);
@@ -54,7 +54,7 @@ public sealed class PipelinePreFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
 
         Assert.Single(send.SentKeeper.OfType<KeeperReinject>());          // exactly one REINJECT
         Assert.False(processor.Invoked);                                 // never reached the In stage
@@ -72,7 +72,7 @@ public sealed class PipelinePreFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
 
         // A2: absent/empty key unifies with a Redis fault → REINJECT (was a business StepFailed pre-Phase-44).
         Assert.Single(send.SentKeeper.OfType<KeeperReinject>());
@@ -98,7 +98,7 @@ public sealed class PipelinePreFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
 
         var sent = Assert.Single(send.Sent);
         Assert.IsType<StepFailed>(sent);

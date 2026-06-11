@@ -30,20 +30,21 @@ public sealed class PipelinePostFacts
         IConnectionMultiplexer redis, IProcessorContext context, BaseProcessorBase processor,
         DispatchTestKit.CapturingSendProvider send) =>
         new(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
-            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
     [Fact]
     public async Task MultiItem_NCompleted_NResults()
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
         var redis = DispatchTestKit.PresentReadWriteDeleteOkL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("a", "b", "c"));
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, Ctx(), processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
         Assert.Equal(3, send.Sent.OfType<StepCompleted>().Count());      // 3 items → 3 StepCompleted (N→N)
     }
@@ -53,13 +54,14 @@ public sealed class PipelinePostFacts
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
         var redis = DispatchTestKit.PresentReadWriteDeleteOkL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out var db);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, Ctx(), processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
         // Phase-50 (D-01): the Model-B UPDATE/CLEANUP keeper sends are retired — a completed item now goes
         // straight write → StepCompleted with NO keeper send on the happy path.
@@ -100,13 +102,14 @@ public sealed class PipelinePostFacts
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
         var redis = DispatchTestKit.PresentReadWriteFaultL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, Ctx(), processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
         // Phase-50 (D-01): UPDATE/CLEANUP retired — a write-exhaust on a completed item is the sole keeper
         // send (KeeperInject, the infra route), with NO StepCompleted for that item.
@@ -120,6 +123,7 @@ public sealed class PipelinePostFacts
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
         var redis = DispatchTestKit.PresentReadWriteDeleteOkL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out _);
         var authorExec = Guid.NewGuid();
@@ -128,7 +132,7 @@ public sealed class PipelinePostFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, Ctx(), processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
         var completed = Assert.Single(send.Sent.OfType<StepCompleted>());
         Assert.NotEqual(Guid.Empty, completed.EntryId);          // framework-minted real data key
@@ -140,6 +144,7 @@ public sealed class PipelinePostFacts
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
         var redis = DispatchTestKit.PresentReadWriteDeleteOkL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out _);
         // [Completed, Failed] — the per-item business-failed emits one StepFailed and does NOT abort.
@@ -149,7 +154,7 @@ public sealed class PipelinePostFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, Ctx(), processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
         Assert.Single(send.Sent.OfType<StepCompleted>());        // the completed item still completed
         Assert.Single(send.Sent.OfType<StepFailed>());           // one StepFailed; batch NOT aborted (A3)

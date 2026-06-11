@@ -11,10 +11,11 @@ using BaseProcessorBase = BaseProcessor.Core.Processing.BaseProcessor;
 namespace BaseApi.Tests.Processor;
 
 /// <summary>
-/// PIPE-08 — the end-delete <c>finally</c> of <see cref="ProcessorPipeline"/>: over EVERY read-succeeded
-/// path (happy, business-fail, In-exception) it deletes <c>L2[entryId]</c> of the inbound dispatch with
-/// bounded retry; exhaust → <see cref="KeeperDelete"/>. It is SKIPPED on the REINJECT path and on a
-/// Guid.Empty source step (both leave readSucceeded false).
+/// FWD-03 — the inline source-delete TAIL of the forward pass in <see cref="ProcessorPipeline"/> (Phase 51:
+/// the WR-01 <c>finally</c> is RETIRED). On the no-REINJECT happy path (happy, business-fail, In-exception)
+/// the forward tail deletes <c>L2[entryId]</c> of the inbound dispatch with bounded retry; exhaust →
+/// <see cref="KeeperDelete"/>. It is SKIPPED on the Pre-read-exhaust REINJECT path (input left intact) and
+/// on a Guid.Empty source step.
 /// </summary>
 public sealed class PipelineEndDeleteFacts
 {
@@ -24,7 +25,7 @@ public sealed class PipelineEndDeleteFacts
         IConnectionMultiplexer redis, IProcessorContext context, BaseProcessorBase processor,
         DispatchTestKit.CapturingSendProvider send) =>
         new(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
-            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
     [Fact]
     public async Task EndDelete_RunsOnHappyPath()
@@ -38,7 +39,7 @@ public sealed class PipelineEndDeleteFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
         await db.Received(1).KeyDeleteAsync(L2ProjectionKeys.ExecutionData(entryId));  // deletes the INBOUND key
         Assert.Empty(send.SentKeeper.OfType<KeeperDelete>());
@@ -61,7 +62,7 @@ public sealed class PipelineEndDeleteFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
         await db.Received(1).KeyDeleteAsync(L2ProjectionKeys.ExecutionData(entryId));
     }
@@ -78,7 +79,7 @@ public sealed class PipelineEndDeleteFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
         await db.Received(1).KeyDeleteAsync(L2ProjectionKeys.ExecutionData(entryId));
     }
@@ -93,7 +94,7 @@ public sealed class PipelineEndDeleteFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
 
         Assert.Single(send.SentKeeper.OfType<KeeperReinject>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());                  // NEVER deleted on REINJECT
@@ -110,7 +111,7 @@ public sealed class PipelineEndDeleteFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
 
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());                  // NEVER deleted on Guid.Empty
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
@@ -128,7 +129,7 @@ public sealed class PipelineEndDeleteFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
         Assert.Single(send.SentKeeper.OfType<KeeperDelete>());   // delete-exhaust → exactly one KeeperDelete
     }
