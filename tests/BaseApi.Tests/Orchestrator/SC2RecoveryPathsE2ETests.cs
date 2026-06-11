@@ -27,14 +27,13 @@ namespace BaseApi.Tests.Orchestrator;
 ///   author <see cref="KeeperReinject.Payload"/>) to <c>queue:{ProcessorId:D}</c>. Asserted on that
 ///   origin-queue depth.</item>
 ///   <item><b>REINJECT data-gone</b> (<c>ReinjectConsumer</c>) — do NOT seed the data key (STRLEN==0) →
-///   the deliberate <see cref="RecoveryDataGoneException"/> terminal → consolidated error transport →
-///   <see cref="ConsolidatedErrorTransportFilter.Dlq1"/> (skp-dlq-1). Asserted on the DLQ depth, then the
-///   one parked message is drained in teardown so the close gate's skp-dlq-1 depth==0 holds.</item>
-///   <item><b>INJECT</b> (<c>InjectConsumer</c>) — Phase-50 (D-01) RETIRED the Model-B composite-backup
-///   read body; the INJECT consumer is a compile-only no-op stub here (the real A18 forward-only INJECT —
-///   write <c>L2[m.EntryId]=m.Data</c>, send a reconstructed <see cref="StepCompleted"/>, delete
-///   <c>m.DeleteEntryId</c> — lands in Phase 52). This block is kept COMPILING only (RealStack, excluded
-///   hermetically); its A18 behavioral proof is Phase 54.</item>
+///   Phase 52 (D-06) makes this a BY-DESIGN silent drop (no throw, no send, no dead-letter; increments
+///   <c>keeper_reinject_dropped</c>). Asserted on the origin queue staying EMPTY (nothing re-injected) and
+///   the DLQ depth NOT incrementing — A18 "accepted silent losses".</item>
+///   <item><b>INJECT</b> (<c>InjectConsumer</c>) — Phase 52 (KEEP-02) implements the A18 forward-only body:
+///   write <c>L2[m.EntryId]=m.Data</c>, send a reconstructed <see cref="StepCompleted"/> to
+///   <c>queue:orchestrator-result</c>, delete <c>m.DeleteEntryId</c>. Asserted on the data key being
+///   written and the source key being deleted.</item>
 ///   <item><b>DELETE</b> (<c>DeleteConsumer</c>) — PRE-SEED <c>skp:data:{entryId}</c> → the consumer
 ///   deletes it. Asserted on the data key being gone.</item>
 /// </list>
@@ -114,7 +113,7 @@ public sealed class SC2RecoveryPathsE2ETests
         }
 
         // =========================================================================================
-        // STATE 2 — REINJECT data-gone → RecoveryDataGoneException → ConsolidatedErrorTransportFilter.Dlq1
+        // STATE 2 — REINJECT data-gone → Phase 52 (D-06) BY-DESIGN silent drop (no re-inject, no dead-letter)
         // =========================================================================================
         {
             var wfId = Guid.NewGuid();
@@ -122,8 +121,7 @@ public sealed class SC2RecoveryPathsE2ETests
             var procId = Guid.NewGuid();
             var entryId = Guid.NewGuid();   // its skp:data:{entryId} is DELIBERATELY absent (STRLEN==0)
 
-            // Read the DLQ depth BEFORE so we can assert the increment (the close gate later requires
-            // depth==0, so we drain the parked message in teardown).
+            // Read the DLQ depth BEFORE so we can assert it does NOT increment (data-gone is a drop, D-06).
             var dlqBefore = await ReadQueueDepthAsync(ConsolidatedErrorTransportFilter.Dlq1, ct);
 
             await endpoint.Send(new KeeperReinject(wfId, stepId, procId)
@@ -134,26 +132,22 @@ public sealed class SC2RecoveryPathsE2ETests
                 Payload = "step-config",
             }, ct);
 
-            // EFFECT: STRLEN==0 → the deliberate RecoveryDataGoneException terminal → the inherited
-            // ConsolidatedErrorTransportFilter moves the give-up to the ONE shared skp-dlq-1 (referenced via
-            // the CONST, never the literal). Assert the DLQ depth incremented past the BEFORE baseline.
-            var dlqAfter = await PollForQueueDepthAsync(
-                ConsolidatedErrorTransportFilter.Dlq1, minDepth: dlqBefore + 1, ct);
-            Assert.True(dlqAfter >= dlqBefore + 1,
-                $"REINJECT data-gone: expected the data-gone give-up to land in " +
-                $"{ConsolidatedErrorTransportFilter.Dlq1} (depth {dlqBefore} -> {dlqBefore + 1}), but it " +
-                $"stayed {dlqAfter}.");
-
-            // BOUNDED + self-cleaning (T-49-05): drain the one parked DLQ message so the close gate's
-            // skp-dlq-1 depth==0 invariant holds.
-            factory.BrokerQueuesToPurge.Add(ConsolidatedErrorTransportFilter.Dlq1);
+            // EFFECT (D-06): STRLEN==0 → silent drop — ack with no throw, no re-inject, no dead-letter, and
+            // a keeper_reinject_dropped increment (observability only). Allow a settle window, then assert
+            // the origin queue stayed EMPTY (nothing re-injected) and the DLQ depth did NOT climb.
+            await Task.Delay(5_000, ct);
+            var originQueue = procId.ToString("D");
+            var originDepth = await ReadQueueDepthAsync(originQueue, ct);
+            Assert.Equal(0, originDepth);   // dropped, not re-injected
+            var dlqAfter = await ReadQueueDepthAsync(ConsolidatedErrorTransportFilter.Dlq1, ct);
+            Assert.True(dlqAfter <= dlqBefore,
+                $"REINJECT data-gone: expected a silent drop (no dead-letter), but " +
+                $"{ConsolidatedErrorTransportFilter.Dlq1} depth climbed {dlqBefore} -> {dlqAfter}.");
         }
 
         // =========================================================================================
-        // STATE 3 — INJECT — Phase-50 (D-01) compile-only: the Model-B composite read/write/send/delete is
-        // retired. The A18 forward-only INJECT (write L2[m.EntryId]=m.Data, send StepCompleted, delete
-        // m.DeleteEntryId) + its behavioral proof land in Phases 52/54. This block only publishes the
-        // reshaped KeeperInject (carrying its A18 id-set) so the file COMPILES under 0-warning.
+        // STATE 3 — INJECT (Phase 52, KEEP-02) — A18 forward-only: write L2[m.EntryId]=m.Data, send a
+        // reconstructed StepCompleted to queue:orchestrator-result, delete L2[m.DeleteEntryId].
         // =========================================================================================
         {
             var wfId = Guid.NewGuid();
@@ -162,6 +156,15 @@ public sealed class SC2RecoveryPathsE2ETests
             var corr = Guid.NewGuid();
             var execId = Guid.NewGuid();
             var entryId = Guid.NewGuid();
+            var deleteEntryId = Guid.NewGuid();
+
+            // PRE-SEED the source key so its post-INJECT deletion is observable; register both keys for
+            // net-zero teardown (the entryId write survives, the deleteEntryId source is removed by INJECT).
+            var entryKey = L2ProjectionKeys.ExecutionData(entryId);
+            var deleteKey = L2ProjectionKeys.ExecutionData(deleteEntryId);
+            await db.StringSetAsync(deleteKey, "source-to-delete");
+            factory.L2KeysToCleanup.Add(entryKey);
+            factory.L2KeysToCleanup.Add(deleteKey);
 
             await endpoint.Send(new KeeperInject(wfId, stepId, procId)
             {
@@ -169,11 +172,17 @@ public sealed class SC2RecoveryPathsE2ETests
                 ExecutionId = execId,
                 EntryId = entryId,
                 Data = "inject-payload",
-                DeleteEntryId = Guid.NewGuid(),
+                DeleteEntryId = deleteEntryId,
             }, ct);
 
-            // No behavioral assertion in Phase 50 — the INJECT consumer is a no-op stub (the A18 effect is
-            // proven in Phase 54). The reshaped contract publishing above is the load-bearing compile gate.
+            // EFFECT: the data key is written with m.Data, and the source key is deleted (the StepCompleted
+            // send to queue:orchestrator-result is exercised end-to-end by SC1's round-trip).
+            var written = await PollForKeyValueAsync(db, entryKey, "inject-payload", ct);
+            Assert.True(written,
+                $"INJECT: expected {entryKey} to be written with the injected Data, but it was not.");
+            var sourceDeleted = await PollForKeyAbsentAsync(db, deleteKey, ct);
+            Assert.True(sourceDeleted,
+                $"INJECT: expected the source key {deleteKey} to be deleted after the send, but it remains.");
         }
 
         // =========================================================================================
@@ -215,6 +224,26 @@ public sealed class SC2RecoveryPathsE2ETests
         {
             ct.ThrowIfCancellationRequested();
             if (!await db.KeyExistsAsync(key))
+            {
+                return true;
+            }
+
+            await Task.Delay(Math.Min(delay, 2_000), ct);
+            delay = Math.Min(delay * 2, 2_000);
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> PollForKeyValueAsync(IDatabase db, string key, string expected, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(EffectPollTimeoutMs);
+        var delay = 500;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            var value = await db.StringGetAsync(key);
+            if (value.HasValue && value.ToString() == expected)
             {
                 return true;
             }
