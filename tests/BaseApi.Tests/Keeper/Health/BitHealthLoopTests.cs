@@ -91,8 +91,30 @@ public sealed class BitHealthLoopTests
         }
     }
 
-    private static BitHealthLoop NewLoop(L2ProbeRecovery probe, IL2HealthGate gate, IBus bus) =>
-        new(probe, gate, bus, ZeroDelay(), NullLogger<BitHealthLoop>.Instance);
+    private static BitHealthLoop NewLoop(L2ProbeRecovery probe, IL2HealthGate gate, IBus bus, RecoveryEndpointHandle holder) =>
+        new(probe, gate, bus, holder, ZeroDelay(), NullLogger<BitHealthLoop>.Instance);
+
+    /// <summary>
+    /// KEEP-04 (D-04): a populated <see cref="RecoveryEndpointHandle"/> over a substituted
+    /// <see cref="IReceiveEndpoint"/> so the BIT loop's edge-driven endpoint Stop/Start calls are assertable.
+    /// In 8.5.5 <c>IReceiveEndpoint.Stop(ct)</c> returns a <see cref="Task"/> while <c>Start(ct)</c> returns a
+    /// <see cref="ReceiveEndpointHandle"/> (the loop awaits its <c>.Ready</c>) — both interfaces, NSubstitute-able.
+    /// Returns the holder (injected into the loop) and the endpoint (the assertion surface for Stop/Start counts).
+    /// </summary>
+    private static (RecoveryEndpointHandle holder, IReceiveEndpoint endpoint) FakeHandle()
+    {
+        var started = Substitute.For<ReceiveEndpointHandle>();
+        started.Ready.Returns(Task.FromResult(Substitute.For<ReceiveEndpointReady>()));
+
+        var endpoint = Substitute.For<IReceiveEndpoint>();
+        endpoint.Start(Arg.Any<CancellationToken>()).Returns(started);
+        endpoint.Stop(Arg.Any<CancellationToken>()).Returns(Task.CompletedTask);
+
+        var host = Substitute.For<HostReceiveEndpointHandle>();
+        host.ReceiveEndpoint.Returns(endpoint);
+
+        return (new RecoveryEndpointHandle { Handle = host }, endpoint);
+    }
 
     // Start the loop, let it consume the whole script, release the park, then graceful-stop.
     private static async Task RunScriptThenStop(BitHealthLoop loop, ScriptedRedis redis, CancellationToken ct)
@@ -112,7 +134,7 @@ public sealed class BitHealthLoopTests
         using var redis = new ScriptedRedis([RedisDown(), null]);
         var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
-        using var loop = NewLoop(probe, new L2HealthGate(), bus);
+        using var loop = NewLoop(probe, new L2HealthGate(), bus, FakeHandle().holder);
 
         await RunScriptThenStop(loop, redis, ct);
 
@@ -128,7 +150,7 @@ public sealed class BitHealthLoopTests
         using var redis = new ScriptedRedis([new InvalidOperationException("genuine bug")]);
         var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
-        using var loop = NewLoop(probe, new L2HealthGate(), bus);
+        using var loop = NewLoop(probe, new L2HealthGate(), bus, FakeHandle().holder);
 
         // The non-Redis exception faults ExecuteAsync — it is NOT relabeled "L2 down". Because ExecuteAsync
         // faults at the very first probe (before yielding), BackgroundService.StartAsync surfaces the faulted
@@ -148,7 +170,7 @@ public sealed class BitHealthLoopTests
         using var redis = new ScriptedRedis([null, null, null]);
         var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
-        using var loop = NewLoop(probe, new L2HealthGate(), bus);
+        using var loop = NewLoop(probe, new L2HealthGate(), bus, FakeHandle().holder);
 
         await loop.StartAsync(ct);
         await redis.Exhausted.WaitAsync(TimeSpan.FromSeconds(10), ct);
@@ -167,7 +189,7 @@ public sealed class BitHealthLoopTests
         using var redis = new ScriptedRedis([null, null, RedisDown()]);
         var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
-        using var loop = NewLoop(probe, new L2HealthGate(), bus);
+        using var loop = NewLoop(probe, new L2HealthGate(), bus, FakeHandle().holder);
 
         await RunScriptThenStop(loop, redis, ct);
 
@@ -185,7 +207,7 @@ public sealed class BitHealthLoopTests
         using var redis = new ScriptedRedis([RedisDown(), RedisDown(), null]);
         var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
-        using var loop = NewLoop(probe, new L2HealthGate(), bus);
+        using var loop = NewLoop(probe, new L2HealthGate(), bus, FakeHandle().holder);
 
         await RunScriptThenStop(loop, redis, ct);
 
@@ -203,11 +225,54 @@ public sealed class BitHealthLoopTests
         using var redis = new ScriptedRedis([null, null, RedisDown(), RedisDown(), null]);
         var probe = new L2ProbeRecovery(redis.Multiplexer);
         var bus = Substitute.For<IBus>();
-        using var loop = NewLoop(probe, new L2HealthGate(), bus);
+        using var loop = NewLoop(probe, new L2HealthGate(), bus, FakeHandle().holder);
 
         await RunScriptThenStop(loop, redis, ct);
 
         await bus.Received(1).Publish(Arg.Any<PauseAll>(), Arg.Any<CancellationToken>());
         await bus.Received(2).Publish(Arg.Any<ResumeAll>(), Arg.Any<CancellationToken>());
+    }
+
+    // KEEP-04 (D-04): the BIT loop drives the keeper-recovery endpoint Stop (unhealthy edge) / Start (healthy
+    // edge) on the SAME edges as gate.Close/Open + PauseAll/ResumeAll. These facts mirror the Publish-count
+    // facts above with endpoint Stop/Start call counts, proving the non-destructive gate-closed pause + drain.
+    [Fact]
+    [Trait("Phase", "52")]
+    public async Task Healthy_To_Unhealthy_Edge_Stops_Recovery_Endpoint()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // healthy, healthy, unhealthy: the first healthy tick (prev=null) STARTS the endpoint (mirrors the
+        // "first healthy tick -> 1 ResumeAll" semantics); the healthy->unhealthy edge STOPS it exactly once.
+        using var redis = new ScriptedRedis([null, null, RedisDown()]);
+        var probe = new L2ProbeRecovery(redis.Multiplexer);
+        var bus = Substitute.For<IBus>();
+        var (holder, endpoint) = FakeHandle();
+        using var loop = NewLoop(probe, new L2HealthGate(), bus, holder);
+
+        await RunScriptThenStop(loop, redis, ct);
+
+        await endpoint.Received(1).Stop(Arg.Any<CancellationToken>());   // unhealthy edge -> pause (accumulate)
+        endpoint.Received(1).Start(Arg.Any<CancellationToken>());        // first healthy transition -> drain
+    }
+
+    [Fact]
+    [Trait("Phase", "52")]
+    public async Task Same_State_Ticks_No_Stop_Start()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        // healthy,healthy,unhealthy,unhealthy,healthy (mirrors Same_State_Ticks_Publish_Nothing). Edge-trigger:
+        // same-state ticks issue NO Stop/Start. Transitions: (null->healthy) Start#1, (healthy->unhealthy)
+        // Stop#1, (unhealthy->healthy) Start#2 => exactly 1 Stop + 2 Start. A per-tick regression would give
+        // 2 Stop + 3 Start.
+        using var redis = new ScriptedRedis([null, null, RedisDown(), RedisDown(), null]);
+        var probe = new L2ProbeRecovery(redis.Multiplexer);
+        var bus = Substitute.For<IBus>();
+        var (holder, endpoint) = FakeHandle();
+        using var loop = NewLoop(probe, new L2HealthGate(), bus, holder);
+
+        await RunScriptThenStop(loop, redis, ct);
+
+        await endpoint.Received(1).Stop(Arg.Any<CancellationToken>());   // one healthy->unhealthy edge
+        endpoint.Received(2).Start(Arg.Any<CancellationToken>());        // first-tick Start + unhealthy->healthy
     }
 }
