@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
-status: executing
-stopped_at: Completed 51-02-PLAN.md
-last_updated: "2026-06-11T13:11:39.182Z"
+status: verifying
+stopped_at: Completed 51-03-PLAN.md
+last_updated: "2026-06-11T13:20:32.020Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 4
-  percent: 80
+  completed_plans: 5
+  percent: 100
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
 Phase: 51 (processor-forward-recovery-pipeline) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-11
 
 ### Roadmap Evolution
@@ -671,7 +671,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 80%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -912,6 +912,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 50 P02 | 75 | 3 tasks | 36 files |
 | Phase 51 P01 | ~12 min | 2 tasks | 3 files |
 | Phase 51 P02 | continuation | 4 tasks | 8 files |
+| Phase 51 P03 | single-session | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1284,6 +1285,8 @@ Recent decisions affecting current work:
 - Phase 50: Model-B retired at the contract level (RETIRE-01/02) — CompositeBackup builder, KeeperUpdate/KeeperCleanup records, BackupOptions deleted; ModelBContractsRetiredFacts reflection guard proves absence (SC-2); full RETIRE-03 source/reflection sweep deferred to Phase 53.
 - Phase 51-01: SlotArrayOptions bound from the SAME "Processor" section as liveness knobs (D-04) — no new config section; defaults 300/600 (300 floor = ExecutionDataTtl default so L2[messageId] outlives indexed data; 600 ceiling = 2x jitter, D-05)
 - Phase 51 UseMessageRetry (RESEARCH Open Q1) resolved keep-latch: the Phase-44 outer dead-letter latch STAYS (no change to ProcessorStartupOrchestrator.cs) so send-exhaust PROPAGATE (D-10) still reaches skp-dlq-1; A18 UseMessageRetry=none / _error-disabled end-state DEFERRED to Phase 53 teardown (T-51-07 accept/deferred)
+- 51-03: recovery not-exist (clean KeyExistsAsync==false) and L2-fault (thrown inside RetryLoop) route DIFFERENTLY (Pattern 3) — not-exist drops, fault is infra_entryId/leave-slot; NOT unified
+- 51-03: send-before-retire (SLOT-03/T-51-08) — SendResult (throws on exhaust) precedes HashSetAsync(slot,Guid.Empty); recovery completed mints a FRESH NewId.NextGuid exec (D-03, slot stores only entryId)
 
 ### Roadmap Milestone Log
 
@@ -1386,8 +1389,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T13:11:39.165Z
-Stopped at: Completed 51-02-PLAN.md
+Last session: 2026-06-11T13:20:24.075Z
+Stopped at: Completed 51-03-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.

@@ -11,7 +11,8 @@
 **: Post-Process generates a GUID `entryId`, then writes the allocation index `L2[messageId][slot]=entryId` (TTL random) **before** writing the data key (allocation-before-data, so a crash never leaves unreferenced data).
 - [x] **SLOT-02
 **: Post-Process writes `L2[entryId]=data` after the allocation index write.
-- [ ] **SLOT-03**: A slot is retired to `guid.empty` **only after** that item's `completed` result is confirmed-sent to the orchestrator (send-before-retire), so a recovery replay never re-sends a completed entry while leaving infra entries re-checkable.
+- [x] **SLOT-03
+**: A slot is retired to `guid.empty` **only after** that item's `completed` result is confirmed-sent to the orchestrator (send-before-retire), so a recovery replay never re-sends a completed entry while leaving infra entries re-checkable.
 
 ### Infra Taxonomy (INFRA)
 - [x] **INFRA-01
@@ -28,9 +29,12 @@
 **: The forward happy-path tail deletes the source `entryId`; delete exhaustion → keeper **`DELETE`**.
 
 ### Recovery Pass (RECOV)
-- [ ] **RECOV-01**: On `exist L2[messageId]` the processor runs the recovery pass — reads `entryIds[]` and builds a temp list per slot (`exists`→completed · `not-exist`→failed · L2-fail→failed+`infra_entryId`); a `read L2[messageId]` / existence-check exhaustion routes to keeper `REINJECT`.
-- [ ] **RECOV-02**: Recovery dispatch — `completed` → re-send orchestrator(`completed`) then retire the slot to `guid.empty`; `failed` not-exist → drop; `failed` `infra_entryId` → leave the slot intact (preserved for retry).
-- [ ] **RECOV-03**: If any recovery item is `infra_entryId` → send keeper `REINJECT` and **do NOT delete the source** (`REINJECT` and source-delete are mutually exclusive); otherwise delete the source `entryId` (exhaustion → keeper `DELETE`).
+- [x] **RECOV-01
+**: On `exist L2[messageId]` the processor runs the recovery pass — reads `entryIds[]` and builds a temp list per slot (`exists`→completed · `not-exist`→failed · L2-fail→failed+`infra_entryId`); a `read L2[messageId]` / existence-check exhaustion routes to keeper `REINJECT`.
+- [x] **RECOV-02
+**: Recovery dispatch — `completed` → re-send orchestrator(`completed`) then retire the slot to `guid.empty`; `failed` not-exist → drop; `failed` `infra_entryId` → leave the slot intact (preserved for retry).
+- [x] **RECOV-03
+**: If any recovery item is `infra_entryId` → send keeper `REINJECT` and **do NOT delete the source** (`REINJECT` and source-delete are mutually exclusive); otherwise delete the source `entryId` (exhaustion → keeper `DELETE`).
 
 ### 3-State Keeper (KEEP)
 - [ ] **KEEP-01**: `REINJECT` reads the source `entryId` (drops if absent), then re-injects a reconstructed `EntryStepDispatch` carrying the original `Payload` to the processor input (simulate orchestrator send).
