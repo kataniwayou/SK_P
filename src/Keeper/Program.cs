@@ -4,6 +4,8 @@ using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using OpenTelemetry;            // ConfigureOpenTelemetryMeterProvider
+using OpenTelemetry.Metrics;    // AddMeter (KeeperMetrics export — D-07)
 using Keeper;
 
 // Thin-shell composition root (KEEP-01). Generic Host — Host.CreateApplicationBuilder, NOT
@@ -37,17 +39,36 @@ builder.Services.AddSingleton<Keeper.Health.IL2HealthGate, Keeper.Health.L2Healt
 // KEEP-01/02 (D-06): the proactive BIT loop hosted service (edge-triggered global pause/resume + gate driver).
 builder.Services.AddHostedService<Keeper.Health.BitHealthLoop>();
 
+// KEEP-04 / D-04 (OQ-1): the keeper-recovery endpoint is RUNTIME-BOUND via ConnectReceiveEndpoint
+// (RecoveryEndpointBinder), NOT static AddConsumer auto-config — a statically-configured 8.5.5 endpoint
+// cannot be runtime-paused (StopAsync removes it). So the three consumers are registered for DI but
+// EXCLUDED from auto endpoint config (mirrors BaseProcessorServiceCollectionExtensions: the dispatch
+// consumer is AddConsumer().ExcludeFromConfigureEndpoints() and the {id:D} endpoint is bound at runtime).
+// Exactly ONE source (the binder) configures keeper-recovery (Pitfall 1 — no static + connect collision).
+// The three ConsumerDefinition shells (only ReinjectConsumerDefinition survives, holding the PartitionKey/
+// PartitionGuid statics) no longer drive the endpoint — the retry + 3x partitioner + policy branch
+// re-homed into the binder's connect callback.
 builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
 {
-    // KEEP-04..09 (D-02/D-06/D-07-additive) — the three gate-open-only recovery consumers co-located on the
-    // shared queue:keeper-recovery endpoint. ReinjectConsumerDefinition is the SINGLE OWNER of the endpoint-level
-    // retry + the three UsePartitioner<T> calls; the other two definitions no-op (Pitfalls 1 & 4). The
-    // recovery consumers ctor-inject IConnectionMultiplexer / ISendEndpointProvider (via the bus),
-    // IL2HealthGate (line above), and IOptions<Retry/Recovery> (all already bound) — no new AddSingleton.
-    x.AddConsumer<Keeper.Recovery.ReinjectConsumer, Keeper.Recovery.ReinjectConsumerDefinition>();
-    x.AddConsumer<Keeper.Recovery.InjectConsumer,   Keeper.Recovery.InjectConsumerDefinition>();
-    x.AddConsumer<Keeper.Recovery.DeleteConsumer,   Keeper.Recovery.DeleteConsumerDefinition>();
+    x.AddConsumer<Keeper.Recovery.ReinjectConsumer>().ExcludeFromConfigureEndpoints();
+    x.AddConsumer<Keeper.Recovery.InjectConsumer>().ExcludeFromConfigureEndpoints();
+    x.AddConsumer<Keeper.Recovery.DeleteConsumer>().ExcludeFromConfigureEndpoints();
 });
+
+// D-04 (OQ-1): the singleton holding the connected keeper-recovery handle (set by the binder after
+// handle.Ready) so Plan 03's BitHealthLoop can Stop/Start the endpoint on L2-health edges; and the binder
+// hosted service that runtime-connects the endpoint on the running bus (the connector resolves on the
+// MassTransitHostedService-started bus, exactly the processor precedent).
+builder.Services.AddSingleton<Keeper.Recovery.RecoveryEndpointHandle>();
+builder.Services.AddHostedService<Keeper.Recovery.RecoveryEndpointBinder>();
+
+// D-07 (Plan 01 handoff): the code-owned Keeper meter consumed by ReinjectConsumer (keeper_reinject_dropped),
+// + its OTel meter-provider registration (mirrors ProcessorMetrics' AddSingleton + AddMeter). Without the
+// AddSingleton the consumer cannot resolve KeeperMetrics at runtime; without the AddMeter the counter is
+// created but never exported.
+builder.Services.AddSingleton<Keeper.Observability.KeeperMetrics>();
+builder.Services.ConfigureOpenTelemetryMeterProvider(
+    mp => mp.AddMeter(Keeper.Observability.KeeperMetrics.MeterName));
 
 var host = builder.Build();
 await host.RunAsync();
