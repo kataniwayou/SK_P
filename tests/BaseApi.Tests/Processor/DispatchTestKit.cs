@@ -5,6 +5,7 @@ using BaseProcessor.Core.Processing;
 using MassTransit;
 using Messaging.Contracts;
 using Messaging.Contracts.Configuration;
+using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Microsoft.Extensions.DependencyInjection;
@@ -331,6 +332,127 @@ internal static class DispatchTestKit
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
         return mux;
+    }
+
+    // ---- Phase-51 RECOVERY muxes (existence-check TRUE → recovery branch) ----
+
+    /// <summary>
+    /// Builds the <c>HashEntry[]</c> a recovery HGETALL returns: <c>new HashEntry(slotInt, entryId.ToString("D"))</c>
+    /// for each given entryId, slot ordinals assigned in array order (0,1,2,…). A <see cref="Guid.Empty"/>
+    /// entry models an already-retired (inert) slot.
+    /// </summary>
+    public static HashEntry[] Slots(params Guid[] entryIds)
+        => entryIds.Select((id, i) => new HashEntry(i, id.ToString("D"))).ToArray();
+
+    /// <summary>
+    /// RECOV-02/03 recovery mux: <c>KeyExistsAsync(MessageIndex)</c> returns TRUE (→ the recovery branch);
+    /// <c>HashGetAllAsync(MessageIndex)</c> returns <paramref name="slots"/>; each per-entry
+    /// <c>KeyExistsAsync(ExecutionData(entryId))</c> resolves the <paramref name="entryExists"/> matrix
+    /// (<c>true</c>=exists→completed, <c>false</c>=clean not-exist→drop); any entryId in
+    /// <paramref name="faultEntries"/> THROWS on its exist check (→ <c>infra_entryId</c>, leaves the slot).
+    /// The retire <c>HashSetAsync</c>, the TTL <c>KeyExpireAsync</c>, and the source <c>KeyDeleteAsync</c> all
+    /// succeed (so a fact can assert <c>Received</c>/<c>DidNotReceive</c> on each).
+    /// </summary>
+    public static IConnectionMultiplexer RecoveryL2(
+        Guid messageId, HashEntry[] slots,
+        IReadOnlyDictionary<Guid, bool> entryExists, IReadOnlyCollection<Guid> faultEntries, out IDatabase db)
+    {
+        db = Substitute.For<IDatabase>();
+        var msgKey = L2ProjectionKeys.MessageIndex(messageId);
+        var existMatrix = entryExists.ToDictionary(kv => L2ProjectionKeys.ExecutionData(kv.Key), kv => kv.Value);
+
+        // KeyExistsAsync resolves per key: the MessageIndex (dispatcher recovery branch) is TRUE; each
+        // ExecutionData(entryId) maps to the matrix (clean true/false). Fault entries are overridden below.
+        db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(ci =>
+            {
+                var key = ((RedisKey)ci[0]).ToString();
+                if (key == msgKey) return true;                                  // recovery branch
+                return existMatrix.TryGetValue(key, out var present) && present; // exists / clean not-exist
+            });
+        foreach (var faultId in faultEntries)
+        {
+            var faultKey = L2ProjectionKeys.ExecutionData(faultId);
+            var boom = new RedisConnectionException(ConnectionFailureType.UnableToConnect, "stub: per-entry exist unreachable");
+            db.When(x => x.KeyExistsAsync(faultKey, Arg.Any<CommandFlags>())).Do(_ => throw boom);
+            db.When(x => x.KeyExistsAsync(faultKey)).Do(_ => throw boom);
+        }
+
+        db.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(slots);
+        db.HashGetAllAsync(Arg.Any<RedisKey>()).Returns(slots);
+        // Retire (slot → Guid.Empty), the D-06 TTL refresh, and the source delete all succeed.
+        db.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+        return mux;
+    }
+
+    /// <summary>
+    /// RECOV-01 recovery HGETALL-fault mux: <c>KeyExistsAsync(MessageIndex)</c> TRUE (→ recovery branch), but
+    /// <c>HashGetAllAsync(MessageIndex)</c> THROWS → the retry loop exhausts → <c>KeeperReinject</c> (no source
+    /// delete). The mock <c>db</c> is returned so a fact can assert <c>DidNotReceive().KeyDeleteAsync(...)</c>.
+    /// </summary>
+    public static IConnectionMultiplexer RecoveryHGetAllFaultL2(Guid messageId, out IDatabase db)
+    {
+        db = Substitute.For<IDatabase>();
+        db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);   // recovery branch
+        var boom = new RedisConnectionException(ConnectionFailureType.UnableToConnect, "stub: HGETALL unreachable");
+        db.When(x => x.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())).Do(_ => throw boom);
+        db.When(x => x.HashGetAllAsync(Arg.Any<RedisKey>())).Do(_ => throw boom);
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+        return mux;
+    }
+
+    /// <summary>
+    /// SLOT-03 send-fail recovery mux: <c>KeyExistsAsync(MessageIndex)</c> TRUE; HGETALL returns
+    /// <paramref name="slots"/>; every per-entry exist check is TRUE (→ completed). The retire
+    /// <c>HashSetAsync</c> is stubbed but a fact asserting <c>DidNotReceive()</c> proves the send-before-retire
+    /// invariant when the SendResult throws (the send fails via a throwing send provider, so the retire is
+    /// never reached). The mock <c>db</c> is returned for that assertion.
+    /// </summary>
+    public static IConnectionMultiplexer RecoveryAllCompletedL2(Guid messageId, HashEntry[] slots, out IDatabase db)
+    {
+        db = Substitute.For<IDatabase>();
+        // recovery branch (MessageIndex exists) AND every per-entry data key exists → every slot is completed.
+        db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.HashGetAllAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(slots);
+        db.HashGetAllAsync(Arg.Any<RedisKey>()).Returns(slots);
+        db.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+        return mux;
+    }
+
+    /// <summary>
+    /// An <see cref="ISendEndpointProvider"/> whose <c>IStepResult</c> sends THROW (the send-fail case for the
+    /// SLOT-03 send-before-retire fact) but whose <c>IKeeperRecoverable</c> sends still record into
+    /// <see cref="CapturingSendProvider.SentKeeper"/>-shaped capture. Records keeper sends; throws on results.
+    /// </summary>
+    public sealed class ResultSendFailProvider : ISendEndpointProvider
+    {
+        public List<IKeeperRecoverable> SentKeeper { get; } = new();
+
+        public Task<ISendEndpoint> GetSendEndpoint(Uri address)
+        {
+            var endpoint = Substitute.For<ISendEndpoint>();
+            endpoint.Send(Arg.Any<object>(), Arg.Any<CancellationToken>())
+                .Returns(ci =>
+                {
+                    var o = ci[0];
+                    if (o is IStepResult)
+                        throw new RedisConnectionException(ConnectionFailureType.UnableToConnect, "stub: result send unreachable");
+                    if (o is IKeeperRecoverable kr) SentKeeper.Add(kr);
+                    return Task.CompletedTask;
+                });
+            return Task.FromResult(endpoint);
+        }
+
+        public ConnectHandle ConnectSendObserver(ISendObserver observer) => throw new NotSupportedException();
     }
 
     /// <summary>Options carrying the given execution-data TTL (other knobs at their defaults). The pipeline
