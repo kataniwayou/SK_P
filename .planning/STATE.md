@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
 status: executing
-stopped_at: Completed 53-01-PLAN.md
-last_updated: "2026-06-11T19:57:39.317Z"
+stopped_at: Completed 53-02-PLAN.md
+last_updated: "2026-06-11T20:02:43.908Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 5
   completed_phases: 3
   total_plans: 11
-  completed_plans: 9
-  percent: 82
+  completed_plans: 10
+  percent: 91
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
 Phase: 53 (model-b-teardown) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-11
 
@@ -671,7 +671,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 82%
+Progress: [█████████░] 91%
 
 ### Milestone Phases (v3.4.0)
 
@@ -919,6 +919,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 52 P02 | 21min | 3 tasks | 6 files |
 | Phase 52 P03 | 25min | 3 tasks | 2 files |
 | Phase 53 P01 | 13min | 2 tasks | 1 files |
+| Phase 53 P02 | 3min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1299,6 +1300,7 @@ Recent decisions affecting current work:
 - 52-03: BitHealthLoop drives keeper-recovery ReceiveEndpoint.Stop (unhealthy edge) / Start(...).Ready (healthy edge) additively alongside gate.Open/Close + PauseAll/ResumeAll, under the existing WR-01 try; null-guarded for the startup window (T-52-11). IReceiveEndpoint.Start(ct) returns a ReceiveEndpointHandle (await .Ready), Stop(ct) returns a Task (verified 8.5.5) — completes KEEP-04 end to end.
 - Phase 53-01: landed RED-first Wave-0 negative guards — FACT 5 (5->3 reflection) GREEN, FACTS 6/7/8 (D-01/D-03/D-07 source-scans) intentionally RED until Wave-1 removal (RED=success here)
 - Phase 53-01: FACT 6 uses CALL-pattern scan (endpointConfigurator/cfg.UseMessageRetry(, .ConfigureError() not bare word, to exclude ~9 doc-comment false-positives
+- 53-02: stripped UseMessageRetry from all 5 orchestrator definitions (Start/Stop dual-owner + StepCompleted/PauseWorkflow/PauseAll); dead Ignore<WorkflowRootNotFoundException> and IOptions<RetryOptions> removed; ConcurrentMessageLimit=1 kept; FACT 8 GREEN, FACT 6 orchestrator-half cleared (processor-half remains for 53-03)
 
 ### Roadmap Milestone Log
 
@@ -1401,8 +1403,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T19:57:39.302Z
-Stopped at: Completed 53-01-PLAN.md
+Last session: 2026-06-11T20:02:43.885Z
+Stopped at: Completed 53-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
