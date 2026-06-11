@@ -56,7 +56,10 @@
   2. The keeper performs an L2 op only when the BIT gate is open; gate-closed does not dequeue-and-drop (consumption pauses / requeues without ack).
   3. The exhaustion policy is config-driven: DLQ1 mode dead-letters to `skp-dlq-1`; sustained-outage mode holds/requeues for L2 recovery.
   4. Hermetic facts prove each state + the gate-closed and exhaustion-policy behaviors; solution 0-warning.
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 52-01-PLAN.md — Three recovery-state bodies (REINJECT drop-flip, INJECT forward-only, DELETE verify) + base gate-wait strip + KeeperMetrics drop counter (Wave 1)
+- [ ] 52-02-PLAN.md — keeper-recovery static→ConnectReceiveEndpoint conversion + handle singleton + configurable exhaustion policy (Dlq1 vs SustainedOutage) + integration facts (Wave 2)
+- [ ] 52-03-PLAN.md — BitHealthLoop endpoint Stop/Start driver on BIT health edges + driver facts + full keeper-suite green gate (Wave 3)
 
 #### Phase 53: Model-B Teardown
 **Goal**: The v4.0.0 Model-B recovery surface is fully removed — composite backup key, `UPDATE`/`CLEANUP` consumers, and the 5-state consumer collapsed to the 3 surviving states — leaving the system buildable on the slot-array path alone.
