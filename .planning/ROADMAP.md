@@ -69,7 +69,10 @@
   1. The composite backup key + its TTL are gone (remnant-verified); `UPDATE`/`CLEANUP` consumers + definitions deleted.
   2. The recovery consumer registers exactly 3 states (`REINJECT`/`INJECT`/`DELETE`); a reflection/source sweep finds no Model-B remnant.
   3. Full hermetic suite green; solution 0-warning Release + Debug.
-**Plans**: TBD
+**Plans**: 3 plans (Wave 0 guards, then 2 parallel removal plans)
+- [ ] 53-01-PLAN.md — Standing guards FIRST (5→3 reflection + D-01/D-03/D-07 source-scan facts; land RED) (Wave 0)
+- [ ] 53-02-PLAN.md — Orchestrator retry teardown (strip UseMessageRetry + dead IOptions/Ignore<> from all 5 owners) (Wave 1)
+- [ ] 53-03-PLAN.md — Processor keep-latch removal + comment reconcile + D-03 ConfigureError→keeper move + SC-3 gate (Wave 1)
 
 #### Phase 54: Live Proof & Close Gate
 **Goal**: A real-stack E2E proves the slot-array forward + recovery passes and each keeper state, sealed behind an N-consecutive-GREEN triple-SHA net-zero close gate.
