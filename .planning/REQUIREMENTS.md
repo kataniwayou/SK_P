@@ -54,26 +54,26 @@
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| SLOT-01 | TBD | Pending |
-| SLOT-02 | TBD | Pending |
-| SLOT-03 | TBD | Pending |
-| INFRA-01 | TBD | Pending |
-| INFRA-02 | TBD | Pending |
-| FWD-01 | TBD | Pending |
-| FWD-02 | TBD | Pending |
-| FWD-03 | TBD | Pending |
-| RECOV-01 | TBD | Pending |
-| RECOV-02 | TBD | Pending |
-| RECOV-03 | TBD | Pending |
-| KEEP-01 | TBD | Pending |
-| KEEP-02 | TBD | Pending |
-| KEEP-03 | TBD | Pending |
-| KEEP-04 | TBD | Pending |
-| KEEP-05 | TBD | Pending |
-| RETIRE-01 | TBD | Pending |
-| RETIRE-02 | TBD | Pending |
-| RETIRE-03 | TBD | Pending |
-| TEST-01 | TBD | Pending |
-| TEST-02 | TBD | Pending |
+| SLOT-01 | Phase 51 | Pending |
+| SLOT-02 | Phase 51 | Pending |
+| SLOT-03 | Phase 51 | Pending |
+| INFRA-01 | Phase 51 | Pending |
+| INFRA-02 | Phase 51 | Pending |
+| FWD-01 | Phase 51 | Pending |
+| FWD-02 | Phase 51 | Pending |
+| FWD-03 | Phase 51 | Pending |
+| RECOV-01 | Phase 51 | Pending |
+| RECOV-02 | Phase 51 | Pending |
+| RECOV-03 | Phase 51 | Pending |
+| KEEP-01 | Phase 52 | Pending |
+| KEEP-02 | Phase 52 | Pending |
+| KEEP-03 | Phase 52 | Pending |
+| KEEP-04 | Phase 52 | Pending |
+| KEEP-05 | Phase 52 | Pending |
+| RETIRE-01 | Phase 50 | Pending |
+| RETIRE-02 | Phase 50 | Pending |
+| RETIRE-03 | Phase 53 | Pending |
+| TEST-01 | Phase 54 | Pending |
+| TEST-02 | Phase 54 | Pending |
 
 *21 requirements across 7 categories (SLOT 3 · INFRA 2 · FWD 3 · RECOV 3 · KEEP 5 · RETIRE 3 · TEST 2). Phase assignments filled by the roadmap.*

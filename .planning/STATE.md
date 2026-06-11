@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 ## Current Position
 
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-06-11 — Milestone v5.0.0 started (v4.0.0 shipped + archived + tagged)
+Phase: 50 (Contracts & Slot-Array L2 Key Reshape) — ready to plan
+Plan: — (run /gsd-plan-phase 50)
+Status: Requirements (21) + roadmap (phases 50-54) defined; ready to plan Phase 50
+Last activity: 2026-06-11 — Milestone v5.0.0 roadmap created (5 phases, 50-54; all 21 reqs mapped)
 
 ### Roadmap Evolution
 
