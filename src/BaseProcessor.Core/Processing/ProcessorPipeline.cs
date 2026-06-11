@@ -15,41 +15,47 @@ using StackExchange.Redis;
 namespace BaseProcessor.Core.Processing;
 
 /// <summary>
-/// The Phase-44 Pre → In → Post → end-delete pipeline runner (PIPE-01, RESEARCH Pattern 1). Extracted
-/// from the old straight-through <see cref="EntryStepDispatchConsumer"/> so the five terminals are
-/// testable without a MassTransit harness (a plain object the facts construct directly).
+/// The A18 dispatcher + FORWARD pass runner (Phase 51, design doc lines 146-177). Extracted from the old
+/// straight-through <see cref="EntryStepDispatchConsumer"/> so the terminals are testable without a
+/// MassTransit harness (a plain object the facts construct directly).
 /// <para>
-/// <b>Pre</b> (D-07/PIPE-02/03): a <c>SourceStep.IsSource</c> Guid.Empty dispatch skips the L2 read with
-/// empty validatedData and arms NO end-delete; otherwise a bounded-retry read (absent/empty unified with a
-/// Redis fault via <see cref="KeyAbsentException"/>) that exhausts routes to <c>KeeperReinject</c> and
-/// returns WITHOUT arming end-delete (the input is left intact for the keeper, T-44-08); a read that
-/// succeeds arms end-delete, then an input-schema failure is a business <c>StepFailed</c> (end-delete still
-/// runs).
+/// <b>Dispatcher</b> (D-07/FWD-01): the entry point branches on <c>exist L2[messageId]</c> via a bounded
+/// retry. An existence-check exhaustion routes to <c>KeeperReinject</c> and ENDS the round trip WITHOUT
+/// deleting the source (the input is left intact for the keeper). On a present marker the RECOVERY pass runs
+/// (plan 51-03 — currently a stub); otherwise the FORWARD pass runs.
 /// </para>
 /// <para>
-/// <b>In</b> (PIPE-05): the author seam in a try/catch — a <c>ProcessStatusException</c> maps by runtime
-/// type to exactly one <c>Step*</c> record and aborts the batch (no Post); an unexpected exception ⇒
-/// <c>StepFailed</c>.
+/// <b>Forward — Pre</b> (PIPE-02/03): a <c>SourceStep.IsSource</c> Guid.Empty dispatch skips the L2 read with
+/// empty validatedData; otherwise a bounded-retry read (absent/empty unified with a Redis fault via
+/// <see cref="KeyAbsentException"/>) that exhausts routes to <c>KeeperReinject</c> and returns WITHOUT the
+/// source-delete tail (input intact, T-51-04/FWD-01); a read that succeeds proceeds, and an input-schema
+/// failure is a business <c>StepFailed</c> (the source-delete tail STILL runs).
 /// </para>
 /// <para>
-/// <b>Post</b> (PIPE-06/07, per item in order): a completed item → write <c>L2[entryId]</c> with the
-/// bounded <c>ExecutionDataTtl</c> (CONFIG-02/D-17 — so a terminal step's output key and repeated-fire
-/// keys self-expire; bounded retry; exhaust → <c>KeeperInject</c>, batch NOT aborted) → <c>StepCompleted</c>
-/// carrying the framework entryId + author executionId. A per-item business <c>failed</c> (author
-/// <c>Failed</c> OR output-schema failure) → one <c>StepFailed</c>, batch NOT aborted (A3, N items → N
-/// results). Phase-50 (D-01) removed the Model-B UPDATE/CLEANUP keeper sends + their composite backup
-/// key; the real A18 slot-array forward/recovery pass lands in Phase 51.
+/// <b>Forward — In</b> (PIPE-05): the author seam in a try/catch — a <c>ProcessStatusException</c> maps by
+/// runtime type to exactly one <c>Step*</c> record and aborts the batch (the source-delete tail still runs);
+/// an unexpected exception ⇒ <c>StepFailed</c>.
 /// </para>
 /// <para>
-/// <b>End-delete</b> (PIPE-08): a <c>finally</c> over every read-succeeded path — deletes <c>L2[entryId]</c>
-/// of the inbound dispatch with bounded retry; exhaust → <c>KeeperDelete</c>. Skipped on the REINJECT path
-/// and on a Guid.Empty source step (both leave <c>readSucceeded == false</c>).
+/// <b>Forward — Post</b> (SLOT-01/02, INFRA-01/02, allocation-before-data): per completed item, in order:
+/// (1) mint <c>entryId</c>; (2) write the allocation index <c>L2[messageId][slot]=entryId</c> FIRST then a
+/// whole-HASH random TTL (D-06) — an allocation exhaustion is <c>infra_messageId</c> → DROP (no data write,
+/// no send, no slot consumed); (3) write the data key <c>L2[entryId]=data</c> SECOND — a data exhaustion is
+/// <c>infra_entryId</c> → <c>KeeperInject</c> carrying the EntryId/Data/DeleteEntryId id-set (the slot WAS
+/// allocated → consumed); else <c>StepCompleted</c> to the orchestrator. The slot ordinal increments ONLY
+/// for completed items (business-failed + dropped items consume no slot). Allocation-before-data is
+/// deliberate (T-51-05): a crash between the two writes leaves a skippable dangling pointer, never a leak.
+/// </para>
+/// <para>
+/// <b>Forward — source-delete tail</b> (FWD-03): an explicit inline tail (NOT a try/cleanup block — the
+/// WR-01 race is RETIRED in Phase 51) reached ONLY on the no-REINJECT happy path; it deletes the inbound
+/// <c>L2[entryId]</c> with bounded retry; exhaust → <c>KeeperDelete</c>. Skipped on a Guid.Empty source step.
 /// </para>
 /// <para>
 /// <b>Resilience</b> (RESIL-01/D-09/D-10): every L2 op and every send is wrapped in
 /// <see cref="RetryLoop"/> using <c>Retry:Limit</c>; a send that exhausts PROPAGATES (→ the bus
-/// <c>UseMessageRetry</c> dead-letter latch → <c>_error</c>). The in-code retry owns per-op retries; the
-/// bus retry is the OUTER latch, not a second L2/send retry (Pitfall 1).
+/// <c>UseMessageRetry</c> dead-letter latch → <c>_error</c>; the A18 <c>UseMessageRetry=none</c> end-state is
+/// a Phase-53 teardown item). The in-code retry owns per-op retries; the bus retry is the OUTER latch.
 /// </para>
 /// </summary>
 public sealed class ProcessorPipeline(
@@ -59,122 +65,167 @@ public sealed class ProcessorPipeline(
     ISendEndpointProvider sendProvider,
     IOptions<RetryOptions> retryOptions,
     IOptions<ProcessorLivenessOptions> livenessOptions,
+    IOptions<SlotArrayOptions> slotOptions,
     ProcessorMetrics metrics,
     ILogger<ProcessorPipeline> logger)
 {
-    public async Task RunAsync(EntryStepDispatch d, CancellationToken ct)
+    /// <summary>D-06: a random whole-HASH TTL in [min,max]s applied to <c>L2[messageId]</c> on each slot
+    /// write so the allocation index self-expires with jitter (no synchronized expiry herd). <c>+1</c> makes
+    /// the configured max inclusive. <c>Random.Shared</c> is the framework-shared thread-safe RNG.</summary>
+    private TimeSpan SlotTtl() => TimeSpan.FromSeconds(
+        Random.Shared.Next(slotOptions.Value.SlotArrayTtlMinSeconds, slotOptions.Value.SlotArrayTtlMaxSeconds + 1));
+
+    public async Task RunAsync(EntryStepDispatch d, Guid messageId, CancellationToken ct)
     {
         var db = redis.GetDatabase();
         var limit = retryOptions.Value.Limit;
         // CONFIG-02 / D-17: bound execution-data TTL applied on every output write so a TERMINAL step's
-        // output key (no successor step to end-delete it) and any key minted by a repeated cron fire are
-        // bounded rather than leaking forever (the close-gate redis --scan net-zero invariant + the
-        // compose Processor__ExecutionDataTtl override depend on this self-expiry).
+        // output key and any key minted by a repeated cron fire are bounded rather than leaking forever.
         var executionDataTtl = TimeSpan.FromSeconds(livenessOptions.Value.ExecutionDataTtlSeconds);
-        var readSucceeded = false;   // gates the finally end-delete (Pitfall 3)
 
-        try
+        // D-07/FWD-01: branch on exist L2[messageId]. Exhaust → REINJECT; END (no source delete, input intact).
+        var exists = await RetryLoop.ExecuteAsync(
+            () => db.KeyExistsAsync(L2ProjectionKeys.MessageIndex(messageId)), limit, ct);
+        if (!exists.Succeeded)
         {
-            // ---- PRE ----
-            string validatedData;
-            if (SourceStep.IsSource(d.EntryId))          // NEVER inline == Guid.Empty
-            {
-                validatedData = string.Empty;            // skip read; readSucceeded stays false → no end-delete
-            }
-            else
-            {
-                var read = await RetryLoop.ExecuteAsync(async () =>
-                {
-                    var raw = await db.StringGetAsync(L2ProjectionKeys.ExecutionData(d.EntryId));
-                    if (raw.IsNullOrEmpty) throw new KeyAbsentException();   // A2: unify absent/empty with Redis fault
-                    return raw.ToString();
-                }, limit, ct);
+            await SendKeeper(BuildReinject(d), limit, ct);
+            return;
+        }
 
-                if (!read.Succeeded)                      // infra(READ): Redis fault OR absent/empty, exhausted
-                {
-                    await SendKeeper(BuildReinject(d), limit, ct);   // KeeperReinject; END — no end-delete (input left intact)
-                    return;                               // returns through finally, but readSucceeded==false → skip delete
-                }
-                readSucceeded = true;                     // ONLY now is end-delete armed
-                validatedData = read.Value!;
+        if (exists.Value)
+            await RunRecoveryAsync(d, messageId, db, limit, ct);                       // plan 51-03 lands this body
+        else
+            await RunForwardAsync(d, messageId, db, limit, executionDataTtl, ct);
+    }
 
-                if (!ProcessorJsonSchemaValidator.TryValidate(context.InputDefinition, validatedData, out var inErrs))
-                {
-                    await SendResult(BuildFailed(d, string.Join("; ", inErrs)), limit, ct);  // business StepFailed
-                    return;                               // finally STILL runs end-delete (read succeeded)
-                }
-            }
+    /// <summary>RECOVERY pass (<c>exist L2[messageId]</c>) — plan 51-03 (Wave 2) lands the body. The forward
+    /// facts never reach this branch (KeyExists=false), so a throwing stub is sufficient to compile here.</summary>
+    private static Task RunRecoveryAsync(
+        EntryStepDispatch d, Guid messageId, IDatabase db, int limit, CancellationToken ct) =>
+        throw new NotImplementedException("recovery pass — plan 51-03");
 
-            // ---- IN ----
-            List<ProcessItem> items;
-            try { items = await processor.ExecuteAsync(validatedData, d.Payload, ct); }
-            catch (ProcessStatusException e)
+    /// <summary>The A18 FORWARD pass (Pre → In → Post → inline source-delete tail). Reached only when
+    /// <c>L2[messageId]</c> does NOT exist.</summary>
+    private async Task RunForwardAsync(
+        EntryStepDispatch d, Guid messageId, IDatabase db, int limit, TimeSpan executionDataTtl, CancellationToken ct)
+    {
+        // FWD-03: the explicit inline source-delete tail (replaces the retired WR-01 cleanup block). Invoked before
+        // every non-REINJECT forward exit; the Guid.Empty source step never armed a delete, so it is skipped.
+        async Task DeleteSourceTail()
+        {
+            if (SourceStep.IsSource(d.EntryId)) return;
+            var del = await RetryLoop.ExecuteAsync(
+                () => db.KeyDeleteAsync(L2ProjectionKeys.ExecutionData(d.EntryId)), limit, ct);
+            if (!del.Succeeded) await SendKeeper(BuildDelete(d), limit, ct);   // infra(DELETE) → KeeperDelete
+        }
+
+        // ---- PRE ----
+        string validatedData;
+        if (SourceStep.IsSource(d.EntryId))          // NEVER inline == Guid.Empty
+        {
+            validatedData = string.Empty;            // skip read
+        }
+        else
+        {
+            var read = await RetryLoop.ExecuteAsync(async () =>
             {
-                IStepResult result = e switch
-                {
-                    FailedException     => BuildFailed(d, e.Message),
-                    CancelledException  => BuildCancelled(d, e.Message),
-                    ProcessingException => BuildProcessing(d),          // message logged only (no wire field, D-05)
-                    _                   => BuildFailed(d, e.Message),
-                };
-                if (e is ProcessingException) logger.LogInformation("ProcessAsync threw processing status: {Msg}", e.Message);
-                await SendResult(result, limit, ct);                    // exactly ONE result; abort batch (no Post)
-                return;                                                  // end-delete runs (read succeeded)
+                var raw = await db.StringGetAsync(L2ProjectionKeys.ExecutionData(d.EntryId));
+                if (raw.IsNullOrEmpty) throw new KeyAbsentException();   // A2: unify absent/empty with Redis fault
+                return raw.ToString();
+            }, limit, ct);
+
+            if (!read.Succeeded)                      // infra(READ): Redis fault OR absent/empty, exhausted
+            {
+                await SendKeeper(BuildReinject(d), limit, ct);   // KeeperReinject; END — no source delete (input intact)
+                return;                                          // FWD-01: REINJECT path returns WITHOUT the tail
             }
-            catch (Exception ex)                                        // unexpected ⇒ failed
+            validatedData = read.Value!;
+
+            if (!ProcessorJsonSchemaValidator.TryValidate(context.InputDefinition, validatedData, out var inErrs))
             {
-                await SendResult(BuildFailed(d, ex.Message), limit, ct);
+                await SendResult(BuildFailed(d, string.Join("; ", inErrs)), limit, ct);  // business StepFailed
+                await DeleteSourceTail();             // read succeeded → tail runs
                 return;
             }
-
-            // ---- POST (per item, in order) ----
-            foreach (var item in items)
-            {
-                var outcome = item.Result;
-                if (outcome == ProcessOutcome.Completed
-                    && !ProcessorJsonSchemaValidator.TryValidate(context.OutputDefinition, item.Data, out _))
-                    outcome = ProcessOutcome.Failed;                    // output-validation fail → business failed (A3: per-item, NOT abort)
-
-                if (outcome == ProcessOutcome.Completed)
-                {
-                    // Phase-50 (D-01): the Model-B UPDATE-before-write keeper send is removed (the composite
-                    // backup key it wrote is retired); the real A18 slot-array allocation lands in Phase 51.
-                    var entryId = NewId.NextGuid();                     // framework mints the data key
-                    var write = await RetryLoop.ExecuteAsync(
-                        () => db.StringSetAsync(L2ProjectionKeys.ExecutionData(entryId), item.Data, executionDataTtl), limit, ct);  // CONFIG-02/D-17: bounded TTL so terminal/orphaned keys self-expire
-                    if (!write.Succeeded)                               // output-write exhausted → failed(infra)
-                    {
-                        await SendKeeper(BuildInject(d, item), limit, ct);   // KeeperInject (infra route)
-                        continue;                                       // next item — batch NOT aborted
-                    }
-                    // Phase-50 (D-01): the Model-B CLEANUP keeper send is removed (the redundant composite
-                    // backup it deleted is retired); the real A18 retire-after-send lands in Phase 51.
-                    using (logger.BeginScope(new Dictionary<string, object>
-                    {
-                        [ExecutionLogScope.ExecutionId] = item.ExecutionId.ToString(),   // author-minted (D-03/Pitfall 4)
-                        [ExecutionLogScope.EntryId]     = entryId.ToString(),            // framework-minted
-                    }))
-                    {
-                        await SendResult(BuildCompleted(d, item.ExecutionId, entryId), limit, ct);  // StepCompleted carries both ids
-                    }
-                }
-                else // per-item business failed (author Failed OR output-validation fail)
-                {
-                    await SendResult(BuildFailed(d, "output failed schema validation"), limit, ct);  // one StepFailed; NOT abort
-                }
-            }
         }
-        finally
+
+        // ---- IN ----
+        List<ProcessItem> items;
+        try { items = await processor.ExecuteAsync(validatedData, d.Payload, ct); }
+        catch (ProcessStatusException e)
         {
-            // ---- END-DELETE (finally over every read-succeeded path; skip on REINJECT + Guid.Empty source) ----
-            if (readSucceeded)
+            IStepResult result = e switch
             {
-                var del = await RetryLoop.ExecuteAsync(
-                    () => db.KeyDeleteAsync(L2ProjectionKeys.ExecutionData(d.EntryId)), limit, ct);
-                if (!del.Succeeded)
-                    await SendKeeper(BuildDelete(d), limit, ct);        // infra(DELETE) → KeeperDelete
+                FailedException     => BuildFailed(d, e.Message),
+                CancelledException  => BuildCancelled(d, e.Message),
+                ProcessingException => BuildProcessing(d),          // message logged only (no wire field, D-05)
+                _                   => BuildFailed(d, e.Message),
+            };
+            if (e is ProcessingException) logger.LogInformation("ProcessAsync threw processing status: {Msg}", e.Message);
+            await SendResult(result, limit, ct);                    // exactly ONE result; abort batch (no Post)
+            await DeleteSourceTail();                               // read succeeded → tail runs
+            return;
+        }
+        catch (Exception ex)                                        // unexpected ⇒ failed
+        {
+            await SendResult(BuildFailed(d, ex.Message), limit, ct);
+            await DeleteSourceTail();
+            return;
+        }
+
+        // ---- POST (forward, per item, in order) ----
+        var slot = 0;                                               // completed-item ordinal ONLY (D-04 slot counter)
+        foreach (var item in items)
+        {
+            var outcome = item.Result;
+            if (outcome == ProcessOutcome.Completed
+                && !ProcessorJsonSchemaValidator.TryValidate(context.OutputDefinition, item.Data, out _))
+                outcome = ProcessOutcome.Failed;                    // output-validation fail → business failed (A3, per-item)
+
+            if (outcome == ProcessOutcome.Completed)
+            {
+                var entryId = NewId.NextGuid();                     // (1) allocate
+
+                var alloc = await RetryLoop.ExecuteAsync(           // (2) ALLOCATION INDEX FIRST (SLOT-01)
+                    () => db.HashSetAsync(L2ProjectionKeys.MessageIndex(messageId), slot, entryId.ToString("D")), limit, ct);
+                if (alloc.Succeeded)
+                {
+                    await RetryLoop.ExecuteAsync(                   // D-06: whole-HASH random TTL (separate call)
+                        () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), SlotTtl()), limit, ct);
+                }
+                else
+                {
+                    // INFRA-01: allocation exhausted → infra_messageId → DROP (no data write, no send, no slot).
+                    continue;
+                }
+
+                var write = await RetryLoop.ExecuteAsync(          // (3) DATA SECOND (SLOT-02)
+                    () => db.StringSetAsync(L2ProjectionKeys.ExecutionData(entryId), item.Data, executionDataTtl), limit, ct);
+                if (!write.Succeeded)
+                {
+                    // INFRA-02: data-write exhausted → keeper INJECT (data in-hand); the slot WAS allocated → consume it.
+                    await SendKeeper(BuildInject(d, item, entryId), limit, ct);
+                    slot++;
+                    continue;
+                }
+
+                using (logger.BeginScope(new Dictionary<string, object>
+                {
+                    [ExecutionLogScope.ExecutionId] = item.ExecutionId.ToString(),   // author-minted (D-03/Pitfall 4)
+                    [ExecutionLogScope.EntryId]     = entryId.ToString(),            // framework-minted
+                }))
+                {
+                    await SendResult(BuildCompleted(d, item.ExecutionId, entryId), limit, ct);  // FWD-02 → orchestrator
+                }
+                slot++;                                            // completed → consume the slot
+            }
+            else // per-item business failed (author Failed OR output-validation fail) — no slot consumed
+            {
+                await SendResult(BuildFailed(d, "output failed schema validation"), limit, ct);  // one StepFailed; NOT abort
             }
         }
+
+        await DeleteSourceTail();                                  // FWD-03 happy-path tail (inline, no cleanup block)
     }
 
     // ---- Send owners: every send wrapped in RetryLoop; send-exhaustion PROPAGATES (D-10 → bus _error). ----
@@ -186,11 +237,9 @@ public sealed class ProcessorPipeline(
             async () => { await ep.Send((object)result, CancellationToken.None); return true; }, limit, ct);
         if (!sent.Succeeded) throw sent.Error!;   // D-10: propagate → UseMessageRetry → _error
 
-        // METRIC-05 / GAP-49-5 (D-10): count EVERY genuinely-sent step result, tagged ProcessorId (same
-        // context.Id!.Value.ToString("D") shape as EntryStepDispatchConsumer.DispatchConsumed) PLUS the
-        // terminal outcome (completed/failed/cancelled/processing — MetricsRoundTripE2ETests asserts
-        // expectOutcome:true). Placed AFTER the success guard so only a confirmed send increments the
-        // counter (a propagated exhaustion above never reaches here).
+        // METRIC-05 / GAP-49-5 (D-10): count EVERY genuinely-sent step result, tagged ProcessorId PLUS the
+        // terminal outcome (completed/failed/cancelled/processing). Placed AFTER the success guard so only a
+        // confirmed send increments the counter (a propagated exhaustion above never reaches here).
         metrics.ResultSent.Add(1,
             new KeyValuePair<string, object?>("ProcessorId", context.Id!.Value.ToString("D")),
             new KeyValuePair<string, object?>("outcome", ResultOutcome(result)));
@@ -237,6 +286,15 @@ public sealed class ProcessorPipeline(
     private static KeeperDelete    BuildDelete(EntryStepDispatch d) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = d.ExecutionId, EntryId = d.EntryId };   // A1: inbound exec
 
-    private static KeeperInject    BuildInject(EntryStepDispatch d, ProcessItem item) =>
-        new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = item.ExecutionId };   // A1: item exec
+    // INFRA-02 / Pitfall 1: BuildInject populates the FULL Phase-50 id-set (EntryId = the allocation just
+    // written, Data = the raw-JSON output in-hand, DeleteEntryId = the source entryId).
+    private static KeeperInject    BuildInject(EntryStepDispatch d, ProcessItem item, Guid entryId) =>
+        new(d.WorkflowId, d.StepId, d.ProcessorId)
+        {
+            CorrelationId = d.CorrelationId,
+            ExecutionId   = item.ExecutionId,   // D-02/D-03: author-minted item exec
+            EntryId       = entryId,            // the allocation written above
+            Data          = item.Data,         // raw-JSON output, in-hand on the envelope
+            DeleteEntryId = d.EntryId,         // source entryId (A18 literal deleteEntryId)
+        };
 }
