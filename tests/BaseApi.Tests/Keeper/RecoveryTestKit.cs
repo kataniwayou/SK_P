@@ -73,6 +73,7 @@ internal static class RecoveryTestKit
                 Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
             .Returns(true);
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: both-key DEL count removed
         return db;
     }
 
