@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
 status: executing
-stopped_at: Completed 54-03-PLAN.md
-last_updated: "2026-06-11T22:41:47.517Z"
+stopped_at: Completed 54-04-PLAN.md
+last_updated: "2026-06-11T22:56:21.197Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 6
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
 Phase: 54 (terminal-index-delete) — EXECUTING
-Plan: 3 of 4 complete (54-01 — test-kit array-overload mock surface)
+Plan: 4 of 4 complete (54-01 — test-kit array-overload mock surface)
 Status: Ready to execute
 Last activity: 2026-06-11
 
@@ -672,7 +672,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -926,6 +926,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 54 P01 | 14min | 2 tasks | 2 files |
 | Phase 54 P02 | 5min | 1 tasks | 1 files |
 | Phase 54 P03 | 16min | 2 tasks | 2 files |
+| Phase 54 P04 | 11min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1312,6 +1313,8 @@ Recent decisions affecting current work:
 - Phase 54-01: array-overload mock sibling pattern — every scalar KeyDeleteAsync stub/When-Do mirrored with an Arg.Any<RedisKey[]>() sibling (NSubstitute treats the array overload as a distinct method); fault muxes MUST throw on the array overload too (Pitfall-1 false-green guard).
 - 54-02: KeeperDelete carries MessageId init prop (D-05/A19) — origin index id for the keeper both-key DEL; mirrors EntryId, base ctor ids untouched, no STJ attribute; additive (no consumer yet references it).
 - 54-03: Unified ProcessorPipeline.DeleteTerminalAsync — ONE atomic two-key DEL [ExecutionData(entryId), MessageIndex(messageId)] inline (D-02) + best-effort persist-on-escalate + unconditional KeeperDelete(messageId) (D-03); both forward (4 sites) and recovery all-clear converge on it (D-01); source-step early-return removed (D-06); D-07 TTL writes untouched. DeleteConsumer both-key DEL via Guard (GC-03). 0-warning Release+Debug.
+- Phase 54-04: every processor + keeper delete fact asserts the GC-01 atomicity heart — ONE Received(1) on the array KeyDeleteAsync overload + DidNotReceive() on both scalar overloads (a two-scalar-DEL regression fails the suite)
+- Phase 54-04: AC-10 closed — full hermetic suite 529/0; Release + Debug both 0-warning; GC-01/02/03 proven hermetically and marked complete
 
 ### Roadmap Milestone Log
 
@@ -1414,8 +1417,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T22:41:47.495Z
-Stopped at: Completed 54-03-PLAN.md
+Last session: 2026-06-11T22:56:13.218Z
+Stopped at: Completed 54-04-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
