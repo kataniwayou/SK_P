@@ -37,9 +37,12 @@
 **: If any recovery item is `infra_entryId` → send keeper `REINJECT` and **do NOT delete the source** (`REINJECT` and source-delete are mutually exclusive); otherwise delete the source `entryId` (exhaustion → keeper `DELETE`).
 
 ### 3-State Keeper (KEEP)
-- [ ] **KEEP-01**: `REINJECT` reads the source `entryId` (drops if absent), then re-injects a reconstructed `EntryStepDispatch` carrying the original `Payload` to the processor input (simulate orchestrator send).
-- [ ] **KEEP-02**: `INJECT` (forward-only — data is in-hand) writes `L2[entryId]=data`, sends a reconstructed `StepCompleted` to the orchestrator, then deletes `deleteEntryId`.
-- [ ] **KEEP-03**: `DELETE` deletes the L2 key; drops if the key is absent.
+- [x] **KEEP-01
+**: `REINJECT` reads the source `entryId` (drops if absent), then re-injects a reconstructed `EntryStepDispatch` carrying the original `Payload` to the processor input (simulate orchestrator send).
+- [x] **KEEP-02
+**: `INJECT` (forward-only — data is in-hand) writes `L2[entryId]=data`, sends a reconstructed `StepCompleted` to the orchestrator, then deletes `deleteEntryId`.
+- [x] **KEEP-03
+**: `DELETE` deletes the L2 key; drops if the key is absent.
 - [ ] **KEEP-04**: The keeper performs an L2 op only when the BIT gate is open; **gate-closed → non-destructive consume** (no dequeue-and-drop — pause consumption / requeue without ack so messages accumulate and drain when the gate opens).
 - [ ] **KEEP-05**: Keeper exhaustion policy is **configurable** — DLQ1 mode (exhausted op/send dead-letters to `skp-dlq-1`) vs sustained-outage mode (hold/requeue and wait for L2 recovery, no dead-letter).
 

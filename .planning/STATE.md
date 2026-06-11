@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
-status: planning
-stopped_at: Phase 52 context gathered
-last_updated: "2026-06-11T14:22:50.599Z"
-last_activity: 2026-06-11
+status: executing
+stopped_at: Completed 52-01-PLAN.md
+last_updated: "2026-06-11T16:23:31.255Z"
+last_activity: 2026-06-11 -- Completed 52-01-PLAN.md (A18 three-state keeper bodies)
 progress:
   total_phases: 5
   completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
-  percent: 100
+  total_plans: 8
+  completed_plans: 6
+  percent: 75
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 51 — processor-forward-recovery-pipeline
+**Current focus:** Phase 52 (Three-State Keeper) — Plan 01 complete, Plan 02 next
 
 ## Current Position
 
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
-Phase: 52
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-06-11
+Phase: 52 (Three-State Keeper) — EXECUTING
+Plan: 1 of 2 complete (52-01 done; 52-02 = KEEP-04 endpoint pause/resume + KEEP-05 policy-conditional wiring + KeeperMetrics DI registration)
+Status: 52-01 complete — A18 REINJECT/INJECT/DELETE bodies green (16/16 Keeper facts, 518/518 hermetic, solution Release 0-warning)
+Last activity: 2026-06-11 -- Completed 52-01-PLAN.md
 
 ### Roadmap Evolution
 
@@ -671,7 +671,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [████████░░] 75%
 
 ### Milestone Phases (v3.4.0)
 
@@ -914,6 +914,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 51 P01 | ~12 min | 2 tasks | 3 files |
 | Phase 51 P02 | continuation | 4 tasks | 8 files |
 | Phase 51 P03 | single-session | 2 tasks | 4 files |
+| Phase 52 P01 | 30min | 3 tasks | 12 files |
 
 ## Accumulated Context
 
@@ -1288,6 +1289,7 @@ Recent decisions affecting current work:
 - Phase 51 UseMessageRetry (RESEARCH Open Q1) resolved keep-latch: the Phase-44 outer dead-letter latch STAYS (no change to ProcessorStartupOrchestrator.cs) so send-exhaust PROPAGATE (D-10) still reaches skp-dlq-1; A18 UseMessageRetry=none / _error-disabled end-state DEFERRED to Phase 53 teardown (T-51-07 accept/deferred)
 - 51-03: recovery not-exist (clean KeyExistsAsync==false) and L2-fault (thrown inside RetryLoop) route DIFFERENTLY (Pattern 3) — not-exist drops, fault is infra_entryId/leave-slot; NOT unified
 - 51-03: send-before-retire (SLOT-03/T-51-08) — SendResult (throws on exhaust) precedes HashSetAsync(slot,Guid.Empty); recovery completed mints a FRESH NewId.NextGuid exec (D-03, slot stores only entryId)
+- Phase 52-01: A18 three-state keeper bodies landed — REINJECT drops-on-absent (counter+log, D-06/D-07), INJECT forward-only write->send->delete (KEEP-02), DELETE verify (KEEP-03); base gate-wait stripped (D-09), KeeperMetrics created, ExhaustionPolicy enum added (D-01).
 
 ### Roadmap Milestone Log
 
@@ -1390,13 +1392,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 52 context gathered
-Resume file: --resume-file
+Last session: 2026-06-11T16:23:31.229Z
+Stopped at: Completed 52-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 51 (processor-forward-recovery-pipeline) — 3 plans — 2026-06-11T12:29:45.278Z
+**Planned Phase:** 52 (3-State Keeper) — 3 plans — 2026-06-11T14:58:48.353Z
