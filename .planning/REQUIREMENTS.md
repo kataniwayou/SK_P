@@ -34,7 +34,8 @@
 
 ### Model-B Teardown (RETIRE)
 - [ ] **RETIRE-01**: The composite backup key `L2[corr:wf:ProcessorId:executionId]` + its `BackupOptions` TTL are removed.
-- [ ] **RETIRE-02**: The `UPDATE` and `CLEANUP` keeper-state contracts + consumers are removed.
+- [x] **RETIRE-02
+**: The `UPDATE` and `CLEANUP` keeper-state contracts + consumers are removed.
 - [ ] **RETIRE-03**: The 5-state recovery consumer collapses to the 3 surviving states (`REINJECT`/`INJECT`/`DELETE`); no Model-B remnants survive a source/reflection sweep.
 
 ### Live Proof & Close Gate (TEST)
