@@ -177,12 +177,9 @@ public sealed class ProcessorPipeline(
             await SendKeeper(BuildReinject(d), limit, ct);   // replay owns the lifecycle; do NOT delete the source
             return;
         }
-        if (!SourceStep.IsSource(d.EntryId))
-        {
-            var del = await RetryLoop.ExecuteAsync(
-                () => db.KeyDeleteAsync(L2ProjectionKeys.ExecutionData(d.EntryId)), limit, ct);
-            if (!del.Succeeded) await SendKeeper(BuildDelete(d), limit, ct);   // exhaust → KeeperDelete
-        }
+        // D-06: NO source-step early-return — the unified tail's index DEL runs even for a source step
+        // (ExecutionData(Guid.Empty) is a harmless absent operand).
+        await DeleteTerminalAsync(d, messageId, db, limit, ct);
     }
 
     /// <summary>The A18 FORWARD pass (Pre → In → Post → inline source-delete tail). Reached only when
@@ -190,15 +187,9 @@ public sealed class ProcessorPipeline(
     private async Task RunForwardAsync(
         EntryStepDispatch d, Guid messageId, IDatabase db, int limit, TimeSpan executionDataTtl, CancellationToken ct)
     {
-        // FWD-03: the explicit inline source-delete tail (replaces the retired WR-01 cleanup block). Invoked before
-        // every non-REINJECT forward exit; the Guid.Empty source step never armed a delete, so it is skipped.
-        async Task DeleteSourceTail()
-        {
-            if (SourceStep.IsSource(d.EntryId)) return;
-            var del = await RetryLoop.ExecuteAsync(
-                () => db.KeyDeleteAsync(L2ProjectionKeys.ExecutionData(d.EntryId)), limit, ct);
-            if (!del.Succeeded) await SendKeeper(BuildDelete(d), limit, ct);   // infra(DELETE) → KeeperDelete
-        }
+        // A19/FWD-03: the unified terminal tail is DeleteTerminalAsync(d, messageId, db, limit, ct) — invoked before
+        // every non-REINJECT forward exit; it issues the atomic two-key DEL (data + origin index) and, on a source
+        // step, still DELs the index (ExecutionData(Guid.Empty) is a harmless absent operand, D-06).
 
         // ---- PRE ----
         string validatedData;
@@ -225,7 +216,7 @@ public sealed class ProcessorPipeline(
             if (!ProcessorJsonSchemaValidator.TryValidate(context.InputDefinition, validatedData, out var inErrs))
             {
                 await SendResult(BuildFailed(d, string.Join("; ", inErrs)), limit, ct);  // business StepFailed
-                await DeleteSourceTail();             // read succeeded → tail runs
+                await DeleteTerminalAsync(d, messageId, db, limit, ct);   // read succeeded → tail runs
                 return;
             }
         }
@@ -244,13 +235,13 @@ public sealed class ProcessorPipeline(
             };
             if (e is ProcessingException) logger.LogInformation("ProcessAsync threw processing status: {Msg}", e.Message);
             await SendResult(result, limit, ct);                    // exactly ONE result; abort batch (no Post)
-            await DeleteSourceTail();                               // read succeeded → tail runs
+            await DeleteTerminalAsync(d, messageId, db, limit, ct); // read succeeded → tail runs
             return;
         }
         catch (Exception ex)                                        // unexpected ⇒ failed
         {
             await SendResult(BuildFailed(d, ex.Message), limit, ct);
-            await DeleteSourceTail();
+            await DeleteTerminalAsync(d, messageId, db, limit, ct);
             return;
         }
 
@@ -306,7 +297,27 @@ public sealed class ProcessorPipeline(
             }
         }
 
-        await DeleteSourceTail();                                  // FWD-03 happy-path tail (inline, no cleanup block)
+        await DeleteTerminalAsync(d, messageId, db, limit, ct);    // A19/FWD-03 happy-path unified tail (two-key DEL)
+    }
+
+    /// <summary>A19/GC-01..03: the unified terminal tail. Atomically deletes BOTH the source data key and the
+    /// origin allocation index in ONE multi-key DEL; on exhaustion best-effort PERSISTs the index (cancels its
+    /// random TTL) then escalates to a KeeperDelete carrying the messageId — regardless of the persist outcome
+    /// (D-03). NO source-step early-return: ExecutionData(Guid.Empty) is a harmless absent operand (D-06).</summary>
+    private async Task DeleteTerminalAsync(
+        EntryStepDispatch d, Guid messageId, IDatabase db, int limit, CancellationToken ct)
+    {
+        var del = await RetryLoop.ExecuteAsync(
+            () => db.KeyDeleteAsync(new RedisKey[]
+            {
+                L2ProjectionKeys.ExecutionData(d.EntryId),     // operand 1 (Guid.Empty → drop-on-absent no-op on a source step)
+                L2ProjectionKeys.MessageIndex(messageId),      // operand 2 (the index — actively reclaimed)
+            }), limit, ct);
+        if (del.Succeeded) return;
+
+        // D-03: best-effort persist (cancel the random TTL) THEN escalate REGARDLESS of persist outcome.
+        await RetryLoop.ExecuteAsync(() => db.KeyPersistAsync(L2ProjectionKeys.MessageIndex(messageId)), limit, ct);
+        await SendKeeper(BuildDelete(d, messageId), limit, ct);
     }
 
     // ---- Send owners: every send wrapped in RetryLoop; send-exhaustion PROPAGATES (throw → broker redelivery, no _error). ----
@@ -364,8 +375,8 @@ public sealed class ProcessorPipeline(
     private static KeeperReinject  BuildReinject(EntryStepDispatch d) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = d.ExecutionId, EntryId = d.EntryId, Payload = d.Payload };   // A1: inbound exec; D-01: carry Payload
 
-    private static KeeperDelete    BuildDelete(EntryStepDispatch d) =>
-        new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = d.ExecutionId, EntryId = d.EntryId };   // A1: inbound exec
+    private static KeeperDelete    BuildDelete(EntryStepDispatch d, Guid messageId) =>
+        new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = d.ExecutionId, EntryId = d.EntryId, MessageId = messageId };   // A1: inbound exec; A19: index id
 
     // INFRA-02 / Pitfall 1: BuildInject populates the FULL Phase-50 id-set (EntryId = the allocation just
     // written, Data = the raw-JSON output in-hand, DeleteEntryId = the source entryId).
