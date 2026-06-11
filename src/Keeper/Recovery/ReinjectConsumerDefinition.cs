@@ -44,8 +44,8 @@ public sealed class ReinjectConsumerDefinition : ConsumerDefinition<ReinjectCons
         IConsumerConfigurator<ReinjectConsumer> consumerConfigurator,
         IRegistrationContext context)
     {
-        // Endpoint-level bounded immediate retry (single source of truth = "Retry" section). The transient
-        // RecoveryGateTimeoutException re-attempts here; after exhaustion it dead-letters to skp-dlq-1.
+        // Endpoint-level bounded immediate retry (single source of truth = "Retry" section). On exhaustion
+        // a give-up dead-letters to skp-dlq-1 (Dlq1 policy; the policy-conditional wiring lands in Plan 02).
         endpointConfigurator.UseMessageRetry(r => r.Immediate(_retryOptions.Value.Limit));
 
         // One SHARED partitioner so the same 4-tuple key collides into the same slot across all three types.

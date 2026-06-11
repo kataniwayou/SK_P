@@ -25,8 +25,8 @@ builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry
 // registered singleton via AddBaseConsole (line above chains the Redis registration) — do NOT add it again.
 builder.Services.Configure<ProbeOptions>(builder.Configuration.GetSection("Probe"));
 
-// D-03/D-06 — partition count (8) + gate-wait bound (300s) knobs (mirrors Probe/Retry). PartitionCount
-// drives the keeper-recovery UsePartitioner slot count; GateWaitSeconds bounds the once-at-entry gate await.
+// D-01/D-06 — partition count (8) + ExhaustionPolicy knobs (mirrors Probe/Retry). PartitionCount drives
+// the keeper-recovery UsePartitioner slot count; ExhaustionPolicy selects the gate-open give-up posture.
 builder.Services.Configure<RecoveryOptions>(builder.Configuration.GetSection("Recovery"));
 
 // PROBE-01 — the v4 BitHealthLoop's L2 probe helper (stateless; ctor-injects the singleton multiplexer).
