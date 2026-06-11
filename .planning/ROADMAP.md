@@ -45,7 +45,7 @@
 **Plans**: 3 plans
 - [x] 51-01-PLAN.md — SlotArrayOptions (TTL random) record + DI bind + bind facts (Wave 0) ✓ SlotArrayOptions sealed class (300/600, D-04/D-05) + Configure<SlotArrayOptions>(Processor section) + 2 bind facts; ProcessorOptionsBindingFacts 4/4 GREEN, SK_P.sln Release 0/0; SLOT-01; commits 6433c27, 368b5e3
 - [x] 51-02-PLAN.md — Pipeline dispatcher + FORWARD pass, BuildInject fix, WR-01 finally removal, messageId seam, forward facts (Wave 1) ✓ A18 thin dispatcher (exist L2[messageId] branch) + RunForwardAsync (allocation-before-data, split infra infra_messageId/infra_entryId, inline source-delete tail; WR-01 finally RETIRED) + BuildInject id-set fix + consumer messageId null fail-fast; Pipeline facts 26/26 GREEN, SK_P.sln Release+Debug 0/0; UseMessageRetry=keep-latch (none deferred to Phase 53); SLOT-01/02, INFRA-01/02, FWD-01/02/03; commits 5412ca6, c4df040, ec8567e
-- [ ] 51-03-PLAN.md — RECOVERY pass (temp-list, send-before-retire, REINJECT-no-source-delete), recovery + consumer facts (Wave 2)
+- [x] 51-03-PLAN.md — RECOVERY pass (temp-list, send-before-retire, REINJECT-no-source-delete), recovery + consumer facts (Wave 2)
 
 #### Phase 52: 3-State Keeper
 **Goal**: The Keeper recovery consumer applies the three surviving states gate-open-only — `REINJECT` (read source / re-inject with payload), `INJECT` (forward-only write→send→delete), `DELETE` — with gate-closed non-destructive consume and a configurable DLQ1-vs-sustained-outage exhaustion policy.
@@ -485,7 +485,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 48. v3.x Teardown | v4.0.0 | 3/3 | Complete | 2026-06-09 |
 | 49. Live-Proof Close Gate | v4.0.0 | 6/6 | In Progress (live gate operator-gated) | — |
 | 50. Contracts & Slot-Array L2 Key Reshape | v5.0.0 | 2/2 | Complete    | 2026-06-11 |
-| 51. Processor Forward + Recovery Pipeline | v5.0.0 | 3/3 | Complete | 2026-06-11 |
+| 51. Processor Forward + Recovery Pipeline | v5.0.0 | 3/3 | Complete    | 2026-06-11 |
 | 52. 3-State Keeper | v5.0.0 | 0/? | Not planned | — |
 | 53. Model-B Teardown | v5.0.0 | 0/? | Not planned | — |
 | 54. Live Proof & Close Gate | v5.0.0 | 0/? | Not planned | — |

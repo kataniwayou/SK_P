@@ -67,17 +67,17 @@
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| SLOT-01 | Phase 51 | Pending |
-| SLOT-02 | Phase 51 | Pending |
-| SLOT-03 | Phase 51 | Pending |
-| INFRA-01 | Phase 51 | Pending |
-| INFRA-02 | Phase 51 | Pending |
-| FWD-01 | Phase 51 | Pending |
-| FWD-02 | Phase 51 | Pending |
-| FWD-03 | Phase 51 | Pending |
-| RECOV-01 | Phase 51 | Pending |
-| RECOV-02 | Phase 51 | Pending |
-| RECOV-03 | Phase 51 | Pending |
+| SLOT-01 | Phase 51 | Complete |
+| SLOT-02 | Phase 51 | Complete |
+| SLOT-03 | Phase 51 | Complete |
+| INFRA-01 | Phase 51 | Complete |
+| INFRA-02 | Phase 51 | Complete |
+| FWD-01 | Phase 51 | Complete |
+| FWD-02 | Phase 51 | Complete |
+| FWD-03 | Phase 51 | Complete |
+| RECOV-01 | Phase 51 | Complete |
+| RECOV-02 | Phase 51 | Complete |
+| RECOV-03 | Phase 51 | Complete |
 | KEEP-01 | Phase 52 | Pending |
 | KEEP-02 | Phase 52 | Pending |
 | KEEP-03 | Phase 52 | Pending |
