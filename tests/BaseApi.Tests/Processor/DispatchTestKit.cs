@@ -145,6 +145,8 @@ internal static class DispatchTestKit
                 Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
             .Returns(true);
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: array DEL count removed (value ignored by code)
+        db.KeyPersistAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);   // A19: best-effort persist resolves
         // Phase-51 FWD-01: KeyExists FALSE → forward branch; slot HASH ops succeed (allocation lands).
         db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(false);
         db.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
@@ -171,6 +173,8 @@ internal static class DispatchTestKit
         db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<CommandFlags>()).Returns(true);
         db.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: array DEL count removed (value ignored by code)
+        db.KeyPersistAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);   // A19: best-effort persist resolves
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
         return mux;
@@ -257,6 +261,9 @@ internal static class DispatchTestKit
             .Do(_ => throw boom);
         db.When(x => x.KeyDeleteAsync(Arg.Any<RedisKey>()))
             .Do(_ => throw boom);
+        // A19 Pitfall-1 guard: the production tail now calls the ARRAY DEL overload — it MUST throw too,
+        // or an unstubbed Task<long>→0L false-greens the exhaust branch.
+        db.When(x => x.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>())).Do(_ => throw boom);
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
         return mux;
@@ -329,6 +336,52 @@ internal static class DispatchTestKit
             .Do(_ => throw boom);
         db.When(x => x.KeyDeleteAsync(Arg.Any<RedisKey>()))
             .Do(_ => throw boom);
+        // A19 Pitfall-1 guard: the production tail now calls the ARRAY DEL overload — it MUST throw too,
+        // or an unstubbed Task<long>→0L false-greens the exhaust branch.
+        db.When(x => x.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>())).Do(_ => throw boom);
+        // A19: best-effort persist SUCCEEDS here — only the DEL exhausts (AC-5 persist-then-escalate path).
+        db.KeyPersistAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        var mux = Substitute.For<IConnectionMultiplexer>();
+        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
+        return mux;
+    }
+
+    /// <summary>
+    /// A19 persist-exhaust fault mux (sibling of <see cref="ReadOkDeleteFaultL2"/>): <c>StringGetAsync</c>
+    /// resolves registered keys, <c>StringSetAsync</c> (output write) succeeds, the forward slot HASH ops
+    /// succeed, but BOTH the tail array <c>KeyDeleteAsync(RedisKey[], …)</c> AND the best-effort
+    /// <c>KeyPersistAsync</c> THROW <see cref="RedisConnectionException"/> — the D-03 persist-exhaust path
+    /// (the production code must STILL send the KeeperDelete despite the failed persist fall-through). Backs
+    /// the new <c>EndDelete_PersistExhaust_StillSendsKeeper</c> fact (Plan 04).
+    /// </summary>
+    public static IConnectionMultiplexer ReadOkDeleteAndPersistFaultL2(
+        IReadOnlyDictionary<string, string> values, out IDatabase db)
+    {
+        db = Substitute.For<IDatabase>();
+        db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(ci =>
+            {
+                var key = ((RedisKey)ci[0]).ToString();
+                return values.TryGetValue(key, out var v) ? (RedisValue)v : RedisValue.Null;
+            });
+        db.StringSetAsync(
+                Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(),
+                Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
+            .Returns(true);
+        // Phase-51 FWD-01: KeyExists FALSE → forward branch; slot HASH ops succeed so the source-delete tail
+        // is reached (and faults).
+        db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(false);
+        db.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<CommandFlags>()).Returns(true);
+        var boom = new RedisConnectionException(ConnectionFailureType.UnableToConnect, "stub: Redis delete unreachable");
+        db.When(x => x.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()))
+            .Do(_ => throw boom);
+        db.When(x => x.KeyDeleteAsync(Arg.Any<RedisKey>()))
+            .Do(_ => throw boom);
+        // A19 Pitfall-1 guard: the array DEL overload throws (the production tail calls it).
+        db.When(x => x.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>())).Do(_ => throw boom);
+        // A19: persist ALSO throws here — BOTH the array DEL and KeyPersistAsync exhaust (D-03 fall-through).
+        db.When(x => x.KeyPersistAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())).Do(_ => throw boom);
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
         return mux;
@@ -384,6 +437,8 @@ internal static class DispatchTestKit
         db.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
         db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<CommandFlags>()).Returns(true);
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: array DEL count removed (value ignored by code)
+        db.KeyPersistAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);   // A19: best-effort persist resolves
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
         return mux;
@@ -423,6 +478,8 @@ internal static class DispatchTestKit
         db.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
         db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<CommandFlags>()).Returns(true);
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: array DEL count removed (value ignored by code)
+        db.KeyPersistAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);   // A19: best-effort persist resolves
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
         return mux;
