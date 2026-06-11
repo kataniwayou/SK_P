@@ -4,6 +4,7 @@
 **Amended 2026-06-08 (A15):** the processor→orchestrator result is split into **four typed records** (`StepCompleted`/`StepFailed`/`StepCancelled`/`StepProcessing`), replacing the single `ExecutionResult(Outcome)` — see the **Result contract** section and locked-decision **A15**. Every "send orchestrator result" / `ExecutionResult(<status>, …)` phrasing below is read through that section.
 **Amended 2026-06-09 (A16):** the **at-least-once / no-dedup delivery model is now a named guarantee** — the v4 execution path is at-least-once, carries **no dedup / idempotency key** (the v3.x `H` + dedup gate were removed in Phase 43), and **tolerates duplicate effects downstream by construction** (a redelivered message reproduces its effect; nothing collapses it). This elevates the **Delivery model** line (line 5) and locked decisions **No dedup / idempotency key** (line 105) + **A4** single `_DLQ1` (line 112) to a single test-cited guarantee. It is proven **hermetically** by the Phase-47 traceability ledger `.planning/phases/47-dlq-consolidation-at-least-once-semantics/47-DLQ-AUDIT.md` (every RESIL-02 / RESIL-03 + SC-1/2/3 row → a green test: single-DLQ consolidation + duplicate-delivery no-collapse + data-gone terminal); the **live / real-stack** proof (broker `skp-dlq-1` + `x-message-ttl`) is **Phase 49** (TEST-01..03). **Bundled (Phase-46 deferred note):** `KeeperReinject` carries an additive **`Payload : string`** field — verified live by `KeeperContractTests` and stamped/set by `ProcessorPipeline.BuildReinject` + `RecoveryDeadLetterFacts`; without it a recovered run silently loses its author config. *(Additive amendment; no source change.)*
 **Amended 2026-06-09 (A17):** the v3.x **reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` Keeper recovery path + the `keeper-dlq` / `keeper-fault-recovery` queues are now retired** (RETIRE-03) — the reactive consumers, `KeeperRecoveryHandler`, the orphaned `KeeperMetrics` meter, and the `KeeperQueues.DeadLetter`/`FaultRecovery` consts were deleted in Phase 48 (the v4 5-state `keeper-recovery` consumer is the sole recovery mechanism; `KeeperQueues.Recovery` is the sole surviving Keeper queue; the single consolidated `skp-dlq-1` is the sole terminal dead-letter). RETIRE-01 (`H`/`flag[H]`/CAS dedup) + RETIRE-02 (content-addressing + result manifest + N×M fan-out) are confirmed gone by a remnant sweep. Proven **hermetically** by `.planning/phases/48-v3-x-teardown/48-TEARDOWN-AUDIT.md` (every RETIRE-01/02/03 + SC-1/2/3 row → a green reflection guard / source-scan: no reactive `Fault<T>` consumer survives, no `keeper-dlq` literal under `src/Keeper/`, `KeeperQueues` exposes only `Recovery`, `ExecutionData` is `Guid`-only + no `*Manifest*`), and closed by the SC-4 hermetic gate (suite GREEN ×3 + Release/Debug 0-warning build); the live / real-stack + triple-SHA net-zero proof is **Phase 49** (TEST-01..03). *(Additive amendment; the source teardown is Phase 48, this doc only records it.)*
+**Amended 2026-06-11 (A18 — SUPERSEDE, proposed Phase 50 / post-v4.0.0):** a **second recovery re-architecture supersedes the keeper-owned composite-backup recovery (Model B)** described below. It replaces the composite key `L2[corr:wf:ProcessorId:executionId]` + the 5 states (`UPDATE` and `CLEANUP` drop out) with a **processor-owned `messageId` slot-array** (`L2[messageId][x]=entryId`, retired with `guid.empty` only **after** a confirmed orchestrator send), a **3-state** keeper (`REINJECT`/`INJECT`/`DELETE`, `INJECT` forward-only), a **split infra taxonomy** (`infra_messageId` → drop · `infra_entryId` → `INJECT`), a configurable **DLQ1-vs-sustained-outage** keeper exhaustion policy, and **gate-closed non-destructive consume**. **The Identities & L2 key scheme, the Result contract (A15), the BIT health gate + global pause/resume (A14), and the at-least-once guarantee (A16) below still hold; only §3 Post-Process backup/cleanup mechanics and the §Keeper recovery states are superseded.** Full superseding spec: **"Recovery Re-architecture (A18)"** at the end of this doc. The Model-B sections below are **retained verbatim as the as-shipped v4.0.0 record (phases 43–49) — do not delete them.** This is a **breaking change to the recovery core**; it likely warrants its own milestone.
 
 **Delivery model:** at-least-once; **no dedup / idempotency key** (the v3.x `H` + dedup gate are removed); duplicate effects are tolerated downstream.
 
@@ -116,9 +117,111 @@ All four implement `IStepResult : IExecutionCorrelated`, carry the six ids, and 
 | A3 | Retry loops: N immediate attempts, no backoff, shared `Retry:Limit`. |
 | A15 | Processor→orchestrator result is **four typed records** (`StepCompleted`/`StepFailed`/`StepCancelled`/`StepProcessing : IStepResult : IExecutionCorrelated`), replacing the single `ExecutionResult(Outcome)`. `entryId` seeding is contract-level (`StepCompleted` = real key, the other three `Guid.Empty`); `StepOutcome` is demoted off the wire to internal advancement/consumer vocabulary. Enables no-`if`/`else` typed-consumer routing. See the **Result contract** section. *(Amendment 2026-06-08.)* |
 | A17 | The v3.x **reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` Keeper recovery path + the `keeper-dlq` / `keeper-fault-recovery` queues are retired** in Phase 48 (RETIRE-03): the reactive consumers + `KeeperRecoveryHandler` + the orphaned `KeeperMetrics` meter + the `KeeperQueues.DeadLetter`/`FaultRecovery` consts are deleted — the v4 5-state `keeper-recovery` consumer is the sole recovery mechanism, `KeeperQueues.Recovery` the sole surviving Keeper queue, and `skp-dlq-1` (A4) the sole terminal dead-letter. RETIRE-01/02 confirmed gone by remnant sweep. Proven by `48-TEARDOWN-AUDIT.md` (reflection + `src/Keeper/` source-scan guards) + the SC-4 hermetic close gate; live / triple-SHA proof is Phase 49. *(Additive amendment 2026-06-09; source teardown is Phase 48.)* |
+| A18 | **SUPERSEDE Model B** (proposed Phase 50 / post-v4.0.0): processor-owned `messageId` slot-array recovery (`L2[messageId][x]=entryId`, `guid.empty`-retire only after a confirmed send) replaces the composite backup key + `UPDATE`/`CLEANUP`; keeper shrinks to **3 states** (`REINJECT`/`INJECT`/`DELETE`, `INJECT` forward-only); split infra (`infra_messageId` → drop / `infra_entryId` → `INJECT`); `REINJECT` and source-delete mutually exclusive; configurable **DLQ1-vs-sustained-outage** exhaustion; **gate-closed non-destructive consume**. Identities / A15 / A14 / A16 / A4 unchanged. See **"Recovery Re-architecture (A18)"**. *(Proposed amendment 2026-06-11; breaking — likely its own milestone.)* |
 
 ---
 
 ## Scope note
 
 This **replaces** large parts of the shipped v3.x execution model — effect-first idempotency (`H`/content-addressing/CAS), the single-`ProcessAsync` seam, the result manifest, and the reactive `Fault<T>` recovery path. It is a **breaking change** and should be planned as the next **major** milestone (v4.0.0).
+
+---
+
+## Recovery Re-architecture (A18 — supersede Model B) — proposed Phase 50 / post-v4.0.0
+
+**Status:** PROPOSED 2026-06-11. **Supersedes** §3 Post-Process backup/cleanup mechanics and the §Keeper recovery states above. Everything else above (Identities & L2 data key, Result contract A15, BIT health gate + global pause/resume A14, at-least-once A16, single `_DLQ1` A4) **still holds**. Likely its own milestone.
+
+**What changes vs Model B:** drop the keeper-owned composite backup key `L2[corr:wf:ProcessorId:executionId]` and the `UPDATE`/`CLEANUP` states. Recovery becomes **processor-owned** via a per-message slot-array index, and the keeper shrinks to **3 states**.
+
+### New L2 vocabulary
+- `L2[entryId]` — per-item data (GUID key). *(unchanged)*
+- `L2[messageId]` — a per-message **slot array** of allocated output `entryId`s; doubles as the **idempotency marker** and the **allocation table**. Slots are retired to `guid.empty` only **after** their result is safely delivered. `TTL(random)`.
+- **infra failure** = an L2 op exhausted after its retry loop. Split by site: `infra_messageId` (slot/allocation write) vs `infra_entryId` (data write/read).
+
+### Global rules *(unchanged from above)*
+- `_error` routing disabled; `UseMessageRetry = none`.
+- **send op:** try/catch retry loop; exhausted → **throw** (broker redelivery).
+- **L2 op:** try/catch retry loop; exhausted → routed per-site (below).
+
+### Processor — FORWARD pass (`NOT exist L2[messageId]`)
+```
+1) processor consumes EntryStepDispatch from orchestrator.   // trigger, outside the branch
+
+if NOT exist L2[messageId]:
+    (existence-check L2 fail → exhausted → keeper REINJECT; end)
+
+  PRE
+    read L2[entryId]                 (L2 fail → exhausted → keeper REINJECT; end)
+    validate vs INPUT schema           invalid → send orchestrator(Failed); end
+
+  IN  (author override)
+    list = author.Process(validatedData, payload)   // List<(result, data, executionId)>
+      general exception → send orchestrator(ONE synthetic batch result); end
+
+  POST (forward)
+    for each completed item: validate vs OUTPUT def → completed | failed
+    for each completed item:
+        1) generate entryId
+        2) write L2[messageId][slot]=entryId  TTL(rand)      // ALLOCATION FIRST
+             L2 fail → exhausted → item=failed +error_message="infra_messageId"
+        3) write L2[entryId]=data                            // DATA SECOND
+             L2 fail → exhausted → item=failed +error_message="infra_entryId"
+    dispatch (per item):
+        error_message != infra_*          → send orchestrator(result)
+        error_message == "infra_entryId"  → send keeper INJECT (ids, entryId, data, deleteEntryId=source)
+        error_message == "infra_messageId" → DROP (no send)
+    delete L2[source entryId]                                // happy-path tail
+        delete fail → exhausted → keeper DELETE
+    end
+```
+*Allocation-before-data is deliberate:* a crash after the data write but before the index write would orphan unreferenced data; index-first means the worst case is a **skippable dangling pointer**, never a leak.
+
+### Processor — RECOVERY pass (`EXIST L2[messageId]`)
+```
+else:  // exist
+    (existence-check L2 fail → exhausted → keeper REINJECT; end)
+    read L2[messageId] → entryIds[]   (L2 fail → exhausted → keeper REINJECT; end)
+
+    create temp list; for each entryId in entryIds[]:
+        if exist L2[entryId]:
+            L2 op fail → exhausted → temp item = "failed" +error_message="infra_entryId"
+            exists     → temp item = "completed"
+            not exists → temp item = "failed"
+    for each temp item:
+        "completed"          → send orchestrator("completed")            // send → retry/throw
+                             → write L2[messageId][slot]=guid.empty TTL(rand)   (fail → do nothing)
+        "failed" (not-exist) → drop                                      // no send, no retire
+        "failed" (infra)     → leave slot intact                        // preserved for REINJECT
+
+    if any temp item "failed" +error_message="infra_entryId":
+        send keeper REINJECT             // do NOT delete source — the replay owns the lifecycle
+        end round trip
+    else:
+        delete L2[source entryId]        (delete fail → exhausted → keeper DELETE)
+        end round trip
+```
+*Key invariants:* `guid.empty` retires a slot **only after** its `completed` result is sent (so replays don't re-send completed entries, while infra entries stay re-checkable); **`REINJECT` and the source-delete are mutually exclusive** (a REINJECT replays the whole message, which owns the eventual source delete).
+
+### Keeper — 3 states (forward-only INJECT)
+```
+REINJECT(ids, entryId, payload):                 // simulate orchestrator send; replay whole message
+    read L2[entryId]; if NOT exist → drop
+    re-inject reconstructed EntryStepDispatch → PROCESSOR input (carries original payload)
+
+INJECT(ids, entryId, data, deleteEntryId):        // forward-only; data is in-hand
+    write L2[entryId] = data
+    send → ORCHESTRATOR (StepCompleted)            // per A15
+    delete L2[deleteEntryId]
+
+DELETE(entryId):
+    delete L2[entryId]; if NOT exist → drop
+```
+- BIT health gate + global pause/resume fan-out: **unchanged** (A14 / §BIT health gate).
+- Keeper processes recovery messages **only when the BIT gate is open**; **gate-closed → do not dequeue-and-drop** (pause consumption / requeue without ack — messages accumulate and drain when the gate opens).
+- **Keeper exhaustion policy is configurable:** *DLQ1 mode* → exhausted L2-op/send dead-letters to `skp-dlq-1`; *sustained-outage mode* → hold/requeue and wait for L2 recovery (no dead-letter). Each carries its own residual (DLQ1 may dead-letter recoverable work during an outage; outage mode may spin on a true poison message).
+
+### Invariants
+- **`INJECT` is forward-only** — the one place the data is in-hand; recovery never needs data it doesn't hold.
+- **`REINJECT`** = replay the whole message; safe because the source `entryId` + payload survive (source delete is the happy-path tail, deferred whenever a REINJECT fires).
+- **`guid.empty`** retires a slot only after safe delivery.
+- **Accepted silent losses** (by design, dup-tolerant, narrow windows): `infra_messageId` items (allocation never landed → never recovered); crash-window slots (allocated, data never written → recovery finds not-exist → dropped).

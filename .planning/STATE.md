@@ -31,6 +31,10 @@ Plan: 49-05 of 5 complete (gap-closure). Plans 49-01..49-04 DONE in prior sessio
 Status: Authored-hermetic complete; live close gate is operator-gated (TEST-01/02/03 tick on the operator's GREEN run against the rebuilt v4 stack, 49-HUMAN-UAT.md)
 Last activity: 2026-06-09 -- 49-05 GAP-49-2 close executed (ResumeAll clears pausedTriggerGroups after per-job loop)
 
+### Roadmap Evolution
+- 2026-06-11 — ROADMAP.md reconciled: v4.0.0 milestone + phases 43-49 backfilled into the Milestones list, a v4.0.0 section, the Progress table, and the execution-order line (the table had drifted, stopping at Phase 42 despite 43-49 having shipped). Documentation only — no phase content changed.
+- 2026-06-11 — Phase 50 added (`50-recovery-rearchitecture-slot-array-3-state-keeper`): a recovery re-architecture that **supersedes v4.0.0 Model B** — processor-owned `messageId` slot-array recovery + a 3-state keeper (`REINJECT`/`INJECT`/`DELETE`), split infra taxonomy (`infra_messageId`/`infra_entryId`), configurable DLQ1-vs-outage exhaustion, gate-closed non-destructive consume. Source of truth: design-doc Amendment **A18** (`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`). **Breaking — likely warrants its own milestone (`/gsd-new-milestone`); not yet planned.**
+
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
 ## Deferred Items

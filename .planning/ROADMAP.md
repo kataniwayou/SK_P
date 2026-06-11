@@ -8,6 +8,19 @@
 - ✅ **v3.5.0 Processor Console — Self-Registration, Liveness & Execution Round-Trip** — Phases 25-30 (shipped 2026-06-02)
 - ✅ **v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip** — Phases 31-32.1 (shipped 2026-06-05) — see [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md)
 - ✅ **v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume** — Phases 33-42 (shipped 2026-06-07) — see [milestones/v3.7.0-ROADMAP.md](milestones/v3.7.0-ROADMAP.md)
+- 🚧 **v4.0.0 Processor Pre/In/Post-Process + Keeper Recovery Redesign** — Phases 43-49 (in progress — live close gate operator-gated) — breaking successor to the v3.x execution model; source of truth [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md)
+
+## 🔜 Phase 50 — Recovery Re-architecture (post-v4.0.0 · supersedes Model B)
+
+**Goal:** [To be planned] Replace the v4.0.0 keeper-owned composite-backup recovery (Model B — `UPDATE`/`CLEANUP`, 5 states, at-least-once/no-dedup) with a **processor-owned `messageId` slot-array** model: a per-message `L2[messageId][x]=entryId` allocation index retired with `guid.empty` only **after** a confirmed orchestrator send (so completed entries aren't re-sent on a recovery replay while infra entries stay re-checkable); a **3-state** keeper (`REINJECT` / `INJECT` / `DELETE`, INJECT forward-only); a split infra taxonomy (`infra_messageId` → drop · `infra_entryId` → keeper INJECT); a recovery branch (`if exist L2[messageId]`) that re-sends completed + REINJECTs-without-deleting-source on any unverifiable entry; a configurable **DLQ1-vs-sustained-outage** keeper exhaustion policy; and **gate-closed non-destructive consume** (no dequeue-and-drop). Breaking — supersedes the v4.0.0 recovery core. **Likely warrants its own milestone — run `/gsd-new-milestone` before planning.**
+
+**Depends on:** Phase 49 (v4.0.0 live close gate)
+**Requirements:** TBD
+**Source of truth:** [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) — Amendment **A18** (Recovery Re-architecture section)
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run `/gsd-plan-phase 50` to break down)
 
 ## ✅ v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume (SHIPPED 2026-06-07)
 
@@ -368,7 +381,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 → 31.1 → 32 → 32.1 → 33 → 34 → 35 → 36 → 37 → 38 → 39 → 40 → 41 → 42
+Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 → 31.1 → 32 → 32.1 → 33 → 34 → 35 → 36 → 37 → 38 → 39 → 40 → 41 → 42 → 43 → 44 → 45 → 46 → 47 → 48 → 49 → 50
 
 | Phase | Milestone | Plans Complete | Status   | Completed  |
 | ----- | --------- | -------------- | -------- | ---------- |
@@ -403,6 +416,14 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 40. Keeper Recovery Hardening (gap closure) | v3.7.0 | 3/3 | Complete (live gate Manual-Only) | 2026-06-06 |
 | 41. Orchestrator Pause/Resume Diagnostics (gap closure) | v3.7.0 | 2/2 | Complete    | 2026-06-06 |
 | 42. v3.7.0 Docs & Traceability Reconciliation (gap closure) | v3.7.0 | 3/3 | Complete    | 2026-06-07 |
+| 43. Message Contracts & L2 Key Reshape | v4.0.0 | 5/5 | Complete | 2026-06-08 |
+| 44. Pre/In/Post-Process Pipeline | v4.0.0 | 3/3 | Complete | 2026-06-08 |
+| 45. Keeper BIT Health Gate + Global Pause/Resume | v4.0.0 | 3/3 | Complete | 2026-06-08 |
+| 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | v4.0.0 | 4/4 | Complete | 2026-06-09 |
+| 47. DLQ Consolidation + At-Least-Once Semantics | v4.0.0 | 3/3 | Complete | 2026-06-09 |
+| 48. v3.x Teardown | v4.0.0 | 3/3 | Complete | 2026-06-09 |
+| 49. Live-Proof Close Gate | v4.0.0 | 6/6 | In Progress (live gate operator-gated) | — |
+| 50. Recovery Re-architecture — messageId slot-array + 3-state keeper | (post-v4.0.0) | 0/? | Not planned | — |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 shipped 2026-06-02 (6 phases 25-30, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip + runtime/business metrics) — note: formal archival (ROADMAP/MILESTONES/tag) deferred. v3.6.0 shipped 2026-06-05 (4 phases 31-32.1, Idempotent Execution — exactly-once-effect round-trip via deterministic `H` + effect-first `flag[H]` dedup at both hops; cancelled circuit-breaker built then reverted to plain dead-lettering). Next milestone planning begins with `/gsd-new-milestone`.*
@@ -421,15 +442,15 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 
 ### Phase Table
 
-| Phase | Name | Goal | Requirements | Success Criteria |
-| ----- | ---- | ---- | ------------ | ---------------- |
+| Phase | Name | Plans | Status | Completed |
+| ----- | ---- | ----- | ------ | --------- |
 | 43 | Message Contracts & L2 Key Reshape | 5/5 | Complete    | 2026-06-08 |
 | 44 | Processor Pre/In/Post-Process Pipeline | 3/3 | Complete    | 2026-06-08 |
 | 45 | Keeper BIT Health Gate + Global Pause/Resume | 3/3 | Complete    | 2026-06-08 |
 | 46 | Keeper 5-State Recovery + Orchestrator Per-Item Consume | 4/4 | Complete    | 2026-06-08 |
 | 47 | DLQ Consolidation + At-Least-Once Semantics | 3/3 | Complete    | 2026-06-09 |
 | 48 | v3.x Teardown | 3/3 | Complete    | 2026-06-09 |
-| 49 | Live Proof & Close Gate | 4/4 | Complete    | 2026-06-09 |
+| 49 | Live Proof & Close Gate | 6/6 | In Progress (live gate operator-gated) | — |
 
 ### Phase Details
 
@@ -531,7 +552,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   2. A real-stack E2E proves each recovery path: `REINJECT` data-present (re-injected to `queue:{ProcessorId}`), `REINJECT` data-gone → `_DLQ1`, `INJECT` (reconstructed `Completed` → orchestrator), and `DELETE`.
   3. A real-stack E2E proves the BIT-gate global pause-all/resume-all across a transient L2 outage (outage → pause all → L2 recovers → resume all), with pause/resume idempotent per job.
   4. The close gate runs N consecutive GREEN with triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE==AFTER net-zero — including the composite backup key (proven cleaned by `CLEANUP`/`INJECT`, not lingering on its 2-day TTL), the GUID data keys, and `_DLQ1` — at Release + Debug 0-warning.
-**Plans**: 5 plans (4 + 1 gap-closure)
+**Plans**: 6 plans (4 + 2 gap-closure: 49-05 GAP-49-2, 49-06 GAP-49-3/4/5 — code closed; live N×GREEN close gate operator-gated)
   - [x] 49-01-PLAN.md — SC1 RealStack round-trip E2E (Pre->In->Post; output-to-L2; orchestrator-advance)
   - [x] 49-02-PLAN.md — SC2 RealStack recovery-paths E2E (REINJECT present/gone, INJECT, DELETE via keeper-recovery direct-publish)
   - [x] 49-03-PLAN.md — SC3 RealStack pause-resume-outage E2E (docker stop/start sk-redis; non-parallel collection)
@@ -542,10 +563,10 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 
 | Phase | Plans Complete | Status | Completed |
 | ----- | -------------- | ------ | --------- |
-| 43. Message Contracts & L2 Key Reshape | 0/5 | Planned | - |
+| 43. Message Contracts & L2 Key Reshape | 5/5 | Complete | 2026-06-08 |
 | 44. Processor Pre/In/Post-Process Pipeline | 3/3 | Complete | 2026-06-08 |
 | 45. Keeper BIT Health Gate + Global Pause/Resume | 3/3 | Complete | 2026-06-08 |
-| 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 1/4 | In progress | - |
+| 46. Keeper 5-State Recovery + Orchestrator Per-Item Consume | 4/4 | Complete | 2026-06-09 |
 | 47. DLQ Consolidation + At-Least-Once Semantics | 3/3 | Complete | 47-01 ✓ (RESIL-02, RESIL-03 structural guards); 47-02 ✓ (R3 no-collapse facts + R2 Phase-47 re-tag); 47-03 ✓ (47-DLQ-AUDIT.md ledger + design-doc A16 amendment) |
 | 48. v3.x Teardown | 3/3 | Complete | 2026-06-09 |
-| 49. Live Proof & Close Gate | 2/4 | In progress | - |
+| 49. Live Proof & Close Gate | 6/6 | In Progress (live gate operator-gated) | — |

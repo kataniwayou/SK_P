@@ -1,8 +1,9 @@
 ---
 phase: 49-live-proof-close-gate
 verified: 2026-06-09T14:00:00Z
-status: gaps_found
-score: 5/5 authored must-haves verified; GAP-49-2 PROVEN FIXED by a live run — but the live N×GREEN close gate FAILED, surfacing 3 NEW live-proof gaps (GAP-49-3/4/5)
+status: passed
+resolved: 2026-06-10
+score: 5/5 authored must-haves verified; live N×GREEN close gate PASSED 2026-06-10 (exit 0). The 2026-06-09 gaps below (GAP-49-3/4/5) were code-closed (49-06) and a further GAP-49-6..10 set landed to reach GREEN — see resolution block + 49-HUMAN-UAT.md.
 overrides_applied: 1
 overrides:
   - must_have: "src/Orchestrator/Consumers/ResumeNoBurstTests.cs contains 'ResumeTriggers'"
@@ -43,6 +44,15 @@ human_verification:
   - test: "After GAP-49-3/4/5 are closed: re-run pwsh -File scripts/phase-49-close.ps1 against the rebuilt v4 stack"
     expected: "Exit 0 — both build configs 0-warning, all 3 runs GREEN with identical Passed count, triple-SHA BEFORE==AFTER, skp-dlq-1 depth==0. Then record the values in 49-HUMAN-UAT.md and tick TEST-01/02/03."
     why_human: "Requires the rebuilt v4 container stack. NOTE: an in-session live run on 2026-06-09 PROVED GAP-49-2 fixed (SC1 + SampleRoundTrip pass) but surfaced GAP-49-3/4/5. The gate cannot pass until those are resolved."
+resolution:
+  resolved_at: 2026-06-10
+  result: "PASSED — the live N×GREEN close gate was re-run in-session 2026-06-10 against the rebuilt v4 stack and exited 0: 3×GREEN (515 passed, identical across all 3 runs), triple-SHA (psql / redis --scan / rabbitmq list_queues) BEFORE==AFTER held (redis = empty-keyspace SHA, net-zero), skp-dlq-1 depth==0, both build configs 0-warning. TEST-01/02/03 ticked. Recorded in 49-HUMAN-UAT.md (updated 2026-06-10)."
+  gaps_closed:
+    - "GAP-49-3 (SC2 DLQ parking) — closed in 49-06 (commit 9999d0f): skp-dlq-1 made a passive parking queue via publish-topology BindQueue (no consuming ReceiveEndpoint) so forwarded faults park observably."
+    - "GAP-49-4 (SC3 ES seam) — closed in 49-06 (commits 7464944, 5a23b6a): SC3 OrchestratorSeamQuery aligned to keyword body.text (prefix, not match_phrase)."
+    - "GAP-49-5 (processor_result_sent_total absent) — closed in 49-06 (commit e3bbaae): SendResult increments ProcessorMetrics.ResultSent{ProcessorId,outcome}."
+    - "GAP-49-6..10 — five further gap-closures landed during the 2026-06-10 live run to reach GREEN (see 49-HUMAN-UAT.md GREEN-run record)."
+  note: "This block supersedes the gaps_found status above; the frontmatter gaps: list is retained as the 2026-06-09 historical record of the run that surfaced them."
 ---
 
 # Phase 49: Live Proof & Close Gate — Verification Report (Re-verification)
@@ -50,7 +60,7 @@ human_verification:
 **Phase Goal:** A real-stack E2E proves the full Pre/In/Post round trip plus each recovery path and the BIT-gate global pause-all/resume-all across a transient L2 outage, all sealed behind an N-consecutive-GREEN triple-SHA (psql / redis / rabbitmq) net-zero close gate matching prior-milestone discipline.
 
 **Verified:** 2026-06-09T14:00:00Z
-**Status:** gaps_found (GAP-49-2 proven fixed by a live run; live N×GREEN close gate then FAILED with 3 new gaps)
+**Status:** passed (resolved 2026-06-10) — the 2026-06-09 re-verification found GAP-49-3/4/5; those were code-closed in 49-06 (+ GAP-49-6..10) and the live N×GREEN close gate PASSED 2026-06-10 (exit 0, 3×GREEN/515, triple-SHA net-zero). See the `resolution:` frontmatter block + 49-HUMAN-UAT.md. The narrative below is the 2026-06-09 record.
 **Re-verification:** Yes — after GAP-49-2 gap closure (plan 49-05, commits 081895f / 03e0129 / ddea4df)
 
 ---
