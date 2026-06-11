@@ -8,11 +8,21 @@ using Keeper.Recovery;
 namespace Keeper.Health;
 
 /// <summary>KEEP-01/02 (D-06): proactive BIT loop. Probes L2 each Probe:DelaySeconds tick; edge-triggered —
-/// publishes PauseAll once on healthy→unhealthy and ResumeAll once on unhealthy→healthy, NOT per tick.</summary>
+/// publishes PauseAll once on healthy→unhealthy and ResumeAll once on unhealthy→healthy, NOT per tick.
+/// <para>
+/// KEEP-04 (D-04): on the SAME edges, this loop also drives the keeper-recovery receive endpoint's
+/// <c>Stop</c>/<c>Start</c> through the Plan-02 <see cref="RecoveryEndpointHandle"/> singleton — the unhealthy
+/// edge <c>Stop</c>s consumption (messages accumulate non-destructively on the broker; gate-closed never
+/// dequeue-and-drops) and the healthy edge <c>Start</c>s it (drain). The endpoint Stop/Start is ADDITIVE to the
+/// existing gate.Open/Close + PauseAll/ResumeAll signalling on these edges (gate.Open/Close are still read by
+/// the recovery consumers / tests and are NOT removed). All edge actions live inside the one WR-01 try, so a
+/// Stop/Start throw leaves prevHealthy un-advanced and the next tick re-applies the (idempotent) edge.
+/// </para></summary>
 public sealed class BitHealthLoop(
     L2ProbeRecovery probe,
     IL2HealthGate gate,
     IBus bus,
+    RecoveryEndpointHandle endpointHandle,
     IOptions<ProbeOptions> opts,
     ILogger<BitHealthLoop> logger) : BackgroundService
 {
@@ -38,14 +48,24 @@ public sealed class BitHealthLoop(
                     if (healthy)
                     {
                         gate.Open();
+                        // D-04 / KEEP-04: resume keeper-recovery consumption (drain). Start(ct) returns a
+                        // ReceiveEndpointHandle (NOT a Task) in 8.5.5; await its .Ready so a resume failure also
+                        // lands in the WR-01 catch and leaves prevHealthy un-advanced. Null-guarded for the brief
+                        // startup window before RecoveryEndpointBinder sets the handle (accepted residual T-52-11).
+                        if (endpointHandle.Handle is { } h)
+                            await h.ReceiveEndpoint.Start(stoppingToken).Ready;
                         await bus.Publish(new ResumeAll { CorrelationId = NewId.NextGuid() }, stoppingToken);
-                        logger.LogInformation("L2 healthy — gate OPEN, ResumeAll broadcast");
+                        logger.LogInformation("L2 healthy — gate OPEN, recovery endpoint STARTED, ResumeAll broadcast");
                     }
                     else
                     {
                         gate.Close();
+                        // D-04 / KEEP-04: stop keeper-recovery consumption (basic.cancel) so ops accumulate
+                        // non-destructively on the broker while the gate is closed. Null-guarded (T-52-11).
+                        if (endpointHandle.Handle is { } h)
+                            await h.ReceiveEndpoint.Stop(stoppingToken);
                         await bus.Publish(new PauseAll { CorrelationId = NewId.NextGuid() }, stoppingToken);
-                        logger.LogWarning("L2 unhealthy — gate CLOSED, PauseAll broadcast");
+                        logger.LogWarning("L2 unhealthy — gate CLOSED, recovery endpoint STOPPED, PauseAll broadcast");
                     }
                     prevHealthy = healthy;                              // advance the edge ONLY after the broadcast actually went out
                 }
