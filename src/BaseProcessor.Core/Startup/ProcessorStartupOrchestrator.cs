@@ -5,7 +5,6 @@ using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Processing;
 using MassTransit;
 using Messaging.Contracts;
-using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -34,7 +33,8 @@ namespace BaseProcessor.Core.Startup;
 /// <b>Completion (D-02/D-03 — EXEC-01, the load-bearing order):</b> after identity + all required
 /// non-null definitions resolve, bind the dispatch receive endpoint named <c>{Id:D}</c> on the
 /// running bus via <c>IReceiveEndpointConnector.ConnectReceiveEndpoint</c>
-/// (durable defaults + <c>Immediate(3)</c> retry + <see cref="EntryStepDispatchConsumer"/> attached),
+/// (durable defaults + a bare <see cref="EntryStepDispatchConsumer"/> attached — NO bus retry latch,
+/// A18/Phase-53 D-01: send-exhaustion throws → broker nack-requeue redelivery, no _error),
 /// <c>await handle.Ready</c>, THEN call <see cref="IProcessorContext.MarkHealthy"/> and
 /// <see cref="IStartupGate.MarkReady"/>. Because the heartbeat writes L2 only when <c>IsHealthy</c>,
 /// the <c>"Healthy"</c> key necessarily lands in L2 AFTER the bind — so the orchestrator (which admits
@@ -57,7 +57,6 @@ public sealed class ProcessorStartupOrchestrator(
     IReceiveEndpointConnector endpointConnector,
     MeterProviderHolder meterProviderHolder,
     IOptions<ProcessorLivenessOptions> options,
-    IOptions<RetryOptions> retryOptions,
     TimeProvider clock,
     ILogger<ProcessorStartupOrchestrator> logger) : BackgroundService
 {
@@ -168,17 +167,14 @@ public sealed class ProcessorStartupOrchestrator(
         // the queue is declared + the consumer attached, so the orchestrator (admits only Healthy) never
         // Sends to a non-existent queue.
         var queueName = $"{context.Id!.Value:D}";   // BARE name (queue: scheme is sender-only) -> competing-consumer
-        var retryLimit = retryOptions.Value.Limit;   // D-10: per-process retry budget from the "Retry" section (default Immediate(3))
         var handle = endpointConnector.ConnectReceiveEndpoint(queueName, (ctx, cfg) =>
         {
-            // D-09 reconcile (Phase 44, Pitfall 1): the in-code ProcessorPipeline RetryLoop now owns EVERY
-            // per-op retry (L2 read/write/delete + each send), all bounded by this SAME retryLimit
-            // (Retry:Limit). This UseMessageRetry is the OUTER dead-letter LATCH — it fires ONLY when an
-            // in-code send-exhaustion PROPAGATES out of the pipeline (D-10), NOT a second retry of the L2
-            // ops (those are already surfaced-not-thrown inside RunAsync). Do NOT remove it: it is the
-            // _error dead-letter trigger. The shared Limit keeps the two layers from desyncing.
-            cfg.UseMessageRetry(r => r.Immediate(retryLimit));        // outer dead-letter latch (D-09/D-10); D-10 config-bound Limit
-            cfg.ConfigureConsumer<EntryStepDispatchConsumer>(ctx);    // DI-resolved consumer attached
+            // A18 end-state (Phase-53 D-01): NO bus retry latch on the dispatch endpoint. The in-code
+            // ProcessorPipeline RetryLoop owns EVERY per-op retry (L2 read/write/delete + each send), bounded
+            // by Retry:Limit. A send that exhausts the in-code loop PROPAGATES (throws) out of the pipeline →
+            // with neither retry nor an error filter on this endpoint, the default is RabbitMQ nack-requeue
+            // (broker redelivery) — no _error, no dead-letter. The Model-B outer UseMessageRetry latch is gone.
+            cfg.ConfigureConsumer<EntryStepDispatchConsumer>(ctx);    // DI-resolved consumer attached (bare tail)
         });
         await handle.Ready;                                          // queue declared + consumer attached BEFORE Healthy (D-03)
 

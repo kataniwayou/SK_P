@@ -161,8 +161,7 @@ public sealed class DispatchBindSequenceFacts
 
             var orchestrator = new ProcessorStartupOrchestrator(
                 identityClient, schemaClient, sourceHash, context, gate, connector,
-                IdentityResolutionFacts.StubMeterProviderHolder(), options,
-                Options.Create(new Messaging.Contracts.Configuration.RetryOptions()), clock,
+                IdentityResolutionFacts.StubMeterProviderHolder(), options, clock,
                 NullLogger<ProcessorStartupOrchestrator>.Instance);
 
             await orchestrator.StartAsync(cts.Token);

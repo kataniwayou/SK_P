@@ -52,10 +52,11 @@ namespace BaseProcessor.Core.Processing;
 /// <c>L2[entryId]</c> with bounded retry; exhaust → <c>KeeperDelete</c>. Skipped on a Guid.Empty source step.
 /// </para>
 /// <para>
-/// <b>Resilience</b> (RESIL-01/D-09/D-10): every L2 op and every send is wrapped in
-/// <see cref="RetryLoop"/> using <c>Retry:Limit</c>; a send that exhausts PROPAGATES (→ the bus
-/// <c>UseMessageRetry</c> dead-letter latch → <c>_error</c>; the A18 <c>UseMessageRetry=none</c> end-state is
-/// a Phase-53 teardown item). The in-code retry owns per-op retries; the bus retry is the OUTER latch.
+/// <b>Resilience</b> (RESIL-01/D-09/Phase-53 D-01): every L2 op and every send is wrapped in
+/// <see cref="RetryLoop"/> using <c>Retry:Limit</c>; a send that exhausts PROPAGATES (throws) → with NO bus
+/// retry and NO error pipeline on the dispatch endpoint (the A18 <c>UseMessageRetry=none</c> end-state,
+/// landed in Phase 53) the default is RabbitMQ nack-requeue (broker redelivery) — no dead-letter, no
+/// <c>_error</c>. The in-code RetryLoop owns ALL per-op retries.
 /// </para>
 /// </summary>
 public sealed class ProcessorPipeline(
@@ -308,14 +309,14 @@ public sealed class ProcessorPipeline(
         await DeleteSourceTail();                                  // FWD-03 happy-path tail (inline, no cleanup block)
     }
 
-    // ---- Send owners: every send wrapped in RetryLoop; send-exhaustion PROPAGATES (D-10 → bus _error). ----
+    // ---- Send owners: every send wrapped in RetryLoop; send-exhaustion PROPAGATES (throw → broker redelivery, no _error). ----
 
     private async Task SendResult(IStepResult result, int limit, CancellationToken ct)
     {
         var ep = await sendProvider.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
         var sent = await RetryLoop.ExecuteAsync(
             async () => { await ep.Send((object)result, CancellationToken.None); return true; }, limit, ct);
-        if (!sent.Succeeded) throw sent.Error!;   // D-10: propagate → UseMessageRetry → _error
+        if (!sent.Succeeded) throw sent.Error!;   // propagate → throw → broker redelivery (no _error, Phase-53 D-01)
 
         // METRIC-05 / GAP-49-5 (D-10): count EVERY genuinely-sent step result, tagged ProcessorId PLUS the
         // terminal outcome (completed/failed/cancelled/processing). Placed AFTER the success guard so only a
@@ -341,7 +342,7 @@ public sealed class ProcessorPipeline(
         var ep = await sendProvider.GetSendEndpoint(new Uri($"queue:{KeeperQueues.Recovery}"));   // A2: keeper-recovery
         var sent = await RetryLoop.ExecuteAsync(
             async () => { await ep.Send((object)msg, CancellationToken.None); return true; }, limit, ct);
-        if (!sent.Succeeded) throw sent.Error!;   // D-10: propagate → _error
+        if (!sent.Succeeded) throw sent.Error!;   // propagate → throw → broker redelivery (Phase-53 D-01)
     }
 
     // ---- Builders (inherit-ids positional ctor + init; A1 id-sets) ----

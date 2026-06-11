@@ -19,8 +19,8 @@ namespace BaseProcessor.Core.Processing;
 /// <para>
 /// All business-vs-infra routing lives in <see cref="ProcessorPipeline.RunAsync"/>: business outcomes emit a
 /// <c>Step*</c> result and ack; infra outcomes emit the matching Keeper-state message; only a send-exhaustion
-/// PROPAGATES (→ the runtime <c>UseMessageRetry</c> dead-letter latch → <c>_error</c>, D-10). The consumer
-/// adds nothing beyond the metric and the delegate.
+/// PROPAGATES (throws → RabbitMQ nack-requeue redelivery, no _error, Phase-53 D-01 — the dispatch endpoint
+/// has NO bus retry latch). The consumer adds nothing beyond the metric and the delegate.
 /// </para>
 /// </summary>
 public sealed class EntryStepDispatchConsumer(
