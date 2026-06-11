@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
-status: in_progress
-stopped_at: Defining v5.0.0 requirements (new milestone started 2026-06-11)
-last_updated: "2026-06-11T09:31:06.019Z"
-last_activity: 2026-06-11 -- Milestone v5.0.0 started
+status: planning
+stopped_at: Phase 50 context gathered
+last_updated: "2026-06-11T09:59:06.353Z"
+last_activity: 2026-06-11 — Milestone v5.0.0 roadmap created (5 phases, 50-54; all 21 reqs mapped)
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 100
 ---
 
 # Project State
@@ -1375,9 +1375,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-09T14:57:24.988Z
-Stopped at: Completed 49-06 Tasks 1-3 (GAP-49-3/4/5 code); Task 4 live close gate deferred to operator gate
-Resume file: .planning/phases/49-live-proof-close-gate/49-06-PLAN.md
+Last session: --stopped-at
+Stopped at: Phase 50 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
