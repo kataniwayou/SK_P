@@ -6,9 +6,9 @@ namespace Orchestrator.Consumers;
 /// Endpoint config seam for <see cref="ResumeWorkflowConsumer"/> (PAUSE-04 / D-07). Binds the SAME
 /// dedicated shared fan-out endpoint <c>"orchestrator-pauseresume"</c> as
 /// <see cref="PauseWorkflowConsumerDefinition"/> and sets <c>ConcurrentMessageLimit = 1</c> (serial —
-/// NO lock, NO stripe). It deliberately does NOT register a second <c>UseMessageRetry</c>:
-/// <c>UseMessageRetry</c> is per-endpoint and the Pause definition already owns retry for this shared
-/// endpoint (RESEARCH §5). No <c>IOptions&lt;RetryOptions&gt;</c> needed here.
+/// NO lock, NO stripe). This endpoint registers NO bus retry (Phase-53 D-01): a send that exhausts the
+/// in-code RetryLoop throws → RabbitMQ nack-requeue (broker redelivery), no <c>_error</c>, no
+/// dead-letter. No <c>IOptions&lt;RetryOptions&gt;</c> needed here (parameterless ctor).
 /// </summary>
 public sealed class ResumeWorkflowConsumerDefinition : ConsumerDefinition<ResumeWorkflowConsumer>
 {
@@ -22,6 +22,6 @@ public sealed class ResumeWorkflowConsumerDefinition : ConsumerDefinition<Resume
         IConsumerConfigurator<ResumeWorkflowConsumer> consumerConfigurator,
         IRegistrationContext context)
     {
-        consumerConfigurator.ConcurrentMessageLimit = 1; // D-07 serial; retry owned by Pause def on the shared endpoint
+        consumerConfigurator.ConcurrentMessageLimit = 1; // D-07 serial; no bus retry on this endpoint (Phase-53 D-01)
     }
 }
