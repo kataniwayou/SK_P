@@ -9,17 +9,23 @@
 ### Processor Slot-Array Recovery (SLOT)
 - [x] **SLOT-01
 **: Post-Process generates a GUID `entryId`, then writes the allocation index `L2[messageId][slot]=entryId` (TTL random) **before** writing the data key (allocation-before-data, so a crash never leaves unreferenced data).
-- [ ] **SLOT-02**: Post-Process writes `L2[entryId]=data` after the allocation index write.
+- [x] **SLOT-02
+**: Post-Process writes `L2[entryId]=data` after the allocation index write.
 - [ ] **SLOT-03**: A slot is retired to `guid.empty` **only after** that item's `completed` result is confirmed-sent to the orchestrator (send-before-retire), so a recovery replay never re-sends a completed entry while leaving infra entries re-checkable.
 
 ### Infra Taxonomy (INFRA)
-- [ ] **INFRA-01**: An allocation-index write exhausted after its retry loop sets `error_message="infra_messageId"`; the item is **dropped** (no send anywhere).
-- [ ] **INFRA-02**: A data-key write exhausted after its retry loop sets `error_message="infra_entryId"`; the item is sent to keeper **`INJECT`** carrying `(data, deleteEntryId)`.
+- [x] **INFRA-01
+**: An allocation-index write exhausted after its retry loop sets `error_message="infra_messageId"`; the item is **dropped** (no send anywhere).
+- [x] **INFRA-02
+**: A data-key write exhausted after its retry loop sets `error_message="infra_entryId"`; the item is sent to keeper **`INJECT`** carrying `(data, deleteEntryId)`.
 
 ### Forward Pass (FWD)
-- [ ] **FWD-01**: On `NOT exist L2[messageId]` the processor runs the forward pass (Pre → In → Post); an existence-check / source-read L2 exhaustion routes to keeper **`REINJECT`** and ends the round trip with input intact.
-- [ ] **FWD-02**: Forward dispatch routes per item — non-`infra_*` → orchestrator result; `infra_entryId` → keeper `INJECT`; `infra_messageId` → drop.
-- [ ] **FWD-03**: The forward happy-path tail deletes the source `entryId`; delete exhaustion → keeper **`DELETE`**.
+- [x] **FWD-01
+**: On `NOT exist L2[messageId]` the processor runs the forward pass (Pre → In → Post); an existence-check / source-read L2 exhaustion routes to keeper **`REINJECT`** and ends the round trip with input intact.
+- [x] **FWD-02
+**: Forward dispatch routes per item — non-`infra_*` → orchestrator result; `infra_entryId` → keeper `INJECT`; `infra_messageId` → drop.
+- [x] **FWD-03
+**: The forward happy-path tail deletes the source `entryId`; delete exhaustion → keeper **`DELETE`**.
 
 ### Recovery Pass (RECOV)
 - [ ] **RECOV-01**: On `exist L2[messageId]` the processor runs the recovery pass — reads `entryIds[]` and builds a temp list per slot (`exists`→completed · `not-exist`→failed · L2-fail→failed+`infra_entryId`); a `read L2[messageId]` / existence-check exhaustion routes to keeper `REINJECT`.
