@@ -59,6 +59,7 @@ public sealed class PipelineRecoveryFacts
         Assert.Single(send.SentKeeper.OfType<KeeperReinject>());                       // HGETALL exhaust → one REINJECT
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());                  // input intact — never deleted
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());  // GC-02: index survives
     }
 
     [Fact]
@@ -90,6 +91,7 @@ public sealed class PipelineRecoveryFacts
         Assert.Single(send.SentKeeper.OfType<KeeperReinject>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());  // GC-02: index survives — no array DEL
     }
 
     [Fact]
@@ -130,8 +132,15 @@ public sealed class PipelineRecoveryFacts
 
         await Build(redis, Ctx(), NoopProcessor(), send).RunAsync(d, messageId, ct);
 
-        // no infra entry → the all-clear path deletes the source L2[entryId]; no REINJECT.
-        await db.Received().KeyDeleteAsync(L2ProjectionKeys.ExecutionData(d.EntryId));
+        // A19/GC-01/AC-2: the all-clear path issues ONE atomic two-key DEL containing BOTH the source data key
+        // and the index — and zero scalar deletes (atomicity heart); no REINJECT.
+        await db.Received(1).KeyDeleteAsync(
+            Arg.Is<RedisKey[]>(ks => ks.Length == 2
+                && ks.Contains((RedisKey)L2ProjectionKeys.ExecutionData(d.EntryId))
+                && ks.Contains((RedisKey)L2ProjectionKeys.MessageIndex(messageId))),
+            Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());
         Assert.Empty(send.SentKeeper.OfType<KeeperReinject>());
     }
 

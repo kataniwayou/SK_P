@@ -32,6 +32,7 @@ public sealed class PipelineEndDeleteFacts
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
         var redis = DispatchTestKit.PresentReadWriteDeleteOkL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out var db);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
@@ -39,9 +40,17 @@ public sealed class PipelineEndDeleteFacts
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
-        await db.Received(1).KeyDeleteAsync(L2ProjectionKeys.ExecutionData(entryId));  // deletes the INBOUND key
+        // A19/GC-01: ONE atomic two-key DEL whose operands contain BOTH the source data key and the index …
+        await db.Received(1).KeyDeleteAsync(
+            Arg.Is<RedisKey[]>(ks => ks.Length == 2
+                && ks.Contains((RedisKey)L2ProjectionKeys.ExecutionData(entryId))
+                && ks.Contains((RedisKey)L2ProjectionKeys.MessageIndex(messageId))),
+            Arg.Any<CommandFlags>());
+        // … AND zero scalar deletes (the GC-01 atomicity heart — never two scalar DELs).
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());
         Assert.Empty(send.SentKeeper.OfType<KeeperDelete>());
     }
 
@@ -64,7 +73,7 @@ public sealed class PipelineEndDeleteFacts
         await Build(redis, context, processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
-        await db.Received(1).KeyDeleteAsync(L2ProjectionKeys.ExecutionData(entryId));
+        await db.Received(1).KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
     }
 
     [Fact]
@@ -81,7 +90,7 @@ public sealed class PipelineEndDeleteFacts
         await Build(redis, context, processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
 
-        await db.Received(1).KeyDeleteAsync(L2ProjectionKeys.ExecutionData(entryId));
+        await db.Received(1).KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
     }
 
     [Fact]
@@ -99,22 +108,33 @@ public sealed class PipelineEndDeleteFacts
         Assert.Single(send.SentKeeper.OfType<KeeperReinject>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());                  // NEVER deleted on REINJECT
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());  // GC-02: index survives
     }
 
     [Fact]
     public async Task EndDelete_Skipped_OnSourceStep()
     {
         var ct = TestContext.Current.CancellationToken;
+        var messageId = Guid.NewGuid();
         var redis = DispatchTestKit.PresentReadWriteDeleteOkL2(new Dictionary<string, string>(), out var db);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
         var send = new DispatchTestKit.CapturingSendProvider();
 
+        // D-06: the source step (Guid.Empty entryId) now DELETES the index too — ExecutionData(Guid.Empty) is a
+        // harmless drop-on-absent operand; the test completing without throwing proves the absent-operand no-op.
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
+            DispatchTestKit.Dispatch(entryId: Guid.Empty, correlationId: Guid.NewGuid()), messageId, ct);
 
-        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());                  // NEVER deleted on Guid.Empty
+        // A19/GC-01/AC-3: ONE atomic two-key DEL containing the index + the Guid.Empty source data operand …
+        await db.Received(1).KeyDeleteAsync(
+            Arg.Is<RedisKey[]>(ks => ks.Length == 2
+                && ks.Contains((RedisKey)L2ProjectionKeys.ExecutionData(Guid.Empty))
+                && ks.Contains((RedisKey)L2ProjectionKeys.MessageIndex(messageId))),
+            Arg.Any<CommandFlags>());
+        // … and zero scalar deletes (atomicity heart).
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());
     }
 
     [Fact]
@@ -122,15 +142,39 @@ public sealed class PipelineEndDeleteFacts
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
         var redis = DispatchTestKit.ReadOkDeleteFaultL2(
+            new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out var db);
+        var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
+        var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
+        var send = new DispatchTestKit.CapturingSendProvider();
+
+        await Build(redis, context, processor, send).RunAsync(
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
+
+        // AC-5: the array DEL exhausts → best-effort PERSIST the index (cancel its random TTL) …
+        await db.Received(1).KeyPersistAsync((RedisKey)L2ProjectionKeys.MessageIndex(messageId), Arg.Any<CommandFlags>());
+        // AC-6: … then exactly one escalated KeeperDelete carrying MessageId == messageId.
+        var kd = Assert.Single(send.SentKeeper.OfType<KeeperDelete>());
+        Assert.Equal(messageId, kd.MessageId);
+    }
+
+    [Fact]
+    public async Task EndDelete_PersistExhaust_StillSendsKeeper()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        // D-03 fall-through: BOTH the array DEL and the best-effort persist THROW — the keeper must STILL be sent.
+        var redis = DispatchTestKit.ReadOkDeleteAndPersistFaultL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
         var send = new DispatchTestKit.CapturingSendProvider();
 
         await Build(redis, context, processor, send).RunAsync(
-            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), Guid.NewGuid(), ct);
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
-        Assert.Single(send.SentKeeper.OfType<KeeperDelete>());   // delete-exhaust → exactly one KeeperDelete
+        Assert.Single(send.SentKeeper.OfType<KeeperDelete>());   // persist-exhaust must not swallow the escalation
     }
 }
