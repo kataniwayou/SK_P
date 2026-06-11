@@ -91,7 +91,7 @@
 | KEEP-05 | Phase 52 | Complete |
 | RETIRE-01 | Phase 50 | Complete |
 | RETIRE-02 | Phase 50 | Complete |
-| RETIRE-03 | Phase 53 | Pending |
+| RETIRE-03 | Phase 53 | Complete |
 | TEST-01 | Phase 54 | Pending |
 | TEST-02 | Phase 54 | Pending |
 
