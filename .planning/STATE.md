@@ -4,14 +4,14 @@ milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
 status: planning
 stopped_at: Phase 53 context gathered
-last_updated: "2026-06-11T18:25:29.269Z"
+last_updated: "2026-06-11T19:37:03.376Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 5
   completed_phases: 3
-  total_plans: 8
+  total_plans: 11
   completed_plans: 8
-  percent: 100
+  percent: 73
 ---
 
 # Project State
@@ -1407,4 +1407,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 52 (3-State Keeper) — 3 plans — 2026-06-11T14:58:48.353Z
+**Planned Phase:** 53 (Model-B Teardown) — 3 plans — 2026-06-11T19:37:03.356Z
