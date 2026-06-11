@@ -7,7 +7,8 @@
 ## Requirements
 
 ### Processor Slot-Array Recovery (SLOT)
-- [ ] **SLOT-01**: Post-Process generates a GUID `entryId`, then writes the allocation index `L2[messageId][slot]=entryId` (TTL random) **before** writing the data key (allocation-before-data, so a crash never leaves unreferenced data).
+- [x] **SLOT-01
+**: Post-Process generates a GUID `entryId`, then writes the allocation index `L2[messageId][slot]=entryId` (TTL random) **before** writing the data key (allocation-before-data, so a crash never leaves unreferenced data).
 - [ ] **SLOT-02**: Post-Process writes `L2[entryId]=data` after the allocation index write.
 - [ ] **SLOT-03**: A slot is retired to `guid.empty` **only after** that item's `completed` result is confirmed-sent to the orchestrator (send-before-retire), so a recovery replay never re-sends a completed entry while leaving infra entries re-checkable.
 
