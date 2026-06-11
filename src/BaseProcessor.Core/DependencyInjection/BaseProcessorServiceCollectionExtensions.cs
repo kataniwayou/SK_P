@@ -88,6 +88,9 @@ public static class BaseProcessorServiceCollectionExtensions
         // 3. Liveness/heartbeat knobs (CONFIG-01) — four independent seconds-ints from the "Processor" section.
         services.Configure<ProcessorLivenessOptions>(cfg.GetSection("Processor"));
 
+        // Phase 51 (D-04): the slot-array random-TTL knobs, SAME "Processor" section as the liveness knobs.
+        services.Configure<SlotArrayOptions>(cfg.GetSection("Processor"));
+
         // 3b. D-10: the retry budget, bound per process from the "Retry" section (single source of truth
         //     for the retry Limit consumed by ProcessorStartupOrchestrator's dispatch-endpoint bind, so
         //     Phase 32's final-attempt check cannot desync from UseMessageRetry). Absent section →
