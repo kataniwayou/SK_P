@@ -118,6 +118,7 @@ All four implement `IStepResult : IExecutionCorrelated`, carry the six ids, and 
 | A15 | Processor→orchestrator result is **four typed records** (`StepCompleted`/`StepFailed`/`StepCancelled`/`StepProcessing : IStepResult : IExecutionCorrelated`), replacing the single `ExecutionResult(Outcome)`. `entryId` seeding is contract-level (`StepCompleted` = real key, the other three `Guid.Empty`); `StepOutcome` is demoted off the wire to internal advancement/consumer vocabulary. Enables no-`if`/`else` typed-consumer routing. See the **Result contract** section. *(Amendment 2026-06-08.)* |
 | A17 | The v3.x **reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` Keeper recovery path + the `keeper-dlq` / `keeper-fault-recovery` queues are retired** in Phase 48 (RETIRE-03): the reactive consumers + `KeeperRecoveryHandler` + the orphaned `KeeperMetrics` meter + the `KeeperQueues.DeadLetter`/`FaultRecovery` consts are deleted — the v4 5-state `keeper-recovery` consumer is the sole recovery mechanism, `KeeperQueues.Recovery` the sole surviving Keeper queue, and `skp-dlq-1` (A4) the sole terminal dead-letter. RETIRE-01/02 confirmed gone by remnant sweep. Proven by `48-TEARDOWN-AUDIT.md` (reflection + `src/Keeper/` source-scan guards) + the SC-4 hermetic close gate; live / triple-SHA proof is Phase 49. *(Additive amendment 2026-06-09; source teardown is Phase 48.)* |
 | A18 | **SUPERSEDE Model B** (proposed Phase 50 / post-v4.0.0): processor-owned `messageId` slot-array recovery (`L2[messageId][x]=entryId`, `guid.empty`-retire only after a confirmed send) replaces the composite backup key + `UPDATE`/`CLEANUP`; keeper shrinks to **3 states** (`REINJECT`/`INJECT`/`DELETE`, `INJECT` forward-only); split infra (`infra_messageId` → drop / `infra_entryId` → `INJECT`); `REINJECT` and source-delete mutually exclusive; configurable **DLQ1-vs-sustained-outage** exhaustion; **gate-closed non-destructive consume**. Identities / A15 / A14 / A16 / A4 unchanged. See **"Recovery Re-architecture (A18)"**. *(LOCKED amendment 2026-06-11; v5.0.0 source of truth.)* |
+| A19 | **Active index GC** (Phase 54 / v5.0.0): the processor happy-path tail actively deletes BOTH the source `L2[entryId]` and the origin `L2[messageId]` index in ONE atomic multi-key `DEL` (no longer waiting out the index's random TTL); it runs only on the no-`REINJECT` path (the index is preserved for any replay). A delete exhaustion `PERSIST`es the index (cancels its TTL) and escalates to keeper `DELETE` now carrying `{messageId, entryId}` — the `DELETE` consumer deletes both keys atomically, drop-on-absent. **Amends A18's TTL-only index reclaim** (TTL demoted to a crash-backstop). Worst case = a duplicate message on a source-step crash-before-ack (A16-accepted); sustained-outage → the index parks in `skp-dlq-1` for operator drain. See **"Active Index GC (A19)"**. *(LOCKED amendment 2026-06-12.)* |
 
 ---
 
@@ -225,3 +226,39 @@ DELETE(entryId):
 - **`REINJECT`** = replay the whole message; safe because the source `entryId` + payload survive (source delete is the happy-path tail, deferred whenever a REINJECT fires).
 - **`guid.empty`** retires a slot only after safe delivery.
 - **Accepted silent losses** (by design, dup-tolerant, narrow windows): `infra_messageId` items (allocation never landed → never recovered); crash-window slots (allocated, data never written → recovery finds not-exist → dropped).
+
+---
+
+## Active Index GC (A19 — amend A18's TTL-only index reclaim) — v5.0.0 (Phase 54)
+
+**Status:** LOCKED 2026-06-12 — **amends A18**. A18 reclaimed the `L2[messageId]` allocation index *passively* via its random TTL (no terminal delete). A19 makes the reclaim **active and deterministic**: the processor deletes the index at end-of-message, restoring the v4 CLEANUP-grade net-zero that A18's TTL-only path gave up. **A18 otherwise stands** — only the index-reclaim mechanism changes (TTL demoted to a crash-backstop).
+
+### What changes vs A18
+- The happy-path tail (forward Post tail + recovery all-clear tail) deletes the origin **`L2[messageId]` index** in addition to the source **`L2[entryId]`** — as ONE atomic Redis multi-key `DEL`.
+- `KeeperDelete` carries **`{messageId, entryId}`**; the keeper `DELETE` state deletes **both keys atomically**.
+- On a terminal-delete exhaustion the processor **`PERSIST`es** the index (cancels its random TTL) before escalating, so the keeper's gated `DELETE` has a deterministic target through an outage.
+
+### Processor — modified happy-path tail (both passes)
+```
+// reached only on the no-REINJECT path (mutually exclusive with REINJECT — INVARIANT)
+atomic DEL [ L2[source entryId] , L2[messageId] ]          // ONE multi-key DEL command
+    delete fail → exhausted →
+        PERSIST L2[messageId]                              // cancel the random TTL
+        send keeper DELETE(messageId, entryId)             // keeper owns the durable both-key delete
+end round trip
+```
+- **Source step** (`entryId == guid.empty`): the `DEL` is effectively index-only (`L2[data:guid.empty]` is absent → a harmless no-op operand).
+- The **REINJECT ⊻ delete** mutual exclusion is preserved and EXTENDED: on any `infra_entryId`/REINJECT, **neither** key is deleted — the index must survive for the replay's recovery pass (`EXIST L2[messageId]`).
+- Atomicity is the single Redis `DEL key1 key2` command (single-threaded execution); valid on the single-instance `sk-redis` (a Redis *cluster* would require both keys in one hash slot — N/A here).
+
+### Keeper — modified DELETE state
+```
+DELETE(messageId, entryId):
+    atomic DEL [ L2[entryId] , L2[messageId] ]   // single multi-key DEL; no-op on absent operands (drop-on-absent)
+```
+
+### Invariants
+- **Active reclaim:** the index is deleted on the happy path, not waited out — close-gate net-zero is a **production property**, not a test-teardown artifact or a TTL race.
+- **TTL = crash-backstop only:** the random index TTL now only covers a crash *before* the terminal delete; on every non-crash path the index is actively gone.
+- **Persist-on-escalate trades the TTL safety net:** once escalated the index is reclaimed by the keeper or (sustained-outage past policy) parks in `skp-dlq-1` for operator drain — it no longer silently TTL-expires.
+- **Worst case = duplicate message** (A16-accepted): a crash between the atomic `DEL` and the broker ack. Non-source steps **self-heal** (a re-forward finds the source gone → `REINJECT` → keeper drop, no dup); source / cron-entry steps may re-run `ProcessAsync` → duplicate `StepCompleted` — within at-least-once / no-dedup (A16).

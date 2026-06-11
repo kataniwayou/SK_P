@@ -9,15 +9,15 @@
 - ✅ **v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip** — Phases 31-32.1 (shipped 2026-06-05) — see [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md)
 - ✅ **v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume** — Phases 33-42 (shipped 2026-06-07) — see [milestones/v3.7.0-ROADMAP.md](milestones/v3.7.0-ROADMAP.md)
 - ✅ **v4.0.0 Processor Pre/In/Post-Process + Keeper Recovery Redesign** — Phases 43-49 (shipped 2026-06-11) — see [milestones/v4.0.0-ROADMAP.md](milestones/v4.0.0-ROADMAP.md)
-- 🚧 **v5.0.0 Recovery Re-architecture — messageId slot-array + 3-state keeper** — Phases 50-54 (in progress — started 2026-06-11) — supersedes v4.0.0 Model-B recovery; source of truth [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) A18
+- 🚧 **v5.0.0 Recovery Re-architecture — messageId slot-array + 3-state keeper** — Phases 50-55 (in progress — started 2026-06-11) — supersedes v4.0.0 Model-B recovery; source of truth [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) A18 + A19
 
 ## 🚧 v5.0.0 Recovery Re-architecture — messageId slot-array + 3-state keeper (In Progress — started 2026-06-11)
 
 **Milestone Goal:** Replace v4.0.0's keeper-owned composite-backup recovery (Model B — `UPDATE`/`CLEANUP`, 5 states) with a **processor-owned `messageId` slot-array** recovery model + a **3-state keeper** (`REINJECT`/`INJECT`/`DELETE`). Per-message `L2[messageId][x]=entryId` allocation index (allocation-before-data), retired to `guid.empty` only **after** a confirmed orchestrator send; split infra taxonomy (`infra_messageId`→drop / `infra_entryId`→`INJECT`); a recovery branch (`if exist L2[messageId]`) that re-sends completed + `REINJECT`s-without-deleting-source on any unverifiable entry; configurable **DLQ1-vs-sustained-outage** keeper exhaustion; **gate-closed non-destructive consume**. Retains the v4.0.0 BIT gate + global pause/resume (A14), four typed `Step*` records (A15), at-least-once/no-dedup (A16), single `skp-dlq-1` (A4). Breaking — supersedes the v4.0.0 recovery core.
 
-**Source of truth:** [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) → "Recovery Re-architecture (A18)" (LOCKED 2026-06-11). Requirements: [REQUIREMENTS.md](REQUIREMENTS.md) (21 reqs).
+**Source of truth:** [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) → "Recovery Re-architecture (A18)" (LOCKED 2026-06-11) + "Active Index GC (A19)" (LOCKED 2026-06-12 — active terminal index delete + atomic both-key keeper GC). Requirements: [REQUIREMENTS.md](REQUIREMENTS.md) (24 reqs).
 
-**Build order (locked, build-before-teardown):** 50 (contracts + slot-array key reshape) → 51 (processor forward + recovery pipeline) → 52 (3-state keeper) → 53 (Model-B teardown) → 54 (live proof + close gate).
+**Build order (locked, build-before-teardown):** 50 (contracts + slot-array key reshape) → 51 (processor forward + recovery pipeline) → 52 (3-state keeper) → 53 (Model-B teardown) → 54 (terminal index delete + atomic keeper GC) → 55 (live proof + close gate).
 
 #### Phase 50: Contracts & Slot-Array L2 Key Reshape
 **Goal**: The new recovery vocabulary exists — the `L2[messageId][x]=entryId` slot-array allocation-index key builder is defined, the three surviving Keeper-state contracts (`REINJECT`/`INJECT`/`DELETE`) carry their A18 id sets (`INJECT` carries `data`+`deleteEntryId`, `REINJECT` carries source `entryId`+`Payload`, `DELETE` carries `entryId`), and the Model-B contracts (`UPDATE`/`CLEANUP` + composite backup key + `BackupOptions`) are removed at the contract level — solution buildable.
@@ -74,14 +74,26 @@
 - [x] 53-02-PLAN.md — Orchestrator retry teardown (strip UseMessageRetry + dead IOptions/Ignore<> from all 5 owners) (Wave 1)
 - [x] 53-03-PLAN.md — Processor keep-latch removal + comment reconcile + D-03 ConfigureError→keeper move + SC-3 gate (Wave 1)
 
-#### Phase 54: Live Proof & Close Gate
-**Goal**: A real-stack E2E proves the slot-array forward + recovery passes and each keeper state, sealed behind an N-consecutive-GREEN triple-SHA net-zero close gate.
+#### Phase 54: Terminal Index Delete + Atomic Keeper GC
+**Goal**: The processor actively reclaims the `L2[messageId]` allocation index at end-of-message — the happy-path tail (forward + recovery all-clear) deletes BOTH the source `L2[entryId]` and the `L2[messageId]` index in one atomic multi-key `DEL`, escalating a delete exhaustion to a keeper `DELETE` that now carries `{messageId, entryId}` and deletes both keys atomically (persisting the index's TTL on escalate). Restores the v4 CLEANUP-grade deterministic net-zero that A18's TTL-only index reclaim gave up.
 **Depends on**: Phase 53
+**Requirements**: GC-01, GC-02, GC-03
+**Design**: [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) → "Active Index GC (A19)" (LOCKED 2026-06-12)
+**Success Criteria**:
+  1. The forward + recovery all-clear tails delete the source `entryId` AND the `messageId` index as a single atomic Redis multi-key `DEL`; the index is no longer left to its random TTL on a non-crash path.
+  2. The terminal two-key delete is mutually exclusive with `REINJECT` — on any `infra_entryId`/`REINJECT` neither key is deleted (the index survives for the replay's recovery pass).
+  3. A terminal-delete exhaustion `PERSIST`s the `L2[messageId]` index (cancels its TTL) and escalates to keeper `DELETE` carrying `{messageId, entryId}`; the `DELETE` consumer deletes both keys atomically (drop-on-absent).
+  4. Hermetic facts prove the atomic two-key delete, the `REINJECT`-mutual-exclusion preservation, the persist-on-escalate, and the both-key keeper `DELETE`; solution 0-warning (Release + Debug).
+**Plans**: TBD
+
+#### Phase 55: Live Proof & Close Gate
+**Goal**: A real-stack E2E proves the slot-array forward + recovery passes, each keeper state, and the A19 active two-key index delete, sealed behind an N-consecutive-GREEN triple-SHA net-zero close gate.
+**Depends on**: Phase 54
 **Requirements**: TEST-01, TEST-02
 **Success Criteria**:
   1. RealStack E2E proves the forward pass (dispatch→slot-array write→orchestrator advance) and the recovery pass.
   2. RealStack E2E proves each keeper state: `REINJECT` (source-present re-inject / source-absent drop), `INJECT`, `DELETE`.
-  3. Close gate N×GREEN + triple-SHA (psql/redis/rabbitmq) BEFORE==AFTER net-zero — slot-array index + data keys leak-free — at Release+Debug 0-warning.
+  3. Close gate N×GREEN + triple-SHA (psql/redis/rabbitmq) BEFORE==AFTER net-zero — slot-array index + data keys leak-free, proven by the A19 active delete (not a TTL settle) — at Release+Debug 0-warning.
 **Plans**: TBD
 
 ## ✅ v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume (SHIPPED 2026-06-07)

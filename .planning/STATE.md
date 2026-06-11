@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
 status: ready_to_plan
-stopped_at: Completed 53-03-PLAN.md
-last_updated: "2026-06-11T20:14:45.017Z"
-last_activity: 2026-06-11
+stopped_at: Inserted Phase 54 (terminal-index-delete, A19); live-proof renumbered 54→55
+last_updated: "2026-06-12T00:00:00.000Z"
+last_activity: 2026-06-12
 progress:
-  total_phases: 5
-  completed_phases: 5
+  total_phases: 6
+  completed_phases: 4
   total_plans: 11
   completed_plans: 11
-  percent: 100
+  percent: 67
 ---
 
 # Project State
@@ -21,7 +21,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 53 — model-b-teardown
+**Current focus:** Phase 54 — terminal-index-delete (A19)
 
 ## Current Position
 
@@ -33,6 +33,7 @@ Last activity: 2026-06-11
 
 ### Roadmap Evolution
 
+- 2026-06-12 — **Phase 54 inserted** (`54-terminal-index-delete`): active terminal reclaim of the `L2[messageId]` allocation index — the processor happy-path tail deletes both the source `L2[entryId]` and the `L2[messageId]` index in one atomic multi-key `DEL`; exhaustion `PERSIST`s the index + escalates to a keeper `DELETE` now carrying `{messageId, entryId}` (both keys deleted atomically). Restores v4 CLEANUP-grade deterministic net-zero that A18's TTL-only index reclaim gave up. Design-doc amendment **A19** (LOCKED 2026-06-12). The live-proof + close-gate phase was **renumbered 54→55**. New reqs GC-01/02/03; TEST-01/02 reassigned to Phase 55. Milestone now phases 50-55 (6 phases). Worst case = duplicate message on a source-step crash-before-ack (A16-accepted).
 - 2026-06-11 — ROADMAP.md reconciled: v4.0.0 milestone + phases 43-49 backfilled into the Milestones list, a v4.0.0 section, the Progress table, and the execution-order line (the table had drifted, stopping at Phase 42 despite 43-49 having shipped). Documentation only — no phase content changed.
 - 2026-06-11 — Phase 50 added (`50-recovery-rearchitecture-slot-array-3-state-keeper`): a recovery re-architecture that **supersedes v4.0.0 Model B** — processor-owned `messageId` slot-array recovery + a 3-state keeper (`REINJECT`/`INJECT`/`DELETE`), split infra taxonomy (`infra_messageId`/`infra_entryId`), configurable DLQ1-vs-outage exhaustion, gate-closed non-destructive consume. Source of truth: design-doc Amendment **A18** (`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`). **Breaking — likely warrants its own milestone (`/gsd-new-milestone`); not yet planned.**
 

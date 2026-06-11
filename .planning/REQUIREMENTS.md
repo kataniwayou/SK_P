@@ -56,6 +56,11 @@
 - [x] **RETIRE-03
 **: The 5-state recovery consumer collapses to the 3 surviving states (`REINJECT`/`INJECT`/`DELETE`); no Model-B remnants survive a source/reflection sweep.
 
+### Active Index GC (GC) — A19 (amends A18's TTL-only index reclaim)
+- [ ] **GC-01**: The processor happy-path tail (forward Post tail + recovery all-clear tail) deletes BOTH the source `L2[entryId]` data key AND the origin `L2[messageId]` allocation index in a **single atomic Redis multi-key `DEL`** — actively reclaiming the index rather than waiting out its random TTL (the TTL is demoted to a crash-backstop).
+- [ ] **GC-02**: The terminal two-key delete is **mutually exclusive with `REINJECT`** — it runs only on the no-`infra_entryId`/no-`REINJECT` path; on any `REINJECT` neither key is deleted (the index survives for the replay's `EXIST L2[messageId]` recovery pass).
+- [ ] **GC-03**: A terminal-delete exhaustion **`PERSIST`es** the `L2[messageId]` index (cancels its random TTL) and escalates to keeper **`DELETE`** now carrying `{messageId, entryId}`; the `DELETE` consumer deletes both keys in a single atomic multi-key `DEL` (drop-on-absent on either operand).
+
 ### Live Proof & Close Gate (TEST)
 - [ ] **TEST-01**: A RealStack E2E proves the forward pass + the recovery pass + each keeper state (`REINJECT` present/absent, `INJECT`, `DELETE`) under the new model.
 - [ ] **TEST-02**: The close gate runs N-consecutive-GREEN + triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE==AFTER net-zero — including the slot-array index keys + data keys (no leak), at Release + Debug 0-warning.
@@ -92,7 +97,10 @@
 | RETIRE-01 | Phase 50 | Complete |
 | RETIRE-02 | Phase 50 | Complete |
 | RETIRE-03 | Phase 53 | Complete |
-| TEST-01 | Phase 54 | Pending |
-| TEST-02 | Phase 54 | Pending |
+| GC-01 | Phase 54 | Pending |
+| GC-02 | Phase 54 | Pending |
+| GC-03 | Phase 54 | Pending |
+| TEST-01 | Phase 55 | Pending |
+| TEST-02 | Phase 55 | Pending |
 
-*21 requirements across 7 categories (SLOT 3 · INFRA 2 · FWD 3 · RECOV 3 · KEEP 5 · RETIRE 3 · TEST 2). Phase assignments filled by the roadmap.*
+*24 requirements across 8 categories (SLOT 3 · INFRA 2 · FWD 3 · RECOV 3 · KEEP 5 · RETIRE 3 · GC 3 · TEST 2). Phase assignments filled by the roadmap.*
