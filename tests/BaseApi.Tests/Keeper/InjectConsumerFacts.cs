@@ -48,9 +48,12 @@ public sealed class InjectConsumerFacts
         Assert.Equal(m.CorrelationId, completed.CorrelationId);
         Assert.Equal(m.ExecutionId, completed.ExecutionId);
 
-        // Strict A18 order: write L2[entryId]=Data → (send) → delete L2[deleteEntryId] (Pitfall 5). SE.Redis
-        // 2.13.1 binds the consumer's 2-arg StringSetAsync to the Expiration/ValueCondition overload, so the
-        // InOrder matcher targets that overload (the send between them is captured by CapturingSendProvider).
+        // Strict A18 order: write L2[entryId]=Data → send StepCompleted → delete L2[deleteEntryId] (Pitfall 5).
+        // The send is the most critical safety step — deleting the source before the send lands would silently
+        // lose the result. NSubstitute's Received.InOrder only covers the Redis substitute's calls directly, so
+        // it locks write < delete; the send between them is captured by CapturingSendProvider. SE.Redis 2.13.1
+        // binds the consumer's 2-arg StringSetAsync to the Expiration/ValueCondition overload, so the InOrder
+        // matcher targets that overload.
         Received.InOrder(() =>
         {
             db.StringSetAsync(
@@ -58,6 +61,11 @@ public sealed class InjectConsumerFacts
                 Arg.Any<Expiration>(), Arg.Any<ValueCondition>(), Arg.Any<CommandFlags>());
             db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
         });
+
+        // Belt: lock the middle of the three-way order machine-side. The single send must have been captured
+        // (it occurs before the delete in the consumer body), so a future refactor that drops or reorders the
+        // send after the delete is caught here rather than slipping through the Redis-only InOrder chain above.
+        Assert.Single(send.Sent);
 
         await db.Received(1).StringSetAsync(
             (RedisKey)L2ProjectionKeys.ExecutionData(m.EntryId), (RedisValue)m.Data,
