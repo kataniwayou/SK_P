@@ -1,4 +1,5 @@
 using BaseConsole.Core.Resilience;   // D-05: RetryLoop / RetryOutcome relocated here
+using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
 using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Resilience;   // KeyAbsentException stays processor-side (Pre-read sentinel)
@@ -32,7 +33,8 @@ namespace BaseProcessor.Core.Processing;
 /// </para>
 /// <para>
 /// <b>Post</b> (PIPE-06/07, per item in order): a completed item → <c>KeeperUpdate</c> → write
-/// <c>L2[entryId]</c> with NO TTL (bounded retry; exhaust → <c>KeeperInject</c>, batch NOT aborted) →
+/// <c>L2[entryId]</c> with the bounded <c>ExecutionDataTtl</c> (CONFIG-02/D-17 — so a terminal step's
+/// output key and repeated-fire keys self-expire; bounded retry; exhaust → <c>KeeperInject</c>, batch NOT aborted) →
 /// <c>KeeperCleanup</c> → <c>StepCompleted</c> carrying the framework entryId + author executionId. A
 /// per-item business <c>failed</c> (author <c>Failed</c> OR output-schema failure) → one <c>StepFailed</c>,
 /// batch NOT aborted (A3, N items → N results).
@@ -55,6 +57,7 @@ public sealed class ProcessorPipeline(
     BaseProcessor processor,
     ISendEndpointProvider sendProvider,
     IOptions<RetryOptions> retryOptions,
+    IOptions<ProcessorLivenessOptions> livenessOptions,
     ProcessorMetrics metrics,
     ILogger<ProcessorPipeline> logger)
 {
@@ -62,6 +65,11 @@ public sealed class ProcessorPipeline(
     {
         var db = redis.GetDatabase();
         var limit = retryOptions.Value.Limit;
+        // CONFIG-02 / D-17: bound execution-data TTL applied on every output write so a TERMINAL step's
+        // output key (no successor step to end-delete it) and any key minted by a repeated cron fire are
+        // bounded rather than leaking forever (the close-gate redis --scan net-zero invariant + the
+        // compose Processor__ExecutionDataTtl override depend on this self-expiry).
+        var executionDataTtl = TimeSpan.FromSeconds(livenessOptions.Value.ExecutionDataTtlSeconds);
         var readSucceeded = false;   // gates the finally end-delete (Pitfall 3)
 
         try
@@ -131,7 +139,7 @@ public sealed class ProcessorPipeline(
                     await SendKeeper(BuildUpdate(d, item), limit, ct);  // UPDATE before write (Pitfall 5: UPDATE→write→CLEANUP order)
                     var entryId = NewId.NextGuid();                     // framework mints the data key
                     var write = await RetryLoop.ExecuteAsync(
-                        () => db.StringSetAsync(L2ProjectionKeys.ExecutionData(entryId), item.Data), limit, ct);  // NO expiry — drop TTL
+                        () => db.StringSetAsync(L2ProjectionKeys.ExecutionData(entryId), item.Data, executionDataTtl), limit, ct);  // CONFIG-02/D-17: bounded TTL so terminal/orphaned keys self-expire
                     if (!write.Succeeded)                               // output-write exhausted → failed(infra)
                     {
                         await SendKeeper(BuildInject(d, item), limit, ct);   // KeeperInject (infra route)

@@ -12,7 +12,7 @@ namespace BaseApi.Tests.Processor;
 
 /// <summary>
 /// PIPE-06/07 — the Post stage of <see cref="ProcessorPipeline"/>: per completed item, UPDATE → write
-/// <c>L2[entryId]</c> with NO TTL → CLEANUP on write-success → <see cref="StepCompleted"/> carrying the
+/// <c>L2[entryId]</c> with the bounded <c>ExecutionDataTtl</c> (CONFIG-02/D-17) → CLEANUP on write-success → <see cref="StepCompleted"/> carrying the
 /// framework entryId + author executionId. N completed items → N results. A write-exhaust becomes
 /// failed(infra) → <see cref="KeeperInject"/> (no StepCompleted, no CLEANUP). A per-item business-failed
 /// (author Failed OR output-validation fail) → one <see cref="StepFailed"/> and does NOT abort the batch (A3).
@@ -27,7 +27,7 @@ public sealed class PipelinePostFacts
     private static ProcessorPipeline Build(
         IConnectionMultiplexer redis, IProcessorContext context, BaseProcessorBase processor,
         DispatchTestKit.CapturingSendProvider send) =>
-        new(redis, context, processor, send, DispatchTestKit.Retry(3),
+        new(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
             DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
     [Fact]
@@ -65,9 +65,11 @@ public sealed class PipelinePostFacts
         Assert.True(send.SentKeeper.IndexOf(update) < send.SentKeeper.IndexOf(cleanup));
         Assert.Single(send.Sent.OfType<StepCompleted>());
 
-        // The Post write dropped the TTL: every StringSetAsync call carries a NULL TimeSpan? expiry argument
-        // (no-TTL — design §16/64). Inspect the received calls overload-agnostically (the 2-arg call site
-        // binds the TimeSpan? expiry parameter to its default null).
+        // The Post write applies the bounded ExecutionDataTtl (CONFIG-02/D-17) so a terminal step's output
+        // key self-expires (the close-gate redis net-zero invariant depends on this). Build() configures
+        // Options(300), so every StringSetAsync call must carry a 300s expiry. Inspect the received calls
+        // overload-agnostically (the expiry binds to either a TimeSpan? or an Expiration parameter).
+        var expectedTtl = TimeSpan.FromSeconds(300);
         var setCalls = db.ReceivedCalls()
             .Where(c => c.GetMethodInfo().Name == nameof(IDatabase.StringSetAsync))
             .ToList();
@@ -77,19 +79,18 @@ public sealed class PipelinePostFacts
             var parameters = c.GetMethodInfo().GetParameters();
             var args = c.GetArguments();
 
-            // No-TTL means: any TTL-bearing argument (a TimeSpan? expiry OR an Expiration) is null/None.
-            // The 2-arg call site defaults whichever expiry parameter the bound overload exposes.
+            // TTL applied means: the TTL-bearing argument (a TimeSpan? expiry OR an Expiration) equals 300s.
             var tsIdx = Array.FindIndex(parameters, p => p.ParameterType == typeof(TimeSpan?));
             if (tsIdx >= 0)
-                Assert.Null(args[tsIdx]);   // TimeSpan? expiry defaulted to null
+                Assert.Equal(expectedTtl, (TimeSpan?)args[tsIdx]);   // TimeSpan? expiry = configured TTL
 
             var expIdx = Array.FindIndex(parameters, p => p.ParameterType.Name == "Expiration");
             if (expIdx >= 0)
-                // Expiration default is the "no expiry" None value — its ToString() is "(none)" / default.
-                Assert.Equal(default, (Expiration)args[expIdx]!);
+                // The Expiration overload carries the same relative TTL (implicit TimeSpan→Expiration).
+                Assert.Equal((Expiration)expectedTtl, (Expiration)args[expIdx]!);
 
             Assert.True(tsIdx >= 0 || expIdx >= 0,
-                "StringSetAsync overload exposes no recognizable expiry parameter to assert no-TTL on");
+                "StringSetAsync overload exposes no recognizable expiry parameter to assert the TTL on");
         });
     }
 

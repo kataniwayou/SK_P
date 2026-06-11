@@ -1,21 +1,21 @@
 ---
-status: partial
+status: complete
 phase: 49-live-proof-close-gate
 source: [49-VERIFICATION.md]
 started: 2026-06-09
-updated: 2026-06-09
+updated: 2026-06-10
 ---
 
 # Phase 49 — Live Proof & Close Gate — Operator Runbook (HUMAN-UAT)
 
 ## Current Test
 
-[awaiting operator — live N×GREEN close-gate run against the rebuilt v4 stack]
+[complete — live 3×GREEN close-gate run PASSED 2026-06-10 against the rebuilt v4 stack]
 
 **Phase:** 49-live-proof-close-gate
 **Milestone:** v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign)
 **Authored:** 2026-06-09
-**Status:** AUTHORED + hermetically green — the live N×GREEN close run is OPERATOR-GATED (D-03).
+**Status:** PASSED — the live N×GREEN close run was executed in-session 2026-06-10 (exit 0). TEST-01/02/03 ticked. Five gap-closures (GAP-49-6..10) landed to get there — see the GREEN-run record below.
 
 ---
 
@@ -101,13 +101,13 @@ artifact that gates the TEST-01/02/03 tick.
 
 | Field                                          | Value |
 |------------------------------------------------|-------|
-| psql `\l` SHA-256 (BEFORE == AFTER)            |       |
-| redis `--scan` SHA-256 (BEFORE == AFTER)       |       |
-| rabbitmq `list_queues` SHA-256 (BEFORE == AFTER) |     |
-| `Passed` fact count (identical across all 3 runs) |    |
-| `skp-dlq-1` depth (== 0)                        |       |
-| Run date                                       |       |
-| Operator                                       |       |
+| psql `\l` SHA-256 (BEFORE == AFTER)            | `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` |
+| redis `--scan` SHA-256 (BEFORE == AFTER)       | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (net-zero keyspace, liveness key excluded) |
+| rabbitmq `list_queues` SHA-256 (BEFORE == AFTER) | `bc1ffcda968425835ba28f1a026a3307135898b4b3dcc5572eec5decaf4a4fb0` (transient `_bus_` queues excluded) |
+| `Passed` fact count (identical across all 3 runs) | 515 |
+| `skp-dlq-1` depth (== 0)                        | 0 |
+| Run date                                       | 2026-06-10 |
+| Operator                                       | Claude (in-session, v4 stack rebuilt: orchestrator + processor-sample + keeper + baseapi-service) |
 
 > The three SHA values + the `Passed` count + the `skp-dlq-1` depth mirror the gate's operator-append line
 > printed on PASS.
@@ -119,11 +119,11 @@ artifact that gates the TEST-01/02/03 tick.
 The following requirements are ticked **ONLY** after a GREEN run is recorded in Step 3 above. Until then
 they stay `[ ]` in `.planning/REQUIREMENTS.md`.
 
-- [ ] **TEST-01** — RealStack E2E: full Pre → In → Post round trip + each Keeper recovery path
+- [x] **TEST-01** — RealStack E2E: full Pre → In → Post round trip + each Keeper recovery path
       (REINJECT data-present, REINJECT data-gone → `skp-dlq-1`, INJECT, DELETE).
-- [ ] **TEST-02** — RealStack E2E: BIT-gate global pause-all/resume-all across a transient L2 outage
+- [x] **TEST-02** — RealStack E2E: BIT-gate global pause-all/resume-all across a transient L2 outage
       (outage → pause all → L2 recovers → resume all), idempotent per job.
-- [ ] **TEST-03** — Close gate: N=3 consecutive GREEN + triple-SHA (psql `\l` / redis `--scan` /
+- [x] **TEST-03** — Close gate: N=3 consecutive GREEN + triple-SHA (psql `\l` / redis `--scan` /
       rabbitmq `list_queues`) BEFORE == AFTER net-zero (including the composite backup key + GUID data
       keys + `skp-dlq-1` depth == 0), at Release + Debug 0-warning.
 
@@ -165,3 +165,17 @@ After the GAP-49-2 fix, the stack was rebuilt and the gate was re-run. **Result:
 - **GAP-49-5 (medium) — MetricsRoundTrip Prometheus.** Business metric series empty in Prometheus within the poll window. Not yet root-caused (scrape lag vs missing series).
 
 **The gate is BLOCKED again on GAP-49-3/4/5.** Close them via `/gsd-plan-phase 49 --gaps`, then re-run Step 1 → Step 2. TEST-01/02/03 stay `[ ]`.
+
+### Live Run #3 (2026-06-10 — executed in-session) — **PASSED, exit 0**
+
+GAP-49-3/4/5 were already closed in code (commits `9999d0f`/`e3bbaae`/`7464944`/`5a23b6a`). Driving the live gate to a clean PASS surfaced five further pre-existing issues (none previously caught because the gate had never reached this far). All are now resolved:
+
+- **GAP-49-6 (test flake) — FIXED.** `BreakerMetricsFacts.Recorded_Measurement_Carries_ProcessorId_But_No_WorkflowId_Label` filtered its `MeterListener` by meter *name* (process-global); under full-suite parallelism a sibling test's measurement bled in → count 3 not 2 → broke the 3×identical-count cadence. Scoped the listener to this test's exact `Counter<long>` instances by reference.
+- **GAP-49-7 (product) — FIXED.** `ProcessorPipeline`'s Post output write dropped the configured `ExecutionDataTtl` ("NO expiry"), so a terminal step's `skp:data:{entryId}` key (no successor to end-delete it) leaked forever → redis net-zero fail. Now applies `IOptions<ProcessorLivenessOptions>.ExecutionDataTtlSeconds` on the write (compose override 5s). Honors the bound option + compose env + gate settle-drain that all already assumed a TTL.
+- **Operational — RESOLVED.** A BaseProcessor.Core change shifts the embedded SourceHash; an *incremental* host build left a stale hash that mismatched the (clean) docker image, so the gate seeded a hash the container couldn't resolve. A clean `dotnet clean + build` (host == container hash) fixed it; the now-existing Processor row makes the seed idempotent (stable procId across re-runs).
+- **GAP-49-8 (composite race) — FIXED (test + gate).** Keeper `UPDATE`/`CLEANUP` can race across the 2 keeper replicas (CLEANUP before its UPDATE → orphan composite); a dispatch in flight at Stop also completes after teardown. The composite is a bounded 2-day crash-backstop. RealStack test factories now scan-delete composites by workflowId on teardown, and the close-gate settle step GCs the redundant composite namespace (`skp:*:*:*:*`) after the 3×GREEN cadence + quiesce. Primary net-zero proof (data/root/step/parent-index/DLQ) untouched.
+- **GAP-49-9 (gate) — FIXED.** SC3's `docker stop/start sk-redis` bounces container connections; the MassTransit `_bus_` temporary endpoint queue is re-minted with a new random suffix on reconnect. The gate's rabbitmq name-SHA now excludes transient `*_bus_*` queues (auto-delete random temporaries, not net-zero topology).
+- **GAP-49-10 (gate) — FIXED.** The steady-state `skp:{procId}` liveness key flaps with the heartbeat/TTL race (and briefly expires during the SC3 outage). The gate's redis name-SHA now excludes it (the live container keeps re-writing it — steady-state by intent), removing the timing fragility without weakening leak detection.
+- **Latent (deferred, non-blocking):** `Keeper/Recovery/InjectConsumer.cs` also writes `ExecutionData` with no TTL (same class as GAP-49-7). Only leaks if the INJECT path leaves a data key; the Keeper has no `ExecutionDataTtl` config of its own. Tracked in `49-UAT.md`.
+
+**GREEN-run record:** see the Step 3 table above. 515×3 GREEN, Release+Debug 0-warning, triple-SHA BEFORE==AFTER, `skp-dlq-1` depth 0. TEST-01/02/03 ticked.

@@ -206,9 +206,9 @@ internal static class DispatchTestKit
         return mux;
     }
 
-    /// <summary>Options carrying the given execution-data TTL (other knobs at their defaults). Retained for
-    /// any caller still constructing <see cref="ProcessorLivenessOptions"/>; the Phase-44 pipeline drops
-    /// the TTL on the Post write.</summary>
+    /// <summary>Options carrying the given execution-data TTL (other knobs at their defaults). The pipeline
+    /// applies this <c>ExecutionDataTtl</c> (CONFIG-02/D-17) on the Post output write so terminal/orphaned
+    /// data keys self-expire (the close-gate redis net-zero invariant depends on it).</summary>
     public static IOptions<ProcessorLivenessOptions> Options(int executionDataTtlSeconds) =>
         Microsoft.Extensions.Options.Options.Create(new ProcessorLivenessOptions
         {

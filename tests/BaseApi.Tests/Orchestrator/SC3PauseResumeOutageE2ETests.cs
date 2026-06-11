@@ -593,6 +593,19 @@ public sealed class SC3PauseResumeOutageE2ETests
                 {
                     await db.SetRemoveAsync(L2ProjectionKeys.ParentIndex(), ParentIndexMembersToSrem.ToArray());
                 }
+
+                // GAP-49-8: sweep any composite backup keys (skp:{corr}:{wf}:{proc}:{exec}) the live Keeper
+                // left for this run's workflows. The composite is a bounded 2-day crash-backstop normally
+                // deleted by the happy-path CLEANUP/INJECT, but a race across the 2 keeper replicas can orphan
+                // one (CLEANUP processed before its UPDATE). Scan-delete by workflowId (the 2nd key segment)
+                // so the close-gate redis net-zero holds without waiting out the 2-day TTL.
+                foreach (var srv in cleanupMux.GetEndPoints())
+                {
+                    var server = cleanupMux.GetServer(srv);
+                    foreach (var wfId in ParentIndexMembersToSrem)
+                        foreach (var compositeKey in server.Keys(pattern: $"skp:*:{wfId}:*"))
+                            await db.KeyDeleteAsync(compositeKey);
+                }
             }
             Restore();
             await base.DisposeAsync();

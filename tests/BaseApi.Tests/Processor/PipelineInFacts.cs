@@ -24,7 +24,7 @@ public sealed class PipelineInFacts
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out _);
         var context = new FakeProcessorContext { InputDefinition = null, OutputDefinition = null };
         var send = new DispatchTestKit.CapturingSendProvider();
-        var pipeline = new ProcessorPipeline(redis, context, processor, send, DispatchTestKit.Retry(3),
+        var pipeline = new ProcessorPipeline(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
             DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
         return (pipeline, send, entryId);
     }

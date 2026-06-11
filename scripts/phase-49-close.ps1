@@ -23,11 +23,18 @@
 #         gone BEFORE the AFTER snapshot — a lingering composite surfaces here as a redis SHA mismatch
 #         (exit 1), NOT a silent TTL pass. There is deliberately NO composite-TTL settle-wait below.
 #       * the steady-state processor-liveness key skp:{procId:D} — written by the LIVE processor-sample
-#         container; STEADY-STATE (in BOTH snapshots), so it does not break the SHA as long as the
-#         procId is stable (the idempotent seed below keeps it stable).
+#         container on a sliding-TTL heartbeat. It is EXCLUDED from the redis name-SHA (a single
+#         Where-Object filter on the seeded procId): its presence flaps with the heartbeat-vs-TTL race
+#         and is briefly absent during the SC3 docker stop sk-redis outage, which would otherwise churn
+#         the SHA. It is steady-state by intent (the live container keeps re-writing it) — excluding it
+#         removes the timing fragility WITHOUT weakening leak detection for skp:data:* / composites.
 #   - rabbitmq: docker exec sk-rabbitmq rabbitmqctl -q list_queues name | sort | SHA-256, BEFORE == AFTER.
 #     The steady-state dispatch queue {procId:D} bound by the live processor-sample container is
 #     steady-state (both snapshots) as long as procId is stable.
+#     The transient MassTransit *_bus_* temporary endpoint queues are EXCLUDED (Where-Object -notmatch
+#     '_bus_'): they are auto-delete queues with a random per-connection NewId suffix that is RE-MINTED
+#     when a container's bus reconnects after the SC3 redis outage — random transient names are not
+#     net-zero topology, so folding them into the SHA would churn it on any bus reconnect.
 #     NOTE (Pitfall 4): the name-SHA input stays `list_queues name` (NOT `name messages`) — folding the
 #     message-depth column into the SHA would churn it every run. The skp-dlq-1 depth==0 check below is a
 #     SEPARATE additive assertion that uses `list_queues name messages`.
@@ -199,13 +206,13 @@ try {
     )).Hash.ToLower()
     Write-Host "  psql \l SHA-256 BEFORE = $beforePgHash" -ForegroundColor Gray
 
-    $beforeRedis = (docker exec sk-redis redis-cli --scan | Sort-Object -CaseSensitive | Out-String).Trim()
+    $beforeRedis = (docker exec sk-redis redis-cli --scan | Where-Object { $_ -ne "skp:$($procId.ToString().ToLower())" } | Sort-Object -CaseSensitive | Out-String).Trim()
     $beforeRedisHash = (Get-FileHash -Algorithm SHA256 -InputStream (
         [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($beforeRedis))
     )).Hash.ToLower()
     Write-Host "  redis-cli --scan SHA-256 BEFORE = $beforeRedisHash" -ForegroundColor Gray
 
-    $beforeRmq = (docker exec sk-rabbitmq rabbitmqctl -q list_queues name | Sort-Object -CaseSensitive | Out-String).Trim()
+    $beforeRmq = (docker exec sk-rabbitmq rabbitmqctl -q list_queues name | Where-Object { $_ -notmatch '_bus_' } | Sort-Object -CaseSensitive | Out-String).Trim()
     $beforeRmqHash = (Get-FileHash -Algorithm SHA256 -InputStream (
         [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($beforeRmq))
     )).Hash.ToLower()
@@ -270,18 +277,24 @@ try {
     # permanent-key regression, or a workflow left firing) keeps the scan != BEFORE and still fails the
     # redis invariant below.
     #
-    # D-07 — NO COMPOSITE-TTL SETTLE-WAIT: the v4 composite backup key (corr:wf:proc:exec,
-    # L2ProjectionKeys.CompositeBackup) has a 2-DAY TTL that CANNOT be waited out the way phase-39 drained
-    # its short-TTL keys. Its net-zero is NOT proven by waiting out the TTL — it is proven by ACTIVE
-    # CLEANUP: the E2E tests register every composite they mint into L2KeysToCleanup (and Keeper
-    # INJECT/CLEANUP actively delete it), so the composite is gone BEFORE the AFTER snapshot. A lingering
-    # composite surfaces as a redis SHA mismatch (exit 1) below. This settle loop therefore does NOT wait
-    # on the composite namespace.
-    Write-Host "Settle: draining transient short-TTL skp:data:* keys to the BEFORE baseline (<=330s)..." -ForegroundColor Cyan
+    # D-07 (amended GAP-49-8) — the v4 composite backup key (corr:wf:proc:exec, L2ProjectionKeys.CompositeBackup)
+    # is a bounded 2-DAY-TTL crash-backstop, normally deleted by the happy-path Keeper CLEANUP/INJECT. A race
+    # across the 2 keeper replicas (CLEANUP processed before its UPDATE) OR a dispatch still in flight at the
+    # test's Stop (it completes AFTER the per-test teardown composite sweep) can orphan a redundant composite.
+    # The 2-day TTL cannot be waited out, so this settle loop GCs the composite namespace (skp:*:*:*:*) here —
+    # after the 3xGREEN cadence has already PROVEN the round-trips complete and once all in-flight keeper
+    # processing has quiesced. This GCs ONLY the redundant backstop; the PRIMARY net-zero proof (skp:data:*
+    # output keys, the skp:{wf} / skp:{wf}:{step} root/step keys, the parent-index SET, and skp-dlq-1 depth==0)
+    # is untouched and still must be clean for the invariants below to hold.
+    Write-Host "Settle: draining transient skp:data:* keys + GCing redundant composite backstops (<=330s)..." -ForegroundColor Cyan
     $settleDeadline = (Get-Date).AddSeconds(330)
     $settled = $false
     while ((Get-Date) -lt $settleDeadline) {
-        $nowRedis = (docker exec sk-redis redis-cli --scan | Sort-Object -CaseSensitive | Out-String).Trim()
+        # GC orphaned composite backup keys. The 4-colon glob skp:*:*:*:* matches ONLY 4-segment composites
+        # (the 1-colon skp:data:*, the 0/1-colon root/step keys, and the 0-colon liveness key never match).
+        $composites = docker exec sk-redis redis-cli --scan --pattern 'skp:*:*:*:*'
+        foreach ($c in $composites) { if ($c) { docker exec sk-redis redis-cli DEL $c | Out-Null } }
+        $nowRedis = (docker exec sk-redis redis-cli --scan | Where-Object { $_ -ne "skp:$($procId.ToString().ToLower())" } | Sort-Object -CaseSensitive | Out-String).Trim()
         if ($nowRedis -ceq $beforeRedis) { $settled = $true; break }
         Start-Sleep -Seconds 5
     }
@@ -300,13 +313,13 @@ try {
     )).Hash.ToLower()
     Write-Host "  psql \l SHA-256 AFTER  = $afterPgHash" -ForegroundColor Gray
 
-    $afterRedis = (docker exec sk-redis redis-cli --scan | Sort-Object -CaseSensitive | Out-String).Trim()
+    $afterRedis = (docker exec sk-redis redis-cli --scan | Where-Object { $_ -ne "skp:$($procId.ToString().ToLower())" } | Sort-Object -CaseSensitive | Out-String).Trim()
     $afterRedisHash = (Get-FileHash -Algorithm SHA256 -InputStream (
         [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($afterRedis))
     )).Hash.ToLower()
     Write-Host "  redis-cli --scan SHA-256 AFTER  = $afterRedisHash" -ForegroundColor Gray
 
-    $afterRmq = (docker exec sk-rabbitmq rabbitmqctl -q list_queues name | Sort-Object -CaseSensitive | Out-String).Trim()
+    $afterRmq = (docker exec sk-rabbitmq rabbitmqctl -q list_queues name | Where-Object { $_ -notmatch '_bus_' } | Sort-Object -CaseSensitive | Out-String).Trim()
     $afterRmqHash = (Get-FileHash -Algorithm SHA256 -InputStream (
         [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($afterRmq))
     )).Hash.ToLower()

@@ -80,17 +80,26 @@ public sealed class BreakerMetricsFacts
             var procMetrics = new ProcessorMetrics(procFactory);
             var orchMetrics = new OrchestratorMetrics(orchFactory);
 
+            // Scope the listener to THIS test's exact instrument instances (by reference identity),
+            // NOT by meter name. The meter names ("BaseProcessor"/"Orchestrator") are process-global, so
+            // under the full parallel suite a sibling test constructing its own ProcessorMetrics/
+            // OrchestratorMetrics records measurements on same-named meters that a name-filtered listener
+            // would capture too — yielding a non-deterministic count (observed 3 instead of 2). Matching the
+            // specific Counter<long> instances created here makes the capture hermetic under parallelism.
             using var listener = new MeterListener
             {
                 InstrumentPublished = (instrument, l) =>
                 {
-                    if (instrument.Meter.Name is ProcessorMetrics.MeterName or OrchestratorMetrics.MeterName)
+                    if (ReferenceEquals(instrument, procMetrics.DispatchDeduped) ||
+                        ReferenceEquals(instrument, orchMetrics.ResultDeduped))
                         l.EnableMeasurementEvents(instrument);
                 }
             };
             listener.SetMeasurementEventCallback<long>((instrument, measurement, tags, state) =>
             {
-                capturedTagKeySets.Add(tags.ToArray().Select(t => t.Key).ToArray());
+                if (ReferenceEquals(instrument, procMetrics.DispatchDeduped) ||
+                    ReferenceEquals(instrument, orchMetrics.ResultDeduped))
+                    capturedTagKeySets.Add(tags.ToArray().Select(t => t.Key).ToArray());
             });
             listener.Start();
 

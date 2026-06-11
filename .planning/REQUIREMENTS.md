@@ -71,9 +71,9 @@
 **: Remove the reactive `Fault<EntryStepDispatch>`/`Fault<ExecutionResult>` Keeper recovery path and the `keeper-dlq` queue.
 
 ### Live Proof & Close Gate (TEST)
-- [ ] **TEST-01**: Real-stack E2E proves the full Pre/In/Post round trip plus each recovery path (`REINJECT` data-present, `REINJECT` data-gone → `_DLQ1`, `INJECT`, `DELETE`).
-- [ ] **TEST-02**: Real-stack proof of the BIT-gate global pause-all/resume-all across a transient L2 outage (outage → pause → recover → resume).
-- [ ] **TEST-03**: Close gate — N consecutive GREEN runs + triple-SHA (psql / redis / rabbitmq) net-zero, matching prior milestone close-gate discipline.
+- [x] **TEST-01**: Real-stack E2E proves the full Pre/In/Post round trip plus each recovery path (`REINJECT` data-present, `REINJECT` data-gone → `_DLQ1`, `INJECT`, `DELETE`). _(GREEN live close-gate run 2026-06-10 — SC1/SC2 facts pass live; see 49-HUMAN-UAT.md.)_
+- [x] **TEST-02**: Real-stack proof of the BIT-gate global pause-all/resume-all across a transient L2 outage (outage → pause → recover → resume). _(GREEN live close-gate run 2026-06-10 — SC3 facts pass live.)_
+- [x] **TEST-03**: Close gate — N consecutive GREEN runs + triple-SHA (psql / redis / rabbitmq) net-zero, matching prior milestone close-gate discipline. _(GREEN 2026-06-10 — 515×3, triple-SHA BEFORE==AFTER, skp-dlq-1 depth 0.)_
 
 ## Future Requirements (deferred)
 
@@ -120,8 +120,8 @@
 | RETIRE-01 | Phase 43 (coupled per D-01) | Satisfied |
 | RETIRE-02 | Phase 43 (coupled per D-01) | Satisfied |
 | RETIRE-03 | Phase 48 | Satisfied |
-| TEST-01 | Phase 49 | Pending |
-| TEST-02 | Phase 49 | Pending |
-| TEST-03 | Phase 49 | Pending |
+| TEST-01 | Phase 49 | Satisfied (GREEN live run 2026-06-10) |
+| TEST-02 | Phase 49 | Satisfied (GREEN live run 2026-06-10) |
+| TEST-03 | Phase 49 | Satisfied (GREEN live run 2026-06-10) |
 
 **Coverage:** 31 / 31 requirements mapped (PIPE ×8, MSG ×3, ORCH ×2, KEEP ×9, RESIL ×3, RETIRE ×3, TEST ×3). No orphans; each requirement maps to exactly one phase. RETIRE-01/02 were pulled forward into Phase 43 (coupled to the field/type reshape per D-01/D-02), where they share the phase with MSG-01/02/03 — an intended coupling, not a double-map; Phase 48 now carries RETIRE-03 + a final remnant sweep. 7 phases (43-49).
