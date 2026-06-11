@@ -386,7 +386,7 @@ public sealed class SC2RecoveryPathsE2ETests
                 skipPostgresFixture: true,
                 connectionStringOverride: HostPostgres,
                 skipRedisFixture: true,
-                redisConnectionStringOverride: HostRedisFull)
+                redisConnectionStringOverride: HostRedis)
         {
             try
             {
@@ -395,7 +395,7 @@ public sealed class SC2RecoveryPathsE2ETests
                 Set("RabbitMq__Username", "guest");
                 Set("RabbitMq__Password", "guest");
 
-                Set("ConnectionStrings__Redis", HostRedisFull);
+                Set("ConnectionStrings__Redis", HostRedis);
                 Set("ConnectionStrings__Postgres", HostPostgres);
 
                 Set("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4317");
@@ -407,7 +407,8 @@ public sealed class SC2RecoveryPathsE2ETests
             }
         }
 
-        private const string HostRedisFull = "localhost:6380,abortConnect=false,connectTimeout=5000";
+        // IN-04: Redis connection string is the outer-class HostRedis (same file, private const is
+        // visible to this nested class) — single source of truth, no shadowing HostRedisFull duplicate.
         private const string HostPostgres =
             "Host=localhost;Port=5433;Database=stepsdb;Username=postgres;Password=postgres;Maximum Pool Size=20;Timeout=15";
 
@@ -447,7 +448,7 @@ public sealed class SC2RecoveryPathsE2ETests
         {
             if (L2KeysToCleanup.Count > 0 || ParentIndexMembersToSrem.Count > 0)
             {
-                await using var cleanupMux = await ConnectionMultiplexer.ConnectAsync(HostRedisFull);
+                await using var cleanupMux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
                 var db = cleanupMux.GetDatabase();
                 if (L2KeysToCleanup.Count > 0)
                 {
