@@ -10,6 +10,6 @@ public sealed record KeeperInject(Guid WorkflowId, Guid StepId, Guid ProcessorId
     public Guid CorrelationId { get; init; }
     public Guid ExecutionId   { get; init; }
     public Guid EntryId       { get; init; }   // D-08: allocation to write L2[entryId]=data
-    public string Data        { get; init; } = "";   // D-08: raw-JSON output, in-hand on the envelope (was KeeperUpdate.ValidatedData)
+    public string Data        { get; init; } = "";   // D-08: raw-JSON output, in-hand on the envelope
     public Guid DeleteEntryId { get; init; }   // D-08: source entryId deleted after the orchestrator send (A18 literal `deleteEntryId`)
 }

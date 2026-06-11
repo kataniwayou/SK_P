@@ -8,8 +8,8 @@ using StackExchange.Redis;
 
 namespace Keeper.Recovery;
 
-/// <summary>D-02/D-03: shared base for the five Keeper recovery-state consumers. Owns the two
-/// cross-cutting concerns so each subclass body is just its distinct state op:
+/// <summary>D-02/D-03: shared base for the three Keeper recovery-state consumers (REINJECT/INJECT/DELETE).
+/// Owns the two cross-cutting concerns so each subclass body is just its distinct state op:
 /// <list type="number">
 ///   <item>D-03 gate-wait — awaits <see cref="IL2HealthGate.WaitForOpenAsync"/> ONCE at Consume entry
 ///   (before any L2 op) under a linked CTS bounded by <c>RecoveryOptions.GateWaitSeconds</c>. On bound
@@ -28,14 +28,12 @@ public abstract class RecoveryConsumerBase<TMessage>(
     ISendEndpointProvider sendProvider,
     IL2HealthGate gate,
     IOptions<RetryOptions> retryOptions,
-    IOptions<RecoveryOptions> recoveryOptions,
-    IOptions<BackupOptions> backupOptions) : IConsumer<TMessage>
+    IOptions<RecoveryOptions> recoveryOptions) : IConsumer<TMessage>
     where TMessage : class, IKeeperRecoverable
 {
     protected IDatabase Db => redis.GetDatabase();
     protected ISendEndpointProvider Send => sendProvider;
     protected int RetryLimit => retryOptions.Value.Limit;
-    protected int TtlDays => backupOptions.Value.TtlDays;
 
     public async Task Consume(ConsumeContext<TMessage> context)
     {
@@ -59,7 +57,7 @@ public abstract class RecoveryConsumerBase<TMessage>(
         await HandleAsync(context.Message, context.CancellationToken);   // dispatch to the per-state body
     }
 
-    /// <summary>The per-state body (UPDATE/REINJECT/INJECT/DELETE/CLEANUP). Runs only after the gate is
+    /// <summary>The per-state body (REINJECT/INJECT/DELETE). Runs only after the gate is
     /// open; every L2 op + Send inside it should go through <see cref="Guard"/>/<see cref="Guard{T}"/>.</summary>
     protected abstract Task HandleAsync(TMessage m, CancellationToken ct);
 

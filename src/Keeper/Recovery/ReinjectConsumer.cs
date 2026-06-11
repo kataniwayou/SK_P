@@ -16,9 +16,8 @@ namespace Keeper.Recovery;
 /// (→ skp-dlq-1, D-04) rather than a silent ack. Runs only after the gate opens (base D-03).</summary>
 public sealed class ReinjectConsumer(
     IConnectionMultiplexer redis, ISendEndpointProvider sendProvider, IL2HealthGate gate,
-    IOptions<RetryOptions> retryOptions, IOptions<RecoveryOptions> recoveryOptions,
-    IOptions<BackupOptions> backupOptions)
-    : RecoveryConsumerBase<KeeperReinject>(redis, sendProvider, gate, retryOptions, recoveryOptions, backupOptions)
+    IOptions<RetryOptions> retryOptions, IOptions<RecoveryOptions> recoveryOptions)
+    : RecoveryConsumerBase<KeeperReinject>(redis, sendProvider, gate, retryOptions, recoveryOptions)
 {
     protected override async Task HandleAsync(KeeperReinject m, CancellationToken ct)
     {

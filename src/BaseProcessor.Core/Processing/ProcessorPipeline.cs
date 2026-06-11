@@ -32,12 +32,13 @@ namespace BaseProcessor.Core.Processing;
 /// <c>StepFailed</c>.
 /// </para>
 /// <para>
-/// <b>Post</b> (PIPE-06/07, per item in order): a completed item → <c>KeeperUpdate</c> → write
-/// <c>L2[entryId]</c> with the bounded <c>ExecutionDataTtl</c> (CONFIG-02/D-17 — so a terminal step's
-/// output key and repeated-fire keys self-expire; bounded retry; exhaust → <c>KeeperInject</c>, batch NOT aborted) →
-/// <c>KeeperCleanup</c> → <c>StepCompleted</c> carrying the framework entryId + author executionId. A
-/// per-item business <c>failed</c> (author <c>Failed</c> OR output-schema failure) → one <c>StepFailed</c>,
-/// batch NOT aborted (A3, N items → N results).
+/// <b>Post</b> (PIPE-06/07, per item in order): a completed item → write <c>L2[entryId]</c> with the
+/// bounded <c>ExecutionDataTtl</c> (CONFIG-02/D-17 — so a terminal step's output key and repeated-fire
+/// keys self-expire; bounded retry; exhaust → <c>KeeperInject</c>, batch NOT aborted) → <c>StepCompleted</c>
+/// carrying the framework entryId + author executionId. A per-item business <c>failed</c> (author
+/// <c>Failed</c> OR output-schema failure) → one <c>StepFailed</c>, batch NOT aborted (A3, N items → N
+/// results). Phase-50 (D-01) removed the Model-B UPDATE/CLEANUP keeper sends + their composite backup
+/// key; the real A18 slot-array forward/recovery pass lands in Phase 51.
 /// </para>
 /// <para>
 /// <b>End-delete</b> (PIPE-08): a <c>finally</c> over every read-succeeded path — deletes <c>L2[entryId]</c>
@@ -136,7 +137,8 @@ public sealed class ProcessorPipeline(
 
                 if (outcome == ProcessOutcome.Completed)
                 {
-                    await SendKeeper(BuildUpdate(d, item), limit, ct);  // UPDATE before write (Pitfall 5: UPDATE→write→CLEANUP order)
+                    // Phase-50 (D-01): the Model-B UPDATE-before-write keeper send is removed (the composite
+                    // backup key it wrote is retired); the real A18 slot-array allocation lands in Phase 51.
                     var entryId = NewId.NextGuid();                     // framework mints the data key
                     var write = await RetryLoop.ExecuteAsync(
                         () => db.StringSetAsync(L2ProjectionKeys.ExecutionData(entryId), item.Data, executionDataTtl), limit, ct);  // CONFIG-02/D-17: bounded TTL so terminal/orphaned keys self-expire
@@ -145,7 +147,8 @@ public sealed class ProcessorPipeline(
                         await SendKeeper(BuildInject(d, item), limit, ct);   // KeeperInject (infra route)
                         continue;                                       // next item — batch NOT aborted
                     }
-                    await SendKeeper(BuildCleanup(d, item), limit, ct);      // composite backup now redundant
+                    // Phase-50 (D-01): the Model-B CLEANUP keeper send is removed (the redundant composite
+                    // backup it deleted is retired); the real A18 retire-after-send lands in Phase 51.
                     using (logger.BeginScope(new Dictionary<string, object>
                     {
                         [ExecutionLogScope.ExecutionId] = item.ExecutionId.ToString(),   // author-minted (D-03/Pitfall 4)
@@ -214,7 +217,7 @@ public sealed class ProcessorPipeline(
 
     // ---- Builders (inherit-ids positional ctor + init; A1 id-sets) ----
     // A1: REINJECT/DELETE carry the INBOUND dispatch ExecutionId (d.ExecutionId — the pre-item-split entry,
-    // may legitimately be Guid.Empty); UPDATE/INJECT/CLEANUP carry the AUTHOR-MINTED item ExecutionId.
+    // may legitimately be Guid.Empty); INJECT carries the AUTHOR-MINTED item ExecutionId.
 
     private static StepCompleted   BuildCompleted(EntryStepDispatch d, Guid exec, Guid entryId) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = exec, EntryId = entryId };
@@ -234,12 +237,6 @@ public sealed class ProcessorPipeline(
     private static KeeperDelete    BuildDelete(EntryStepDispatch d) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = d.ExecutionId, EntryId = d.EntryId };   // A1: inbound exec
 
-    private static KeeperUpdate    BuildUpdate(EntryStepDispatch d, ProcessItem item) =>
-        new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = item.ExecutionId, ValidatedData = item.Data };   // A1: item exec
-
     private static KeeperInject    BuildInject(EntryStepDispatch d, ProcessItem item) =>
-        new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = item.ExecutionId };   // A1: item exec
-
-    private static KeeperCleanup   BuildCleanup(EntryStepDispatch d, ProcessItem item) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = item.ExecutionId };   // A1: item exec
 }

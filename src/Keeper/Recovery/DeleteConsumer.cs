@@ -13,9 +13,8 @@ namespace Keeper.Recovery;
 /// exhaustion → skp-dlq-1 (D-04).</summary>
 public sealed class DeleteConsumer(
     IConnectionMultiplexer redis, ISendEndpointProvider sendProvider, IL2HealthGate gate,
-    IOptions<RetryOptions> retryOptions, IOptions<RecoveryOptions> recoveryOptions,
-    IOptions<BackupOptions> backupOptions)
-    : RecoveryConsumerBase<KeeperDelete>(redis, sendProvider, gate, retryOptions, recoveryOptions, backupOptions)
+    IOptions<RetryOptions> retryOptions, IOptions<RecoveryOptions> recoveryOptions)
+    : RecoveryConsumerBase<KeeperDelete>(redis, sendProvider, gate, retryOptions, recoveryOptions)
 {
     protected override async Task HandleAsync(KeeperDelete m, CancellationToken ct)
         => await Guard(() => Db.KeyDeleteAsync(L2ProjectionKeys.ExecutionData(m.EntryId)), ct);

@@ -25,11 +25,7 @@ builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry
 // registered singleton via AddBaseConsole (line above chains the Redis registration) — do NOT add it again.
 builder.Services.Configure<ProbeOptions>(builder.Configuration.GetSection("Probe"));
 
-// D-10 — bind the composite-backup TTL knob from the "Backup" section (mirrors "Probe"/"Retry"). The
-// TTL is applied only at the Keeper UPDATE write (Phase 46), never baked into the key builder.
-builder.Services.Configure<BackupOptions>(builder.Configuration.GetSection("Backup"));
-
-// D-03/D-06 — partition count (8) + gate-wait bound (300s) knobs (mirrors Probe/Backup/Retry). PartitionCount
+// D-03/D-06 — partition count (8) + gate-wait bound (300s) knobs (mirrors Probe/Retry). PartitionCount
 // drives the keeper-recovery UsePartitioner slot count; GateWaitSeconds bounds the once-at-entry gate await.
 builder.Services.Configure<RecoveryOptions>(builder.Configuration.GetSection("Recovery"));
 
@@ -43,16 +39,14 @@ builder.Services.AddHostedService<Keeper.Health.BitHealthLoop>();
 
 builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
 {
-    // KEEP-04..09 (D-02/D-06/D-07-additive) — the five gate-open-only recovery consumers co-located on the
-    // shared queue:keeper-recovery endpoint. UpdateConsumerDefinition is the SINGLE OWNER of the endpoint-level
-    // retry + the five UsePartitioner<T> calls; the other four definitions no-op (Pitfalls 1 & 4). The
+    // KEEP-04..09 (D-02/D-06/D-07-additive) — the three gate-open-only recovery consumers co-located on the
+    // shared queue:keeper-recovery endpoint. ReinjectConsumerDefinition is the SINGLE OWNER of the endpoint-level
+    // retry + the three UsePartitioner<T> calls; the other two definitions no-op (Pitfalls 1 & 4). The
     // recovery consumers ctor-inject IConnectionMultiplexer / ISendEndpointProvider (via the bus),
-    // IL2HealthGate (line above), and IOptions<Retry/Recovery/Backup> (all already bound) — no new AddSingleton.
-    x.AddConsumer<Keeper.Recovery.UpdateConsumer,   Keeper.Recovery.UpdateConsumerDefinition>();
+    // IL2HealthGate (line above), and IOptions<Retry/Recovery> (all already bound) — no new AddSingleton.
     x.AddConsumer<Keeper.Recovery.ReinjectConsumer, Keeper.Recovery.ReinjectConsumerDefinition>();
     x.AddConsumer<Keeper.Recovery.InjectConsumer,   Keeper.Recovery.InjectConsumerDefinition>();
     x.AddConsumer<Keeper.Recovery.DeleteConsumer,   Keeper.Recovery.DeleteConsumerDefinition>();
-    x.AddConsumer<Keeper.Recovery.CleanupConsumer,  Keeper.Recovery.CleanupConsumerDefinition>();
 });
 
 var host = builder.Build();

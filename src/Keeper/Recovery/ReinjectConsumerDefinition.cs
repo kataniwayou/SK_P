@@ -1,17 +1,42 @@
+using System.Security.Cryptography;
+using System.Text;
 using MassTransit;
+using MassTransit.Middleware;   // Partitioner + Murmur3UnsafeHashGenerator (8.5.5 namespace — verified vs the installed assembly, RESEARCH A1/A2)
 using Messaging.Contracts;
+using Messaging.Contracts.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace Keeper.Recovery;
 
-/// <summary>D-02 — co-locates <see cref="ReinjectConsumer"/> on the shared <see cref="KeeperQueues.Recovery"/>
-/// endpoint. Endpoint-level retry + partitioner are owned SOLELY by <see cref="UpdateConsumerDefinition"/> —
-/// this sibling's <c>ConfigureConsumer</c> is an INTENTIONAL no-op (Pitfalls 1 &amp; 4, precedent
-/// <c>FaultEntryStepDispatchConsumerDefinition</c>).</summary>
+/// <summary>
+/// KEEP-09 / D-02 / D-06 — the SINGLE-OWNER endpoint config for the shared <see cref="KeeperQueues.Recovery"/>
+/// ("keeper-recovery") endpoint. Phase-50 (D-01) re-homed this single-ownership off the deleted Model-B
+/// UPDATE-state definition onto <see cref="ReinjectConsumer"/>'s definition. The endpoint-level
+/// <c>UseMessageRetry</c> and the three <c>UsePartitioner&lt;T&gt;</c> calls are endpoint-scoped, so ONLY this
+/// one definition may register them — the other two recovery <c>ConsumerDefinition</c>s
+/// (<see cref="InjectConsumerDefinition"/>, <see cref="DeleteConsumerDefinition"/>) leave
+/// <c>ConfigureConsumer</c> an INTENTIONAL no-op.
+/// <para>
+/// The three <c>UsePartitioner&lt;T&gt;</c> calls share a SINGLE <see cref="Partitioner"/> instance keyed on the
+/// <see cref="IKeeperRecoverable"/> 4-tuple (<c>corr:wf:ProcessorId:executionId</c>, EXCLUDING StepId — D-12),
+/// so REINJECT/INJECT/DELETE for the SAME exec serialize into the same partition slot while different execs
+/// run in parallel. <see cref="Partitioner"/> + <see cref="Murmur3UnsafeHashGenerator"/> live in
+/// <c>MassTransit.Middleware</c> in 8.5.5; the shared-instance
+/// <c>UsePartitioner&lt;T&gt;(IConsumePipeConfigurator, IPartitioner, keyProvider)</c> overload is used.
+/// </para>
+/// NO per-consumer ConfigureError/SetQueueArgument anywhere (Pitfall 3) — give-ups inherit the consolidated
+/// skp-dlq-1 route from BaseConsole.Core's once-per-endpoint error filter.
+/// </summary>
 public sealed class ReinjectConsumerDefinition : ConsumerDefinition<ReinjectConsumer>
 {
-    public ReinjectConsumerDefinition()
+    private readonly IOptions<RetryOptions> _retryOptions;
+    private readonly IOptions<RecoveryOptions> _recoveryOptions;
+
+    public ReinjectConsumerDefinition(IOptions<RetryOptions> retryOptions, IOptions<RecoveryOptions> recoveryOptions)
     {
-        EndpointName = KeeperQueues.Recovery;   // "keeper-recovery" — shared endpoint
+        _retryOptions = retryOptions;
+        _recoveryOptions = recoveryOptions;
+        EndpointName = KeeperQueues.Recovery;   // "keeper-recovery" — shared by all three recovery consumers
     }
 
     protected override void ConfigureConsumer(
@@ -19,6 +44,42 @@ public sealed class ReinjectConsumerDefinition : ConsumerDefinition<ReinjectCons
         IConsumerConfigurator<ReinjectConsumer> consumerConfigurator,
         IRegistrationContext context)
     {
-        // Intentional no-op — endpoint-level retry + partitioner owned solely by UpdateConsumerDefinition.
+        // Endpoint-level bounded immediate retry (single source of truth = "Retry" section). The transient
+        // RecoveryGateTimeoutException re-attempts here; after exhaustion it dead-letters to skp-dlq-1.
+        endpointConfigurator.UseMessageRetry(r => r.Immediate(_retryOptions.Value.Limit));
+
+        // One SHARED partitioner so the same 4-tuple key collides into the same slot across all three types.
+        // 8.5.5's endpoint-level (IConsumePipeConfigurator) shared-IPartitioner overload keys on a Guid
+        // (the string+Encoding overloads bind to the consumer pipe, not the endpoint — verified vs the
+        // installed assembly, RESEARCH A1/A2). So derive a DETERMINISTIC Guid from the canonical 4-tuple
+        // string: identical 4-tuple → identical PartitionKey string → identical Guid → identical slot, so
+        // ordering semantics are exactly the 4-tuple's (StepId still excluded). PartitionGuid wraps
+        // PartitionKey, keeping the string the single source of truth the test pins.
+        // IN-02: the Murmur3 layer is REQUIRED by the API shape, not redundant decoration. PartitionGuid
+        // already gives a uniform SHA256-derived Guid, but the 8.5.5 Partitioner ctor takes an IHashGenerator
+        // and re-hashes the key bytes to pick a slot — so the effective slot is murmur3(guid.bytes) %
+        // PartitionCount. Both hashes are deterministic; do NOT "simplify" by dropping the Murmur3 generator
+        // (the ctor needs one) and do NOT drop the SHA256 Guid (the endpoint overload is Guid-keyed).
+        var partition = new Partitioner(_recoveryOptions.Value.PartitionCount, new Murmur3UnsafeHashGenerator());
+        endpointConfigurator.UsePartitioner<KeeperReinject>(partition, p => PartitionGuid(p.Message));
+        endpointConfigurator.UsePartitioner<KeeperInject>(partition, p => PartitionGuid(p.Message));
+        endpointConfigurator.UsePartitioner<KeeperDelete>(partition, p => PartitionGuid(p.Message));
+    }
+
+    /// <summary>KEEP-09 / D-12 — the per-key partition key is the <see cref="IKeeperRecoverable"/> 4-tuple
+    /// (the composite-backup key shape), deliberately EXCLUDING StepId so all three states for one exec
+    /// serialize together. <c>public static</c> (a pure key helper, no DI/state) so <c>RecoveryPartitionFacts</c>
+    /// can pin the shape without InternalsVisibleTo (which would expose Keeper's top-level Program to the
+    /// test assembly and collide with BaseApi.Service's Program).</summary>
+    public static string PartitionKey(IKeeperRecoverable m) =>
+        $"{m.CorrelationId:D}:{m.WorkflowId:D}:{m.ProcessorId:D}:{m.ExecutionId:D}";
+
+    /// <summary>Deterministic Guid over the canonical <see cref="PartitionKey"/> string for the 8.5.5
+    /// Guid-keyed endpoint partitioner overload. Same 4-tuple → same Guid → same partition slot; StepId
+    /// excluded by construction (it is never part of <see cref="PartitionKey"/>).</summary>
+    public static Guid PartitionGuid(IKeeperRecoverable m)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(PartitionKey(m)));
+        return new Guid(hash.AsSpan(0, 16));   // first 128 bits — stable across processes
     }
 }

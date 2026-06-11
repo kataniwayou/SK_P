@@ -4,7 +4,7 @@ using Messaging.Contracts;
 namespace Keeper.Recovery;
 
 /// <summary>D-02 — co-locates <see cref="InjectConsumer"/> on the shared <see cref="KeeperQueues.Recovery"/>
-/// endpoint. Endpoint-level retry + partitioner are owned SOLELY by <see cref="UpdateConsumerDefinition"/> —
+/// endpoint. Endpoint-level retry + partitioner are owned SOLELY by <see cref="ReinjectConsumerDefinition"/> —
 /// this sibling's <c>ConfigureConsumer</c> is an INTENTIONAL no-op (Pitfalls 1 &amp; 4, precedent
 /// <c>FaultEntryStepDispatchConsumerDefinition</c>).</summary>
 public sealed class InjectConsumerDefinition : ConsumerDefinition<InjectConsumer>
@@ -19,6 +19,6 @@ public sealed class InjectConsumerDefinition : ConsumerDefinition<InjectConsumer
         IConsumerConfigurator<InjectConsumer> consumerConfigurator,
         IRegistrationContext context)
     {
-        // Intentional no-op — endpoint-level retry + partitioner owned solely by UpdateConsumerDefinition.
+        // Intentional no-op — endpoint-level retry + partitioner owned solely by ReinjectConsumerDefinition.
     }
 }
