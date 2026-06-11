@@ -28,7 +28,9 @@
   2. `UPDATE`/`CLEANUP` contracts + the composite backup key `corr:wf:proc:exec` + `BackupOptions` are deleted; a source/reflection scan finds no references.
   3. `INJECT`/`REINJECT`/`DELETE` carry their A18 id sets in `Messaging.Contracts`.
   4. Solution builds 0-warning (Release + Debug); hermetic suite green.
-**Plans**: TBD (run `/gsd-plan-phase 50`)
+**Plans**: 2 plans (2 waves)
+- [ ] 50-01-PLAN.md — Additive contract surface: MessageIndex slot-array key builder + golden pin + KeeperInject A18 id-set (RETIRE-02; no deletions)
+- [ ] 50-02-PLAN.md — Atomic Model-B teardown: delete UPDATE/CLEANUP/BackupOptions/composite key, re-home single-owner endpoint, stub survivors, reconcile test surface + reflection guard (RETIRE-01, RETIRE-02)
 
 #### Phase 51: Processor Forward + Recovery Pipeline
 **Goal**: `ProcessorPipeline` runs the slot-array forward pass (allocation-before-data, split infra, per-item dispatch, source-delete tail) and the `if exist L2[messageId]` recovery pass (temp-list, send-before-retire, `REINJECT`-no-source-delete), replacing the Model-B Post-Process backup/cleanup mechanics.
