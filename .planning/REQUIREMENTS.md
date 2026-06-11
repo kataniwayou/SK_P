@@ -33,7 +33,8 @@
 - [ ] **KEEP-05**: Keeper exhaustion policy is **configurable** — DLQ1 mode (exhausted op/send dead-letters to `skp-dlq-1`) vs sustained-outage mode (hold/requeue and wait for L2 recovery, no dead-letter).
 
 ### Model-B Teardown (RETIRE)
-- [ ] **RETIRE-01**: The composite backup key `L2[corr:wf:ProcessorId:executionId]` + its `BackupOptions` TTL are removed.
+- [x] **RETIRE-01
+**: The composite backup key `L2[corr:wf:ProcessorId:executionId]` + its `BackupOptions` TTL are removed.
 - [x] **RETIRE-02
 **: The `UPDATE` and `CLEANUP` keeper-state contracts + consumers are removed.
 - [ ] **RETIRE-03**: The 5-state recovery consumer collapses to the 3 surviving states (`REINJECT`/`INJECT`/`DELETE`); no Model-B remnants survive a source/reflection sweep.

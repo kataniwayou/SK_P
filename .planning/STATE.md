@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
-status: executing
-stopped_at: Completed 50-01-PLAN.md
-last_updated: "2026-06-11T10:39:53.944Z"
+status: verifying
+stopped_at: Completed 50-02-PLAN.md
+last_updated: "2026-06-11T11:01:28.786Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 5
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 50
+  completed_plans: 2
+  percent: 100
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
 Phase: 50 (contracts-slot-array-l2-key-reshape) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-11
 
 ### Roadmap Evolution
@@ -671,7 +671,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -908,6 +908,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 49 P05 | 35 | 2 tasks | 4 files |
 | Phase 49 P06 | 5min | 3 tasks | 7 files |
 | Phase 50 P01 | 14min | 2 tasks | 3 files |
+| Phase 50 P02 | 75 | 3 tasks | 36 files |
 
 ## Accumulated Context
 
@@ -1276,6 +1277,8 @@ Recent decisions affecting current work:
 - GAP-49-4: SC3 OrchestratorSeamQuery match_phrases body.text (phrase-searchable nested otel field) not plain body; test-only, no src/Orchestrator change
 - Phase 50 Plan 01: L2ProjectionKeys.MessageIndex(Guid) -> skp:msg:{messageId:D} added additively (msg: discriminator mirrors data: precedent; no TTL baked in; golden-pinned)
 - Phase 50 Plan 01: KeeperInject gained A18 INJECT id-set EntryId/Data/DeleteEntryId as init-default props (BuildInject compiles unchanged; CompositeBackup + Model-B deletions deferred to Plan 02)
+- Phase 50: re-homed keeper-recovery single-owner endpoint (retry + 3-type partitioner + byte-pinned PartitionKey/Guid) off the deleted UpdateConsumerDefinition onto ReinjectConsumerDefinition; survivor bodies + pipeline Post stubbed shape-preserving (no throw) for green hermetic — real A18 bodies are Phases 51/52.
+- Phase 50: Model-B retired at the contract level (RETIRE-01/02) — CompositeBackup builder, KeeperUpdate/KeeperCleanup records, BackupOptions deleted; ModelBContractsRetiredFacts reflection guard proves absence (SC-2); full RETIRE-03 source/reflection sweep deferred to Phase 53.
 
 ### Roadmap Milestone Log
 
@@ -1378,8 +1381,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T10:39:53.922Z
-Stopped at: Completed 50-01-PLAN.md
+Last session: 2026-06-11T11:01:19.214Z
+Stopped at: Completed 50-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
