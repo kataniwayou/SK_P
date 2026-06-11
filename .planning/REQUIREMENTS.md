@@ -83,11 +83,11 @@
 | RECOV-01 | Phase 51 | Complete |
 | RECOV-02 | Phase 51 | Complete |
 | RECOV-03 | Phase 51 | Complete |
-| KEEP-01 | Phase 52 | Pending |
-| KEEP-02 | Phase 52 | Pending |
-| KEEP-03 | Phase 52 | Pending |
-| KEEP-04 | Phase 52 | Pending |
-| KEEP-05 | Phase 52 | Pending |
+| KEEP-01 | Phase 52 | Complete |
+| KEEP-02 | Phase 52 | Complete |
+| KEEP-03 | Phase 52 | Complete |
+| KEEP-04 | Phase 52 | Complete |
+| KEEP-05 | Phase 52 | Complete |
 | RETIRE-01 | Phase 50 | Complete |
 | RETIRE-02 | Phase 50 | Complete |
 | RETIRE-03 | Phase 53 | Pending |
