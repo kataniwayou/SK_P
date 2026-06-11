@@ -22,6 +22,7 @@ namespace Messaging.Contracts.Projections;
 ///   <item><description>Step: <c>{Prefix}{workflowId}:{stepId}</c></description></item>
 ///   <item><description>Processor: <c>{Prefix}{processorId}</c></description></item>
 ///   <item><description>ExecutionData: <c>{Prefix}data:{entryId:D}</c> — the sole GUID-keyed data builder (D-08; the legacy 64-hex content-addressed string overload was removed in v4.0.0).</description></item>
+///   <item><description>MessageIndex: <c>{Prefix}msg:{messageId:D}</c> — the processor-owned slot-array allocation-index key (D-04; a Redis HASH of int-slot → entryId, D-05). No TTL baked in.</description></item>
 ///   <item><description>CompositeBackup: <c>{Prefix}{corr:D}:{wf:D}:{proc:D}:{exec:D}</c> — the crash-backstop backup key (D-09); the four-GUID shape IS the namespace (no data:/backup: segment).</description></item>
 /// </list>
 /// </summary>
@@ -40,6 +41,12 @@ public static class L2ProjectionKeys
     /// <summary>D-08: the sole GUID-keyed L2 data builder — <c>skp:data:{entryId:D}</c> (no TTL baked
     /// in; caller concern). The legacy 64-hex content-addressed string overload was removed in v4.0.0.</summary>
     public static string ExecutionData(Guid entryId) => $"{Prefix}data:{entryId:D}";
+
+    /// <summary>D-04: the processor-owned slot-array allocation-index key —
+    /// <c>skp:msg:{messageId:D}</c> (a Redis HASH of int-slot → entryId; D-05). No TTL baked
+    /// in (caller concern, mirrors <see cref="ExecutionData"/>; the random TTL lands in Phase 51).
+    /// <c>messageId</c> is the MassTransit broker MessageId (a Guid).</summary>
+    public static string MessageIndex(Guid messageId) => $"{Prefix}msg:{messageId:D}";
 
     /// <summary>D-09: composite backup key — <c>skp:{corr:D}:{wf:D}:{proc:D}:{exec:D}</c>. The four-GUID
     /// shape IS the namespace (no data:/backup: segment — Anti-Pattern). No TTL baked in (caller concern).</summary>

@@ -60,6 +60,14 @@ public sealed class L2ProjectionKeysTests
     }
 
     [Fact]
+    public void MessageIndex_Produces_Prefix_Msg_Discriminator_Plus_HyphenatedGuid()
+    {
+        Assert.Equal(
+            "skp:msg:55555555-5555-5555-5555-555555555555",
+            L2ProjectionKeys.MessageIndex(Guid.Parse("55555555-5555-5555-5555-555555555555")));
+    }
+
+    [Fact]
     public void ExecutionData_Is_Distinct_From_Root_And_Processor()
     {
         var g = Guid.Parse("66666666-6666-6666-6666-666666666666");
