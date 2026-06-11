@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v4.0.0
-milestone_name: Processor Pre/In/Post-Process + Keeper Recovery Redesign
-status: completed
-stopped_at: Completed 49-06 Tasks 1-3 (GAP-49-3/4/5 code); Task 4 live close gate deferred to operator gate
+milestone: v5.0.0
+milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
+status: in_progress
+stopped_at: Defining v5.0.0 requirements (new milestone started 2026-06-11)
 last_updated: "2026-06-11T09:31:06.019Z"
-last_activity: 2026-06-11
+last_activity: 2026-06-11 -- Milestone v5.0.0 started
 progress:
-  total_phases: 7
-  completed_phases: 7
-  total_plans: 27
-  completed_plans: 27
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,15 +21,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 49 — live-proof-close-gate
+**Current focus:** v5.0.0 — defining requirements (Recovery Re-architecture)
 
 ## Current Position
 
-Milestone: v4.0.0 (Processor Pre/In/Post-Process + Keeper Recovery Redesign) — STARTED 2026-06-08. Breaking successor to the v3.x execution model; source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md`. Phases continue at 43.
-Phase: 49 (live-proof-close-gate) — GAP-49-2 CLOSED (orchestrator fix authored + regression-locked); awaiting operator-gated live N×GREEN close run (D-03)
-Plan: 49-05 of 5 complete (gap-closure). Plans 49-01..49-04 DONE in prior sessions; GAP-49-1 fixed (5666fb7); GAP-49-2 fixed (49-05 / 03e0129) — no open defects remain in scope.
-Status: Authored-hermetic complete; live close gate is operator-gated (TEST-01/02/03 tick on the operator's GREEN run against the rebuilt v4 stack, 49-HUMAN-UAT.md)
-Last activity: 2026-06-11
+Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-11 — Milestone v5.0.0 started (v4.0.0 shipped + archived + tagged)
 
 ### Roadmap Evolution
 
