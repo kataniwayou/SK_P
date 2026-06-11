@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
-status: verifying
+status: ready_to_plan
 stopped_at: Completed 50-02-PLAN.md
 last_updated: "2026-06-11T11:01:28.786Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 5
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 2
   completed_plans: 2
-  percent: 100
+  percent: 40
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 ## Current Position
 
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
-Phase: 50 (contracts-slot-array-l2-key-reshape) — EXECUTING
-Plan: 2 of 2
-Status: Phase complete — ready for verification
+Phase: 51
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-11
 
 ### Roadmap Evolution
@@ -700,7 +700,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 169
+- Total plans completed: 171
 - Average duration: —
 - Total execution time: —
 
@@ -753,6 +753,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 47 | 3 | - | - |
 | 48 | 3 | - | - |
 | 49 | 4 | - | - |
+| 50 | 2 | - | - |
 
 **Recent Trend:**
 
