@@ -31,7 +31,9 @@ public sealed class InjectConsumer(
             ExecutionId = m.ExecutionId,
             EntryId = m.EntryId,        // the REAL data key just written
         };
-        var ep = await Send.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}"));
+        // IN-01: resolve the send endpoint through Guard too, so a transient GetSendEndpoint failure
+        // (e.g. bus not yet fully started) routes through the bounded RetryLoop like every other op.
+        var ep = await Guard(() => Send.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}")), ct);
         await Guard(() => ep.Send(completed, CancellationToken.None), ct);   // IN-01 inner send
 
         // 3) delete L2[deleteEntryId] (source cleanup tail — AFTER the confirmed send)

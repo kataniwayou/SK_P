@@ -46,7 +46,9 @@ public sealed class ReinjectConsumer(
             ExecutionId = m.ExecutionId,
             EntryId = m.EntryId,
         };
-        var ep = await Send.GetSendEndpoint(new Uri($"queue:{m.ProcessorId:D}"));
+        // IN-01: resolve the send endpoint through Guard too, so a transient GetSendEndpoint failure
+        // routes through the bounded RetryLoop like every other op.
+        var ep = await Guard(() => Send.GetSendEndpoint(new Uri($"queue:{m.ProcessorId:D}")), ct);
         // IN-01: the inner broker Send uses CancellationToken.None to match ProcessorPipeline's send
         // convention ("do not abort a broker send once started"). The outer Guard keeps ct so the
         // bounded RetryLoop still observes bus shutdown between attempts.
