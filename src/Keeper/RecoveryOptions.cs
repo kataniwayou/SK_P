@@ -1,22 +1,24 @@
 namespace Keeper;
 
-/// <summary>D-03/D-06: recovery-consumer knobs, bound from the "Recovery" appsettings section
-/// (mirrors <see cref="ProbeOptions"/>). <see cref="PartitionCount"/> is
-/// the MassTransit UsePartitioner slot count (D-06, default 8). <see cref="GateWaitSeconds"/> bounds the
-/// once-at-entry IL2HealthGate await via a linked CTS (D-03, default 300s — well under RabbitMQ's
-/// default 30-min consumer_timeout; on bound exhaustion a transient marker routes through the endpoint
-/// UseMessageRetry).</summary>
+/// <summary>D-01/D-06: recovery-consumer knobs, bound from the "Recovery" appsettings section
+/// (mirrors <see cref="ProbeOptions"/>). <see cref="PartitionCount"/> is the MassTransit UsePartitioner
+/// slot count (D-06, default 8). <see cref="ExhaustionPolicy"/> (D-01) selects the keeper-wide
+/// give-up posture for op/send failures that occur while the gate is OPEN: <c>Dlq1</c> (default, D-02 —
+/// matches the v4 A4 single-DLQ posture) re-throws on exhaustion so the give-up dead-letters to
+/// skp-dlq-1; <c>SustainedOutage</c> holds/requeues with no dead-letter (D-03, accepted poison-op spin).
+/// Phase 52 (D-09) REMOVED the obsolete <c>GateWaitSeconds</c> — gating now happens at the endpoint
+/// (pause/resume), not via a bounded in-Consume await.</summary>
 public sealed class RecoveryOptions
 {
-    public int PartitionCount  { get; set; } = 8;    // D-06 default
+    public int PartitionCount { get; set; } = 8;    // D-06 default
 
-    /// <summary>D-03: bounds the once-at-entry IL2HealthGate await via a linked CTS (default 300s).
-    /// <para>OPERATIONAL COUPLING (WR-02): a parked recovery <c>Consume</c> holds its broker channel for up
-    /// to this many seconds, so <see cref="GateWaitSeconds"/> MUST remain below the deployed RabbitMQ
-    /// <c>consumer_timeout</c> (broker default 30 min). If an operator lowers <c>consumer_timeout</c> below
-    /// this value, a parked recovery Consume is FORCE-CLOSED by the broker and the channel is dropped. The
-    /// two values live in different config systems (this app vs. the broker) and CANNOT be validated
-    /// together at build time — there is deliberately no runtime assertion against the broker; keep them in
-    /// sync operationally.</para></summary>
-    public int GateWaitSeconds { get; set; } = 300;  // D-03 — bounded gate-wait, MUST stay below broker consumer_timeout (WR-02)
+    /// <summary>D-01/D-02: the keeper-wide exhaustion posture, default <see cref="ExhaustionPolicy.Dlq1"/>.</summary>
+    public ExhaustionPolicy ExhaustionPolicy { get; set; } = ExhaustionPolicy.Dlq1;
 }
+
+/// <summary>D-01: keeper-wide give-up policy for gate-open op/send exhaustion.
+/// <list type="bullet">
+///   <item><see cref="Dlq1"/> — re-throw on exhaustion → dead-letter to the consolidated skp-dlq-1 (D-02 default).</item>
+///   <item><see cref="SustainedOutage"/> — hold/requeue, no dead-letter, accepted poison-op spin (D-03).</item>
+/// </list></summary>
+public enum ExhaustionPolicy { Dlq1, SustainedOutage }
