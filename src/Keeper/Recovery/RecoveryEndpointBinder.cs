@@ -26,9 +26,10 @@ namespace Keeper.Recovery;
 ///   <item><see cref="ExhaustionPolicy.Dlq1"/> (default, D-02): <c>UseMessageRetry(r =&gt; r.Immediate(limit))</c>
 ///   — on exhaustion the give-up re-throws and the inherited consolidated error filter (BaseConsole.Core's
 ///   once-per-endpoint <c>ConfigureError</c>) moves it to <c>skp-dlq-1</c>.</item>
-///   <item><see cref="ExhaustionPolicy.SustainedOutage"/> (D-03): an UNBOUNDED interval retry
-///   (<c>r.Interval(int.MaxValue, 1s)</c>) so a thrown delivery is held/redelivered in-process and NEVER
-///   reaches the error transport — no <c>skp-dlq-1</c> dead-letter, the accepted poison-op spin. OQ-2:
+///   <item><see cref="ExhaustionPolicy.SustainedOutage"/> (D-03): an effectively-unbounded interval retry
+///   (large-but-finite count × 1s — NOT <c>int.MaxValue</c>, which OOMs the pre-allocated <c>TimeSpan[]</c>)
+///   so a thrown delivery is held/redelivered in-process and NEVER reaches the error transport — no
+///   <c>skp-dlq-1</c> dead-letter, the accepted poison-op spin. OQ-2:
 ///   the consolidated error MOVE is wired globally per-endpoint by BaseConsole.Core; the only way to
 ///   suppress the dead-letter without a message scheduler is to never let the retry pipeline exhaust, which
 ///   the unbounded interval retry achieves (SustainedOutageFacts proves NO ConsolidatedFault is produced).</item>
@@ -50,6 +51,20 @@ public sealed class RecoveryEndpointBinder(
     RecoveryEndpointHandle holder,
     ILogger<RecoveryEndpointBinder> logger) : BackgroundService
 {
+    /// <summary>SustainedOutage (D-03) hold/requeue interval — the gap between in-process redeliveries of a
+    /// faulting op. 1s bounds broker/CPU pressure during the accepted poison-op spin.</summary>
+    private static readonly TimeSpan SustainedOutageInterval = TimeSpan.FromSeconds(1);
+
+    /// <summary>SustainedOutage (D-03) retry count. NOT <c>int.MaxValue</c> — MassTransit's
+    /// <c>Interval(count, interval)</c> pre-allocates a <c>TimeSpan[count]</c>, so a too-large count throws
+    /// <c>OutOfMemoryException</c> at bus build (verified). This is sized for the "accepted poison-op spin
+    /// while the gate is OPEN" (D-03): a genuine outage is handled by KEEP-04 endpoint PAUSE (Plan 03 stops
+    /// the endpoint so messages accumulate on the broker, NOT in the retry loop), so this only needs to
+    /// outlast transient blips while L2 is healthy. ~1,000,000 × 1s ≈ 11.5 days of in-process redelivery
+    /// (a ~8MB TimeSpan[] — built once at startup), far beyond any realistic gate-open transient, so a
+    /// SustainedOutage op effectively never dead-letters.</summary>
+    private const int SustainedOutageRetryCount = 1_000_000;
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var retryLimit = retry.Value.Limit;
@@ -70,10 +85,11 @@ public sealed class RecoveryEndpointBinder(
             // (D-05): a closed gate simply isn't consuming, so nothing dead-letters in either mode.
             if (policy == ExhaustionPolicy.SustainedOutage)
             {
-                // D-03: hold/requeue, no dead-letter. An unbounded interval retry keeps the thrown delivery
-                // cycling in-process and never propagates a fault to the error transport, so the consolidated
-                // skp-dlq-1 move never fires. The 1s interval bounds the spin's broker/CPU pressure.
-                cfg.UseMessageRetry(r => r.Interval(int.MaxValue, TimeSpan.FromSeconds(1)));
+                // D-03: hold/requeue, no dead-letter. An effectively-unbounded interval retry keeps the thrown
+                // delivery cycling in-process and never propagates a fault to the error transport, so the
+                // consolidated skp-dlq-1 move never fires (OQ-2). The count is large-but-finite (NOT
+                // int.MaxValue — that OOMs the pre-allocated TimeSpan[]); see SustainedOutageRetryCount.
+                cfg.UseMessageRetry(r => r.Interval(SustainedOutageRetryCount, SustainedOutageInterval));
             }
             else
             {
