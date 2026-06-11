@@ -8,10 +8,9 @@ namespace Orchestrator.Consumers;
 /// competing-consumer queue <see cref="OrchestratorQueues.Result"/> (<c>"orchestrator-result"</c>) as the
 /// other three typed result consumers.
 /// <para>
-/// <b>Intentional no-op <c>ConfigureConsumer</c> (Pitfall 4):</b> endpoint-level retry for
-/// <c>orchestrator-result</c> is owned solely by <see cref="StepCompletedConsumerDefinition"/>. Because
-/// <c>UseMessageRetry</c> is PER-ENDPOINT (not per-consumer), only ONE definition on the shared endpoint
-/// may register it; this sibling deliberately registers nothing.
+/// <b>Intentional no-op (Pitfall 4):</b> NO bus retry on <c>orchestrator-result</c> (Phase-53 D-01) —
+/// a send that exhausts the in-code RetryLoop throws → RabbitMQ nack-requeue (broker redelivery),
+/// no <c>_error</c>, no dead-letter. This sibling deliberately registers nothing.
 /// </para>
 /// </summary>
 public sealed class StepFailedConsumerDefinition : ConsumerDefinition<StepFailedConsumer>
@@ -21,5 +20,5 @@ public sealed class StepFailedConsumerDefinition : ConsumerDefinition<StepFailed
         EndpointName = OrchestratorQueues.Result;   // "orchestrator-result" — shared competing-consumer
     }
 
-    // Intentional no-op: endpoint-level retry owned by StepCompletedConsumerDefinition (Pitfall 4).
+    // Intentional no-op: NO bus retry on orchestrator-result (Phase-53 D-01) — send-exhaust throws → broker redelivery.
 }
