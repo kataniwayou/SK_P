@@ -22,7 +22,7 @@ namespace BaseProcessor.Core.Processing;
 /// <b>Dispatcher</b> (D-07/FWD-01): the entry point branches on <c>exist L2[messageId]</c> via a bounded
 /// retry. An existence-check exhaustion routes to <c>KeeperReinject</c> and ENDS the round trip WITHOUT
 /// deleting the source (the input is left intact for the keeper). On a present marker the RECOVERY pass runs
-/// (plan 51-03 — currently a stub); otherwise the FORWARD pass runs.
+/// (implemented this phase — <see cref="RunRecoveryAsync"/>); otherwise the FORWARD pass runs.
 /// </para>
 /// <para>
 /// <b>Forward — Pre</b> (PIPE-02/03): a <c>SourceStep.IsSource</c> Guid.Empty dispatch skips the L2 read with
@@ -69,6 +69,12 @@ public sealed class ProcessorPipeline(
     ProcessorMetrics metrics,
     ILogger<ProcessorPipeline> logger)
 {
+    /// <summary>IN-02: the on-wire retired-slot sentinel (A18: a retired slot carries <c>Guid.Empty</c>). A
+    /// shared <c>static readonly</c> avoids re-materializing the string per retire and keeps the production
+    /// write byte-identical to the test assertions in <c>PipelineRecoveryFacts</c> (which hardcode
+    /// <c>(RedisValue)Guid.Empty.ToString()</c>).</summary>
+    private static readonly RedisValue RetiredSlot = Guid.Empty.ToString();
+
     /// <summary>D-06: a random whole-HASH TTL in [min,max]s applied to <c>L2[messageId]</c> on each slot
     /// write so the allocation index self-expires with jitter (no synchronized expiry herd). <c>+1</c> makes
     /// the configured max inclusive. <c>Random.Shared</c> is the framework-shared thread-safe RNG.</summary>
@@ -93,7 +99,7 @@ public sealed class ProcessorPipeline(
         }
 
         if (exists.Value)
-            await RunRecoveryAsync(d, messageId, db, limit, ct);                       // plan 51-03 lands this body
+            await RunRecoveryAsync(d, messageId, db, limit, ct);                       // RECOVERY pass (implemented this phase)
         else
             await RunForwardAsync(d, messageId, db, limit, executionDataTtl, ct);
     }
@@ -151,13 +157,16 @@ public sealed class ProcessorPipeline(
 
             // Retire AFTER a confirmed send (SendResult throws on send-exhaust → reaching here == sent).
             var retire = await RetryLoop.ExecuteAsync(
-                () => db.HashSetAsync(L2ProjectionKeys.MessageIndex(messageId), t.Slot, Guid.Empty.ToString()), limit, ct);
+                () => db.HashSetAsync(L2ProjectionKeys.MessageIndex(messageId), t.Slot, RetiredSlot), limit, ct);
             if (retire.Succeeded)
             {
                 await RetryLoop.ExecuteAsync(
                     () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), SlotTtl()), limit, ct);   // D-06 refresh
             }
             // Retire exhaust → "do nothing" (A18 line 192): the slot stays; a future replay re-sends (dup-tolerant, A16).
+            // IN-01: the D-06 whole-HASH TTL refresh runs ONLY inside the retire-succeeded branch above; on a retire
+            // exhaust the existing HASH TTL is deliberately left intact (no path leaves a freshly-written HASH without
+            // an EXPIRE — the HASH already carried a TTL from its forward-Post alloc write).
         }
 
         // RECOV-03 tail — REINJECT ⊻ source-delete mutual exclusion.
