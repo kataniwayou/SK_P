@@ -1,4 +1,5 @@
 using System.Reflection;
+using MassTransit;                          // IConsumer<> (5->3 reflection fact)
 using Messaging.Contracts;                  // KeeperInject (Contracts assembly anchor)
 using Messaging.Contracts.Projections;      // L2ProjectionKeys (SC-2)
 using Xunit;
@@ -93,5 +94,26 @@ public sealed class ModelBContractsRetiredFacts
         var only = Assert.Single(overloads);
         var param = Assert.Single(only.GetParameters());
         Assert.Equal(typeof(Guid), param.ParameterType);
+    }
+
+    /// <summary>
+    /// FACT 5 (SC-2 / RETIRE-03) — REFLECTION. The 5-state Model-B recovery surface has collapsed to
+    /// EXACTLY the 3 A18 states: the Keeper assembly consumes IConsumer&lt;KeeperReinject/Inject/Delete&gt;
+    /// and NO IConsumer&lt;KeeperUpdate/KeeperCleanup&gt;. Inherited closed-generic interface is reported
+    /// by GetInterfaces() (RecoveryConsumerBase&lt;T&gt; : IConsumer&lt;T&gt;), no base-walk needed.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "53")]
+    public void Keeper_registers_exactly_three_recovery_consumers()
+    {
+        var consumed = Keeper.GetTypes()
+            .SelectMany(t => t.GetInterfaces())
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsumer<>))
+            .Select(i => i.GetGenericArguments()[0].Name)
+            .Where(n => n is "KeeperReinject" or "KeeperInject" or "KeeperDelete"
+                     or "KeeperUpdate"   or "KeeperCleanup")
+            .Distinct().OrderBy(n => n).ToArray();
+
+        Assert.Equal(new[] { "KeeperDelete", "KeeperInject", "KeeperReinject" }, consumed);
     }
 }
