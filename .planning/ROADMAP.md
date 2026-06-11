@@ -84,7 +84,11 @@
   2. The terminal two-key delete is mutually exclusive with `REINJECT` — on any `infra_entryId`/`REINJECT` neither key is deleted (the index survives for the replay's recovery pass).
   3. A terminal-delete exhaustion `PERSIST`s the `L2[messageId]` index (cancels its TTL) and escalates to keeper `DELETE` carrying `{messageId, entryId}`; the `DELETE` consumer deletes both keys atomically (drop-on-absent).
   4. Hermetic facts prove the atomic two-key delete, the `REINJECT`-mutual-exclusion preservation, the persist-on-escalate, and the both-key keeper `DELETE`; solution 0-warning (Release + Debug).
-**Plans**: TBD
+**Plans**: 4 plans (3 waves)
+- [ ] 54-01-PLAN.md — Test-kit mock scaffolding: array `KeyDeleteAsync(RedisKey[])` overload + `KeyPersistAsync` stubs on every tail mux, array When/Do on fault muxes, new `ReadOkDeleteAndPersistFaultL2` persist-exhaust sibling (Wave 1) (GC-01/02/03 enabling)
+- [ ] 54-02-PLAN.md — Contract: `KeeperDelete.MessageId` init prop (D-05, additive) (Wave 1) (GC-03)
+- [ ] 54-03-PLAN.md — Production: unified `DeleteTerminalAsync` (atomic two-key DEL + best-effort persist-on-escalate + `KeeperDelete{messageId}` handoff, D-01/02/03/06) rewiring both tails + `BuildDelete(d, messageId)` + `DeleteConsumer` both-key DEL (Wave 2) (GC-01/02/03)
+- [ ] 54-04-PLAN.md — Facts: invert/harden `PipelineEndDeleteFacts` + `PipelineRecoveryFacts` + `DeleteConsumerFacts` to the atomic array shape (ONE array call + scalar `DidNotReceive`) + persist/MessageId asserts + new `EndDelete_PersistExhaust_StillSendsKeeper` + 0-warning dual-config gate (Wave 3) (GC-01/02/03, AC-1..10)
 
 #### Phase 55: Live Proof & Close Gate
 **Goal**: A real-stack E2E proves the slot-array forward + recovery passes, each keeper state, and the A19 active two-key index delete, sealed behind an N-consecutive-GREEN triple-SHA net-zero close gate.
