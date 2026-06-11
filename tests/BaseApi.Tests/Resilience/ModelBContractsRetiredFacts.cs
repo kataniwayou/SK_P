@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.CompilerServices;      // [CallerFilePath] (RepoRoot source-scan anchor)
 using MassTransit;                          // IConsumer<> (5->3 reflection fact)
 using Messaging.Contracts;                  // KeeperInject (Contracts assembly anchor)
 using Messaging.Contracts.Projections;      // L2ProjectionKeys (SC-2)
@@ -115,5 +116,89 @@ public sealed class ModelBContractsRetiredFacts
             .Distinct().OrderBy(n => n).ToArray();
 
         Assert.Equal(new[] { "KeeperDelete", "KeeperInject", "KeeperReinject" }, consumed);
+    }
+
+    /// <summary>
+    /// FACT 6 (D-01 / SC-2) — SOURCE-SCAN. No bus-retry or error-transport CALL survives on the
+    /// execution + orchestrator path. Matches the CALL pattern (endpointConfigurator/cfg.UseMessageRetry(,
+    /// .ConfigureError() — NOT the bare word, which legitimately survives in ~9 doc-comments. src/ only.
+    /// RED on the pre-teardown tree (the calls still exist); Wave-1 plans 02/03 turn it GREEN.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "53")]
+    public void No_bus_retry_or_error_transport_on_execution_path_endpoints()
+    {
+        foreach (var rel in new[] { Path.Combine("src","Orchestrator","Consumers"),
+                                    Path.Combine("src","BaseProcessor.Core","Startup") })
+        {
+            var dir = Path.Combine(RepoRoot(), rel);
+            Assert.True(Directory.Exists(dir), $"bad anchor: {dir}");
+            var offenders = Directory.EnumerateFiles(dir, "*.cs", SearchOption.AllDirectories)
+                .Where(f =>
+                {
+                    var t = File.ReadAllText(f);
+                    return t.Contains("endpointConfigurator.UseMessageRetry(")
+                        || t.Contains("cfg.UseMessageRetry(")
+                        || t.Contains(".ConfigureError(");
+                })
+                .ToList();
+            Assert.True(offenders.Count == 0,
+                "A18 end-state regressed (bus retry / error transport on exec path): "
+                    + string.Join(", ", offenders));
+        }
+    }
+
+    /// <summary>
+    /// FACT 7 (D-03 / SC-2) — SOURCE-SCAN. The consolidated error filter is keeper-local: the
+    /// BaseConsole.Core global callback file carries NO ConfigureError, and RecoveryEndpointBinder DOES.
+    /// RED on the pre-teardown tree (the filter is still global and not yet in the binder); Wave-1 turns it GREEN.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "53")]
+    public void ConfigureError_is_keeper_local_only()
+    {
+        var global = Path.Combine(RepoRoot(), "src", "BaseConsole.Core",
+            "DependencyInjection", "MessagingServiceCollectionExtensions.cs");
+        var binder = Path.Combine(RepoRoot(), "src", "Keeper", "Recovery", "RecoveryEndpointBinder.cs");
+        Assert.True(File.Exists(global), $"bad anchor: {global}");
+        Assert.True(File.Exists(binder), $"bad anchor: {binder}");
+
+        Assert.DoesNotContain("ConfigureError", File.ReadAllText(global));   // removed from global callback
+        Assert.Contains("ConfigureError", File.ReadAllText(binder));         // moved keeper-local
+    }
+
+    /// <summary>
+    /// FACT 8 (D-07 / SC-2) — SOURCE-SCAN. The dead Ignore&lt;WorkflowRootNotFoundException&gt; (guarding a
+    /// throw that never occurs) is removed from BOTH Start/Stop definitions WITH their retry block. Pure
+    /// teardown: missing-root keeps log+ack; NO catch/DLQ seam is added (D-07 resolution).
+    /// RED on the pre-teardown tree (both still carry it); Wave-1 turns it GREEN.
+    /// </summary>
+    [Fact]
+    [Trait("Phase", "53")]
+    public void Dead_WorkflowRootNotFound_ignore_removed_from_start_stop_definitions()
+    {
+        foreach (var name in new[] { "StartOrchestrationConsumerDefinition.cs",
+                                     "StopOrchestrationConsumerDefinition.cs" })
+        {
+            var f = Path.Combine(RepoRoot(), "src", "Orchestrator", "Consumers", name);
+            Assert.True(File.Exists(f), $"bad anchor: {f}");
+            Assert.DoesNotContain("Ignore<WorkflowRootNotFoundException>", File.ReadAllText(f));
+        }
+    }
+
+    /// <summary>
+    /// Resolves the repository root from THIS source file's compile-time path (<see cref="CallerFilePathAttribute"/>):
+    /// tests/BaseApi.Tests/Resilience/ModelBContractsRetiredFacts.cs -> walk up to the dir containing SK_P.sln.
+    /// FALSE-PASS GUARD (T-53-01): every source-scan fact asserts Directory.Exists/File.Exists before scanning,
+    /// so a mis-resolved anchor fails loudly rather than passing on a silently-empty scan.
+    /// </summary>
+    private static string RepoRoot([CallerFilePath] string thisFile = "")
+    {
+        var dir = new DirectoryInfo(Path.GetDirectoryName(thisFile)!);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "SK_P.sln")))
+            dir = dir.Parent;
+
+        Assert.NotNull(dir); // SK_P.sln must be found by walking up from this test source file.
+        return dir!.FullName;
     }
 }
