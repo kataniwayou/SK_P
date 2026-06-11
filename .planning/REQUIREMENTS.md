@@ -43,8 +43,10 @@
 **: `INJECT` (forward-only — data is in-hand) writes `L2[entryId]=data`, sends a reconstructed `StepCompleted` to the orchestrator, then deletes `deleteEntryId`.
 - [x] **KEEP-03
 **: `DELETE` deletes the L2 key; drops if the key is absent.
-- [ ] **KEEP-04**: The keeper performs an L2 op only when the BIT gate is open; **gate-closed → non-destructive consume** (no dequeue-and-drop — pause consumption / requeue without ack so messages accumulate and drain when the gate opens).
-- [ ] **KEEP-05**: Keeper exhaustion policy is **configurable** — DLQ1 mode (exhausted op/send dead-letters to `skp-dlq-1`) vs sustained-outage mode (hold/requeue and wait for L2 recovery, no dead-letter).
+- [x] **KEEP-04
+**: The keeper performs an L2 op only when the BIT gate is open; **gate-closed → non-destructive consume** (no dequeue-and-drop — pause consumption / requeue without ack so messages accumulate and drain when the gate opens).
+- [x] **KEEP-05
+**: Keeper exhaustion policy is **configurable** — DLQ1 mode (exhausted op/send dead-letters to `skp-dlq-1`) vs sustained-outage mode (hold/requeue and wait for L2 recovery, no dead-letter).
 
 ### Model-B Teardown (RETIRE)
 - [x] **RETIRE-01
