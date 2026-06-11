@@ -1,8 +1,11 @@
+using System.Diagnostics.Metrics;
 using global::Keeper;
 using global::Keeper.Health;
+using global::Keeper.Observability;
 using MassTransit;
 using Messaging.Contracts;
 using Messaging.Contracts.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using StackExchange.Redis;
@@ -19,7 +22,9 @@ namespace BaseApi.Tests.Keeper;
 /// </summary>
 internal static class RecoveryTestKit
 {
-    /// <summary>A gate that is already open — WaitForOpenAsync returns synchronously.</summary>
+    /// <summary>A gate that is already open — WaitForOpenAsync returns synchronously. Phase 52 (D-04/D-09)
+    /// removed the base gate-wait, so the recovery consumers no longer take an IL2HealthGate; this helper
+    /// survives only for the remaining non-recovery-consumer references (e.g. BitHealthLoop tests).</summary>
     public static IL2HealthGate OpenGate()
     {
         var gate = Substitute.For<IL2HealthGate>();
@@ -30,8 +35,19 @@ internal static class RecoveryTestKit
     public static IOptions<RetryOptions> Retry(int limit = 3) =>
         Options.Create(new RetryOptions { Limit = limit });
 
-    public static IOptions<RecoveryOptions> Recovery(int gateWaitSeconds = 300) =>
-        Options.Create(new RecoveryOptions { GateWaitSeconds = gateWaitSeconds });
+    /// <summary>Phase 52 (D-09): RecoveryOptions no longer carries GateWaitSeconds.</summary>
+    public static IOptions<RecoveryOptions> Recovery() =>
+        Options.Create(new RecoveryOptions { PartitionCount = 8 });
+
+    /// <summary>A real <see cref="KeeperMetrics"/> built from a real <see cref="IMeterFactory"/> (mirrors
+    /// the ProcessorMetricsFacts construction idiom) so consumer facts can pass a live counter and observe
+    /// it via a <see cref="System.Diagnostics.Metrics.MeterListener"/>.</summary>
+    public static KeeperMetrics Metrics()
+    {
+        var meterFactory = new ServiceCollection().AddMetrics().BuildServiceProvider()
+            .GetRequiredService<IMeterFactory>();
+        return new KeeperMetrics(meterFactory);
+    }
 
     /// <summary>A multiplexer over a caller-supplied (or default) substituted <see cref="IDatabase"/>.</summary>
     public static IConnectionMultiplexer Mux(IDatabase db)

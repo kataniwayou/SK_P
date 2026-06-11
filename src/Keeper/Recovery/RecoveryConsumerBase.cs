@@ -30,6 +30,10 @@ public abstract class RecoveryConsumerBase<TMessage>(
     protected ISendEndpointProvider Send => sendProvider;
     protected int RetryLimit => retryOptions.Value.Limit;
 
+    /// <summary>The keeper-wide exhaustion posture (D-01). Read by the endpoint policy wiring (Plan 02);
+    /// exposed here so the base ctor's <c>recoveryOptions</c> is observed and subclasses can branch on it.</summary>
+    protected ExhaustionPolicy ExhaustionPolicy => recoveryOptions.Value.ExhaustionPolicy;
+
     public Task Consume(ConsumeContext<TMessage> context)
         => HandleAsync(context.Message, context.CancellationToken);   // gate now enforced at the ENDPOINT (D-04)
 

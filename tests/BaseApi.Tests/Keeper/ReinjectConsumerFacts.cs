@@ -1,7 +1,11 @@
+using System.Diagnostics.Metrics;
+using global::Keeper.Observability;
 using global::Keeper.Recovery;
 using MassTransit;
 using Messaging.Contracts;
 using Messaging.Contracts.Projections;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using StackExchange.Redis;
 using Xunit;
@@ -9,9 +13,9 @@ using Xunit;
 namespace BaseApi.Tests.Keeper;
 
 /// <summary>
-/// Phase 46 / KEEP-05: the Keeper REINJECT state reads L2[entryId]; present → re-injects a reconstructed
-/// EntryStepDispatch carrying the D-01 Payload to queue:{ProcessorId}; absent/empty → throws
-/// RecoveryDataGoneException (the deliberate data-gone terminal → skp-dlq-1).
+/// Phase 52 / KEEP-01: the Keeper REINJECT state reads L2[entryId]; present → re-injects a reconstructed
+/// EntryStepDispatch carrying the D-01 Payload to queue:{ProcessorId}; absent/empty (STRLEN==0, no Redis
+/// exception) → BY-DESIGN silent drop (no throw, no send) + keeper_reinject_dropped counter (D-06/D-07).
 /// </summary>
 public sealed class ReinjectConsumerFacts
 {
@@ -24,7 +28,7 @@ public sealed class ReinjectConsumerFacts
     }
 
     [Fact]
-    [Trait("Phase", "46")]
+    [Trait("Phase", "52")]
     public async Task Reinject_present_sends_EntryStepDispatch_with_Payload()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -36,14 +40,15 @@ public sealed class ReinjectConsumerFacts
             Payload = "{\"cfg\":7}",
         };
         var db = RecoveryTestKit.Db();
-        // IN-04: REINJECT now gates on STRLEN, not a full StringGet. STRLEN > 0 → data present.
+        // IN-04: REINJECT gates on STRLEN, not a full StringGet. STRLEN > 0 → data present.
         db.StringLengthAsync(L2ProjectionKeys.ExecutionData(m.EntryId), Arg.Any<CommandFlags>())
             .Returns(10L);   // present
         var send = new RecoveryTestKit.CapturingSendProvider();
 
         var consumer = new ReinjectConsumer(
-            RecoveryTestKit.Mux(db), send, RecoveryTestKit.OpenGate(),
-            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery());
+            RecoveryTestKit.Mux(db), send,
+            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery(),
+            RecoveryTestKit.Metrics(), NullLogger<ReinjectConsumer>.Instance);
 
         await consumer.Consume(Ctx(m, ct));
 
@@ -60,8 +65,8 @@ public sealed class ReinjectConsumerFacts
     }
 
     [Fact]
-    [Trait("Phase", "46")]
-    public async Task Reinject_absent_throws_RecoveryDataGone()
+    [Trait("Phase", "52")]
+    public async Task Reinject_absent_drops_no_throw_no_send_and_increments_counter()
     {
         var ct = TestContext.Current.CancellationToken;
         var m = new KeeperReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
@@ -71,17 +76,34 @@ public sealed class ReinjectConsumerFacts
             EntryId = Guid.NewGuid(),
             Payload = "{\"cfg\":7}",
         };
-        // IN-04: REINJECT now gates on STRLEN. STRLEN == 0 covers BOTH a missing key AND an empty value
-        // (the absent-OR-empty data-gone terminal). NSubstitute returns default(long) == 0 unstubbed, so the
-        // un-stubbed key here reads as length 0 → data-gone.
-        var db = RecoveryTestKit.Db();   // StringLengthAsync defaults to 0 → absent/empty
+        // IN-04: STRLEN==0 covers BOTH a missing key AND an empty value (the absent-OR-empty drop case).
+        // NSubstitute returns default(long) == 0 unstubbed, so the un-stubbed key reads as length 0 → drop.
+        var db = RecoveryTestKit.Db();
         var send = new RecoveryTestKit.CapturingSendProvider();
 
-        var consumer = new ReinjectConsumer(
-            RecoveryTestKit.Mux(db), send, RecoveryTestKit.OpenGate(),   // gate already open → throw is the data-gone path
-            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery());
+        // Build a real KeeperMetrics over a real IMeterFactory and observe the counter via a MeterListener.
+        var meterFactory = new ServiceCollection().AddMetrics().BuildServiceProvider()
+            .GetRequiredService<IMeterFactory>();
+        var metrics = new KeeperMetrics(meterFactory);
 
-        await Assert.ThrowsAsync<RecoveryDataGoneException>(() => consumer.Consume(Ctx(m, ct)));
-        Assert.Empty(send.Sent);   // nothing re-injected when the data is gone
+        long dropped = 0;
+        using var listener = new MeterListener();
+        listener.InstrumentPublished = (instrument, l) =>
+        {
+            if (instrument.Meter.Name == KeeperMetrics.MeterName && instrument.Name == "keeper_reinject_dropped")
+                l.EnableMeasurementEvents(instrument);
+        };
+        listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => Interlocked.Add(ref dropped, measurement));
+        listener.Start();
+
+        var consumer = new ReinjectConsumer(
+            RecoveryTestKit.Mux(db), send,
+            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery(),
+            metrics, NullLogger<ReinjectConsumer>.Instance);
+
+        await consumer.Consume(Ctx(m, ct));   // D-06: no throw
+
+        Assert.Empty(send.Sent);              // nothing re-injected when the data is gone
+        Assert.Equal(1, Interlocked.Read(ref dropped));   // D-07: keeper_reinject_dropped incremented by 1
     }
 }
