@@ -1,6 +1,6 @@
 using BaseConsole.Core.Messaging;   // ConsolidatedErrorTransportFilter (Phase-53 D-03 keeper-local error move)
 using MassTransit;
-using MassTransit.Middleware;   // Partitioner + Murmur3UnsafeHashGenerator (8.5.5 namespace — RESEARCH A1/A2) + GenerateFaultFilter
+using MassTransit.Middleware;   // Partitioner + Murmur3UnsafeHashGenerator + GenerateFaultFilter (all MassTransit.Middleware, 8.5.5 — RESEARCH A1/A2)
 using Messaging.Contracts;
 using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Hosting;
