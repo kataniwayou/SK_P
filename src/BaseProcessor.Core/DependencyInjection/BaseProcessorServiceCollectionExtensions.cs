@@ -83,6 +83,17 @@ public static class BaseProcessorServiceCollectionExtensions
         //     delegates to. Scoped per dispatch consume (mirrors the consumer's per-message resolution); its
         //     collaborators (IConnectionMultiplexer, IProcessorContext, BaseProcessor, ISendEndpointProvider,
         //     IOptions<RetryOptions>, ILogger) are all already registered by the calls above / step 3b.
+        //
+        // WR-02 — BaseProcessor lifetime contract: the `BaseProcessor` author-transform seam is NOT
+        //     registered by AddBaseProcessor; the concrete author's Program.cs MUST register it. Because this
+        //     pipeline is Scoped, the author MUST register BaseProcessor as Singleton (the expected choice for
+        //     a stateless transform) OR Scoped — NEVER as a stateful Transient/per-call type that holds
+        //     per-message state, which would surface a captive-dependency / state-bleed bug at runtime under
+        //     the MassTransit consume scope (the hermetic facts `new` the pipeline directly and cannot catch
+        //     it). To turn a missing or mis-scoped BaseProcessor registration into a build-time failure rather
+        //     than a first-consume crash, the author host SHOULD enable DI scope validation
+        //     (ValidateScopes = true / ValidateOnBuild = true) — the .NET Host enables both by default in the
+        //     Development environment.
         services.AddScoped<ProcessorPipeline>();
 
         // 3. Liveness/heartbeat knobs (CONFIG-01) — four independent seconds-ints from the "Processor" section.
