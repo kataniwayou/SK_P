@@ -98,11 +98,82 @@ public sealed class ProcessorPipeline(
             await RunForwardAsync(d, messageId, db, limit, executionDataTtl, ct);
     }
 
-    /// <summary>RECOVERY pass (<c>exist L2[messageId]</c>) — plan 51-03 (Wave 2) lands the body. The forward
-    /// facts never reach this branch (KeyExists=false), so a throwing stub is sufficient to compile here.</summary>
-    private static Task RunRecoveryAsync(
-        EntryStepDispatch d, Guid messageId, IDatabase db, int limit, CancellationToken ct) =>
-        throw new NotImplementedException("recovery pass — plan 51-03");
+    /// <summary>The A18 RECOVERY pass (design doc lines 179-203). Reached only when <c>L2[messageId]</c>
+    /// EXISTS (a redelivery). HGETALL the slot array, build a temp list per slot, then re-send any
+    /// <c>completed</c> result (a FRESH exec, D-03) BEFORE retiring the slot (SLOT-03 send-before-retire), then
+    /// either REINJECT (any <c>infra_entryId</c> — replay owns the source lifecycle) ⊻ delete the
+    /// source (the all-clear path). The two routes are mutually exclusive (RECOV-03).
+    /// <para>
+    /// Per-slot classification (Pattern 3 — clean not-exist and an L2 fault route differently): a clean
+    /// <c>KeyExistsAsync == false</c> is <c>not-exist</c> → failed/DROP (no send, no retire); a thrown fault
+    /// inside the bounded retry is <c>infra_entryId</c> → leave the slot intact (the tail REINJECTs);
+    /// <c>true</c> is <c>completed</c>. An already-retired (<c>Guid.Empty</c>) or unparsable slot is inert and
+    /// skipped (A18: retired slots carry no work).
+    /// </para>
+    /// </summary>
+    private async Task RunRecoveryAsync(
+        EntryStepDispatch d, Guid messageId, IDatabase db, int limit, CancellationToken ct)
+    {
+        // RECOV-01: HGETALL the slot array. Exhaust → REINJECT; END (no source delete — the input is intact).
+        var read = await RetryLoop.ExecuteAsync(
+            () => db.HashGetAllAsync(L2ProjectionKeys.MessageIndex(messageId)), limit, ct);
+        if (!read.Succeeded)
+        {
+            await SendKeeper(BuildReinject(d), limit, ct);
+            return;
+        }
+
+        // Build the temp list per slot (Claude's-Discretion representation: a local tuple list).
+        var temp = new List<(RedisValue Slot, Guid EntryId, bool Completed, bool Infra)>();
+        foreach (var entry in read.Value!)
+        {
+            // Skip already-retired (Guid.Empty) or unparsable slots — A18: retired slots are inert.
+            if (!Guid.TryParse(entry.Value.ToString(), out var entryId) || entryId == Guid.Empty)
+                continue;
+
+            var exist = await RetryLoop.ExecuteAsync(
+                () => db.KeyExistsAsync(L2ProjectionKeys.ExecutionData(entryId)), limit, ct);
+
+            if (!exist.Succeeded)
+                temp.Add((entry.Name, entryId, Completed: false, Infra: true));    // L2-fail → infra_entryId (leave slot)
+            else if (exist.Value)
+                temp.Add((entry.Name, entryId, Completed: true,  Infra: false));   // exists → completed
+            // clean not-exist (exist.Value == false) → failed/DROP: NOT added (no send, no retire)
+        }
+
+        // Dispatch + send-before-retire (SLOT-03).
+        foreach (var t in temp)
+        {
+            if (!t.Completed) continue;   // infra_entryId items: leave the slot intact, no send (handled in the tail)
+
+            // D-03/Pitfall 4: recovery completed mints a FRESH exec (the slot holds only entryId, no exec persisted).
+            await SendResult(BuildCompleted(d, NewId.NextGuid(), t.EntryId), limit, ct);   // SEND FIRST
+
+            // Retire AFTER a confirmed send (SendResult throws on send-exhaust → reaching here == sent).
+            var retire = await RetryLoop.ExecuteAsync(
+                () => db.HashSetAsync(L2ProjectionKeys.MessageIndex(messageId), t.Slot, Guid.Empty.ToString()), limit, ct);
+            if (retire.Succeeded)
+            {
+                await RetryLoop.ExecuteAsync(
+                    () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), SlotTtl()), limit, ct);   // D-06 refresh
+            }
+            // Retire exhaust → "do nothing" (A18 line 192): the slot stays; a future replay re-sends (dup-tolerant, A16).
+        }
+
+        // RECOV-03 tail — REINJECT ⊻ source-delete mutual exclusion.
+        var anyInfra = temp.Any(t => t.Infra);
+        if (anyInfra)
+        {
+            await SendKeeper(BuildReinject(d), limit, ct);   // replay owns the lifecycle; do NOT delete the source
+            return;
+        }
+        if (!SourceStep.IsSource(d.EntryId))
+        {
+            var del = await RetryLoop.ExecuteAsync(
+                () => db.KeyDeleteAsync(L2ProjectionKeys.ExecutionData(d.EntryId)), limit, ct);
+            if (!del.Succeeded) await SendKeeper(BuildDelete(d), limit, ct);   // exhaust → KeeperDelete
+        }
+    }
 
     /// <summary>The A18 FORWARD pass (Pre → In → Post → inline source-delete tail). Reached only when
     /// <c>L2[messageId]</c> does NOT exist.</summary>
