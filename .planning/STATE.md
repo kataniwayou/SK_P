@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
-status: verifying
+status: ready_to_plan
 stopped_at: Completed 52-03-PLAN.md
 last_updated: "2026-06-11T17:22:41.910Z"
 last_activity: 2026-06-11 -- Completed 52-03-PLAN.md (FINAL plan of Phase 52)
 progress:
   total_phases: 5
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
   completed_plans: 8
-  percent: 100
+  percent: 80
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 ## Current Position
 
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
-Phase: 52 (Three-State Keeper) — ALL PLANS COMPLETE
-Plan: 3 of 3 complete (52-01 = A18 three-state bodies; 52-02 = KEEP-04 endpoint pause/resume mechanism via ConnectReceiveEndpoint + handle singleton, KEEP-05 ExhaustionPolicy branch (Dlq1/SustainedOutage), KeeperMetrics DI registration; 52-03 = BIT-edge Stop/Start driver — BitHealthLoop now Stops the recovery endpoint on the unhealthy edge / Starts it on the healthy edge, additive to gate.Open/Close + PauseAll/ResumeAll, completing KEEP-04 end to end).
-Status: Phase complete — ready for verification. BitHealthLoopTests 8/8, Keeper namespace 32/32, solution Debug build 0-warning. (5 RealStack/E2E tests fail without a live RabbitMQ/Postgres stack — operator-gated live close, not a code gap.)
-Last activity: 2026-06-11 -- Completed 52-03-PLAN.md (FINAL plan of Phase 52)
+Phase: 53
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-06-11
 
 ### Roadmap Evolution
 
@@ -700,7 +700,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 174
+- Total plans completed: 177
 - Average duration: —
 - Total execution time: —
 
@@ -755,6 +755,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 49 | 4 | - | - |
 | 50 | 2 | - | - |
 | 51 | 3 | - | - |
+| 52 | 3 | - | - |
 
 **Recent Trend:**
 

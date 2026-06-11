@@ -489,7 +489,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 49. Live-Proof Close Gate | v4.0.0 | 6/6 | In Progress (live gate operator-gated) | — |
 | 50. Contracts & Slot-Array L2 Key Reshape | v5.0.0 | 2/2 | Complete    | 2026-06-11 |
 | 51. Processor Forward + Recovery Pipeline | v5.0.0 | 3/3 | Complete    | 2026-06-11 |
-| 52. 3-State Keeper | v5.0.0 | 3/3 | Complete | KEEP-01..05 |
+| 52. 3-State Keeper | v5.0.0 | 3/3 | Complete    | 2026-06-11 |
 | 53. Model-B Teardown | v5.0.0 | 0/? | Not planned | — |
 | 54. Live Proof & Close Gate | v5.0.0 | 0/? | Not planned | — |
 
