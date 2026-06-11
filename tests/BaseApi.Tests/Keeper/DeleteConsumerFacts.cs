@@ -28,6 +28,7 @@ public sealed class DeleteConsumerFacts
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
             EntryId = Guid.NewGuid(),
+            MessageId = Guid.NewGuid(),   // A19: a distinct, assertable origin-index id (both-key DEL operand 2)
         };
 
     [Fact]
@@ -46,8 +47,12 @@ public sealed class DeleteConsumerFacts
 
         await consumer.Consume(Ctx(m, ct));
 
+        // A19/GC-03/AC-7: ONE atomic both-key DEL whose operands contain BOTH the source data key AND the index.
         await db.Received(1).KeyDeleteAsync(
-            (RedisKey)L2ProjectionKeys.ExecutionData(m.EntryId), Arg.Any<CommandFlags>());
+            Arg.Is<RedisKey[]>(ks => ks.Length == 2
+                && ks.Contains((RedisKey)L2ProjectionKeys.ExecutionData(m.EntryId))
+                && ks.Contains((RedisKey)L2ProjectionKeys.MessageIndex(m.MessageId))),
+            Arg.Any<CommandFlags>());
     }
 
     [Fact]
@@ -56,8 +61,8 @@ public sealed class DeleteConsumerFacts
     {
         var ct = TestContext.Current.CancellationToken;
         var db = RecoveryTestKit.Db();
-        // KeyDeleteAsync returns false for an absent key — drop-on-absent (KEEP-03).
-        db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(false);
+        // KeyDeleteAsync returns 0 (no keys removed) for absent keys — drop-on-absent (GC-03/AC-7).
+        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(0L);
         var send = new RecoveryTestKit.CapturingSendProvider();
 
         var consumer = new DeleteConsumer(
@@ -69,7 +74,6 @@ public sealed class DeleteConsumerFacts
         // No throw on an absent key — the consume completes cleanly.
         await consumer.Consume(Ctx(m, ct));
 
-        await db.Received(1).KeyDeleteAsync(
-            (RedisKey)L2ProjectionKeys.ExecutionData(m.EntryId), Arg.Any<CommandFlags>());
+        await db.Received(1).KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
     }
 }
