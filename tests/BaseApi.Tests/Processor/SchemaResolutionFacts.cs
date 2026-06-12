@@ -16,11 +16,13 @@ using Xunit;
 namespace BaseApi.Tests.Processor;
 
 /// <summary>
-/// Loop B facts (SCHEMA-01/02 / D-05 / LIVE-04): after identity resolves, the orchestrator resolves
-/// the definition for each NON-NULL input/output schema Id — and ONLY those. The
-/// <c>ConfigSchemaId</c> is NEVER queried (D-05); a null input schema Id sends NO request yet the
-/// processor still reaches Healthy (SCHEMA-02 / LIVE-04). A capturing schema responder records every
-/// queried Id so the never-config invariant is asserted directly.
+/// Loop B facts (CFG-03/04 / SCHEMA-01/02 / LIVE-04): after identity resolves, the orchestrator resolves
+/// the definition for each NON-NULL input/output/CONFIG schema Id. Phase 57 D-12 LIFTS the D-05 carve-out
+/// — the <c>ConfigSchemaId</c> IS now queried and its fetched definition stored on
+/// <c>context.ConfigDefinition</c> (CFG-03); the unchanged Loop B retry body proves CFG-04 transient
+/// retry for the config Id too (one leading NotFound per Id → Found). A null input schema Id still sends
+/// NO request yet the processor still reaches Healthy (SCHEMA-02 / LIVE-04). A capturing schema responder
+/// records every queried Id so the now-config-IS-queried invariant is asserted directly.
 /// </summary>
 public sealed class SchemaResolutionFacts
 {
@@ -115,7 +117,7 @@ public sealed class SchemaResolutionFacts
     }
 
     [Fact]
-    public async Task LoopB_Resolves_Input_And_Output_Never_Config()
+    public async Task LoopB_Resolves_Input_Output_And_Config()
     {
         var inputId = Guid.NewGuid();
         var outputId = Guid.NewGuid();
@@ -132,17 +134,19 @@ public sealed class SchemaResolutionFacts
         {
             var (context, gate) = await RunOrchestratorAsync(provider, cts.Token);
 
-            // (a) both input + output definitions resolved.
+            // (a) input + output + config definitions all resolved (D-12 lifts the D-05 config carve-out).
             Assert.Equal($"def-for-{inputId:N}", context.InputDefinition);
             Assert.Equal($"def-for-{outputId:N}", context.OutputDefinition);
+            // CFG-03 — the fetched config-schema definition is now stored on the context.
+            Assert.Equal($"def-for-{configId:N}", context.ConfigDefinition);
             Assert.True(context.IsHealthy);
             Assert.True(gate.IsReady);
 
-            // (b) the schema responder was queried for input + output, but NEVER for the config Id (D-05).
+            // (b) the schema responder was queried for input + output AND the config Id (D-12, was D-05 never).
             var queried = capture.QueriedIds.ToList();
             Assert.Contains(inputId, queried);
             Assert.Contains(outputId, queried);
-            Assert.DoesNotContain(configId, queried);
+            Assert.Contains(configId, queried);
         }
         finally
         {
@@ -175,10 +179,12 @@ public sealed class SchemaResolutionFacts
             Assert.True(context.IsHealthy);
             Assert.True(gate.IsReady);
 
-            // Only the output Id was queried; neither config nor (the absent) input was queried.
+            // Output + config are queried (D-12); the absent (null) input is NOT.
             var queried = capture.QueriedIds.ToList();
             Assert.Contains(outputId, queried);
-            Assert.DoesNotContain(configId, queried);
+            Assert.Contains(configId, queried);
+            // CFG-03 — the config definition is resolved onto the context.
+            Assert.Equal($"def-for-{configId:N}", context.ConfigDefinition);
         }
         finally
         {

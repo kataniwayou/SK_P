@@ -6,6 +6,7 @@ using MassTransit;
 using MassTransit.Testing;
 using Messaging.Contracts;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
@@ -81,6 +82,10 @@ public sealed class DispatchBindSequenceFacts
         public string? Version => _inner.Version;
         public string? InputDefinition => _inner.InputDefinition;
         public string? OutputDefinition => _inner.OutputDefinition;
+        // Phase 57 Gate A (CFG-03) — proxy the new ConfigDefinition member so the orchestrator's Gate A
+        // call site reads the fetched config definition through the recording context. RED until Plan 02/03
+        // adds ConfigDefinition to ProcessorContext/IProcessorContext.
+        public string? ConfigDefinition => _inner.ConfigDefinition;
         public bool IsHealthy => _inner.IsHealthy;
         public Task WhenHealthy => _inner.WhenHealthy;
 
@@ -112,6 +117,172 @@ public sealed class DispatchBindSequenceFacts
         // The bound queue name is the bare Id "D" format — NO "queue:" prefix (the scheme is sender-only).
         Assert.Equal(foundId.ToString("D"), connector.BoundQueueName);
         Assert.DoesNotContain("queue:", connector.BoundQueueName!);
+    }
+
+    /// <summary>
+    /// A list-recording <see cref="ILogger{T}"/> that captures every entry's level + rendered message so
+    /// the Gate A clash fact can assert exactly one <see cref="LogLevel.Error"/> mentioning the processor
+    /// id + config schema id + the clash property (D-10 single structured error log).
+    /// </summary>
+    private sealed class CapturingLogger : ILogger<ProcessorStartupOrchestrator>
+    {
+        public List<(LogLevel Level, string Message)> Entries { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+            => Entries.Add((logLevel, formatter(state, exception)));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
+    }
+
+    /// <summary>Identity responder that replies Found immediately with the caller-configured identity.</summary>
+    private sealed class FixedIdentityResponder(ProcessorIdentityFound identity) : IConsumer<GetProcessorBySourceHash>
+    {
+        public Task Consume(ConsumeContext<GetProcessorBySourceHash> context)
+            => context.RespondAsync(identity);
+    }
+
+    /// <summary>Schema responder that replies Found with a per-Id definition from the supplied map.</summary>
+    private sealed class MappedSchemaResponder(IReadOnlyDictionary<Guid, string> definitions) : IConsumer<GetSchemaDefinition>
+    {
+        public Task Consume(ConsumeContext<GetSchemaDefinition> context)
+        {
+            var id = context.Message.SchemaId;
+            var def = definitions.TryGetValue(id, out var d) ? d : "{\"type\":\"object\"}";
+            return context.RespondAsync(new SchemaDefinitionFound(def));
+        }
+    }
+
+    /// <summary>
+    /// CFG-06 — a Gate A clash WITHHOLDS MarkHealthy + the bind. The ordered log is exactly
+    /// <c>["ready"]</c> (gate.MarkReady fires — no crash-loop — but NO "connect"/"markhealthy"), the queue
+    /// is never bound, the context never latches Healthy, and exactly one Error log records the clash.
+    /// RED until Plan 02 (checker) + Plan 03 (Gate A wiring + ConfigDefinition) land.
+    /// </summary>
+    [Fact]
+    public async Task GateA_Clash_Withholds_MarkHealthy_And_Bind()
+    {
+        var configId = Guid.NewGuid();
+        // A config-schema definition whose "Mode" prop is a string-enum CLASHING the processor's TConfig
+        // CLR enum (rule-table row #13 — confirmed CLASH by the Wave-0 spike).
+        var clashingDef =
+            "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{\"Mode\":{\"enum\":[\"A\",\"B\"]}}}";
+
+        var (log, connector, context, logger) = await DriveOrchestratorWithConfigSchema(
+            configSchemaId: configId,
+            definitions: new Dictionary<Guid, string> { [configId] = clashingDef });
+
+        // ONLY "ready" — gate.MarkReady fired (no crash-loop, Pitfall 1) but the bind + MarkHealthy did NOT.
+        Assert.Equal(new[] { "ready" }, log);
+        Assert.Null(connector.BoundQueueName);
+        Assert.False(context.IsHealthy);
+
+        // Exactly one Error log mentioning the processor id + config schema id + the clash property (D-10).
+        var errors = logger.Entries.FindAll(e => e.Level == LogLevel.Error);
+        Assert.Single(errors);
+    }
+
+    /// <summary>
+    /// CFG-07 — a NULL ConfigSchemaId SKIPS Gate A entirely: the processor binds + reaches Healthy on the
+    /// normal pass path (ordered log <c>["connect","ready","markhealthy"]</c>). RED until Gate A wiring lands.
+    /// </summary>
+    [Fact]
+    public async Task GateA_NullConfigSchemaId_Skips_And_Reaches_Healthy()
+    {
+        var (log, connector, context, _) = await DriveOrchestratorWithConfigSchema(
+            configSchemaId: null,
+            definitions: new Dictionary<Guid, string>());
+
+        Assert.Equal(new[] { "connect", "ready", "markhealthy" }, log);
+        Assert.NotNull(connector.BoundQueueName);
+        Assert.True(context.IsHealthy);
+    }
+
+    /// <summary>
+    /// Builds an in-memory harness whose identity responds Found immediately with the supplied
+    /// <paramref name="configSchemaId"/> (input/output null), and whose schema responder returns the
+    /// definitions in <paramref name="definitions"/>. Drives the orchestrator with the recording connector
+    /// + recording context + a <see cref="CapturingLogger"/> and returns the ordered event log, the
+    /// connector, the recording context, and the logger so Gate A pass/clash/skip is fully observable.
+    /// </summary>
+    private static async Task<(List<string> Log, RecordingConnector Connector, RecordingContext Context, CapturingLogger Logger)>
+        DriveOrchestratorWithConfigSchema(Guid? configSchemaId, IReadOnlyDictionary<Guid, string> definitions)
+    {
+        var foundId = Guid.NewGuid();
+        var identity = new ProcessorIdentityFound(
+            foundId, InputSchemaId: null, OutputSchemaId: null, ConfigSchemaId: configSchemaId, "proc", "1.0.0");
+
+        await using var provider = new ServiceCollection()
+            .AddSingleton(identity)
+            .AddSingleton(definitions)
+            .AddMassTransitTestHarness(x =>
+            {
+                x.AddConsumer<FixedIdentityResponder>();
+                x.AddConsumer<MappedSchemaResponder>();
+                x.AddRequestClient<GetProcessorBySourceHash>(new Uri("exchange:" + ProcessorQueues.IdentityQuery));
+                x.AddRequestClient<GetSchemaDefinition>(new Uri("exchange:" + ProcessorQueues.SchemaQuery));
+                x.UsingInMemory((ctx, cfg) =>
+                {
+                    cfg.ReceiveEndpoint(ProcessorQueues.IdentityQuery,
+                        e => e.ConfigureConsumer<FixedIdentityResponder>(ctx));
+                    cfg.ReceiveEndpoint(ProcessorQueues.SchemaQuery,
+                        e => e.ConfigureConsumer<MappedSchemaResponder>(ctx));
+                });
+            })
+            .BuildServiceProvider(true);
+
+        var harness = provider.GetRequiredService<ITestHarness>();
+        await harness.Start();
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(30));
+
+        try
+        {
+            using var scope = provider.CreateScope();
+            var identityClient = scope.ServiceProvider.GetRequiredService<IRequestClient<GetProcessorBySourceHash>>();
+            var schemaClient = scope.ServiceProvider.GetRequiredService<IRequestClient<GetSchemaDefinition>>();
+
+            var sourceHash = Substitute.For<ISourceHashProvider>();
+            sourceHash.Get().Returns(new string('a', 64));
+
+            var log = new List<string>();
+            var connector = new RecordingConnector(log);
+            var context = new RecordingContext(log);
+            var gate = new StartupGate();
+            var clock = new FakeTimeProvider();
+            var logger = new CapturingLogger();
+            var options = Options.Create(new ProcessorLivenessOptions
+            {
+                IntervalSeconds = 10,
+                TtlSeconds = 30,
+                RequestTimeoutSeconds = 8,
+                BackoffCapSeconds = 30,
+                ExecutionDataTtlSeconds = 3600,
+            });
+
+            var orchestrator = new ProcessorStartupOrchestrator(
+                identityClient, schemaClient, sourceHash, context, gate, connector,
+                IdentityResolutionFacts.StubMeterProviderHolder(), options, clock, logger);
+
+            await orchestrator.StartAsync(cts.Token);
+            // On the clash path the context never latches Healthy, so wait on the gate (fires on all paths).
+            await IdentityResolutionFacts.AdvanceUntilAsync(clock, () => gate.IsReady, cts.Token);
+            await orchestrator.StopAsync(cts.Token);
+
+            return (log, connector, context, logger);
+        }
+        finally
+        {
+            await harness.Stop(TestContext.Current.CancellationToken);
+        }
     }
 
     /// <summary>
