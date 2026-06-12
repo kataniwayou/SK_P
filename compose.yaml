@@ -289,6 +289,40 @@ services:
       retries: 5
       start_period: 30s
 
+  # Phase 58 (D-04 / D-05) — the Gate-A INCOMPATIBLE subject (CFG-08). A faithful processor-sample
+  # clone whose only delta is the clashing BadConfig(int Quantity) TConfig vs a schema typing
+  # "quantity" as string → Gate A withholds MarkHealthy (no skp:{id} liveness key, binds no queue).
+  # PROFILE-GATED behind "badconfig" so the DEFAULT `docker compose up` EXCLUDES it; the close gate +
+  # the Gate-A live run bring it up with `--profile badconfig`. Its /health/ready still passes (MarkReady
+  # flips — no crash-loop, D-05), so compose never marks it unhealthy; it adds NOTHING to the triple-SHA.
+  processor-badconfig:
+    profiles: ["badconfig"]
+    build:
+      context: .
+      dockerfile: src/Processor.BadConfig/Dockerfile
+    container_name: sk-processor-badconfig
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      baseapi-service:
+        condition: service_healthy
+    environment:
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Username: guest
+      RabbitMq__Password: guest
+      ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=5000"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
+      Processor__ExecutionDataTtl: "5"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8082/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
   baseapi-service:
     build:
       context: .
