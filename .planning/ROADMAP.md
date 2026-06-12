@@ -98,7 +98,12 @@
   1. RealStack E2E proves the forward pass (dispatch→slot-array write→orchestrator advance) and the recovery pass.
   2. RealStack E2E proves each keeper state: `REINJECT` (source-present re-inject / source-absent drop), `INJECT`, `DELETE`.
   3. Close gate N×GREEN + triple-SHA (psql/redis/rabbitmq) BEFORE==AFTER net-zero — slot-array index + data keys leak-free, proven by the A19 active delete (not a TTL settle) — at Release+Debug 0-warning.
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 55-01-PLAN.md — clone phase-49 close gate → phase-55-close.ps1 (composite removed, skp:msg:* count==0 added) + operator runbook (TEST-02)
+- [ ] 55-02-PLAN.md — adapt SC1 (slot-array index + A19 net-zero), retag SC3, delete composite sweeps (TEST-01)
+- [ ] 55-03-PLAN.md — rewrite SC2 (3-state + both-key DELETE) + organic recovery test (TEST-01)
+- [ ] 55-04-PLAN.md — autonomous build gate (D-08) + operator-gated live N=3×GREEN close run (D-09)
 
 ## ✅ v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume (SHIPPED 2026-06-07)
 
