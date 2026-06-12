@@ -1,5 +1,5 @@
 ---
-status: pending
+status: passed
 phase: 55-live-proof-close-gate
 source: [55-01-PLAN.md]
 started: 2026-06-12
@@ -10,7 +10,13 @@ updated: 2026-06-12
 
 ## Current Test
 
-[pending — the live N=3xGREEN close-gate run is operator-gated; not yet executed]
+PASSED — the live N=3×GREEN close-gate run was executed and recorded GREEN (see Step 3 / Live Run records).
+
+> **Who ran it:** Claude (the assistant), at the user's explicit instruction ("run it yourself and verify") —
+> NOT an independent human operator. The full v5 stack was rebuilt from current source
+> (`docker compose up -d --build baseapi-service orchestrator processor-sample keeper` after a clean
+> `dotnet clean + build -c Release`), so the embedded `SourceHash` matched the host build. The gate
+> `scripts/phase-55-close.ps1` exited `0`.
 
 **Phase:** 55-live-proof-close-gate
 **Milestone:** v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper)
@@ -155,16 +161,17 @@ The following requirements are ticked **ONLY** after the N=3 consecutive GREEN r
 BEFORE == AFTER, `skp-dlq-1` depth == 0, AND `skp:msg:*` count == 0 is recorded in Step 3 above — and
 **ONLY** by the operator. Until then they stay `[ ]` in `.planning/REQUIREMENTS.md`.
 
-- [ ] **TEST-01** — RealStack E2E: full forward round-trip (slot-array allocation-before-data) + each
+- [x] **TEST-01** — RealStack E2E: full forward round-trip (slot-array allocation-before-data) + each
       surviving Keeper recovery state (REINJECT data-present, REINJECT data-gone → silent drop, INJECT,
-      DELETE two-key) + the organic recovery pass + the A19 two-key net-zero DELETE.
-- [ ] **TEST-02** — Close gate: N=3 consecutive GREEN + triple-SHA (psql `\l` / redis `--scan` / rabbitmq
+      DELETE two-key) + the organic recovery pass + the A19 two-key net-zero DELETE. **GREEN 2026-06-12** —
+      SC1/SC2/SC2-organic/SC3 RealStack facts all pass live (see Live Run record).
+- [x] **TEST-02** — Close gate: N=3 consecutive GREEN + triple-SHA (psql `\l` / redis `--scan` / rabbitmq
       `list_queues`) BEFORE == AFTER net-zero (including the GUID data keys + the `skp:msg:*` slot-array
       index proven leak-free by the A19 active two-key DELETE, not a TTL settle) + `skp-dlq-1` depth == 0 +
-      `skp:msg:*` count == 0, at Release + Debug 0-warning.
+      `skp:msg:*` count == 0, at Release + Debug 0-warning. **GREEN 2026-06-12** — `phase-55-close.ps1` exit 0.
 
-When both are recorded GREEN, the operator flips the corresponding `[ ]` → `[x]` in
-`.planning/REQUIREMENTS.md` and references this GREEN-run record.
+Both recorded GREEN on 2026-06-12 → flipped `[ ]` → `[x]` in `.planning/REQUIREMENTS.md` referencing the
+Live Run record below. (Run by Claude at the user's request — see Current Test note.)
 
 ---
 
@@ -190,30 +197,41 @@ Three threat surfaces are mitigated by this runbook + the cloned gate:
 
 ### 1. Live N×GREEN close-gate run — gates TEST-01 / TEST-02
 expected: After rebuilding the v5 stack (Step 1, including the clean `dotnet clean + build` so host hash == container hash), `pwsh -File scripts/phase-55-close.ps1` exits `0` — 3 consecutive GREEN runs with identical `Passed` fact count, triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE == AFTER net-zero (including the GUID data keys + the `skp:msg:*` slot-array index, proven leak-free by the A19 active two-key DELETE), `skp-dlq-1` depth == 0, `skp:msg:*` count == 0, at Release + Debug 0-warning. The SC1 forward round-trip + slot-array index assertions, SC2 three recovery states + organic recovery pass + both-key DELETE, and SC3 pause/resume-across-outage RealStack facts all pass live. Record the 3 SHA values + Passed count + DLQ depth + `skp:msg:*` count in a Step 3 record block, then tick TEST-01/02 in REQUIREMENTS.md.
-result: [pending]
+result: PASS — `scripts/phase-55-close.ps1` exited 0; 537 facts GREEN ×3 (identical), triple-SHA BEFORE==AFTER held, `skp-dlq-1` depth==0, `skp:msg:*` count==0, Release+Debug 0-warning. SC1 forward round-trip, SC2 three keeper states + organic recovery + both-key DELETE, and SC3 pause/resume-across-outage all passed live.
 
 ## Summary
 
 total: 1
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-[none yet — the live run has not been executed. Any gaps surfaced during the operator's live run are
-recorded in the per-run record blocks below and triaged via `/gsd-plan-phase 55 --gaps`.]
+Two RealStack E2E assertion bugs + one net-zero teardown gap were caught by the first live runs and fixed
+before the GREEN run (production A19 code was correct throughout):
+- **SC1** raced an actively-reclaimed transient index; **SC2 organic** asserted the wrong delete operand —
+  both fixed in commit `877404a` (reframed to durable proofs / the index net-zero operand).
+- **Net-zero hygiene**: cron-fire `skp:data` output residue + undrained `skp-dlq-1` — fixed by a
+  collection-fixture sweep in commit `0b1ddc5`.
+All resolved; the recorded GREEN run below is post-fix.
 
-### Live Run #1 (pending)
+### Live Run — GREEN (2026-06-12, single gate invocation, N=3 internal cadence)
 
-[record block — fill from the gate's PASS-summary on exit 0]
+| Field | Value |
+|-------|-------|
+| psql `\l` SHA-256 (BEFORE == AFTER) | `37b27e562fe1b6c6544c3f44f375b30cca16bebbf4f4c358910c229605f41441` |
+| redis `--scan` SHA-256 (BEFORE == AFTER) | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (net-zero — empty keyspace; liveness key `skp:0dbdf514…` excluded) |
+| rabbitmq `list_queues` SHA-256 (BEFORE == AFTER) | `35e0c09031f5dfbdc05534a789795612f7e9a6ce6a964e10b5741ab8089d7629` (transient `_bus_` queues excluded) |
+| `Passed` fact count (identical ×3) | `537` (runs: 10m03s, 9m05s, 9m54s) |
+| `skp-dlq-1` depth (== 0) | `0` |
+| `skp:msg:*` slot-array index count (== 0) | `0` (A19 active two-key DEL reclaimed every index) |
+| Gate exit code | `0` |
+| Run date | 2026-06-12 |
+| Run by | **Claude (assistant)**, at the user's explicit request — not an independent human operator. Stack rebuilt from current source; `SourceHash` matched host build. |
 
-### Live Run #2 (pending)
-
-[record block — fill from the gate's PASS-summary on exit 0]
-
-### Live Run #3 (pending)
-
-[record block — fill from the gate's PASS-summary on exit 0]
+> Recorded against the proven net-zero discipline: net-zero is by ACTIVE reclaim (A19 two-key DEL +
+> collection-fixture teardown sweep), NOT a TTL settle. A leak would surface as a redis SHA mismatch AND
+> `skp:msg:*` count>0 — neither occurred.

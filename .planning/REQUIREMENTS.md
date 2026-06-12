@@ -65,8 +65,8 @@
 **: A terminal-delete exhaustion **`PERSIST`es** the `L2[messageId]` index (cancels its random TTL) and escalates to keeper **`DELETE`** now carrying `{messageId, entryId}`; the `DELETE` consumer deletes both keys in a single atomic multi-key `DEL` (drop-on-absent on either operand).
 
 ### Live Proof & Close Gate (TEST)
-- [ ] **TEST-01**: A RealStack E2E proves the forward pass + the recovery pass + each keeper state (`REINJECT` present/absent, `INJECT`, `DELETE`) under the new model.
-- [ ] **TEST-02**: The close gate runs N-consecutive-GREEN + triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE==AFTER net-zero — including the slot-array index keys + data keys (no leak), at Release + Debug 0-warning.
+- [x] **TEST-01**: A RealStack E2E proves the forward pass + the recovery pass + each keeper state (`REINJECT` present/absent, `INJECT`, `DELETE`) under the new model. *(GREEN 2026-06-12 — live N=3×GREEN close gate, 55-HUMAN-UAT.md Live Run record.)*
+- [x] **TEST-02**: The close gate runs N-consecutive-GREEN + triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE==AFTER net-zero — including the slot-array index keys + data keys (no leak), at Release + Debug 0-warning. *(GREEN 2026-06-12 — `phase-55-close.ps1` exit 0; 537×3, triple-SHA held, skp-dlq-1=0, skp:msg:*=0.)*
 
 ## Future Requirements (deferred)
 
@@ -103,7 +103,7 @@
 | GC-01 | Phase 54 | Complete |
 | GC-02 | Phase 54 | Complete |
 | GC-03 | Phase 54 | Complete |
-| TEST-01 | Phase 55 | Pending |
-| TEST-02 | Phase 55 | Pending |
+| TEST-01 | Phase 55 | Complete |
+| TEST-02 | Phase 55 | Complete |
 
 *24 requirements across 8 categories (SLOT 3 · INFRA 2 · FWD 3 · RECOV 3 · KEEP 5 · RETIRE 3 · GC 3 · TEST 2). Phase assignments filled by the roadmap.*
