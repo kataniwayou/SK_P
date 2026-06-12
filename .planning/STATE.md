@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v6.0.0
 milestone_name: Config & Payload Validation Hardening
 status: executing
-stopped_at: Completed 57-01-PLAN.md
-last_updated: "2026-06-12T20:05:14.966Z"
+stopped_at: Completed 57-02-PLAN.md
+last_updated: "2026-06-12T20:14:39.726Z"
 last_activity: 2026-06-12
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
-  percent: 50
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v6.0.0 (Config & Payload Validation Hardening) — STARTED 2026-06-12. Breaking change to the BaseProcessor author contract (typed base-config seam) + startup config-schema compatibility gate (Gate A); complements the shipped WebAPI Gate B (`PayloadConfigSchemaValidator`). Phases continue at 56.
 Phase: 57 (startup-config-schema-fetch-gate-a) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-06-12
 
@@ -674,7 +674,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████░░░░░] 50%
+Progress: [███████░░░] 67%
 
 ### Milestone Phases (v3.4.0)
 
@@ -938,6 +938,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 56 P01 | 3min | 3 tasks | 5 files |
 | Phase 56 P02 | 36min | 3 tasks | 4 files |
 | Phase 57 P01 | 31min | 3 tasks | 6 files |
+| Phase 57 P02 | 63min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1336,6 +1337,7 @@ Recent decisions affecting current work:
 - Phase 56: deser-failure proof drives a REAL BaseProcessor<TConfig> subclass with 'not json' through RunAsync -> one StepFailed, no Keeper send (Req 4a / T-56-01 mitigated)
 - Phase 56 gate verified via the xUnit v3 MTP runner natively (dotnet test --filter is ignored under Microsoft.Testing.Platform); 530/530 hermetic green, Release+Debug 0-warning
 - Phase 57 spike: A1/A2/A3 STJ verdicts ALL CONFIRMED CLASH against real ProcessorConfig.SerializerOptions (rows #13 string-enum->enum, #5/#8 number/string->int, #22 null->non-nullable) — Plan 02 locks rule table, no corrections
+- Plan 57-02: JsonSchema.Net 9.2.1 removed the keyword object model the research assumed; Gate A walks the schema as a JsonNode tree (JsonSchema.FromText kept as parse gate)
 
 ### Roadmap Milestone Log
 
@@ -1438,8 +1440,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T20:05:06.979Z
-Stopped at: Completed 57-01-PLAN.md
+Last session: 2026-06-12T20:14:32.262Z
+Stopped at: Completed 57-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.

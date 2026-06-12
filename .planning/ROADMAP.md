@@ -45,8 +45,8 @@
   5. The config-schema definition mutation window between the startup Gate A check and a later orchestration-start Gate B check is closed by the spec-locked TOCTOU policy (immutability or re-validate-on-change), with a test recording the chosen mechanism.
 **Plans**: 4 plans
 Plans:
-- [ ] 57-01-PLAN.md — Wave 0 (BLOCKING): STJ rule-table spike + RED test scaffolds (covers facts, freeze integration, inverted/extended harness facts)
-- [ ] 57-02-PLAN.md — Gate A covers-checker `ConfigSchemaCoverageCheck.Evaluate` (CFG-05/07)
+- [x] 57-01-PLAN.md — Wave 0 (BLOCKING): STJ rule-table spike + RED test scaffolds (covers facts, freeze integration, inverted/extended harness facts)
+- [x] 57-02-PLAN.md — Gate A covers-checker `ConfigSchemaCoverageCheck.Evaluate` (CFG-05/07)
 - [ ] 57-03-PLAN.md — Wire Gate A: Loop B config fetch + ConfigDefinition + decoupled MarkReady/MarkHealthy (CFG-03/04/06/07)
 - [ ] 57-04-PLAN.md — Frozen-once-referenced schema Definition + 409 handler (CFG-10)
 
