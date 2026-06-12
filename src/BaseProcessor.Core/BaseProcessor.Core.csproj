@@ -31,6 +31,13 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
+  <!-- Phase 57 Gate A: the internal ConfigSchemaCoverageCheck (CFG-05) is asserted directly by
+       BaseApi.Tests' ConfigSchemaCoverageFacts table-driven theory. The checker is process-internal
+       logic (not a DI seam), so it stays internal and is exposed to the test assembly here. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="BaseApi.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="MassTransit" />
     <PackageReference Include="StackExchange.Redis" />
