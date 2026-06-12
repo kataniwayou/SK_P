@@ -26,7 +26,7 @@ public sealed class PipelinePreFacts
             DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
     [Fact]
-    public async Task SourceStep_Skip_EmptyData_NoEndDelete()
+    public async Task SourceStep_EmptyData_ArrayDeleteRuns()
     {
         var ct = TestContext.Current.CancellationToken;
         var redis = DispatchTestKit.PresentReadWriteDeleteOkL2(new Dictionary<string, string>(), out var db);
@@ -40,7 +40,10 @@ public sealed class PipelinePreFacts
         Assert.True(processor.Invoked);                                   // ran with empty validatedData
         Assert.Equal(string.Empty, processor.LastInputData);
         Assert.Empty(send.SentKeeper.OfType<KeeperReinject>());          // no REINJECT
-        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());    // no end-delete (readSucceeded false)
+        // A19/D-06: source-step DOES issue the array DEL (ExecutionData(Guid.Empty) is a harmless absent operand).
+        await db.Received(1).KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
+        // … and zero scalar deletes (atomicity heart).
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
     }
 
