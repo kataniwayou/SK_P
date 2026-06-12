@@ -30,7 +30,8 @@ Guarantee that any processor which reaches *Healthy* can deserialize every orche
 **: A processor with a null `ConfigSchemaId` skips Gate A entirely and reaches Healthy on identity + input/output definitions alone (null-is-skip, matching `ProcessorStartupOrchestrator.cs:127-128` and `PayloadConfigSchemaValidator.cs:42`).
 
 ### Orchestration Gate Integration (CFG)
-- [ ] **CFG-08**: An orchestration whose graph includes a config-incompatible (never-Healthy) processor is blocked at orchestration start with 422 via the existing `ProcessorLivenessValidator` ("absent"), proven end-to-end against the real stack.
+- [x] **CFG-08
+**: An orchestration whose graph includes a config-incompatible (never-Healthy) processor is blocked at orchestration start with 422 via the existing `ProcessorLivenessValidator` ("absent"), proven end-to-end against the real stack.
 - [ ] **CFG-09**: A config-**compatible** processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker.
 
 ### TOCTOU Policy (CFG)
