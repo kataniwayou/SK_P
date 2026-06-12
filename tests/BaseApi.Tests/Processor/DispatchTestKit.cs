@@ -26,42 +26,44 @@ namespace BaseApi.Tests.Processor;
 /// </summary>
 internal static class DispatchTestKit
 {
+    /// <summary>A trivial field-less author config for the fake — <c>{"cfg":1}</c> deserializes harmlessly
+    /// into it under the framework's ignore-unknown options, keeping every pipeline-double fact deser-inert.</summary>
+    public sealed record DummyConfig : ProcessorConfig;
+
     /// <summary>
-    /// A test-double <see cref="BaseProcessorBase"/> whose In-Process <c>ProcessAsync</c> either returns a
-    /// configurable <see cref="List{ProcessItem}"/> (recording the (validatedData, payload) it was called
-    /// with) or throws (the throw ctor serves BOTH the <c>ProcessStatusException</c> family AND the
-    /// unexpected-exception case).
+    /// A test-double <see cref="BaseProcessor{DummyConfig}"/> whose typed In-Process <c>ProcessAsync</c> either
+    /// returns a configurable <see cref="List{ProcessItem}"/> (recording the validatedData it was called with)
+    /// or throws (the throw ctor serves BOTH the <c>ProcessStatusException</c> family AND the
+    /// unexpected-exception case). The framework deserializes the dispatch payload into a <see cref="DummyConfig"/>
+    /// before invoking the seam — the double is deserialize-inert (no field to populate).
     /// </summary>
-    public sealed class FakeProcessor : BaseProcessorBase
+    public sealed class FakeProcessor : BaseProcessor<DummyConfig>
     {
-        private readonly Func<string, string, CancellationToken, Task<List<ProcessItem>>> _impl;
+        private readonly Func<string, DummyConfig?, CancellationToken, Task<List<ProcessItem>>> _impl;
 
         public FakeProcessor(List<ProcessItem> items)
-            => _impl = (validatedData, payload, _) =>
+            => _impl = (validatedData, config, _) =>
             {
                 Invoked = true;
                 LastInputData = validatedData;
-                LastConfig = payload;
                 return Task.FromResult(items);
             };
 
         public FakeProcessor(Exception toThrow)
-            => _impl = (validatedData, payload, _) =>
+            => _impl = (validatedData, config, _) =>
             {
                 Invoked = true;
                 LastInputData = validatedData;
-                LastConfig = payload;
                 throw toThrow;
             };
 
         /// <summary>True once the transform was actually invoked (proves the Pre guards short-circuited or not).</summary>
         public bool Invoked { get; private set; }
         public string? LastInputData { get; private set; }
-        public string? LastConfig { get; private set; }
 
         protected override Task<List<ProcessItem>> ProcessAsync(
-            string validatedData, string payload, CancellationToken ct)
-            => _impl(validatedData, payload, ct);
+            string validatedData, DummyConfig? config, CancellationToken ct)
+            => _impl(validatedData, config, ct);
     }
 
     /// <summary>Returns N completed <see cref="ProcessItem"/>s carrying the given output strings, each with
