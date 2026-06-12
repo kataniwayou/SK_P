@@ -48,6 +48,7 @@ public sealed class ProcessorIdEnricherTests
         public string? Version { get; set; }
         public string? InputDefinition { get; }
         public string? OutputDefinition { get; }
+        public string? ConfigDefinition { get; }
         public bool IsHealthy { get; }
         public Task WhenHealthy { get; } = Task.CompletedTask;
 

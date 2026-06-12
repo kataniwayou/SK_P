@@ -71,7 +71,7 @@ public sealed class IdentityResolutionFacts
 
             var orchestrator = new ProcessorStartupOrchestrator(
                 identityClient, schemaClient, sourceHash, context, gate, StubConnector(),
-                StubMeterProviderHolder(), options, fakeClock,
+                StubMeterProviderHolder(), StubConfigTypeProvider(), options, fakeClock,
                 NullLogger<ProcessorStartupOrchestrator>.Instance);
 
             // Drive the orchestrator. The two leading NotFound replies trigger two backoff delays
@@ -137,6 +137,29 @@ public sealed class IdentityResolutionFacts
     /// gRPC channel is lazy), and <c>ForceFlush</c>/<c>Dispose</c> on #1 are safe with no collector.
     /// Shared by every test that drives the orchestrator past identity-resolve (MLBL-03 / Plan 38-03).
     /// </summary>
+    /// <summary>
+    /// A stub <see cref="IConfigTypeProvider"/> returning the supplied <paramref name="configType"/> (or
+    /// <see cref="GateAStubConfig"/> by default) so the orchestrator's Gate A has a concrete <c>TConfig</c>
+    /// to reflect over WITHOUT a real <c>BaseProcessor&lt;TConfig&gt;</c> DI registration. Mirrors the
+    /// <see cref="StubConnector"/>/<see cref="StubMeterProviderHolder"/> seam pattern.
+    /// </summary>
+    internal static IConfigTypeProvider StubConfigTypeProvider(Type? configType = null)
+    {
+        var provider = Substitute.For<IConfigTypeProvider>();
+        provider.Get().Returns(configType ?? typeof(GateAStubConfig));
+        return provider;
+    }
+
+    /// <summary>The enum whose name-vs-number STJ binding is rule-table row #13 (spike-CONFIRMED CLASH).</summary>
+    internal enum GateAMode { A, B }
+
+    /// <summary>
+    /// A minimal author-config analog for Gate A facts: its <c>Mode</c> is a CLR enum, so a config-schema
+    /// declaring <c>Mode</c> as a string-enum (<c>{"enum":["A","B"]}</c>) CLASHES (row #13). A schema with
+    /// no <c>Mode</c> property (or a string <c>Mode</c>) is covered.
+    /// </summary>
+    internal sealed record GateAStubConfig(GateAMode Mode) : ProcessorConfig;
+
     internal static MeterProviderHolder StubMeterProviderHolder()
     {
         var hostProvider = Sdk.CreateMeterProviderBuilder()

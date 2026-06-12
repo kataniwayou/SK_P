@@ -161,10 +161,10 @@ public sealed class DispatchBindSequenceFacts
     }
 
     /// <summary>
-    /// CFG-06 — a Gate A clash WITHHOLDS MarkHealthy + the bind. The ordered log is exactly
-    /// <c>["ready"]</c> (gate.MarkReady fires — no crash-loop — but NO "connect"/"markhealthy"), the queue
-    /// is never bound, the context never latches Healthy, and exactly one Error log records the clash.
-    /// RED until Plan 02 (checker) + Plan 03 (Gate A wiring + ConfigDefinition) land.
+    /// CFG-06 — a Gate A clash WITHHOLDS MarkHealthy + the bind. The bind/Ready/MarkHealthy ordered log is
+    /// EMPTY (no "connect"/"ready"/"markhealthy" — none of the completion block ran), yet
+    /// <c>gate.MarkReady</c> DID fire (<c>gate.IsReady</c> — readiness green, NO K8s crash-loop, Pitfall 1).
+    /// The queue is never bound, the context never latches Healthy, and exactly one Error log records the clash.
     /// </summary>
     [Fact]
     public async Task GateA_Clash_Withholds_MarkHealthy_And_Bind()
@@ -175,12 +175,16 @@ public sealed class DispatchBindSequenceFacts
         var clashingDef =
             "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"type\":\"object\",\"properties\":{\"Mode\":{\"enum\":[\"A\",\"B\"]}}}";
 
-        var (log, connector, context, logger) = await DriveOrchestratorWithConfigSchema(
+        var (log, connector, context, logger, gate) = await DriveOrchestratorWithConfigSchema(
             configSchemaId: configId,
             definitions: new Dictionary<Guid, string> { [configId] = clashingDef });
 
-        // ONLY "ready" — gate.MarkReady fired (no crash-loop, Pitfall 1) but the bind + MarkHealthy did NOT.
-        Assert.Equal(new[] { "ready" }, log);
+        // The completion block never ran — NO connect/ready/markhealthy. (The "ready" log entry is the
+        // RecordingHandle's await-Ready continuation, which only fires on the bind path; gate.MarkReady is a
+        // separate StartupGate latch asserted directly below.)
+        Assert.Empty(log);
+        // gate.MarkReady DID fire — readiness goes green so K8s does NOT crash-loop (D-09, Pitfall 1, T-57-05).
+        Assert.True(gate.IsReady);
         Assert.Null(connector.BoundQueueName);
         Assert.False(context.IsHealthy);
 
@@ -196,7 +200,7 @@ public sealed class DispatchBindSequenceFacts
     [Fact]
     public async Task GateA_NullConfigSchemaId_Skips_And_Reaches_Healthy()
     {
-        var (log, connector, context, _) = await DriveOrchestratorWithConfigSchema(
+        var (log, connector, context, _, _) = await DriveOrchestratorWithConfigSchema(
             configSchemaId: null,
             definitions: new Dictionary<Guid, string>());
 
@@ -212,7 +216,7 @@ public sealed class DispatchBindSequenceFacts
     /// + recording context + a <see cref="CapturingLogger"/> and returns the ordered event log, the
     /// connector, the recording context, and the logger so Gate A pass/clash/skip is fully observable.
     /// </summary>
-    private static async Task<(List<string> Log, RecordingConnector Connector, RecordingContext Context, CapturingLogger Logger)>
+    private static async Task<(List<string> Log, RecordingConnector Connector, RecordingContext Context, CapturingLogger Logger, StartupGate Gate)>
         DriveOrchestratorWithConfigSchema(Guid? configSchemaId, IReadOnlyDictionary<Guid, string> definitions)
     {
         var foundId = Guid.NewGuid();
@@ -270,14 +274,18 @@ public sealed class DispatchBindSequenceFacts
 
             var orchestrator = new ProcessorStartupOrchestrator(
                 identityClient, schemaClient, sourceHash, context, gate, connector,
-                IdentityResolutionFacts.StubMeterProviderHolder(), options, clock, logger);
+                IdentityResolutionFacts.StubMeterProviderHolder(),
+                // Gate A reflects over GateAStubConfig (its Mode is a CLR enum) — so a config schema declaring
+                // Mode as a string-enum CLASHES (row #13); a null config def or a schema without Mode is covered.
+                IdentityResolutionFacts.StubConfigTypeProvider(typeof(IdentityResolutionFacts.GateAStubConfig)),
+                options, clock, logger);
 
             await orchestrator.StartAsync(cts.Token);
             // On the clash path the context never latches Healthy, so wait on the gate (fires on all paths).
             await IdentityResolutionFacts.AdvanceUntilAsync(clock, () => gate.IsReady, cts.Token);
             await orchestrator.StopAsync(cts.Token);
 
-            return (log, connector, context, logger);
+            return (log, connector, context, logger, gate);
         }
         finally
         {
@@ -332,7 +340,8 @@ public sealed class DispatchBindSequenceFacts
 
             var orchestrator = new ProcessorStartupOrchestrator(
                 identityClient, schemaClient, sourceHash, context, gate, connector,
-                IdentityResolutionFacts.StubMeterProviderHolder(), options, clock,
+                IdentityResolutionFacts.StubMeterProviderHolder(), IdentityResolutionFacts.StubConfigTypeProvider(),
+                options, clock,
                 NullLogger<ProcessorStartupOrchestrator>.Instance);
 
             await orchestrator.StartAsync(cts.Token);

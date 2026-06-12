@@ -24,22 +24,34 @@ namespace BaseProcessor.Core.Startup;
 /// response arrives — then populate the <see cref="IProcessorContext"/>.
 /// </para>
 /// <para>
-/// <b>Loop B (definitions):</b> for each NON-NULL <c>InputSchemaId</c>/<c>OutputSchemaId</c> resolve
-/// the definition via <c>IRequestClient&lt;GetSchemaDefinition&gt;</c> with the same unbounded
-/// retry/backoff. <c>null</c> schema Ids are SKIPPED (no request sent — SCHEMA-02) and
-/// the config schema id is NEVER queried (D-05).
+/// <b>Loop B (definitions):</b> for each NON-NULL <c>InputSchemaId</c>/<c>OutputSchemaId</c>/<c>ConfigSchemaId</c>
+/// resolve the definition via <c>IRequestClient&lt;GetSchemaDefinition&gt;</c> with the same unbounded
+/// retry/backoff. <c>null</c> schema Ids are SKIPPED (no request sent — SCHEMA-02 / CFG-07 fetch-side).
+/// The config schema id IS now queried (D-12 lifts the prior D-05 carve-out) and its definition stored on
+/// <see cref="IProcessorContext.ConfigDefinition"/> for Gate A.
 /// </para>
 /// <para>
-/// <b>Completion (D-02/D-03 — EXEC-01, the load-bearing order):</b> after identity + all required
-/// non-null definitions resolve, bind the dispatch receive endpoint named <c>{Id:D}</c> on the
-/// running bus via <c>IReceiveEndpointConnector.ConnectReceiveEndpoint</c>
+/// <b>Gate A (CFG-05/06/07 — D-09/D-11/D-13):</b> AFTER Loop B and BEFORE the dispatch bind, run
+/// <see cref="ConfigSchemaCoverageCheck.Evaluate"/> on the fetched <c>ConfigDefinition</c> vs the concrete
+/// <c>TConfig</c> (from <see cref="IConfigTypeProvider"/>). A null definition is covered (skip — CFG-07).
+/// On a clash the processor STAYS UP but never serves: log ONE Error (D-10), fire
+/// <see cref="IStartupGate.MarkReady"/> (no K8s crash-loop — D-09), WITHHOLD
+/// <see cref="IProcessorContext.MarkHealthy"/>, do NOT bind the receive endpoint, and return (terminal,
+/// no retry — D-11). Because the heartbeat writes L2 only when <c>IsHealthy</c>, a clash means no
+/// <c>skp:{id}</c> key → the orchestration-start liveness gate reports "absent" → 422.
+/// </para>
+/// <para>
+/// <b>Completion (D-02/D-03 — EXEC-01, the load-bearing order):</b> on Gate A pass OR a null config id,
+/// bind the dispatch receive endpoint named <c>{Id:D}</c> on the running bus via
+/// <c>IReceiveEndpointConnector.ConnectReceiveEndpoint</c>
 /// (durable defaults + a bare <see cref="EntryStepDispatchConsumer"/> attached — NO bus retry latch,
 /// A18/Phase-53 D-01: send-exhaustion throws → broker nack-requeue redelivery, no _error),
 /// <c>await handle.Ready</c>, THEN call <see cref="IProcessorContext.MarkHealthy"/> and
 /// <see cref="IStartupGate.MarkReady"/>. Because the heartbeat writes L2 only when <c>IsHealthy</c>,
 /// the <c>"Healthy"</c> key necessarily lands in L2 AFTER the bind — so the orchestrator (which admits
-/// only Healthy processors) never Sends to a non-existent queue. <c>/startup</c> and <c>/ready</c> flip
-/// green HERE, not at bare host start.
+/// only Healthy processors) never Sends to a non-existent queue. <see cref="IStartupGate.MarkReady"/> fires
+/// on BOTH the clash path and the pass/skip path (D-09); <see cref="IProcessorContext.MarkHealthy"/> + the
+/// bind fire ONLY on pass/skip. <c>/startup</c> and <c>/ready</c> flip green HERE, not at bare host start.
 /// </para>
 /// <para>
 /// <b>Resilience (T-26-04/05):</b> exactly one in-flight request at a time per loop; a short
@@ -56,6 +68,7 @@ public sealed class ProcessorStartupOrchestrator(
     IStartupGate gate,
     IReceiveEndpointConnector endpointConnector,
     MeterProviderHolder meterProviderHolder,
+    IConfigTypeProvider configType,
     IOptions<ProcessorLivenessOptions> options,
     TimeProvider clock,
     ILogger<ProcessorStartupOrchestrator> logger) : BackgroundService
@@ -121,8 +134,10 @@ public sealed class ProcessorStartupOrchestrator(
         if (stoppingToken.IsCancellationRequested)
             return;
 
-        // --- Loop B: per-non-null definition (SCHEMA-01/02). Never read the config schema id (D-05). ---
-        foreach (var schemaId in new[] { context.InputSchemaId, context.OutputSchemaId })
+        // --- Loop B: per-non-null definition (SCHEMA-01/02). Resolve input/output AND config definitions
+        // (D-12; the D-05 "never read the config schema id" carve-out is lifted — the config def is Gate A's
+        // input, CFG-03/04). A null config id is null-skipped by the existing guard below (CFG-07 fetch-side). ---
+        foreach (var schemaId in new[] { context.InputSchemaId, context.OutputSchemaId, context.ConfigSchemaId })
         {
             if (schemaId is not { } id)
                 continue; // null schema id skipped by design — no request sent (SCHEMA-02).
@@ -161,7 +176,22 @@ public sealed class ProcessorStartupOrchestrator(
                 return;
         }
 
-        // --- Completion (D-02/D-03): identity + all required non-null definitions resolved. ---
+        // --- Gate A (CFG-05/06/07 — D-09/D-11/D-13): AFTER Loop B, BEFORE the bind. ---
+        // Check the fetched config-schema definition COVERS the concrete TConfig (schema ⊨ TConfig). A null
+        // ConfigDefinition (null ConfigSchemaId) is covered → skip (CFG-07). On a clash the processor STAYS UP
+        // but never serves: one Error log (D-10), MarkReady (no crash-loop — D-09, Pitfall 1), and a terminal
+        // return that WITHHOLDS MarkHealthy + the bind (D-11). The Type is process-stable (Pitfall 4).
+        var coverage = ConfigSchemaCoverageCheck.Evaluate(context.ConfigDefinition, configType.Get());
+        if (!coverage.Covered)
+        {
+            logger.LogError(
+                "Gate A incompatibility for processor {ProcessorId} config schema {ConfigSchemaId}: {Clash}",
+                context.Id, context.ConfigSchemaId, coverage.ClashDetail);
+            gate.MarkReady();   // readiness green — NO K8s crash-loop (D-09). MarkHealthy + bind NOT reached.
+            return;             // terminal — Gate A is not retried (D-11); the definition is immutable (D-05).
+        }
+
+        // --- Completion (D-02/D-03): identity + all required non-null definitions resolved + Gate A passed/skipped. ---
         // Bind the dispatch receive endpoint BEFORE MarkHealthy (EXEC-01 — the load-bearing order):
         // because the heartbeat writes L2 only when IsHealthy, "Healthy" necessarily lands in L2 AFTER
         // the queue is declared + the consumer attached, so the orchestrator (admits only Healthy) never

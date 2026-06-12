@@ -46,8 +46,14 @@ public sealed class SchemaResolutionFacts
             if (capture.NextIsNotFound(id))
                 await context.RespondAsync(new SchemaDefinitionNotFound(id));
             else
-                await context.RespondAsync(new SchemaDefinitionFound($"def-for-{id:N}"));
+                // A VALID JSON Schema carrying the id (so per-Id identity is still provable) with NO
+                // properties — so Gate A parses it and finds no both-present clash → the processor reaches
+                // Healthy (CFG-03/04 are the subject here, not Gate A; the empty-object schema covers any TConfig).
+                await context.RespondAsync(new SchemaDefinitionFound(DefFor(id)));
         }
+
+        /// <summary>A valid (parseable) Draft 2020-12 object schema carrying the id in <c>$comment</c>.</summary>
+        public static string DefFor(Guid id) => $"{{\"type\":\"object\",\"$comment\":\"def-for-{id:N}\"}}";
     }
 
     private sealed class SchemaCapture
@@ -106,7 +112,8 @@ public sealed class SchemaResolutionFacts
 
         var orchestrator = new ProcessorStartupOrchestrator(
             identityClient, schemaClient, sourceHash, context, gate,
-            IdentityResolutionFacts.StubConnector(), IdentityResolutionFacts.StubMeterProviderHolder(), options, clock,
+            IdentityResolutionFacts.StubConnector(), IdentityResolutionFacts.StubMeterProviderHolder(),
+            IdentityResolutionFacts.StubConfigTypeProvider(), options, clock,
             NullLogger<ProcessorStartupOrchestrator>.Instance);
 
         await orchestrator.StartAsync(ct);
@@ -135,10 +142,10 @@ public sealed class SchemaResolutionFacts
             var (context, gate) = await RunOrchestratorAsync(provider, cts.Token);
 
             // (a) input + output + config definitions all resolved (D-12 lifts the D-05 config carve-out).
-            Assert.Equal($"def-for-{inputId:N}", context.InputDefinition);
-            Assert.Equal($"def-for-{outputId:N}", context.OutputDefinition);
+            Assert.Equal(CapturingSchemaResponder.DefFor(inputId), context.InputDefinition);
+            Assert.Equal(CapturingSchemaResponder.DefFor(outputId), context.OutputDefinition);
             // CFG-03 — the fetched config-schema definition is now stored on the context.
-            Assert.Equal($"def-for-{configId:N}", context.ConfigDefinition);
+            Assert.Equal(CapturingSchemaResponder.DefFor(configId), context.ConfigDefinition);
             Assert.True(context.IsHealthy);
             Assert.True(gate.IsReady);
 
@@ -174,7 +181,7 @@ public sealed class SchemaResolutionFacts
 
             // Output still resolves; input definition stays null (skipped, no request sent).
             Assert.Null(context.InputDefinition);
-            Assert.Equal($"def-for-{outputId:N}", context.OutputDefinition);
+            Assert.Equal(CapturingSchemaResponder.DefFor(outputId), context.OutputDefinition);
             // All-required-resolved with a skipped null is still Healthy (SCHEMA-02 / LIVE-04).
             Assert.True(context.IsHealthy);
             Assert.True(gate.IsReady);
@@ -184,7 +191,7 @@ public sealed class SchemaResolutionFacts
             Assert.Contains(outputId, queried);
             Assert.Contains(configId, queried);
             // CFG-03 — the config definition is resolved onto the context.
-            Assert.Equal($"def-for-{configId:N}", context.ConfigDefinition);
+            Assert.Equal(CapturingSchemaResponder.DefFor(configId), context.ConfigDefinition);
         }
         finally
         {

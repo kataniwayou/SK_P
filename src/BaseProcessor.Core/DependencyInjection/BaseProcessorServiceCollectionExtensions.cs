@@ -125,6 +125,12 @@ public static class BaseProcessorServiceCollectionExtensions
         // 5. SourceHash seam (IDENT-03) — reflection over the assembly metadata attribute, fail-fast when absent.
         services.AddSingleton<ISourceHashProvider, AssemblyMetadataSourceHashProvider>();
 
+        // 5b. Config-type seam (Phase 57 D-01) — supplies the concrete TConfig type Gate A checks the
+        //     fetched config-schema against. The default resolves the author-registered BaseProcessor<TConfig>
+        //     ONCE and reads only its generic type argument (process-stable Type; the instance is never held —
+        //     RESEARCH Pitfall 4). Singleton, mirrors ISourceHashProvider.
+        services.AddSingleton<IConfigTypeProvider, BaseProcessorConfigTypeProvider>();
+
         // 6. The mutable identity/Healthy holder shared by the orchestrator (writer) and the Phase 03
         //    heartbeat (reader).
         services.AddSingleton<IProcessorContext, ProcessorContext>();

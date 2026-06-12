@@ -23,6 +23,7 @@ internal sealed class FakeProcessorContext : IProcessorContext
     public string? Version { get; set; }
     public string? InputDefinition { get; set; }
     public string? OutputDefinition { get; set; }
+    public string? ConfigDefinition { get; set; }
     public bool IsHealthy { get; set; }
     public Task WhenHealthy { get; } = Task.CompletedTask;
 
