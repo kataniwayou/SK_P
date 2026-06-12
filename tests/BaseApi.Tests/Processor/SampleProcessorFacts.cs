@@ -8,14 +8,16 @@ namespace BaseApi.Tests.Processor;
 
 /// <summary>
 /// Hermetic unit facts for <see cref="SampleProcessor"/> (SAMPLE-01 / D-07): the one concrete
-/// In-Process transform deserializes the dispatch <c>payload</c> — the per-step assignment payload —
-/// logs it, and echoes it back as a single completed <see cref="ProcessItem"/>. A blank payload falls
-/// back to the fixed <c>"processor-sample-ok"</c> token.
+/// In-Process transform receives a framework-deserialized typed <see cref="SampleConfig"/> — the
+/// framework owns deserialization of the per-step assignment payload — logs the config's value, and
+/// echoes it back as a single completed <see cref="ProcessItem"/>. A null config (blank/absent payload)
+/// falls back to the fixed <c>"processor-sample-ok"</c> token.
 ///
 /// <para>
-/// <see cref="SampleProcessor"/> is <c>sealed</c> and its <c>ProcessAsync</c> is <c>protected</c>
+/// <see cref="SampleProcessor"/> is <c>sealed</c> and its typed <c>ProcessAsync</c> is <c>protected</c>
 /// (BaseProcessor.Core grants no <c>InternalsVisibleTo</c> to this test assembly), so the seam is
-/// invoked by reflection — the hermetic equivalent of the framework's internal forwarder.
+/// invoked by reflection — passing a typed <see cref="SampleConfig"/> exactly as the framework's internal
+/// forwarder would after deserialize.
 /// </para>
 /// </summary>
 public sealed class SampleProcessorFacts
@@ -40,23 +42,23 @@ public sealed class SampleProcessorFacts
     }
 
     private static Task<List<ProcessItem>> InvokeProcessAsync(
-        SampleProcessor processor, string validatedData, string payload)
+        SampleProcessor processor, string validatedData, SampleConfig? config)
     {
         var method = typeof(SampleProcessor).GetMethod(
             "ProcessAsync",
             BindingFlags.Instance | BindingFlags.NonPublic)!;
         return (Task<List<ProcessItem>>)method.Invoke(
-            processor, new object[] { validatedData, payload, CancellationToken.None })!;
+            processor, new object?[] { validatedData, config, CancellationToken.None })!;
     }
 
     [Fact]
-    public async Task ProcessAsync_Deserializes_Payload_Logs_It_And_Echoes_It()
+    public async Task ProcessAsync_Receives_Typed_Config_Logs_It_And_Echoes_It()
     {
         var logger = new CapturingLogger();
         var processor = new SampleProcessor(logger);
 
-        // payload is a JSON string — exactly what the assignment payload "\"StepA1\"" looks like on the wire.
-        var result = await InvokeProcessAsync(processor, "any-input", "\"StepA1\"");
+        // The framework deserialized {"value":"StepA1"} into this typed config before the seam ran.
+        var result = await InvokeProcessAsync(processor, "any-input", new SampleConfig("StepA1"));
 
         var only = Assert.Single(result);
         Assert.Equal(ProcessOutcome.Completed, only.Result);
@@ -70,29 +72,30 @@ public sealed class SampleProcessorFacts
     }
 
     [Fact]
-    public async Task ProcessAsync_Blank_Config_Falls_Back_To_Fixed_Token()
+    public async Task ProcessAsync_Null_Config_Falls_Back_To_Fixed_Token()
     {
         var logger = new CapturingLogger();
         var processor = new SampleProcessor(logger);
 
-        var result = await InvokeProcessAsync(processor, "any-input", "");
+        // Blank/absent payload → the framework hands the seam a null config (D-04).
+        var result = await InvokeProcessAsync(processor, "any-input", (SampleConfig?)null);
 
         var only = Assert.Single(result);
         Assert.Equal("processor-sample-ok", only.Data);
-        Assert.Single(logger.Entries); // still logs (payload null) — proves the seam always runs
+        Assert.Single(logger.Entries); // still logs (config null) — proves the seam always runs
     }
 
     [Fact]
-    public void ProcessAsync_Fail_Payload_Throws_FailedException()
+    public void ProcessAsync_Fail_Config_Throws_FailedException()
     {
         var logger = new CapturingLogger();
         var processor = new SampleProcessor(logger);
 
-        // D-07 worked example: the "fail" payload demonstrates the author status-exception path.
+        // D-07 worked example: a "fail" Value demonstrates the author status-exception path.
         // The seam throws SYNCHRONOUSLY (before returning the Task), so the reflection invoke
         // surfaces it wrapped in a TargetInvocationException — assert the inner is FailedException.
         var outer = Assert.Throws<TargetInvocationException>(
-            () => { _ = InvokeProcessAsync(processor, "any-input", "\"fail\""); });
+            () => { _ = InvokeProcessAsync(processor, "any-input", new SampleConfig("fail")); });
         Assert.IsType<FailedException>(outer.InnerException);
     }
 }

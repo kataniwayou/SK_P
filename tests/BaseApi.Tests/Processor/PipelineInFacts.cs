@@ -1,3 +1,4 @@
+using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Processing;
 using Messaging.Contracts;
 using Messaging.Contracts.Projections;
@@ -27,6 +28,34 @@ public sealed class PipelineInFacts
         var pipeline = new ProcessorPipeline(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
             DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
         return (pipeline, send, entryId);
+    }
+
+    /// <summary>A trivial author config for the real-subclass deser-failure fact.</summary>
+    private sealed record DeserConfig(string? Value) : ProcessorConfig;
+
+    /// <summary>A REAL <see cref="BaseProcessor{DeserConfig}"/> (not a fake) so the framework actually
+    /// runs <c>JsonSerializer.Deserialize</c> — a malformed payload throws inside ExecuteAsync before the
+    /// transform body is ever reached.</summary>
+    private sealed class RealDeserProcessor : BaseProcessor<DeserConfig>
+    {
+        protected override Task<List<ProcessItem>> ProcessAsync(
+            string validatedData, DeserConfig? config, CancellationToken ct)
+            => Task.FromResult(new List<ProcessItem>());   // never reached on a malformed payload
+    }
+
+    [Fact]
+    public async Task MalformedPayload_DeserFailure_Emits_Single_StepFailed()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (pipeline, send, entryId) = Build(new RealDeserProcessor());
+
+        // "not json" → JsonException inside BaseProcessor<DeserConfig>.ExecuteAsync
+        //            → ProcessorPipeline.cs:241 catch-all → exactly one StepFailed (D-03, Req 4a).
+        await pipeline.RunAsync(DispatchTestKit.Dispatch(entryId, Guid.NewGuid(), "not json"), Guid.NewGuid(), ct);
+
+        var sent = Assert.Single(send.Sent);               // exactly ONE result (no default, no crash)
+        Assert.IsType<StepFailed>(sent);
+        Assert.Empty(send.SentKeeper);                     // business StepFailed — NOT routed to Keeper (D-03)
     }
 
     [Fact]
