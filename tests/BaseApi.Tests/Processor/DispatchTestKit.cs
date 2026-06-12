@@ -113,6 +113,7 @@ internal static class DispatchTestKit
             .Do(_ => throw boom);
         // KeyDeleteAsync is a no-op success (the source-delete tail runs and succeeds on this path).
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: array DEL count removed
         // Phase-51 FWD-01: KeyExists(L2[messageId]) FALSE → forward branch (the slot HASH ops succeed so the
         // data-write fault is reached). HashSetAsync + KeyExpireAsync stubbed OK so the allocation index lands.
         db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(false);
