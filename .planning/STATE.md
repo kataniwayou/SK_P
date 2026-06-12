@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v5.0.0
-milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
-status: milestone_complete
-stopped_at: Phase 55-04 build gate (D-08) PASSED; STOPPED at 55-04 Task 2 operator close-gate checkpoint (D-09)
-last_updated: "2026-06-12T08:39:41.623Z"
+milestone: v6.0.0
+milestone_name: Config & Payload Validation Hardening
+status: defining_requirements
+stopped_at: ""
+last_updated: "2026-06-12"
 last_activity: 2026-06-12
 progress:
-  total_phases: 6
-  completed_phases: 6
-  total_plans: 19
-  completed_plans: 19
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -25,14 +25,15 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 ## Current Position
 
-Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
-Phase: 55
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-12
+Milestone: v6.0.0 (Config & Payload Validation Hardening) — STARTED 2026-06-12. Breaking change to the BaseProcessor author contract (typed base-config seam) + startup config-schema compatibility gate (Gate A); complements the shipped WebAPI Gate B (`PayloadConfigSchemaValidator`). Phases continue at 56.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-12 — Milestone v6.0.0 started
 
 ### Roadmap Evolution
 
+- 2026-06-12 — **Milestone v6.0.0 started** (Config & Payload Validation Hardening): base config-class seam on `BaseProcessor` (authors inherit a typed config; the framework deserializes the dispatch payload into it, replacing the raw-string seam) + startup config-schema fetch (Loop B also reads `ConfigSchemaId`, lifting the D-05 carve-out) + **Gate A** (config-type↔config-schema compat → withhold `MarkHealthy` on mismatch → no L2 liveness → orchestration-start `ProcessorLivenessValidator` blocks 422). Null `ConfigSchemaId` skips Gate A (null-is-skip). Complements the shipped WebAPI **Gate B** (`PayloadConfigSchemaValidator`). v5.0.0 (phases 50-55) shipped/complete. Breaking author-contract change → major bump. Phases continue at **56**.
 - 2026-06-12 — **Phase 54 inserted** (`54-terminal-index-delete`): active terminal reclaim of the `L2[messageId]` allocation index — the processor happy-path tail deletes both the source `L2[entryId]` and the `L2[messageId]` index in one atomic multi-key `DEL`; exhaustion `PERSIST`s the index + escalates to a keeper `DELETE` now carrying `{messageId, entryId}` (both keys deleted atomically). Restores v4 CLEANUP-grade deterministic net-zero that A18's TTL-only index reclaim gave up. Design-doc amendment **A19** (LOCKED 2026-06-12). The live-proof + close-gate phase was **renumbered 54→55**. New reqs GC-01/02/03; TEST-01/02 reassigned to Phase 55. Milestone now phases 50-55 (6 phases). Worst case = duplicate message on a source-step crash-before-ack (A16-accepted).
 - 2026-06-11 — ROADMAP.md reconciled: v4.0.0 milestone + phases 43-49 backfilled into the Milestones list, a v4.0.0 section, the Progress table, and the execution-order line (the table had drifted, stopping at Phase 42 despite 43-49 having shipped). Documentation only — no phase content changed.
 - 2026-06-11 — Phase 50 added (`50-recovery-rearchitecture-slot-array-3-state-keeper`): a recovery re-architecture that **supersedes v4.0.0 Model B** — processor-owned `messageId` slot-array recovery + a 3-state keeper (`REINJECT`/`INJECT`/`DELETE`), split infra taxonomy (`infra_messageId`/`infra_entryId`), configurable DLQ1-vs-outage exhaustion, gate-closed non-destructive consume. Source of truth: design-doc Amendment **A18** (`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`). **Breaking — likely warrants its own milestone (`/gsd-new-milestone`); not yet planned.**

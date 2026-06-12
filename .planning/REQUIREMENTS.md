@@ -1,109 +1,52 @@
-# Steps API — v5.0.0 Requirements
+# Steps API — v6.0.0 Requirements
 
-> **Milestone:** v5.0.0 — Recovery Re-architecture (messageId slot-array + 3-state keeper)
-> **Source of truth:** `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED 2026-06-11)
-> **Posture:** Breaking successor to v4.0.0's recovery core. **Supersedes Model B** (keeper-owned composite backup key + `UPDATE`/`CLEANUP` + the 5-state consumer) with a **processor-owned `messageId` slot-array** model + a **3-state keeper**. **Retained unchanged from v4.0.0:** BIT health gate + global pause/resume (A14), four typed `Step*` result records (A15), at-least-once / no-dedup (A16), single consolidated `skp-dlq-1` (A4). Phases continue at **50**.
+> **Milestone:** v6.0.0 — Config & Payload Validation Hardening
+> **Source of truth:** Locked Gate A / Gate B analysis (planning conversation, 2026-06-12).
+> **Posture:** **Breaking change** to the `BaseProcessor` author contract. Introduces a typed base-config seam authors inherit (replacing the raw-string `ProcessAsync(string validatedData, string payload)` deserialize) and a startup **config-schema compatibility gate (Gate A)** that withholds processor *Healthy* on incompatibility — so the orchestration-start liveness gate blocks any workflow using a config-incompatible processor. Complements the already-shipped WebAPI **Gate B** (`PayloadConfigSchemaValidator`, payload↔`ConfigSchemaId` at orchestration start). Net effect: runtime payload-deserialization exceptions become impossible except for in-transit payload mutation. Phases continue at **56**.
+
+## Goal
+
+Guarantee that any processor which reaches *Healthy* can deserialize every orchestration-admitted payload, by enforcing the transitive invariant `payload ⊨ ConfigSchemaId` (Gate B, exists) ∧ `ConfigSchemaId ⊨ configType` (Gate A, new) ⟹ payload deserializes.
 
 ## Requirements
 
-### Processor Slot-Array Recovery (SLOT)
-- [x] **SLOT-01
-**: Post-Process generates a GUID `entryId`, then writes the allocation index `L2[messageId][slot]=entryId` (TTL random) **before** writing the data key (allocation-before-data, so a crash never leaves unreferenced data).
-- [x] **SLOT-02
-**: Post-Process writes `L2[entryId]=data` after the allocation index write.
-- [x] **SLOT-03
-**: A slot is retired to `guid.empty` **only after** that item's `completed` result is confirmed-sent to the orchestrator (send-before-retire), so a recovery replay never re-sends a completed entry while leaving infra entries re-checkable.
+### Base Config Seam (CFG)
+- [ ] **CFG-01**: A processor author declares its configuration as a typed class inheriting a framework-provided base config; the framework deserializes the dispatch `payload` into that typed config and supplies it to the author's transform (replacing the raw-string `payload` parameter at `BaseProcessor.cs:29`).
+- [ ] **CFG-02**: `Processor.Sample` is migrated to the new typed-config seam as the worked example (clean break — the old raw-string deserialize is removed).
 
-### Infra Taxonomy (INFRA)
-- [x] **INFRA-01
-**: An allocation-index write exhausted after its retry loop sets `error_message="infra_messageId"`; the item is **dropped** (no send anywhere).
-- [x] **INFRA-02
-**: A data-key write exhausted after its retry loop sets `error_message="infra_entryId"`; the item is sent to keeper **`INJECT`** carrying `(data, deleteEntryId)`.
+### Startup Config-Schema Fetch (CFG)
+- [ ] **CFG-03**: At startup, when `ConfigSchemaId` is non-null, the processor fetches the config-schema definition over the bus (extends the Loop B definition-fetch at `ProcessorStartupOrchestrator.cs:124`, lifting the D-05 "never read the config schema id" carve-out) and stores it on the processor context (extends `ProcessorContext.SetDefinition`).
+- [ ] **CFG-04**: A missing config-schema definition is **transient** — the startup loop retries on `SchemaDefinitionNotFound` / timeout exactly as it does for input/output definitions (boot-before-register tolerated).
 
-### Forward Pass (FWD)
-- [x] **FWD-01
-**: On `NOT exist L2[messageId]` the processor runs the forward pass (Pre → In → Post); an existence-check / source-read L2 exhaustion routes to keeper **`REINJECT`** and ends the round trip with input intact.
-- [x] **FWD-02
-**: Forward dispatch routes per item — non-`infra_*` → orchestrator result; `infra_entryId` → keeper `INJECT`; `infra_messageId` → drop.
-- [x] **FWD-03
-**: The forward happy-path tail deletes the source `entryId`; delete exhaustion → keeper **`DELETE`**.
+### Gate A — Startup Config Compatibility (CFG)
+- [ ] **CFG-05**: At startup the processor validates that its concrete config type *covers* the fetched config-schema definition (every payload valid under `ConfigSchemaId` deserializes into the config type — direction/fidelity locked during spec).
+- [ ] **CFG-06**: On a Gate A incompatibility the processor **never reaches Healthy** — `MarkHealthy` is withheld, so the liveness heartbeat no-ops (`ProcessorLivenessHeartbeat.cs:70`) and no `skp:{id}` L2 key is written; the incompatibility is **terminal** (not retried like a missing definition) and the reason is logged.
+- [ ] **CFG-07**: A processor with a null `ConfigSchemaId` skips Gate A entirely and reaches Healthy on identity + input/output definitions alone (null-is-skip, matching `ProcessorStartupOrchestrator.cs:127-128` and `PayloadConfigSchemaValidator.cs:42`).
 
-### Recovery Pass (RECOV)
-- [x] **RECOV-01
-**: On `exist L2[messageId]` the processor runs the recovery pass — reads `entryIds[]` and builds a temp list per slot (`exists`→completed · `not-exist`→failed · L2-fail→failed+`infra_entryId`); a `read L2[messageId]` / existence-check exhaustion routes to keeper `REINJECT`.
-- [x] **RECOV-02
-**: Recovery dispatch — `completed` → re-send orchestrator(`completed`) then retire the slot to `guid.empty`; `failed` not-exist → drop; `failed` `infra_entryId` → leave the slot intact (preserved for retry).
-- [x] **RECOV-03
-**: If any recovery item is `infra_entryId` → send keeper `REINJECT` and **do NOT delete the source** (`REINJECT` and source-delete are mutually exclusive); otherwise delete the source `entryId` (exhaustion → keeper `DELETE`).
+### Orchestration Gate Integration (CFG)
+- [ ] **CFG-08**: An orchestration whose graph includes a config-incompatible (never-Healthy) processor is blocked at orchestration start with 422 via the existing `ProcessorLivenessValidator` ("absent"), proven end-to-end against the real stack.
+- [ ] **CFG-09**: A config-**compatible** processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker.
 
-### 3-State Keeper (KEEP)
-- [x] **KEEP-01
-**: `REINJECT` reads the source `entryId` (drops if absent), then re-injects a reconstructed `EntryStepDispatch` carrying the original `Payload` to the processor input (simulate orchestrator send).
-- [x] **KEEP-02
-**: `INJECT` (forward-only — data is in-hand) writes `L2[entryId]=data`, sends a reconstructed `StepCompleted` to the orchestrator, then deletes `deleteEntryId`.
-- [x] **KEEP-03
-**: `DELETE` deletes the L2 key; drops if the key is absent.
-- [x] **KEEP-04
-**: The keeper performs an L2 op only when the BIT gate is open; **gate-closed → non-destructive consume** (no dequeue-and-drop — pause consumption / requeue without ack so messages accumulate and drain when the gate opens).
-- [x] **KEEP-05
-**: Keeper exhaustion policy is **configurable** — DLQ1 mode (exhausted op/send dead-letters to `skp-dlq-1`) vs sustained-outage mode (hold/requeue and wait for L2 recovery, no dead-letter).
+### TOCTOU Policy (CFG)
+- [ ] **CFG-10**: The config-schema definition mutation window between a processor's startup Gate A check and a later orchestration-start Gate B check is closed by an explicit policy — config-schema definition immutability **or** processor re-validation on schema change (decision locked during spec; this requirement records the chosen mechanism and its test).
 
-### Model-B Teardown (RETIRE)
-- [x] **RETIRE-01
-**: The composite backup key `L2[corr:wf:ProcessorId:executionId]` + its `BackupOptions` TTL are removed.
-- [x] **RETIRE-02
-**: The `UPDATE` and `CLEANUP` keeper-state contracts + consumers are removed.
-- [x] **RETIRE-03
-**: The 5-state recovery consumer collapses to the 3 surviving states (`REINJECT`/`INJECT`/`DELETE`); no Model-B remnants survive a source/reflection sweep.
+## Open Decisions (resolved during /gsd-spec-phase, not pre-committed here)
 
-### Active Index GC (GC) — A19 (amends A18's TTL-only index reclaim)
-- [x] **GC-01
-**: The processor happy-path tail (forward Post tail + recovery all-clear tail) deletes BOTH the source `L2[entryId]` data key AND the origin `L2[messageId]` allocation index in a **single atomic Redis multi-key `DEL`** — actively reclaiming the index rather than waiting out its random TTL (the TTL is demoted to a crash-backstop).
-- [x] **GC-02
-**: The terminal two-key delete is **mutually exclusive with `REINJECT`** — it runs only on the no-`infra_entryId`/no-`REINJECT` path; on any `REINJECT` neither key is deleted (the index survives for the replay's `EXIST L2[messageId]` recovery pass).
-- [x] **GC-03
-**: A terminal-delete exhaustion **`PERSIST`es** the `L2[messageId]` index (cancels its random TTL) and escalates to keeper **`DELETE`** now carrying `{messageId, entryId}`; the `DELETE` consumer deletes both keys in a single atomic multi-key `DEL` (drop-on-absent on either operand).
-
-### Live Proof & Close Gate (TEST)
-- [x] **TEST-01**: A RealStack E2E proves the forward pass + the recovery pass + each keeper state (`REINJECT` present/absent, `INJECT`, `DELETE`) under the new model. *(GREEN 2026-06-12 — live N=3×GREEN close gate, 55-HUMAN-UAT.md Live Run record.)*
-- [x] **TEST-02**: The close gate runs N-consecutive-GREEN + triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE==AFTER net-zero — including the slot-array index keys + data keys (no leak), at Release + Debug 0-warning. *(GREEN 2026-06-12 — `phase-55-close.ps1` exit 0; 537×3, triple-SHA held, skp-dlq-1=0, skp:msg:*=0.)*
+1. **Gate A compatibility direction/fidelity** — structural subsumption vs. derive-schema-from-type-and-compare; how faithfully it must model the `System.Text.Json` deserialization contract (unknown properties, required/optional, number coercion, enums).
+2. **Terminal-unhealthy mechanics** — the Healthy latch is one-way (`MarkHealthy` only, no `MarkUnhealthy`, `ProcessorContext.cs:83-89`); likely "withhold Healthy + surface a separate diagnostic", since the latch is binary.
+3. **TOCTOU policy** (CFG-10) — immutable config-schema definitions vs. re-validate-on-change.
 
 ## Future Requirements (deferred)
 
-- Auto-resume sweep into a recovered L2 after a sustained-outage hold (carried from the v3.7.0 `FUTURE-KEEPER-SWEEP` deferral) — out of scope for v5.0.0.
+- Per-step config diagnostics surfaced to operators (which step/assignment would fail which processor) — beyond the binary liveness gate.
+- Generalizing Gate A to input/output schema-vs-type compatibility (this milestone scopes config only).
 
 ## Out of Scope
 
-- **Re-introducing a dedup / idempotency key** — v5.0.0 stays at-least-once / no-dedup (A16); duplicate effects remain tolerated. The slot-array `if exist L2[messageId]` branch is a *replay-dedup-of-sends* optimization, not a downstream-effect dedup.
-- **Changing the BIT gate, pause/resume, typed `Step*` records, or the single `skp-dlq-1`** — retained unchanged from v4.0.0 (A14/A15/A4).
+- Changing Gate B (`PayloadConfigSchemaValidator`) — it already validates the attached payload against `ConfigSchemaId` at orchestration start and is retained unchanged.
+- Runtime per-message re-validation of config against schema inside the processor hot path (the gate is startup-time; the hot path stays deserialize-and-go).
+- In-transit payload integrity (message-bus tamper protection) — explicitly the one residual deserialize-failure window this milestone does not close.
 
 ## Traceability
 
-| REQ-ID | Phase | Status |
-|--------|-------|--------|
-| SLOT-01 | Phase 51 | Complete |
-| SLOT-02 | Phase 51 | Complete |
-| SLOT-03 | Phase 51 | Complete |
-| INFRA-01 | Phase 51 | Complete |
-| INFRA-02 | Phase 51 | Complete |
-| FWD-01 | Phase 51 | Complete |
-| FWD-02 | Phase 51 | Complete |
-| FWD-03 | Phase 51 | Complete |
-| RECOV-01 | Phase 51 | Complete |
-| RECOV-02 | Phase 51 | Complete |
-| RECOV-03 | Phase 51 | Complete |
-| KEEP-01 | Phase 52 | Complete |
-| KEEP-02 | Phase 52 | Complete |
-| KEEP-03 | Phase 52 | Complete |
-| KEEP-04 | Phase 52 | Complete |
-| KEEP-05 | Phase 52 | Complete |
-| RETIRE-01 | Phase 50 | Complete |
-| RETIRE-02 | Phase 50 | Complete |
-| RETIRE-03 | Phase 53 | Complete |
-| GC-01 | Phase 54 | Complete |
-| GC-02 | Phase 54 | Complete |
-| GC-03 | Phase 54 | Complete |
-| TEST-01 | Phase 55 | Complete |
-| TEST-02 | Phase 55 | Complete |
-
-*24 requirements across 8 categories (SLOT 3 · INFRA 2 · FWD 3 · RECOV 3 · KEEP 5 · RETIRE 3 · GC 3 · TEST 2). Phase assignments filled by the roadmap.*
+_(Filled by the roadmapper — each CFG-NN mapped to exactly one phase.)_
