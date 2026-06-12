@@ -102,8 +102,15 @@ public abstract class BaseService<TEntity, TCreate, TUpdate, TRead>
         return _mapper.ToRead(entity);                                   // 6 — audit fields visible
     }
 
-    /// <summary>PUT /api/v1/{entity}/{id} — mirrors CreateAsync minus step 3 (entity already exists).</summary>
-    public async Task<TRead> UpdateAsync(Guid id, TUpdate dto, CancellationToken ct)
+    /// <summary>
+    /// PUT /api/v1/{entity}/{id} — mirrors CreateAsync minus step 3 (entity already exists).
+    /// <para>
+    /// <c>virtual</c> (Phase 57 / CFG-10): additive — the sole override is <c>SchemaService.UpdateAsync</c>,
+    /// which layers a frozen-once-referenced precondition (a referenced schema's Definition cannot change → 409)
+    /// in front of this base verb order. No behavior change for any other entity.
+    /// </para>
+    /// </summary>
+    public virtual async Task<TRead> UpdateAsync(Guid id, TUpdate dto, CancellationToken ct)
     {
         await _updateValidator.ValidateAndThrowAsync(dto, ct);
         var entity = await _repo.GetAsync(id, ct);
