@@ -17,7 +17,7 @@ namespace BaseApi.Tests.Orchestrator;
 /// D-02: the SC3 outage proof STOPS <c>sk-redis</c>, which would destabilize any sibling RealStack test
 /// that touches L2. It therefore lives in its OWN xUnit collection with parallelization DISABLED so it
 /// runs ALONE — NEVER the shared <c>"Observability"</c> collection that SC1/SC2 use. The class still
-/// carries <c>[Trait("Category","RealStack")]</c> + <c>[Trait("Phase","49")]</c> so the close gate runs
+/// carries <c>[Trait("Category","RealStack")]</c> + <c>[Trait("Phase","55")]</c> so the close gate runs
 /// it — just serialized against everything else.
 /// </summary>
 [CollectionDefinition("RedisOutageSerial", DisableParallelization = true)]
@@ -82,14 +82,14 @@ public sealed class RedisOutageSerialCollection { }
 /// close gate.
 /// </para>
 /// <para>
-/// Tagged <c>Category=RealStack</c> + <c>Phase=49</c>: the hermetic filter (<c>Category!=RealStack</c>)
-/// EXCLUDES this fact; it runs only against the operator-gated live v4 stack (49-HUMAN-UAT.md). TEST-02
+/// Tagged <c>Category=RealStack</c> + <c>Phase=55</c>: the hermetic filter (<c>Category!=RealStack</c>)
+/// EXCLUDES this fact; it runs only against the operator-gated live v5 stack (55-HUMAN-UAT.md). TEST-02
 /// stays UNTICKED until that GREEN live run.
 /// </para>
 /// </summary>
 [Trait("Category", "E2E")]
 [Trait("Category", "RealStack")]
-[Trait("Phase", "49")]
+[Trait("Phase", "55")]
 [Collection("RedisOutageSerial")]
 public sealed class SC3PauseResumeOutageE2ETests
 {
@@ -592,19 +592,6 @@ public sealed class SC3PauseResumeOutageE2ETests
                 if (ParentIndexMembersToSrem.Count > 0)
                 {
                     await db.SetRemoveAsync(L2ProjectionKeys.ParentIndex(), ParentIndexMembersToSrem.ToArray());
-                }
-
-                // GAP-49-8: sweep any composite backup keys (skp:{corr}:{wf}:{proc}:{exec}) the live Keeper
-                // left for this run's workflows. The composite is a bounded 2-day crash-backstop normally
-                // deleted by the happy-path CLEANUP/INJECT, but a race across the 2 keeper replicas can orphan
-                // one (CLEANUP processed before its UPDATE). Scan-delete by workflowId (the 2nd key segment)
-                // so the close-gate redis net-zero holds without waiting out the 2-day TTL.
-                foreach (var srv in cleanupMux.GetEndPoints())
-                {
-                    var server = cleanupMux.GetServer(srv);
-                    foreach (var wfId in ParentIndexMembersToSrem)
-                        foreach (var compositeKey in server.Keys(pattern: $"skp:*:{wfId}:*"))
-                            await db.KeyDeleteAsync(compositeKey);
                 }
             }
             Restore();
