@@ -238,6 +238,7 @@ internal static class DispatchTestKit
                 Arg.Any<ValueCondition>(), Arg.Any<CommandFlags>()))
             .Do(_ => throw boom);
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: array DEL count removed
         var mux = Substitute.For<IConnectionMultiplexer>();
         mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
         return mux;
