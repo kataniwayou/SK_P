@@ -116,6 +116,16 @@ public sealed class SchemaService :
                     WriteCanonical(writer, item);
                 writer.WriteEndArray();
                 break;
+            case JsonValueKind.Number:
+                // Postgres `jsonb` also normalizes NUMBER tokens (3.140 → 3.14, 1e3 → 1000), so an ordinal
+                // compare of the raw token still false-positives. Re-emit via the shortest round-trippable
+                // form so the stored (normalized) and incoming representations of the same value match (D-07).
+                // Both sides get the SAME normalization, so semantically-equal numbers always canonicalize equal.
+                if (element.TryGetDouble(out var d))
+                    writer.WriteNumberValue(d);
+                else
+                    element.WriteTo(writer);
+                break;
             default:
                 element.WriteTo(writer);
                 break;

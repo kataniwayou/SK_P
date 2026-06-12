@@ -243,6 +243,13 @@ internal static class ConfigSchemaCoverageCheck
                 return null;
 
             case SchemaValueType.Object:
+                // A schema `type:object` binds to any STJ dictionary (Dictionary<,>/IDictionary<,>/
+                // IReadOnlyDictionary<,>) — STJ deserializes any JSON object into it, so it ALWAYS covers.
+                // Do NOT recurse into the dictionary's CLR infrastructure props (Count/Keys/Values): a schema
+                // property colliding with one of those names would emit a spurious clash (D-02: never
+                // false-block a config that would actually deserialize).
+                if (IsDictionary(effective))
+                    return null;
                 // Rows #19/#20 — object → class/record: FINE (recurse property-by-property); else CLASH.
                 if (IsBindableObject(effective))
                     return WalkObject(propSchema, effective);
@@ -289,6 +296,18 @@ internal static class ConfigSchemaCoverageCheck
 
     private static bool IsFloating(Type t) =>
         t == typeof(float) || t == typeof(double) || t == typeof(decimal);
+
+    /// <summary>True for an STJ dictionary type (<c>Dictionary&lt;,&gt;</c>, <c>IDictionary&lt;,&gt;</c>,
+    /// <c>IReadOnlyDictionary&lt;,&gt;</c>) — a schema <c>type:object</c> binds into it wholesale, so it
+    /// covers without recursing into the dictionary's CLR infrastructure properties.</summary>
+    private static bool IsDictionary(Type t)
+    {
+        if (!t.IsGenericType)
+            return false;
+        var g = t.GetGenericTypeDefinition();
+        return g == typeof(Dictionary<,>) || g == typeof(IDictionary<,>)
+            || g == typeof(IReadOnlyDictionary<,>);
+    }
 
     /// <summary>A class/record that is neither a primitive/string nor a collection — a recurse target.</summary>
     private static bool IsBindableObject(Type t) =>
