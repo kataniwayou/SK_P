@@ -23,7 +23,7 @@ Guarantee that any processor which reaches *Healthy* can deserialize every orche
 **: A missing config-schema definition is **transient** — the startup loop retries on `SchemaDefinitionNotFound` / timeout exactly as it does for input/output definitions (boot-before-register tolerated).
 
 ### Gate A — Startup Config Compatibility (CFG)
-- [ ] **CFG-05**: At startup the processor validates that its concrete config type *covers* the fetched config-schema definition (every payload valid under `ConfigSchemaId` deserializes into the config type — direction/fidelity locked during spec).
+- [x] **CFG-05**: At startup the processor validates that its concrete config type *covers* the fetched config-schema definition (every payload valid under `ConfigSchemaId` deserializes into the config type — direction/fidelity locked during spec).
 - [x] **CFG-06
 **: On a Gate A incompatibility the processor **never reaches Healthy** — `MarkHealthy` is withheld, so the liveness heartbeat no-ops (`ProcessorLivenessHeartbeat.cs:70`) and no `skp:{id}` L2 key is written; the incompatibility is **terminal** (not retried like a missing definition) and the reason is logged.
 - [x] **CFG-07
@@ -62,13 +62,13 @@ Each CFG requirement is mapped to exactly one phase (100% coverage, no orphans).
 |-------------|-------|--------|
 | CFG-01 | Phase 56 — Typed Base-Config Seam | Complete |
 | CFG-02 | Phase 56 — Typed Base-Config Seam | Complete |
-| CFG-03 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
-| CFG-04 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
-| CFG-05 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
-| CFG-06 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
-| CFG-07 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
+| CFG-03 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
+| CFG-04 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
+| CFG-05 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
+| CFG-06 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
+| CFG-07 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
 | CFG-08 | Phase 58 — Orchestration-Gate Integration Proof & Close | Pending |
 | CFG-09 | Phase 58 — Orchestration-Gate Integration Proof & Close | Pending |
-| CFG-10 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
+| CFG-10 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
 
 **Coverage:** 10/10 CFG requirements mapped — no orphans, no duplicates.

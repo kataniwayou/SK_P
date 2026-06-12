@@ -47,7 +47,7 @@
 Plans:
 - [x] 57-01-PLAN.md — Wave 0 (BLOCKING): STJ rule-table spike + RED test scaffolds (covers facts, freeze integration, inverted/extended harness facts)
 - [x] 57-02-PLAN.md — Gate A covers-checker `ConfigSchemaCoverageCheck.Evaluate` (CFG-05/07)
-- [ ] 57-03-PLAN.md — Wire Gate A: Loop B config fetch + ConfigDefinition + decoupled MarkReady/MarkHealthy (CFG-03/04/06/07)
+- [x] 57-03-PLAN.md — Wire Gate A: Loop B config fetch + ConfigDefinition + decoupled MarkReady/MarkHealthy (CFG-03/04/06/07)
 - [x] 57-04-PLAN.md — Frozen-once-referenced schema Definition + 409 handler (CFG-10)
 
 #### Phase 58: Orchestration-Gate Integration Proof & Close
@@ -567,7 +567,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 54. Live Proof & Close Gate | v5.0.0 | 4/4 | Complete    | 2026-06-11 |
 | 55. Live Proof & Close Gate | v5.0.0 | 4/4 | Complete    | 2026-06-12 |
 | 56. Typed Base-Config Seam | v6.0.0 | 2/2 | Complete    | 2026-06-12 |
-| 57. Startup Config-Schema Fetch + Gate A | v6.0.0 | 0/0 | Not started | — |
+| 57. Startup Config-Schema Fetch + Gate A | v6.0.0 | 4/4 | Complete    | 2026-06-12 |
 | 58. Orchestration-Gate Integration Proof & Close | v6.0.0 | 0/0 | Not started | — |
 
 ---
