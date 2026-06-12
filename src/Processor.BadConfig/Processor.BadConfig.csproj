@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Processor.BadConfig — the CFG-08 incompatible subject (Phase 58). A faithful clone of
+    Processor.Sample with exactly ONE semantic delta: its TConfig is BadConfig(int Quantity), which
+    structurally clashes (RESEARCH Clash Shape Option A) with a config-schema that types "quantity"
+    as "string" → ConfigSchemaCoverageCheck String-case returns Detail("quantity","string",Int32) →
+    Gate A withholds MarkHealthy. A separate project dir importing SourceHash.targets yields a
+    distinct embedded SourceHash → its own DB Processor row + procId, with zero extra effort.
+
+    Common props (TargetFramework=net8.0, Nullable, ImplicitUsings, LangVersion, TreatWarningsAsErrors, …)
+    inherit from Directory.Build.props — do NOT redeclare them. NuGet versions are CPM-pinned in
+    Directory.Packages.props — NO Version= attribute on any PackageReference.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Processor.BadConfig</RootNamespace>
+    <AssemblyName>Processor.BadConfig</AssemblyName>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit" />
+    <!-- Pitfall 5: BaseProcessor.Core declares MassTransit but NOT the RabbitMQ transport; the
+         concrete must add it (the Orchestrator pattern declares it the same way). -->
+    <PackageReference Include="MassTransit.RabbitMQ" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pitfall 6: the worker SDK does not copy appsettings.json — copy it next to the assembly. -->
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BaseProcessor.Core\BaseProcessor.Core.csproj" />
+    <ProjectReference Include="..\Messaging.Contracts\Messaging.Contracts.csproj" />
+  </ItemGroup>
+
+  <!-- D-01: explicit import — a ProjectReference does NOT auto-flow build/*.targets. -->
+  <Import Project="..\BaseProcessor.Core\SourceHash.targets" />
+
+</Project>
