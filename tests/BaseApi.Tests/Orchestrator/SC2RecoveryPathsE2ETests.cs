@@ -1,4 +1,11 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Json;
+using System.Reflection;
+using System.Text.Json;
+using BaseApi.Service.Features.Processor;
+using BaseApi.Service.Features.Step;
+using BaseApi.Service.Features.Workflow;
 using BaseConsole.Core.Messaging;
 using MassTransit;
 using Messaging.Contracts;
@@ -238,6 +245,204 @@ public sealed class SC2RecoveryPathsE2ETests
             Assert.True(await PollForKeyAbsentAsync(db, indexKey, ct),
                 $"DELETE: expected {indexKey} (skp:msg index) to be deleted by the two-key DEL, but it still exists.");
         }
+    }
+
+    // The live processor-sample container resolves identity + binds + MarkHealthy after the DB row is
+    // seeded (compose start_period + identity-resolve latency); allow a generous budget (mirrors SC1).
+    private const int LivenessPollTimeoutMs = 90_000;
+
+    /// <summary>
+    /// ORGANIC recovery-pass proof (D-03, Open-Question 2 option (b)) — drives the live processor's
+    /// <c>if exist L2[messageId]</c> recovery branch (ProcessorPipeline.cs:94-105) end-to-end, NOT via a
+    /// direct keeper-recovery publish. Pre-seeds a populated slot-array index (one COMPLETED slot) + its
+    /// completed data key, then publishes an <see cref="EntryStepDispatch"/> to the live processor's OWN
+    /// queue (<c>queue:{procId:D}</c>) with the broker <c>MessageId</c> set to that messageId — the
+    /// <c>EntryStepDispatchConsumer.cs:42</c> slot-array branch key. The live processor takes the recovery
+    /// branch: HGETALL → re-send the completed step (a FRESH exec, SLOT-03 send-before-retire) BEFORE
+    /// retiring the slot → all-clear → the RECOV-03 two-key DEL tail (net-zero).
+    /// <para>
+    /// Asserts (Redis-observable, deterministic):
+    /// (1) the slot is RETIRED to <c>Guid.Empty</c> in the index HASH — a slot retires ONLY after a
+    ///     CONFIRMED send (SLOT-03), so observing the retire IS the proof the completed step was re-sent to
+    ///     queue:orchestrator-result (no NEW data key is expected — recovery re-sends the EXISTING entryId);
+    /// (2) the two-key DEL leaves BOTH <c>skp:data:{entryId}</c> AND <c>skp:msg:{messageId}</c> ABSENT (net-zero).
+    /// </para>
+    /// <para>
+    /// Per D-03 discretion this test does NOT stop redis, so it stays in <c>[Collection("Observability")]</c>
+    /// (NOT the serial outage collection). Uses the SC1 truthful liveness gate (no synthetic seed) so the
+    /// dispatch reaches a REAL container bound to <c>queue:{procId:D}</c>.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task LiveOrganicRecovery_PreSeededSlotArray_ReSendsCompletedThenRetiresThenTwoKeyDelete()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        await using var factory = new RealStackWebAppFactory();
+        await factory.InitializeAsync();
+        using var client = factory.CreateClient();
+
+        // Truthful liveness gate (SC1 idiom): register the GENUINE embedded SourceHash as the Processor DB
+        // row + step, then POLL the REAL container's skp:{procId:D} Healthy heartbeat so the dispatch we Send
+        // reaches a container actually bound to queue:{procId:D}.
+        var hash = typeof(global::Processor.Sample.SampleProcessor).Assembly
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .First(a => a.Key == "SourceHash").Value!;
+        var procId = await SeedProcessorAsync(client, hash, ct);
+        var stepId = await SeedStepAsync(client, procId, ct);
+        await PollForHealthyLivenessAsync(procId, ct);
+
+        var bus = factory.Services.GetRequiredService<IBus>();
+        // Drive the recovery branch by dispatching to the processor's OWN queue (the same target a direct
+        // dispatch / ReinjectConsumer re-injection uses) — NOT keeper-recovery.
+        var dispatchEndpoint = await bus.GetSendEndpoint(new Uri($"queue:{procId:D}"));
+
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        var db = mux.GetDatabase();
+
+        var messageId = NewId.NextGuid();
+        var entryId = NewId.NextGuid();
+        var indexKey = L2ProjectionKeys.MessageIndex(messageId);   // skp:msg:{messageId:D} (the recovery branch key)
+        var dataKey = L2ProjectionKeys.ExecutionData(entryId);     // skp:data:{entryId:D}
+
+        // Pre-seed a populated slot array (one COMPLETED slot at index 0) + the completed data key. This is
+        // the L2[messageId]-EXISTS precondition that forces the recovery branch (vs. the forward pass).
+        await db.HashSetAsync(indexKey, 0, entryId.ToString("D"));
+        await db.StringSetAsync(dataKey, "completed-step-data");
+        factory.L2KeysToCleanup.Add(indexKey);   // belt-and-suspenders net-zero (D-07; the two-key DEL self-cleans)
+        factory.L2KeysToCleanup.Add(dataKey);
+
+        // Fire the recovery branch: Send EntryStepDispatch to queue:{procId:D} with the broker MessageId set
+        // to messageId. EntryStepDispatchConsumer.cs:42 reads ctx.MessageId as the slot-array branch key
+        // (null is a contract violation). The MassTransit pipe-callback overload sets it on the SendContext.
+        var dispatch = new EntryStepDispatch(procId, stepId, procId, "organic-recovery-config")
+        {
+            CorrelationId = Guid.NewGuid(),
+        };
+        await dispatchEndpoint.Send(dispatch, ctx => ctx.MessageId = messageId, ct);
+
+        // EFFECT (1) send-before-retire (SLOT-03): the slot is retired to Guid.Empty ONLY after the completed
+        // step is re-sent to queue:orchestrator-result. Poll the HASH slot until it reads Guid.Empty.
+        Assert.True(await PollForHashSlotRetiredAsync(db, indexKey, 0, ct),
+            $"ORGANIC recovery: expected slot 0 of {indexKey} to be retired to Guid.Empty after the " +
+            $"send-before-retire (SLOT-03), proving the completed step was re-sent — it never retired.");
+
+        // EFFECT (2) RECOV-03 all-clear tail: the two-key DEL leaves BOTH operands ABSENT (net-zero).
+        Assert.True(await PollForKeyAbsentAsync(db, dataKey, ct),
+            $"ORGANIC recovery: expected {dataKey} (skp:data) gone after the two-key DEL net-zero tail.");
+        Assert.True(await PollForKeyAbsentAsync(db, indexKey, ct),
+            $"ORGANIC recovery: expected {indexKey} (skp:msg index) gone after the two-key DEL net-zero tail.");
+    }
+
+    // ---- Liveness poll (cloned from SC1): wait for the REAL container's skp:{procId:D} Healthy heartbeat ----
+
+    private static async Task PollForHealthyLivenessAsync(Guid procId, CancellationToken ct)
+    {
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        var db = mux.GetDatabase();
+        var key = L2ProjectionKeys.Processor(procId);
+
+        var deadline = DateTime.UtcNow.AddMilliseconds(LivenessPollTimeoutMs);
+        var delay = 500;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            var raw = await db.StringGetAsync(key);
+            if (!raw.IsNullOrEmpty)
+            {
+                var projection = JsonSerializer.Deserialize<ProcessorProjection>(raw!);
+                if (projection?.Liveness is { } live)
+                {
+                    var age = DateTime.UtcNow - live.Timestamp.ToUniversalTime();
+                    var staleAfter = TimeSpan.FromSeconds(Math.Max(live.Interval, 1) * 3);
+                    if (age <= staleAfter)
+                    {
+                        return; // the REAL container is Healthy — the dispatch will reach its bound queue.
+                    }
+                }
+            }
+
+            await Task.Delay(Math.Min(delay, 2_000), ct);
+            delay = Math.Min(delay * 2, 2_000);
+        }
+
+        Assert.Fail(
+            $"The processor-sample container never wrote a fresh Healthy liveness key {key} within " +
+            $"{LivenessPollTimeoutMs}ms. Either the container is down, or its embedded SourceHash diverges " +
+            $"from the host-built hash registered as the DB row. Ensure the full compose stack incl. " +
+            $"processor-sample is up healthy.");
+    }
+
+    /// <summary>Poll the int-slot of a slot-array index HASH until it reads <c>Guid.Empty</c> (the
+    /// <c>RetiredSlot</c> sentinel written send-before-retire, SLOT-03).</summary>
+    private static async Task<bool> PollForHashSlotRetiredAsync(IDatabase db, string indexKey, int slot, CancellationToken ct)
+    {
+        var empty = Guid.Empty.ToString("D");
+        var deadline = DateTime.UtcNow.AddMilliseconds(EffectPollTimeoutMs);
+        var delay = 500;
+        while (DateTime.UtcNow < deadline)
+        {
+            ct.ThrowIfCancellationRequested();
+            var value = await db.HashGetAsync(indexKey, slot);
+            if (value.HasValue && string.Equals(value.ToString(), empty, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+            // The HASH may already be gone (the two-key DEL raced ahead of this poll) — that ALSO proves the
+            // slot was retired then the all-clear tail fired; treat an absent key as retired.
+            if (!await db.KeyExistsAsync(indexKey))
+            {
+                return true;
+            }
+
+            await Task.Delay(Math.Min(delay, 2_000), ct);
+            delay = Math.Min(delay * 2, 2_000);
+        }
+
+        return false;
+    }
+
+    // ---- HTTP seeding helpers (Processor -> Step), cloned from SC1RoundTripE2ETests ----------------
+
+    private static async Task<Guid> SeedProcessorAsync(HttpClient client, string sourceHash, CancellationToken ct)
+    {
+        // GET-or-create (idempotent): the genuine embedded hash is FIXED and guarded by
+        // uq_processor_source_hash, so reuse the existing row (the one the live container heartbeats against)
+        // and only create on a fresh DB.
+        var lookup = await client.GetAsync($"/api/v1/processors/by-source-hash/{sourceHash}", ct);
+        if (lookup.StatusCode == HttpStatusCode.OK)
+        {
+            var existing = await lookup.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+            return existing!.Id;
+        }
+
+        var dto = new ProcessorCreateDto(
+            Name: $"sample-proc-{Guid.NewGuid():N}",
+            Version: "1.0.0",
+            Description: null,
+            SourceHash: sourceHash,
+            InputSchemaId: null,
+            OutputSchemaId: null,
+            ConfigSchemaId: null);
+        var resp = await client.PostAsJsonAsync("/api/v1/processors", dto, ct);
+        resp.EnsureSuccessStatusCode();
+        var proc = await resp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
+        return proc!.Id;
+    }
+
+    private static async Task<Guid> SeedStepAsync(HttpClient client, Guid processorId, CancellationToken ct)
+    {
+        var dto = new StepCreateDto(
+            Name: $"sample-step-{Guid.NewGuid():N}",
+            Version: "1.0.0",
+            Description: null,
+            ProcessorId: processorId,
+            NextStepIds: null,
+            EntryCondition: StepEntryCondition.Always);
+        var resp = await client.PostAsJsonAsync("/api/v1/steps", dto, ct);
+        resp.EnsureSuccessStatusCode();
+        var step = await resp.Content.ReadFromJsonAsync<StepReadDto>(cancellationToken: ct);
+        return step!.Id;
     }
 
     // ---- L2 polls (mirror SampleRoundTripE2ETests' scan/poll shapes) -------------------------------
