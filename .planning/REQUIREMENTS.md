@@ -17,13 +17,17 @@ Guarantee that any processor which reaches *Healthy* can deserialize every orche
 **: `Processor.Sample` is migrated to the new typed-config seam as the worked example (clean break — the old raw-string deserialize is removed).
 
 ### Startup Config-Schema Fetch (CFG)
-- [ ] **CFG-03**: At startup, when `ConfigSchemaId` is non-null, the processor fetches the config-schema definition over the bus (extends the Loop B definition-fetch at `ProcessorStartupOrchestrator.cs:124`, lifting the D-05 "never read the config schema id" carve-out) and stores it on the processor context (extends `ProcessorContext.SetDefinition`).
-- [ ] **CFG-04**: A missing config-schema definition is **transient** — the startup loop retries on `SchemaDefinitionNotFound` / timeout exactly as it does for input/output definitions (boot-before-register tolerated).
+- [x] **CFG-03
+**: At startup, when `ConfigSchemaId` is non-null, the processor fetches the config-schema definition over the bus (extends the Loop B definition-fetch at `ProcessorStartupOrchestrator.cs:124`, lifting the D-05 "never read the config schema id" carve-out) and stores it on the processor context (extends `ProcessorContext.SetDefinition`).
+- [x] **CFG-04
+**: A missing config-schema definition is **transient** — the startup loop retries on `SchemaDefinitionNotFound` / timeout exactly as it does for input/output definitions (boot-before-register tolerated).
 
 ### Gate A — Startup Config Compatibility (CFG)
 - [ ] **CFG-05**: At startup the processor validates that its concrete config type *covers* the fetched config-schema definition (every payload valid under `ConfigSchemaId` deserializes into the config type — direction/fidelity locked during spec).
-- [ ] **CFG-06**: On a Gate A incompatibility the processor **never reaches Healthy** — `MarkHealthy` is withheld, so the liveness heartbeat no-ops (`ProcessorLivenessHeartbeat.cs:70`) and no `skp:{id}` L2 key is written; the incompatibility is **terminal** (not retried like a missing definition) and the reason is logged.
-- [ ] **CFG-07**: A processor with a null `ConfigSchemaId` skips Gate A entirely and reaches Healthy on identity + input/output definitions alone (null-is-skip, matching `ProcessorStartupOrchestrator.cs:127-128` and `PayloadConfigSchemaValidator.cs:42`).
+- [x] **CFG-06
+**: On a Gate A incompatibility the processor **never reaches Healthy** — `MarkHealthy` is withheld, so the liveness heartbeat no-ops (`ProcessorLivenessHeartbeat.cs:70`) and no `skp:{id}` L2 key is written; the incompatibility is **terminal** (not retried like a missing definition) and the reason is logged.
+- [x] **CFG-07
+**: A processor with a null `ConfigSchemaId` skips Gate A entirely and reaches Healthy on identity + input/output definitions alone (null-is-skip, matching `ProcessorStartupOrchestrator.cs:127-128` and `PayloadConfigSchemaValidator.cs:42`).
 
 ### Orchestration Gate Integration (CFG)
 - [ ] **CFG-08**: An orchestration whose graph includes a config-incompatible (never-Healthy) processor is blocked at orchestration start with 422 via the existing `ProcessorLivenessValidator` ("absent"), proven end-to-end against the real stack.

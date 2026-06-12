@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v6.0.0
 milestone_name: Config & Payload Validation Hardening
-status: executing
-stopped_at: Completed 57-04-PLAN.md
-last_updated: "2026-06-12T20:20:22.147Z"
+status: verifying
+stopped_at: Completed 57-03-PLAN.md
+last_updated: "2026-06-12T20:45:53.122Z"
 last_activity: 2026-06-12
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 Milestone: v6.0.0 (Config & Payload Validation Hardening) — STARTED 2026-06-12. Breaking change to the BaseProcessor author contract (typed base-config seam) + startup config-schema compatibility gate (Gate A); complements the shipped WebAPI Gate B (`PayloadConfigSchemaValidator`). Phases continue at 56.
 Phase: 57 (startup-config-schema-fetch-gate-a) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-12
 
 ### Roadmap Evolution
@@ -674,7 +674,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -940,6 +940,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 57 P01 | 31min | 3 tasks | 6 files |
 | Phase 57 P02 | 63min | 1 tasks | 1 files |
 | Phase 57 P04 | 3min | 2 tasks | 5 files |
+| Phase 57 P03 | 20min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -1341,6 +1342,8 @@ Recent decisions affecting current work:
 - Plan 57-02: JsonSchema.Net 9.2.1 removed the keyword object model the research assumed; Gate A walks the schema as a JsonNode tree (JsonSchema.FromText kept as parse gate)
 - 57-04: Schema Definition frozen-once-referenced — SchemaService.UpdateAsync throws SchemaDefinitionFrozenException (409 RFC-7807) when dto.Definition changes (Ordinal) and any ProcessorEntity FK references the id; Name/Description and unreferenced-draft edits flow through (D-06/D-07/D-08)
 - 57-04: BaseService.UpdateAsync made virtual (additive) so SchemaService layers the freeze precondition in front of the inherited verb order; freeze check runs before base.UpdateAsync to read the pre-mutation Definition
+- 57-03: TConfig wiring via IConfigTypeProvider seam (option b), not IServiceProvider-in-ctor — cleaner DI, no captive scoped instance (Pitfall 4)
+- 57-03: Gate A clash decouples gate.MarkReady (fires on all paths) from MarkHealthy (pass/skip only) — stay-up-but-not-Healthy, no K8s crash-loop (D-09)
 
 ### Roadmap Milestone Log
 
@@ -1432,6 +1435,7 @@ None yet.
 - Open decisions locked in research but worth re-confirming during Phase 6: SemVer regex variant (strict triple chosen), JSON Schema draft (2020-12 chosen), Cron format (5-field Cronos chosen), Assignment.Payload max size (1 MB chosen). All four are captured in REQ-IDs but if the external scheduler uses Quartz-style 6-field cron, VALID-19 will need revision.
 - Testcontainers + Windows Docker Desktop: confirm WSL2 backend before Phase 8.
 - 22-05 Task 5 (close gate) paused: Plan 04 liveness gate + Plan 03 no-create boundary break ~10 happy-path /start tests across 8+ files OUTSIDE Plan 05 scope (StartLoopFacts, IdempotencyFacts, HappyPathE2EFacts, StartCleanupFacts, StopScanFacts, StartOrchestrationFacts, ValidationOrderFacts). Needs operator decision on fix strategy (per-test seed vs centralized harness helper) before full-suite-GREEN x3 close gate can run.
+- 57-04 CFG-10 freeze defect: SchemaDefinitionFreezeFacts.NameDescription_Edit_On_Referenced_Schema_Returns_200 returns 409 instead of 200 (Definition-change detection bug in SchemaService.UpdateAsync). Out of scope for 57-03; logged in deferred-items.md; must fix before CFG-10 sign-off.
 
 ## Deferred Items
 
@@ -1443,8 +1447,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T20:20:22.128Z
-Stopped at: Completed 57-04-PLAN.md
+Last session: 2026-06-12T20:45:45.819Z
+Stopped at: Completed 57-03-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
