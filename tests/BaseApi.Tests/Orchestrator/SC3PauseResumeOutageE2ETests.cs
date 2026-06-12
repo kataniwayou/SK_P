@@ -21,7 +21,11 @@ namespace BaseApi.Tests.Orchestrator;
 /// it — just serialized against everything else.
 /// </summary>
 [CollectionDefinition("RedisOutageSerial", DisableParallelization = true)]
-public sealed class RedisOutageSerialCollection { }
+public sealed class RedisOutageSerialCollection : ICollectionFixture<RealStackNetZeroSweepFixture>
+{
+    // Shares the same host-stack net-zero sweep as the Observability collection: whichever DisableParallelization
+    // host-stack collection finishes LAST leaves a clean skp: keyspace + drained skp-dlq-1 for the close gate.
+}
 
 /// <summary>
 /// SC3 / TEST-02 — the RealStack proof of the BIT-gate GLOBAL pause-all / resume-all across a TRUE

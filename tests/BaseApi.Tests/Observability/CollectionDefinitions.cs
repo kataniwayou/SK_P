@@ -1,3 +1,4 @@
+using BaseApi.Tests.Orchestrator;
 using Xunit;
 
 namespace BaseApi.Tests.Observability;
@@ -11,6 +12,10 @@ namespace BaseApi.Tests.Observability;
 /// backend determinism.
 /// </summary>
 [CollectionDefinition("Observability", DisableParallelization = true)]
-public sealed class ObservabilityCollection
+public sealed class ObservabilityCollection : ICollectionFixture<RealStackNetZeroSweepFixture>
 {
+    // ICollectionFixture<RealStackNetZeroSweepFixture>: runs the host-stack net-zero sweep ONCE after every
+    // test in this (DisableParallelization) collection finishes — the cron round-trip tests (SC1/SC2 +
+    // SampleRoundTrip) live here, so their TTL-bound skp:data:* output residue + any skp-dlq-1 dead-letters
+    // are actively reclaimed before the close gate's net-zero snapshot. Best-effort on a hermetic-only run.
 }
