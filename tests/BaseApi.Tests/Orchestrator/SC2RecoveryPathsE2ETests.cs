@@ -265,7 +265,11 @@ public sealed class SC2RecoveryPathsE2ETests
     /// (1) the slot is RETIRED to <c>Guid.Empty</c> in the index HASH — a slot retires ONLY after a
     ///     CONFIRMED send (SLOT-03), so observing the retire IS the proof the completed step was re-sent to
     ///     queue:orchestrator-result (no NEW data key is expected — recovery re-sends the EXISTING entryId);
-    /// (2) the two-key DEL leaves BOTH <c>skp:data:{entryId}</c> AND <c>skp:msg:{messageId}</c> ABSENT (net-zero).
+    /// (2) the RECOV-03 terminal two-key DEL actively reclaims the slot-array index <c>skp:msg:{messageId}</c>
+    ///     (operand 2) — assert it goes ABSENT (the A19 active reclaim, not a TTL race). The dispatch's own
+    ///     <c>ExecutionData(d.EntryId)</c> is operand 1 (here a harmless absent no-op — the source sentinel
+    ///     <c>Guid.Empty</c>); the slot's COMPLETED data key <c>skp:data:{entryId}</c> is a downstream-consumed
+    ///     output, NOT a recovery-tail operand, so it is teardown-cleaned (L2KeysToCleanup), not asserted here.
     /// </para>
     /// <para>
     /// Per D-03 discretion this test does NOT stop redis, so it stays in <c>[Collection("Observability")]</c>
@@ -327,11 +331,18 @@ public sealed class SC2RecoveryPathsE2ETests
             $"ORGANIC recovery: expected slot 0 of {indexKey} to be retired to Guid.Empty after the " +
             $"send-before-retire (SLOT-03), proving the completed step was re-sent — it never retired.");
 
-        // EFFECT (2) RECOV-03 all-clear tail: the two-key DEL leaves BOTH operands ABSENT (net-zero).
-        Assert.True(await PollForKeyAbsentAsync(db, dataKey, ct),
-            $"ORGANIC recovery: expected {dataKey} (skp:data) gone after the two-key DEL net-zero tail.");
+        // EFFECT (2) RECOV-03 all-clear tail — the two-key DEL actively reclaims the slot-array INDEX (net-zero).
+        // The terminal tail (DeleteTerminalAsync, ProcessorPipeline.cs:310-315) DELs the pair
+        // [ExecutionData(d.EntryId), MessageIndex(messageId)]. Here d.EntryId is the source sentinel Guid.Empty
+        // (the EntryStepDispatch default), so operand 1 is a HARMLESS ABSENT no-op (D-06) and the load-bearing
+        // reclaim is operand 2 — the index skp:msg:{messageId}. Assert IT goes ABSENT: that is the A19 ACTIVE
+        // reclaim (not a TTL race). The slot's COMPLETED data key skp:data:{entryId} is deliberately NOT asserted
+        // gone — by A18 design it is a downstream-consumed OUTPUT (the re-sent StepCompleted carries entryId; a
+        // later step's terminal tail / its bounded TTL reclaims it), NOT a recovery-tail operand. It is registered
+        // in L2KeysToCleanup (above) for net-zero teardown, so it never leaks to the close gate.
         Assert.True(await PollForKeyAbsentAsync(db, indexKey, ct),
-            $"ORGANIC recovery: expected {indexKey} (skp:msg index) gone after the two-key DEL net-zero tail.");
+            $"ORGANIC recovery: expected {indexKey} (skp:msg index) gone after the two-key DEL net-zero tail " +
+            $"(operand 2 of DeleteTerminalAsync — the A19 active index reclaim).");
     }
 
     // ---- Liveness poll (cloned from SC1): wait for the REAL container's skp:{procId:D} Healthy heartbeat ----

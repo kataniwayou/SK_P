@@ -15,10 +15,14 @@ namespace BaseApi.Tests.Orchestrator;
 /// <summary>
 /// Phase-55 SC1 RealStack round-trip proof (TEST-01, round-trip half) — the live-proof E2E that
 /// exercises the full v5 forward round trip against real containers: a workflow fire drives a
-/// dispatch the live <c>processor-sample</c> consumes, runs <c>ProcessAsync</c>, writes the slot-array
-/// allocation index <c>skp:msg:{messageId}</c> FIRST (allocation-before-data) then its OUTPUT to
-/// <c>skp:data:{entryId}</c>; the orchestrator then ADVANCES on the per-item result, and the A19 two-key
-/// terminal DELETE reclaims BOTH keys at end-of-message (net-zero).
+/// dispatch the live <c>processor-sample</c> consumes, runs <c>ProcessAsync</c>, and writes its OUTPUT to
+/// <c>skp:data:{entryId}</c>; the orchestrator then ADVANCES on the per-item result. The A19 two-key
+/// terminal DELETE reclaims the slot-array index + input data key at end-of-message — but that net-zero is
+/// a deterministic CLOSE-GATE property (<c>scripts/phase-55-close.ps1</c>: unfiltered redis <c>--scan</c>
+/// SHA BEFORE==AFTER + <c>skp:msg:*</c> count==0, D-06c), NOT a per-test assertion: the allocation index is
+/// processor-internal and actively reclaimed within the same dispatch (~tens of ms), so it is not reliably
+/// observable from a black-box poll. This test proves the live forward round trip; TEST-02's gate proves the
+/// index net-zero.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -42,17 +46,17 @@ namespace BaseApi.Tests.Orchestrator;
 ///   </item>
 /// </list>
 /// <para>
-/// The round-trip is asserted on these clauses: (a-index) a fresh <c>skp:msg:*</c> slot-array allocation
-/// index HASH appears that was NOT present before Start — written BEFORE the data key (allocation-before-data,
-/// the production order is <c>HashSetAsync</c> index FIRST then <c>StringSetAsync</c> data); (a-data) a fresh
-/// <c>skp:data:*</c> execution-data key appears in host Redis that was NOT present before Start (the
-/// <c>ProcessorPipeline</c> mints a server-side <c>NewId.NextGuid()</c> entryId and writes the output there);
-/// (b) the ORCHESTRATOR ADVANCED — its container's <c>"Start reload for WorkflowId={wfId}"</c> seam log flows
-/// via otel → Elasticsearch (the proven precedent), proving the orchestrator consumed the published
-/// <c>StartOrchestration</c> and hydrated+scheduled the workflow whose fire drove the dispatch; and (d, A19
-/// net-zero) after the round trip completes BOTH the minted <c>skp:data:{entryId}</c> AND
-/// <c>skp:msg:{messageId}</c> become ABSENT via the production two-key <c>DEL</c> (DeleteTerminalAsync) —
-/// the index reclaim is asserted directly, not assumed by TTL.
+/// The round-trip is asserted on these clauses: (a-data) a fresh <c>skp:data:*</c> execution-data key appears
+/// in host Redis that was NOT present before Start (the <c>ProcessorPipeline</c> mints a server-side
+/// <c>NewId.NextGuid()</c> entryId and writes the output there); (b) the ORCHESTRATOR ADVANCED — its
+/// container's <c>"Start reload for WorkflowId={wfId}"</c> seam log flows via otel → Elasticsearch (the proven
+/// precedent), proving the orchestrator consumed the published <c>StartOrchestration</c> and hydrated+scheduled
+/// the workflow whose fire drove the dispatch; and (c) the WorkflowId reached ES FROM A SCOPE on a
+/// processor-side log (the scope work, not a template). The A19 slot-array index net-zero is intentionally NOT
+/// asserted per-test — it is the close gate's deterministic concern (unfiltered <c>--scan</c> SHA + <c>skp:msg:*</c>
+/// count==0): the index is processor-internal and actively reclaimed within the same dispatch it is written
+/// (~tens of ms; <c>HashSetAsync</c> :262 → terminal <c>DEL</c> :300), so an external poll races the reclaim and
+/// the terminal <c>DEL</c> targets the INPUT <c>ExecutionData(d.EntryId)</c> rather than this round's output key.
 /// </para>
 /// <para>
 /// Net-zero teardown: every minted L2 key (<c>skp:{wfId}</c>, <c>skp:{wfId}:{stepId}</c>, the round's
@@ -83,7 +87,7 @@ public sealed class SC1RoundTripE2ETests
     private const int EsPollTimeoutMs = 120_000;
 
     [Fact]
-    public async Task LiveSampleProcessor_ForwardRoundTrip_AllocBeforeData_TwoKeyNetZero_Phase55()
+    public async Task LiveSampleProcessor_ForwardRoundTrip_OutputAndOrchestratorAdvance_Phase55()
     {
         var ct = TestContext.Current.CancellationToken;
 
@@ -113,10 +117,6 @@ public sealed class SC1RoundTripE2ETests
         // Snapshot the skp:data:* keys present BEFORE Start so we can detect the round-trip's fresh output
         // key (the server mints the entryId via NewId.NextGuid(), so the key name is unknown a priori).
         var dataKeysBefore = ScanExecutionDataKeys();
-        // Snapshot the skp:msg:* slot-array allocation-index HASHes present BEFORE Start so we can detect the
-        // round-trip's fresh index (the messageId is the server-side broker MessageId, also unknown a priori).
-        // The index is written FIRST (allocation-before-data) — see the assertion below.
-        var msgKeysBefore = ScanMessageIndexKeys();
 
         // Drive Start. 204 NoContent means the L2 root was written, the body Guid minted + published, and
         // the processor-liveness gate PASSED — and it passed ONLY because the live container's heartbeat
@@ -131,16 +131,6 @@ public sealed class SC1RoundTripE2ETests
         factory.ParentIndexMembersToSrem.Add(wfId.ToString("D"));
         factory.L2KeysToCleanup.Add($"skp:{wfId}");
         factory.L2KeysToCleanup.Add($"skp:{wfId}:{stepId}");
-
-        // ---- Round-trip clause (a-index): SLOT-ARRAY ALLOCATION INDEX WRITTEN TO L2 (allocation-before-data) ----
-        // The live processor consumes the dispatch and writes the slot-array allocation index FIRST:
-        // db.HashSetAsync(MessageIndex(messageId), slot, entryId) at ProcessorPipeline.cs:262 (SLOT-01) runs
-        // BEFORE db.StringSetAsync(ExecutionData(entryId), ...) at :275 (SLOT-02). Poll for a NEW skp:msg:* HASH.
-        var newMsgKey = await PollForNewMessageIndexKeyAsync(msgKeysBefore, ct);
-        Assert.NotNull(newMsgKey);
-        // Net-zero teardown (D-07 belt-and-suspenders): register the minted index key so a leak surfaces at the
-        // close gate as a redis --scan SHA mismatch. The A19 two-key DEL self-cleans the happy case below.
-        factory.L2KeysToCleanup.Add(newMsgKey!.Value);   // net-zero: register the minted skp:msg:* index key
 
         // ---- Round-trip clause (a-data): OUTPUT WRITTEN TO L2 ----
         // The orchestrator fires the dispatch at the next minute; the live processor consumes it, runs
@@ -199,18 +189,18 @@ public sealed class SC1RoundTripE2ETests
         var scopeProof = await es.PollEsForLog(scopeProofQuery, timeoutMs: EsPollTimeoutMs, ct: ct);
         Assert.NotNull(scopeProof);   // WorkflowId round-tripped to ES from the new scope on a processor log
 
-        // ---- Round-trip clause (d): A19 TWO-KEY NET-ZERO AT END-OF-MESSAGE ----
-        // After the orchestrator-advance proof, the processor's shared DeleteTerminalAsync issues ONE atomic
-        // two-key DEL [ExecutionData(entryId), MessageIndex(messageId)] (ProcessorPipeline.cs:310-315). Assert
-        // BOTH the minted skp:data:* AND skp:msg:* go ABSENT — the index reclaim is ACTIVE (not a TTL race).
-        await using var netZeroMux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
-        var netZeroDb = netZeroMux.GetDatabase();
-        Assert.True(
-            await PollForKeyAbsentAsync(netZeroDb, newDataKey!.Value.ToString(), ct),
-            $"A19 net-zero: expected {newDataKey} (skp:data) to be deleted by the two-key DEL.");
-        Assert.True(
-            await PollForKeyAbsentAsync(netZeroDb, newMsgKey!.Value.ToString(), ct),
-            $"A19 net-zero: expected {newMsgKey} (skp:msg index) to be deleted by the two-key DEL.");
+        // ---- A19 two-key net-zero is proven at the CLOSE GATE, not per-test ----
+        // The slot-array allocation index skp:msg:{messageId} is processor-internal and ACTIVELY reclaimed by
+        // the terminal two-key DEL (DeleteTerminalAsync, ProcessorPipeline.cs:310-315) WITHIN the same dispatch
+        // it is written (HashSetAsync :262 → DEL :300) — its live lifetime is ~tens of ms, far below any external
+        // poll interval, so the index is NOT reliably observable from a black-box test (a poll races the active
+        // reclaim and misses it). The terminal DEL also targets the INPUT ExecutionData(d.EntryId), not this
+        // round's OUTPUT key newDataKey (which the next step consumes), so a per-test "both keys absent" assertion
+        // would target the wrong key. The DETERMINISTIC A19 net-zero proof is therefore the close gate: an
+        // unfiltered redis --scan SHA BEFORE==AFTER + an additive skp:msg:* count==0 assertion
+        // (scripts/phase-55-close.ps1, D-06c). This test's job is the live FORWARD ROUND TRIP (clauses a-data/b/c);
+        // the index net-zero is TEST-02's gate concern. newDataKey is registered in L2KeysToCleanup (above) so any
+        // leak still surfaces at the gate as a --scan SHA mismatch.
 
         // Net-zero: stop the workflow so its self-rescheduling cron fire ceases — left running it mints a
         // fresh per-fire key every minute, churning the close-gate redis --scan name-set. Best-effort: a
@@ -316,82 +306,6 @@ public sealed class SC1RoundTripE2ETests
         }
 
         return keys;
-    }
-
-    // ---- Slot-array allocation-index poll: a NEW skp:msg:* HASH appears after Start (allocation-before-data) ----
-
-    private static async Task<RedisKey?> PollForNewMessageIndexKeyAsync(
-        HashSet<string> before, CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow.AddMilliseconds(OutputPollTimeoutMs);
-        var delay = 1_000;
-        while (DateTime.UtcNow < deadline)
-        {
-            ct.ThrowIfCancellationRequested();
-            foreach (var key in ScanMessageIndexKeys())
-            {
-                if (!before.Contains(key))
-                {
-                    return key; // the slot-array allocation index landed in L2 (HashSetAsync, written first).
-                }
-            }
-
-            await Task.Delay(Math.Min(delay, 3_000), ct);
-            delay = Math.Min(delay * 2, 3_000);
-        }
-
-        Assert.Fail(
-            $"No new skp:msg:* slot-array allocation index appeared within {OutputPollTimeoutMs}ms — the live " +
-            $"forward pass did not write the allocation index (ProcessorPipeline HashSetAsync, allocation-before-data).");
-        return null; // unreachable (Assert.Fail throws) — keeps the compiler happy.
-    }
-
-    /// <summary>
-    /// SCAN host Redis for all keys under the slot-array allocation-index discriminator
-    /// (<c>skp:msg:*</c> = <see cref="L2ProjectionKeys.MessageIndex"/>, a Redis HASH of int-slot → entryId).
-    /// The messageId is the server-side broker MessageId, so we cannot address the key directly — enumerate
-    /// the family (sibling of <see cref="ScanExecutionDataKeys"/>).
-    /// </summary>
-    private static HashSet<string> ScanMessageIndexKeys()
-    {
-        using var mux = ConnectionMultiplexer.Connect(HostRedis);
-        var keys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var ep in mux.GetEndPoints())
-        {
-            var server = mux.GetServer(ep);
-            if (!server.IsConnected || server.IsReplica)
-            {
-                continue;
-            }
-
-            foreach (var key in server.Keys(pattern: $"{L2ProjectionKeys.Prefix}msg:*"))
-            {
-                keys.Add(key.ToString());
-            }
-        }
-
-        return keys;
-    }
-
-    // ---- Key-absent poll (cloned from SC2RecoveryPathsE2ETests): exponential backoff until the key is gone ----
-
-    private static async Task<bool> PollForKeyAbsentAsync(IDatabase db, string key, CancellationToken ct)
-    {
-        var deadline = DateTime.UtcNow.AddMilliseconds(OutputPollTimeoutMs);
-        var delay = 500;
-        while (DateTime.UtcNow < deadline)
-        {
-            ct.ThrowIfCancellationRequested();
-            if (!await db.KeyExistsAsync(key))
-            {
-                return true;
-            }
-
-            await Task.Delay(Math.Min(delay, 2_000), ct);
-            delay = Math.Min(delay * 2, 2_000);
-        }
-
-        return false;
     }
 
     // ---- HTTP seeding helpers (Processor → Step → Workflow) ----
