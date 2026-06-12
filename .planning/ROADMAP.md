@@ -43,7 +43,12 @@
   3. On a Gate A incompatibility the processor never reaches Healthy — `MarkHealthy` is withheld, the heartbeat no-ops (`ProcessorLivenessHeartbeat.cs:70`), no `skp:{id}` L2 key is written, the reason is logged, and the incompatibility is terminal (not retried like a missing definition).
   4. A processor with a null `ConfigSchemaId` skips Gate A entirely and reaches Healthy on identity + input/output definitions alone (null-is-skip, matching `ProcessorStartupOrchestrator.cs:127-128` and `PayloadConfigSchemaValidator.cs:42`).
   5. The config-schema definition mutation window between the startup Gate A check and a later orchestration-start Gate B check is closed by the spec-locked TOCTOU policy (immutability or re-validate-on-change), with a test recording the chosen mechanism.
-**Plans**: TBD
+**Plans**: 4 plans
+Plans:
+- [ ] 57-01-PLAN.md — Wave 0 (BLOCKING): STJ rule-table spike + RED test scaffolds (covers facts, freeze integration, inverted/extended harness facts)
+- [ ] 57-02-PLAN.md — Gate A covers-checker `ConfigSchemaCoverageCheck.Evaluate` (CFG-05/07)
+- [ ] 57-03-PLAN.md — Wire Gate A: Loop B config fetch + ConfigDefinition + decoupled MarkReady/MarkHealthy (CFG-03/04/06/07)
+- [ ] 57-04-PLAN.md — Frozen-once-referenced schema Definition + 409 handler (CFG-10)
 
 #### Phase 58: Orchestration-Gate Integration Proof & Close
 **Goal**: A real-stack end-to-end proof that Gate A composes with the existing orchestration-start liveness gate — a config-incompatible (never-Healthy) processor blocks orchestration start with 422 via `ProcessorLivenessValidator` ("absent"), while a config-compatible processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally (Gate A is not a false-positive blocker) — sealed behind the milestone close gate.
