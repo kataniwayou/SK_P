@@ -23,6 +23,12 @@ internal static class SchemaServiceCollectionExtensions
         services.AddScoped<SchemaService>();
         services.AddScoped<BaseService<SchemaEntity, SchemaCreateDto, SchemaUpdateDto, SchemaReadDto>>(
             sp => sp.GetRequiredService<SchemaService>());
+
+        // CFG-10 / D-08: registered inside AddSchemaFeature (runs via AddAppFeatures) so it lands after
+        // the Core NotFound/Validation/DbUpdate handlers and BEFORE the LAST-registered
+        // FallbackExceptionHandler; walk order == registration order
+        // (ErrorHandlingServiceCollectionExtensions.cs:37-43). Claims SchemaDefinitionFrozenException → 409.
+        services.AddExceptionHandler<SchemaDefinitionFrozenExceptionHandler>();
         return services;
     }
 }
