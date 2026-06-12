@@ -73,7 +73,7 @@ namespace BaseApi.Tests.Orchestrator;
 /// </summary>
 [Trait("Category", "E2E")]
 [Trait("Category", "RealStack")]
-[Trait("Phase", "55")]
+[Trait("Phase", "58")]
 [Collection("Observability")]
 public sealed class SC2RecoveryPathsE2ETests
 {

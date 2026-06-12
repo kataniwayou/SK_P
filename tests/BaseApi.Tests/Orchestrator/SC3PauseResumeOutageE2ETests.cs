@@ -17,7 +17,7 @@ namespace BaseApi.Tests.Orchestrator;
 /// D-02: the SC3 outage proof STOPS <c>sk-redis</c>, which would destabilize any sibling RealStack test
 /// that touches L2. It therefore lives in its OWN xUnit collection with parallelization DISABLED so it
 /// runs ALONE — NEVER the shared <c>"Observability"</c> collection that SC1/SC2 use. The class still
-/// carries <c>[Trait("Category","RealStack")]</c> + <c>[Trait("Phase","55")]</c> so the close gate runs
+/// carries <c>[Trait("Category","RealStack")]</c> + <c>[Trait("Phase","58")]</c> so the close gate runs
 /// it — just serialized against everything else.
 /// </summary>
 [CollectionDefinition("RedisOutageSerial", DisableParallelization = true)]
@@ -93,7 +93,7 @@ public sealed class RedisOutageSerialCollection : ICollectionFixture<RealStackNe
 /// </summary>
 [Trait("Category", "E2E")]
 [Trait("Category", "RealStack")]
-[Trait("Phase", "55")]
+[Trait("Phase", "58")]
 [Collection("RedisOutageSerial")]
 public sealed class SC3PauseResumeOutageE2ETests
 {
