@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
 using BaseApi.Service.Features.Processor;
+using BaseApi.Service.Features.Schema;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Observability.Helpers;
@@ -72,6 +73,18 @@ namespace BaseApi.Tests.Orchestrator;
 public sealed class SampleRoundTripE2ETests
 {
     private const string StartReloadMessage = "Start reload for WorkflowId=";
+
+    // ---- Gate-A (CFG-09) compatible config-schema seed primitives (D-09a / D-13) ----
+    // Shared by Plan 03's Gate-A CFG-09 E2E and Plan 04's close script so all three reuse the SAME
+    // sentinel Name (schemas have NO uniqueness constraint, so a fixed Name is the idempotency key the
+    // GET-or-create helper filters on).
+    internal const string SampleCompatibleSchemaName = "gateA-sample-compatible";
+
+    // The config schema that Processor.Sample's typed config (SampleConfig(string? Value)) COVERS — so
+    // Gate A (ConfigSchemaId ⊨ configType) RUNS AND PASSES (CFG-09), not Gate-A-skipped. An object with a
+    // single optional string "value" property, carrying the draft 2020-12 $schema key.
+    internal const string SampleCompatibleSchemaDefinition =
+        """{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{"value":{"type":"string"}}}""";
 
     // The live processor-sample container resolves identity + binds + MarkHealthy after the DB row is
     // seeded (compose start_period 30s + identity-resolve latency); allow a generous budget.
@@ -297,7 +310,8 @@ public sealed class SampleRoundTripE2ETests
 
     // ---- HTTP seeding helpers (Processor → Step → Workflow) — mirrors CorrelationPropagationE2ETests ----
 
-    private static async Task<Guid> SeedProcessorAsync(HttpClient client, string sourceHash, CancellationToken ct)
+    private static async Task<Guid> SeedProcessorAsync(
+        HttpClient client, string sourceHash, CancellationToken ct, Guid? configSchemaId = null)
     {
         // D-08: register the GENUINE embedded hash (satisfies the DB ^[a-f0-9]{64}$ validator);
         // D-05: null schema Ids (Processor.Sample runs schema-less).
@@ -322,11 +336,39 @@ public sealed class SampleRoundTripE2ETests
             SourceHash: sourceHash,
             InputSchemaId: null,
             OutputSchemaId: null,
-            ConfigSchemaId: null);
+            // CFG-09 delta: defaulted null preserves the schema-less seed for existing callers; a non-null
+            // compatible-schema Id (from SeedConfigSchemaAsync) flips Gate A from skipped to RUN-AND-PASS.
+            ConfigSchemaId: configSchemaId);
         var resp = await client.PostAsJsonAsync("/api/v1/processors", dto, ct);
         resp.EnsureSuccessStatusCode();
         var proc = await resp.Content.ReadFromJsonAsync<ProcessorReadDto>(cancellationToken: ct);
         return proc!.Id;
+    }
+
+    /// <summary>
+    /// GET-or-create-by-sentinel-Name helper for a config schema (D-09a / D-13 / T-58-04).
+    /// Schemas have NO uniqueness constraint (only FK indexes) → a blind POST duplicates every run and
+    /// churns the close-gate net-zero snapshot. GET the list, match a fixed sentinel <paramref name="sentinelName"/>,
+    /// reuse its Id; POST only if absent. NEVER PUT — a referenced schema's Definition is FROZEN
+    /// (PUT → 409, Phase-57 D-06 / SchemaService.cs); this helper is CREATE-IF-ABSENT only.
+    /// </summary>
+    private static async Task<Guid> SeedConfigSchemaAsync(
+        HttpClient client, string sentinelName, string definition, CancellationToken ct)
+    {
+        var all = await client.GetFromJsonAsync<List<SchemaReadDto>>("/api/v1/schemas", ct);
+        var existing = all!.FirstOrDefault(s => s.Name == sentinelName);
+        if (existing is not null)
+        {
+            return existing.Id;
+        }
+
+        // VERIFIED SchemaCreateDto field order (Name, Version, Description, Definition); Definition is a
+        // string on this DTO (SchemaDtos.cs) — the meta-schema validation happens server-side on write.
+        var dto = new SchemaCreateDto(sentinelName, "1.0.0", null, definition);
+        var resp = await client.PostAsJsonAsync("/api/v1/schemas", dto, ct);
+        resp.EnsureSuccessStatusCode();
+        var created = await resp.Content.ReadFromJsonAsync<SchemaReadDto>(cancellationToken: ct);
+        return created!.Id;
     }
 
     private static async Task<Guid> SeedStepAsync(HttpClient client, Guid processorId, CancellationToken ct)
