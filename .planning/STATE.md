@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v6.0.0
 milestone_name: Config & Payload Validation Hardening
-status: planning
-stopped_at: Phase 57 context gathered
-last_updated: "2026-06-12T19:15:43.091Z"
+status: executing
+stopped_at: Completed 57-01-PLAN.md
+last_updated: "2026-06-12T20:05:14.966Z"
 last_activity: 2026-06-12
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 6
-  completed_plans: 2
-  percent: 33
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 56 — typed-base-config-seam
+**Current focus:** Phase 57 — startup-config-schema-fetch-gate-a
 
 ## Current Position
 
 Milestone: v6.0.0 (Config & Payload Validation Hardening) — STARTED 2026-06-12. Breaking change to the BaseProcessor author contract (typed base-config seam) + startup config-schema compatibility gate (Gate A); complements the shipped WebAPI Gate B (`PayloadConfigSchemaValidator`). Phases continue at 56.
-Phase: 57
-Plan: Not started
-Status: Ready to plan
+Phase: 57 (startup-config-schema-fetch-gate-a) — EXECUTING
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-06-12
 
 ### Roadmap Evolution
@@ -674,7 +674,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ### Milestone Phases (v3.4.0)
 
@@ -937,6 +937,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 55 P03 | ~25 min | 2 tasks | 1 files |
 | Phase 56 P01 | 3min | 3 tasks | 5 files |
 | Phase 56 P02 | 36min | 3 tasks | 4 files |
+| Phase 57 P01 | 31min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -1334,6 +1335,7 @@ Recent decisions affecting current work:
 - Phase 56: hermetic test doubles derive from BaseProcessor<TConfig> (no IVT to the non-generic internal seam); field-less DummyConfig keeps the pipeline-double FakeProcessor deserialize-inert under the unchanged {cfg:1} dispatch payload
 - Phase 56: deser-failure proof drives a REAL BaseProcessor<TConfig> subclass with 'not json' through RunAsync -> one StepFailed, no Keeper send (Req 4a / T-56-01 mitigated)
 - Phase 56 gate verified via the xUnit v3 MTP runner natively (dotnet test --filter is ignored under Microsoft.Testing.Platform); 530/530 hermetic green, Release+Debug 0-warning
+- Phase 57 spike: A1/A2/A3 STJ verdicts ALL CONFIRMED CLASH against real ProcessorConfig.SerializerOptions (rows #13 string-enum->enum, #5/#8 number/string->int, #22 null->non-nullable) — Plan 02 locks rule table, no corrections
 
 ### Roadmap Milestone Log
 
@@ -1436,9 +1438,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 57 context gathered
-Resume file: --resume-file
+Last session: 2026-06-12T20:05:06.979Z
+Stopped at: Completed 57-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
