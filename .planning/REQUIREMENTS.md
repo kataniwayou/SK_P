@@ -11,8 +11,10 @@ Guarantee that any processor which reaches *Healthy* can deserialize every orche
 ## Requirements
 
 ### Base Config Seam (CFG)
-- [ ] **CFG-01**: A processor author declares its configuration as a typed class inheriting a framework-provided base config; the framework deserializes the dispatch `payload` into that typed config and supplies it to the author's transform (replacing the raw-string `payload` parameter at `BaseProcessor.cs:29`).
-- [ ] **CFG-02**: `Processor.Sample` is migrated to the new typed-config seam as the worked example (clean break — the old raw-string deserialize is removed).
+- [x] **CFG-01
+**: A processor author declares its configuration as a typed class inheriting a framework-provided base config; the framework deserializes the dispatch `payload` into that typed config and supplies it to the author's transform (replacing the raw-string `payload` parameter at `BaseProcessor.cs:29`).
+- [x] **CFG-02
+**: `Processor.Sample` is migrated to the new typed-config seam as the worked example (clean break — the old raw-string deserialize is removed).
 
 ### Startup Config-Schema Fetch (CFG)
 - [ ] **CFG-03**: At startup, when `ConfigSchemaId` is non-null, the processor fetches the config-schema definition over the bus (extends the Loop B definition-fetch at `ProcessorStartupOrchestrator.cs:124`, lifting the D-05 "never read the config schema id" carve-out) and stores it on the processor context (extends `ProcessorContext.SetDefinition`).
