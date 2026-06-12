@@ -30,7 +30,8 @@ Guarantee that any processor which reaches *Healthy* can deserialize every orche
 - [ ] **CFG-09**: A config-**compatible** processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker.
 
 ### TOCTOU Policy (CFG)
-- [ ] **CFG-10**: The config-schema definition mutation window between a processor's startup Gate A check and a later orchestration-start Gate B check is closed by an explicit policy — config-schema definition immutability **or** processor re-validation on schema change (decision locked during spec; this requirement records the chosen mechanism and its test).
+- [x] **CFG-10
+**: The config-schema definition mutation window between a processor's startup Gate A check and a later orchestration-start Gate B check is closed by an explicit policy — config-schema definition immutability **or** processor re-validation on schema change (decision locked during spec; this requirement records the chosen mechanism and its test).
 
 ## Open Decisions (resolved during /gsd-spec-phase, not pre-committed here)
 

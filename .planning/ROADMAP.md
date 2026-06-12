@@ -48,7 +48,7 @@ Plans:
 - [x] 57-01-PLAN.md — Wave 0 (BLOCKING): STJ rule-table spike + RED test scaffolds (covers facts, freeze integration, inverted/extended harness facts)
 - [x] 57-02-PLAN.md — Gate A covers-checker `ConfigSchemaCoverageCheck.Evaluate` (CFG-05/07)
 - [ ] 57-03-PLAN.md — Wire Gate A: Loop B config fetch + ConfigDefinition + decoupled MarkReady/MarkHealthy (CFG-03/04/06/07)
-- [ ] 57-04-PLAN.md — Frozen-once-referenced schema Definition + 409 handler (CFG-10)
+- [x] 57-04-PLAN.md — Frozen-once-referenced schema Definition + 409 handler (CFG-10)
 
 #### Phase 58: Orchestration-Gate Integration Proof & Close
 **Goal**: A real-stack end-to-end proof that Gate A composes with the existing orchestration-start liveness gate — a config-incompatible (never-Healthy) processor blocks orchestration start with 422 via `ProcessorLivenessValidator` ("absent"), while a config-compatible processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally (Gate A is not a false-positive blocker) — sealed behind the milestone close gate.
