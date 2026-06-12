@@ -65,8 +65,7 @@
 **: A terminal-delete exhaustion **`PERSIST`es** the `L2[messageId]` index (cancels its random TTL) and escalates to keeper **`DELETE`** now carrying `{messageId, entryId}`; the `DELETE` consumer deletes both keys in a single atomic multi-key `DEL` (drop-on-absent on either operand).
 
 ### Live Proof & Close Gate (TEST)
-- [x] **TEST-01
-**: A RealStack E2E proves the forward pass + the recovery pass + each keeper state (`REINJECT` present/absent, `INJECT`, `DELETE`) under the new model.
+- [ ] **TEST-01**: A RealStack E2E proves the forward pass + the recovery pass + each keeper state (`REINJECT` present/absent, `INJECT`, `DELETE`) under the new model.
 - [ ] **TEST-02**: The close gate runs N-consecutive-GREEN + triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE==AFTER net-zero — including the slot-array index keys + data keys (no leak), at Release + Debug 0-warning.
 
 ## Future Requirements (deferred)
