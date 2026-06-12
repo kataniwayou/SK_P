@@ -55,8 +55,8 @@ Each CFG requirement is mapped to exactly one phase (100% coverage, no orphans).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CFG-01 | Phase 56 — Typed Base-Config Seam | Pending |
-| CFG-02 | Phase 56 — Typed Base-Config Seam | Pending |
+| CFG-01 | Phase 56 — Typed Base-Config Seam | Complete |
+| CFG-02 | Phase 56 — Typed Base-Config Seam | Complete |
 | CFG-03 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
 | CFG-04 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
 | CFG-05 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
