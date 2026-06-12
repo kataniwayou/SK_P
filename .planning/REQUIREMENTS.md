@@ -32,7 +32,8 @@ Guarantee that any processor which reaches *Healthy* can deserialize every orche
 ### Orchestration Gate Integration (CFG)
 - [x] **CFG-08
 **: An orchestration whose graph includes a config-incompatible (never-Healthy) processor is blocked at orchestration start with 422 via the existing `ProcessorLivenessValidator` ("absent"), proven end-to-end against the real stack.
-- [ ] **CFG-09**: A config-**compatible** processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker.
+- [x] **CFG-09
+**: A config-**compatible** processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker.
 
 ### TOCTOU Policy (CFG)
 - [x] **CFG-10

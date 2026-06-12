@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v6.0.0
 milestone_name: Config & Payload Validation Hardening
 status: executing
-stopped_at: Completed 58-01-PLAN.md
-last_updated: "2026-06-12T22:06:25.449Z"
+stopped_at: Completed 58-02-PLAN.md
+last_updated: "2026-06-12T22:27:02.499Z"
 last_activity: 2026-06-12
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 11
-  completed_plans: 7
-  percent: 64
+  completed_plans: 8
+  percent: 73
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 Milestone: v6.0.0 (Config & Payload Validation Hardening) — STARTED 2026-06-12. Breaking change to the BaseProcessor author contract (typed base-config seam) + startup config-schema compatibility gate (Gate A); complements the shipped WebAPI Gate B (`PayloadConfigSchemaValidator`). Phases continue at 56.
 Phase: 58 (orchestration-gate-integration-proof-close) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-06-12
 
@@ -674,7 +674,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████░░░░] 64%
+Progress: [███████░░░] 73%
 
 ### Milestone Phases (v3.4.0)
 
@@ -943,6 +943,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 57 P04 | 3min | 2 tasks | 5 files |
 | Phase 57 P03 | 20min | 2 tasks | 11 files |
 | Phase 58 P01 | 3min | 2 tasks | 7 files |
+| Phase 58 P02 | 18min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1347,6 +1348,8 @@ Recent decisions affecting current work:
 - 57-03: TConfig wiring via IConfigTypeProvider seam (option b), not IServiceProvider-in-ctor — cleaner DI, no captive scoped instance (Pitfall 4)
 - 57-03: Gate A clash decouples gate.MarkReady (fires on all paths) from MarkHealthy (pass/skip only) — stay-up-but-not-Healthy, no K8s crash-loop (D-09)
 - Phase 58-01: Processor.BadConfig uses Clash Shape Option A (BadConfig(int Quantity) vs schema-string quantity); Service.Name processor-badconfig, Version kept 3.5.0 (SourceHash distinguishes identity); sln GUID C8D9E0F1-2A3B-4C5D-9E6F-7A8B9C0D1E2F
+- 58-02: SeedConfigSchemaAsync is GET-or-create-by-Name (never PUT — frozen-schema 409 / T-58-04); schema Definition is string not JsonElement (helper adapted)
+- 58-02: hermetic suite must be filtered via MTP '-- --filter-not-trait Category=RealStack' (the VSTest '--filter Category!=RealStack' is ignored under Microsoft.Testing.Platform)
 
 ### Roadmap Milestone Log
 
@@ -1450,8 +1453,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T22:06:25.433Z
-Stopped at: Completed 58-01-PLAN.md
+Last session: 2026-06-12T22:26:53.890Z
+Stopped at: Completed 58-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
