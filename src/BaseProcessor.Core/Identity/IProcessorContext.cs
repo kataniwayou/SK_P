@@ -8,7 +8,7 @@ namespace BaseProcessor.Core.Identity;
 /// the Healthy gate). Populated in two startup loops:
 /// <list type="number">
 ///   <item>Loop A resolves identity by SourceHash → <see cref="SetIdentity"/> (Id + 3 schema Ids).</item>
-///   <item>Loop B resolves each non-null input/output definition → <see cref="SetDefinition"/>.</item>
+///   <item>Loop B resolves each non-null input/output/config definition → <see cref="SetDefinition"/>.</item>
 /// </list>
 /// then <see cref="MarkHealthy"/> flips the latch.
 ///
@@ -22,8 +22,8 @@ namespace BaseProcessor.Core.Identity;
 /// <b>Memory-visibility invariant (WR-03):</b> only <see cref="IsHealthy"/>/<see cref="WhenHealthy"/>
 /// carry synchronization. The identity and definition properties (<see cref="Id"/>,
 /// <see cref="InputSchemaId"/>, <see cref="OutputSchemaId"/>, <see cref="ConfigSchemaId"/>,
-/// <see cref="InputDefinition"/>, <see cref="OutputDefinition"/>, <see cref="Name"/>,
-/// <see cref="Version"/>) are plain auto-properties with NO
+/// <see cref="InputDefinition"/>, <see cref="OutputDefinition"/>, <see cref="ConfigDefinition"/>,
+/// <see cref="Name"/>, <see cref="Version"/>) are plain auto-properties with NO
 /// volatile/barrier semantics. They are only safe to read from another thread AFTER observing
 /// <see cref="IsHealthy"/> == <c>true</c> or after <see cref="WhenHealthy"/> has completed — the
 /// full barrier in <see cref="MarkHealthy"/>'s <c>Interlocked.Exchange</c> publishes the prior
@@ -42,7 +42,7 @@ public interface IProcessorContext
     /// <summary>The output schema Id (null for a sink processor).</summary>
     Guid? OutputSchemaId { get; }
 
-    /// <summary>The config schema Id (carried for completeness; never resolved to a definition — D-05).</summary>
+    /// <summary>The config schema Id (resolved to a definition by Loop B for Gate A — D-12).</summary>
     Guid? ConfigSchemaId { get; }
 
     /// <summary>The resolved processor Name (DB single source of truth; null until Loop A completes). WR-03: read after IsHealthy.</summary>
@@ -56,6 +56,9 @@ public interface IProcessorContext
 
     /// <summary>The resolved output schema definition (null until Loop B resolves it).</summary>
     string? OutputDefinition { get; }
+
+    /// <summary>The resolved config schema definition (null until Loop B resolves it — D-14). WR-03: read after IsHealthy.</summary>
+    string? ConfigDefinition { get; }
 
     /// <summary>
     /// True once identity + all required (non-null) definitions are resolved (LIVE-04 meaning of
@@ -74,8 +77,9 @@ public interface IProcessorContext
 
     /// <summary>
     /// Stores the resolved definition into <see cref="InputDefinition"/> when
-    /// <paramref name="schemaId"/> matches <see cref="InputSchemaId"/>, or
-    /// <see cref="OutputDefinition"/> when it matches <see cref="OutputSchemaId"/>.
+    /// <paramref name="schemaId"/> matches <see cref="InputSchemaId"/>,
+    /// <see cref="OutputDefinition"/> when it matches <see cref="OutputSchemaId"/>, or
+    /// <see cref="ConfigDefinition"/> when it matches <see cref="ConfigSchemaId"/> (D-12 — Gate A's input).
     /// </summary>
     void SetDefinition(Guid schemaId, string definition);
 

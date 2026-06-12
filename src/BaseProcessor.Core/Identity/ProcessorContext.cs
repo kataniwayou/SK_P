@@ -54,6 +54,9 @@ public sealed class ProcessorContext : IProcessorContext
     public string? OutputDefinition { get; private set; }
 
     /// <inheritdoc/>
+    public string? ConfigDefinition { get; private set; }
+
+    /// <inheritdoc/>
     public bool IsHealthy => Volatile.Read(ref _isHealthy) == 1;
 
     /// <inheritdoc/>
@@ -77,6 +80,10 @@ public sealed class ProcessorContext : IProcessorContext
             InputDefinition = definition;
         if (schemaId == OutputSchemaId)
             OutputDefinition = definition;
+        // D-12/D-14: route the config schema id to ConfigDefinition (Gate A's input). Independent `if`
+        // (not else-if) — if two roles share an Id, one fetch populates both slots (idempotent).
+        if (schemaId == ConfigSchemaId)
+            ConfigDefinition = definition;
     }
 
     /// <inheritdoc/>
