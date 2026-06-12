@@ -59,9 +59,9 @@ Plans:
   2. RealStack E2E: a config-compatible processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker (the negative-control).
   3. The milestone close gate holds — N-consecutive-GREEN + triple-SHA (psql/redis/rabbitmq) BEFORE==AFTER net-zero — at Release + Debug 0-warning.
 **Plans**: 5 plans (3 waves)
-- [ ] 58-01-PLAN.md - Processor.BadConfig project (clashing TConfig, distinct SourceHash) + SK_P.sln (CFG-08)
-- [ ] 58-02-PLAN.md - Two-schema GET-or-create seed helpers + compatible Sample seed path + SC1/2/3 retag Phase 58 (CFG-09)
-- [ ] 58-03-PLAN.md - Profile-gated processor-badconfig compose service + Gate-A composition E2E (CFG-08 clash-log+absent+422 / CFG-09 204) (CFG-08, CFG-09)
+- [x] 58-01-PLAN.md - Processor.BadConfig project (clashing TConfig, distinct SourceHash) + SK_P.sln (CFG-08)
+- [x] 58-02-PLAN.md - Two-schema GET-or-create seed helpers + compatible Sample seed path + SC1/2/3 retag Phase 58 (CFG-09)
+- [x] 58-03-PLAN.md - Profile-gated processor-badconfig compose service + Gate-A composition E2E (CFG-08 clash-log+absent+422 / CFG-09 204) (CFG-08, CFG-09)
 - [x] 58-04-PLAN.md - phase-58-close.ps1 (verbatim phase-55 triple-SHA + two-schema/two-processor CREATE-IF-ABSENT seed) (CFG-08, CFG-09) (completed 2026-06-13 — dual embedded-hash read Sample+BadConfig, two-schema/two-processor CREATE-IF-ABSENT seed never PUT, no badconfig SHA exclusion/liveness pre-flight, triple-SHA block verbatim; AST PARSE OK; 5e283bb)
 - [x] 58-05-PLAN.md - 58-HUMAN-UAT.md operator runbook + live N=3 GREEN close gate (ticks CFG-08, CFG-09) (CFG-08, CFG-09) (completed 2026-06-13 — live N=3 close gate exit 0: triple-SHA BEFORE==AFTER psql ed52e389/redis e3b0c442/rabbitmq 88000972, 568 facts x3, skp-dlq-1 depth 0, skp:msg:* 0; CFG-08 three-signal 422 + CFG-09 204 both GREEN; mid-run fix bfa5a65 corrected the Gate-A clash-log ES query; 6faa169, bfa5a65, 52f2f81)
 
@@ -573,7 +573,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 55. Live Proof & Close Gate | v5.0.0 | 4/4 | Complete    | 2026-06-12 |
 | 56. Typed Base-Config Seam | v6.0.0 | 2/2 | Complete    | 2026-06-12 |
 | 57. Startup Config-Schema Fetch + Gate A | v6.0.0 | 4/4 | Complete    | 2026-06-12 |
-| 58. Orchestration-Gate Integration Proof & Close | v6.0.0 | 5/5 | In progress | 2026-06-13 |
+| 58. Orchestration-Gate Integration Proof & Close | v6.0.0 | 5/5 | Complete    | 2026-06-12 |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 shipped 2026-06-02 (6 phases 25-30, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip + runtime/business metrics) — note: formal archival (ROADMAP/MILESTONES/tag) deferred. v3.6.0 shipped 2026-06-05 (4 phases 31-32.1, Idempotent Execution — exactly-once-effect round-trip via deterministic `H` + effect-first `flag[H]` dedup at both hops; cancelled circuit-breaker built then reverted to plain dead-lettering). Next milestone planning begins with `/gsd-new-milestone`.*
