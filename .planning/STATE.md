@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v6.0.0
 milestone_name: Config & Payload Validation Hardening
-status: roadmap_complete
-stopped_at: ""
-last_updated: "2026-06-12"
-last_activity: 2026-06-12
+status: completed
+stopped_at: Phase 56 context gathered
+last_updated: "2026-06-12T14:10:32.028Z"
+last_activity: 2026-06-12 — v6.0.0 roadmap created (phases 56-58)
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 95
 ---
 
 # Project State
@@ -1429,9 +1429,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T08:39:41.606Z
-Stopped at: Phase 55-04 build gate (D-08) PASSED; STOPPED at 55-04 Task 2 operator close-gate checkpoint (D-09)
-Resume file: .planning/phases/55-live-proof-close-gate/55-04-PLAN.md
+Last session: --stopped-at
+Stopped at: Phase 56 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
