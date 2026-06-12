@@ -10,7 +10,8 @@ using Xunit;
 namespace BaseApi.Tests.Orchestrator;
 
 /// <summary>
-/// SC2 / TEST-01 (recovery-paths half) — the RealStack proof of each of the FOUR Keeper recovery states,
+/// SC2 / TEST-01 (recovery-paths half) — the RealStack proof of each of the THREE v5 Keeper recovery states
+/// (REINJECT present/absent, INJECT, DELETE — the v4 UPDATE/CLEANUP states were retired in Phase 53),
 /// driven by DIRECT-PUBLISH of the actual state contracts to the gate-open recovery queue
 /// (<see cref="KeeperQueues.Recovery"/> = the sole surviving Keeper queue, D-05). Sibling to
 /// <see cref="SampleRoundTripE2ETests"/> (SC1) — it REUSES that file's <c>RealStackWebAppFactory</c> host
@@ -19,7 +20,7 @@ namespace BaseApi.Tests.Orchestrator;
 /// <see cref="KeeperInject"/> / <see cref="KeeperDelete"/> straight at <c>queue:keeper-recovery</c> and
 /// asserts each state's deterministic L2 / re-inject / orchestrator-advance / dead-letter effect.
 /// <para>
-/// The four proofs (effects read from the production recovery consumers):
+/// The three direct-publish proofs (effects read from the production recovery consumers):
 /// </para>
 /// <list type="number">
 ///   <item><b>REINJECT data-present</b> (<c>ReinjectConsumer</c>) — PRE-SEED <c>skp:data:{entryId}</c> so
@@ -34,28 +35,38 @@ namespace BaseApi.Tests.Orchestrator;
 ///   write <c>L2[m.EntryId]=m.Data</c>, send a reconstructed <see cref="StepCompleted"/> to
 ///   <c>queue:orchestrator-result</c>, delete <c>m.DeleteEntryId</c>. Asserted on the data key being
 ///   written and the source key being deleted.</item>
-///   <item><b>DELETE</b> (<c>DeleteConsumer</c>) — PRE-SEED <c>skp:data:{entryId}</c> → the consumer
-///   deletes it. Asserted on the data key being gone.</item>
+///   <item><b>DELETE</b> (<c>DeleteConsumer</c>, A19 both-key) — <see cref="KeeperDelete"/> now carries a
+///   <see cref="KeeperDelete.MessageId"/> (KeeperDelete.cs:13); the consumer deletes BOTH
+///   <c>skp:data:{entryId}</c> AND the <c>skp:msg:{messageId}</c> allocation index in ONE atomic multi-key
+///   <c>DEL</c> (DeleteConsumer.cs:19-24, GC-03). PRE-SEED BOTH keys → assert BOTH gone after the one DEL.</item>
 /// </list>
 /// <para>
-/// Net-zero (D-04 + D-07): EVERY minted key — including the composite backup whose 2-day TTL CANNOT be
-/// waited out — is registered into <c>factory.L2KeysToCleanup</c>, so a leak surfaces as a close-gate
-/// redis SHA mismatch rather than a silent TTL pass. The data-gone DLQ message is bounded (exactly one)
-/// and self-cleaning (drained in teardown). Gate-open precondition: a healthy RealStack keeps the BIT loop
+/// In addition to the three direct-publish proofs, a SECOND <c>[Fact]</c> drives the ORGANIC recovery pass
+/// end-to-end: pre-seed a populated slot-array index + a completed data key, publish an
+/// <see cref="EntryStepDispatch"/> with a known broker <c>MessageId</c> at <c>queue:{procId:D}</c>, forcing
+/// the live processor's <c>if exist L2[messageId]</c> recovery branch (ProcessorPipeline.cs:94-105) →
+/// send-before-retire (SLOT-03, slot to <c>Guid.Empty</c>) → two-key DEL net-zero (RECOV-03 tail).
+/// </para>
+/// <para>
+/// Net-zero (D-04 + D-07): EVERY minted key — the seeded <c>skp:data:*</c> + <c>skp:msg:*</c> index — is
+/// registered into <c>factory.L2KeysToCleanup</c>, so a leak surfaces as a close-gate redis SHA mismatch
+/// rather than a silent TTL pass. The A19 two-key DEL self-cleans the happy case; registration is the
+/// belt-and-suspenders. The data-gone DLQ message is bounded (exactly one) and self-cleaning (drained in
+/// teardown). Gate-open precondition: a healthy RealStack keeps the BIT loop
 /// from <c>Stop()</c>ing the <c>keeper-recovery</c> endpoint (D-04/D-09, Phase 52). When the endpoint is
 /// running, the three recovery consumers (REINJECT, INJECT, DELETE) process at entry with NO Consume-level
 /// gate-wait — the per-<c>Consume</c> <c>gate.WaitForOpenAsync</c> was removed in Phase 52; gating is now at
 /// the endpoint level via <c>Stop</c>/<c>Start</c>.
 /// </para>
 /// <para>
-/// Tagged <c>Category=RealStack</c> + <c>Phase=49</c>: the hermetic filter (<c>Category!=RealStack</c>)
-/// EXCLUDES this fact; it runs only against the operator-gated live v4 stack (49-HUMAN-UAT.md). TEST-01
+/// Tagged <c>Category=RealStack</c> + <c>Phase=55</c>: the hermetic filter (<c>Category!=RealStack</c>)
+/// EXCLUDES these facts; they run only against the operator-gated live v5 stack (55-HUMAN-UAT.md). TEST-01
 /// stays UNTICKED until that GREEN live run.
 /// </para>
 /// </summary>
 [Trait("Category", "E2E")]
 [Trait("Category", "RealStack")]
-[Trait("Phase", "49")]
+[Trait("Phase", "55")]
 [Collection("Observability")]
 public sealed class SC2RecoveryPathsE2ETests
 {
@@ -64,7 +75,7 @@ public sealed class SC2RecoveryPathsE2ETests
     private const int EffectPollTimeoutMs = 120_000;
 
     [Fact]
-    public async Task LiveKeeperRecovery_AllFourStates_ProduceTheirL2AndReinjectAndDeadLetterEffects()
+    public async Task LiveKeeperRecovery_AllThreeStates_ProduceTheirL2AndReinjectAndDeadLetterEffects()
     {
         var ct = TestContext.Current.CancellationToken;
 
@@ -191,31 +202,41 @@ public sealed class SC2RecoveryPathsE2ETests
         }
 
         // =========================================================================================
-        // STATE 4 — DELETE → delete skp:data:{entryId}
+        // STATE 4 — DELETE (A19 both-key, v5): KeeperDelete carries a MessageId; DeleteConsumer deletes
+        // BOTH skp:data:{entryId} AND the skp:msg:{messageId} allocation index in ONE atomic multi-key DEL
+        // (DeleteConsumer.cs:19-24, GC-03). The v4 source-only DELETE (data key only, no MessageId) is gone.
         // =========================================================================================
         {
             var wfId = Guid.NewGuid();
             var stepId = Guid.NewGuid();
             var procId = Guid.NewGuid();
-            var entryId = Guid.NewGuid();
+            var entryId = NewId.NextGuid();
+            var messageId = NewId.NextGuid();
 
-            // PRE-SEED skp:data:{entryId} then publish DELETE. Register the key as a belt-and-suspenders
-            // net-zero (the delete is idempotent — registration just guarantees cleanup if DELETE no-ops).
-            var dataKey = L2ProjectionKeys.ExecutionData(entryId);
+            // PRE-SEED BOTH operands of the both-key DEL: the execution-data key AND a one-slot allocation
+            // index HASH (skp:msg:{messageId} → {0: entryId}). Register BOTH for net-zero teardown
+            // (belt-and-suspenders, D-07 — the DEL self-cleans the happy case below).
+            var dataKey = L2ProjectionKeys.ExecutionData(entryId);    // skp:data:{entryId:D}
+            var indexKey = L2ProjectionKeys.MessageIndex(messageId);  // skp:msg:{messageId:D}
             await db.StringSetAsync(dataKey, "to-be-deleted");
+            await db.HashSetAsync(indexKey, 0, entryId.ToString("D"));
             factory.L2KeysToCleanup.Add(dataKey);
+            factory.L2KeysToCleanup.Add(indexKey);
 
             await endpoint.Send(new KeeperDelete(wfId, stepId, procId)
             {
                 CorrelationId = Guid.NewGuid(),
                 ExecutionId = Guid.NewGuid(),
                 EntryId = entryId,
+                MessageId = messageId,   // v5 delta: MessageId carried (KeeperDelete.cs:13) → both-key DEL
             }, ct);
 
-            // EFFECT: DeleteConsumer KeyDeletes L2ProjectionKeys.ExecutionData(entryId). Poll until gone.
-            var deleted = await PollForKeyAbsentAsync(db, dataKey, ct);
-            Assert.True(deleted,
-                $"DELETE: expected {dataKey} to be deleted by the DeleteConsumer, but it still exists.");
+            // EFFECT: DeleteConsumer issues ONE KeyDeleteAsync(new[]{ ExecutionData(entryId), MessageIndex(messageId) }).
+            // Assert BOTH operands go ABSENT — the A19 two-key DEL reclaimed both, not just the data key.
+            Assert.True(await PollForKeyAbsentAsync(db, dataKey, ct),
+                $"DELETE: expected {dataKey} (skp:data) to be deleted by the two-key DEL, but it still exists.");
+            Assert.True(await PollForKeyAbsentAsync(db, indexKey, ct),
+                $"DELETE: expected {indexKey} (skp:msg index) to be deleted by the two-key DEL, but it still exists.");
         }
     }
 
@@ -457,19 +478,6 @@ public sealed class SC2RecoveryPathsE2ETests
                 if (ParentIndexMembersToSrem.Count > 0)
                 {
                     await db.SetRemoveAsync(L2ProjectionKeys.ParentIndex(), ParentIndexMembersToSrem.ToArray());
-                }
-
-                // GAP-49-8: sweep any composite backup keys (skp:{corr}:{wf}:{proc}:{exec}) the live Keeper
-                // left for this run's workflows. The composite is a bounded 2-day crash-backstop normally
-                // deleted by the happy-path CLEANUP/INJECT, but a race across the 2 keeper replicas can orphan
-                // one (CLEANUP processed before its UPDATE). Scan-delete by workflowId (the 2nd key segment)
-                // so the close-gate redis net-zero holds without waiting out the 2-day TTL.
-                foreach (var srv in cleanupMux.GetEndPoints())
-                {
-                    var server = cleanupMux.GetServer(srv);
-                    foreach (var wfId in ParentIndexMembersToSrem)
-                        foreach (var compositeKey in server.Keys(pattern: $"skp:*:{wfId}:*"))
-                            await db.KeyDeleteAsync(compositeKey);
                 }
             }
 
