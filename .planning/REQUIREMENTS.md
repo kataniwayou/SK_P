@@ -31,9 +31,9 @@ Guarantee that any processor which reaches *Healthy* can deserialize every orche
 
 ### Orchestration Gate Integration (CFG)
 - [x] **CFG-08
-**: An orchestration whose graph includes a config-incompatible (never-Healthy) processor is blocked at orchestration start with 422 via the existing `ProcessorLivenessValidator` ("absent"), proven end-to-end against the real stack.
+**: An orchestration whose graph includes a config-incompatible (never-Healthy) processor is blocked at orchestration start with 422 via the existing `ProcessorLivenessValidator` ("absent"), proven end-to-end against the real stack. **LIVE-PROVEN 2026-06-13** — Phase-58 N=3 GREEN close gate (exit 0), three-signal causation (ES clash log scoped to `service.name=processor-badconfig` + `skp:{badId}` stably absent + orchestration-start 422) via `GateACompositionE2ETests.BadConfig_GateAIncompatible_ClashLogged_LivenessAbsent_Start422`; see `58-HUMAN-UAT.md` Step-4 record block.
 - [x] **CFG-09
-**: A config-**compatible** processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker.
+**: A config-**compatible** processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker. **LIVE-PROVEN 2026-06-13** — Phase-58 N=3 GREEN close gate (exit 0), Gate-A-pass + `skp:{sampleId}` present + 204 via `GateACompositionE2ETests.SampleCompatible_GateAPasses_Healthy_Start204`; see `58-HUMAN-UAT.md` Step-4 record block.
 
 ### TOCTOU Policy (CFG)
 - [x] **CFG-10
@@ -69,8 +69,8 @@ Each CFG requirement is mapped to exactly one phase (100% coverage, no orphans).
 | CFG-05 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
 | CFG-06 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
 | CFG-07 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
-| CFG-08 | Phase 58 — Orchestration-Gate Integration Proof & Close | Pending |
-| CFG-09 | Phase 58 — Orchestration-Gate Integration Proof & Close | Pending |
+| CFG-08 | Phase 58 — Orchestration-Gate Integration Proof & Close | Complete |
+| CFG-09 | Phase 58 — Orchestration-Gate Integration Proof & Close | Complete |
 | CFG-10 | Phase 57 — Startup Config-Schema Fetch + Gate A | Complete |
 
 **Coverage:** 10/10 CFG requirements mapped — no orphans, no duplicates.

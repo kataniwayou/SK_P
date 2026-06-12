@@ -1,5 +1,5 @@
 ---
-status: pending
+status: passed
 phase: 58-orchestration-gate-integration-proof-close
 source: [58-05-PLAN.md]
 started: 2026-06-13
@@ -10,16 +10,20 @@ updated: 2026-06-13
 
 ## Current Test
 
-PENDING — the live N=3xGREEN close-gate run is operator-gated and has NOT yet been executed. Until the
-operator records a GREEN run in this file, **CFG-08 / CFG-09 stay `[ ]` in REQUIREMENTS.md.**
+PASS — the live N=3xGREEN close-gate run executed 2026-06-13 and exited `0`. Triple-SHA BEFORE == AFTER
+held (psql/redis/rabbitmq), N=3 consecutive GREEN at an identical `Passed` fact count of **568**,
+`skp-dlq-1` depth == 0, `skp:msg:*` count == 0, both build configs 0-warning. CFG-08's three-signal
+causation and CFG-09 both fired. **CFG-08 / CFG-09 are now ticked `[x]` in REQUIREMENTS.md** (see the
+Step-4 record block below).
 
 **Phase:** 58-orchestration-gate-integration-proof-close
 **Milestone:** v6.0.0 (Config & Payload Validation Hardening — typed base-config seam + startup Gate A)
 **Authored:** 2026-06-13
-**Status:** PENDING — the close gate (`scripts/phase-58-close.ps1`), the profile-gated `processor-badconfig`
+**Status:** PASSED — the close gate (`scripts/phase-58-close.ps1`), the profile-gated `processor-badconfig`
 tier, and the RealStack `GateACompositionE2ETests` (CFG-08 three-signal → 422, CFG-09 compatible → 204)
-are authored and hermetically green. The actual live N=3xGREEN close run is operator-gated (D-12). Until
-the operator records a GREEN run in this file, **CFG-08 / CFG-09 stay `[ ]` in REQUIREMENTS.md.**
+are authored, hermetically green, AND now live-proven. The live N=3xGREEN close run executed 2026-06-13
+and exited `0` (568 facts × 3, triple-SHA BEFORE == AFTER). **CFG-08 / CFG-09 are ticked `[x]` in
+REQUIREMENTS.md** — see the Step-4 record block.
 
 ---
 
@@ -208,17 +212,19 @@ run is the artifact that gates the CFG-08/CFG-09 tick.
 
 | Field                                            | Value |
 |--------------------------------------------------|-------|
-| psql `\l` SHA-256 (BEFORE == AFTER)              | `<fill>` |
-| redis `--scan` SHA-256 (BEFORE == AFTER)         | `<fill>` (net-zero keyspace; Sample liveness key `skp:{sampleId}` excluded; NO badconfig exclusion) |
-| rabbitmq `list_queues` SHA-256 (BEFORE == AFTER) | `<fill>` (transient `_bus_` queues excluded) |
-| `Passed` fact count (identical across all 3 runs)| `<fill>` |
-| `skp-dlq-1` depth (== 0)                         | `<fill>` |
-| `skp:msg:*` slot-array index count (== 0)        | `<fill>` |
-| CFG-08 three-signal fired (clash log + absent liveness + 422) | `<fill>` (Yes/No — `GateACompositionE2ETests.BadConfig_...Start422` GREEN) |
-| CFG-09 (Gate-A-pass + `skp:{sampleId}` present + 204) | `<fill>` (Yes/No — `GateACompositionE2ETests.SampleCompatible_...Start204` GREEN) |
-| Gate exit code (== 0)                            | `<fill>` |
-| Run date                                         | `<fill>` |
-| Operator                                         | `<fill>` |
+| psql `\l` SHA-256 (BEFORE == AFTER)              | `ed52e389db65fc725310a5f753d209190970f3bee5a4c7cd55308ee38e3f9d34` |
+| redis `--scan` SHA-256 (BEFORE == AFTER)         | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (net-zero keyspace; only the excluded Sample liveness key `skp:f985ffcb-d7d2-454e-811d-05fe5cbf565f`; NO badconfig exclusion needed — Gate A withheld its liveness) |
+| rabbitmq `list_queues` SHA-256 (BEFORE == AFTER) | `8800097247c8b5d507b7d82d3ded780431a6aacba85b1df83ddd6683737a25f2` (transient `_bus_` queues excluded) |
+| `Passed` fact count (identical across all 3 runs)| `568` (Run 1 = 568, Run 2 = 568, Run 3 = 568) |
+| `skp-dlq-1` depth (== 0)                         | `0` |
+| `skp:msg:*` slot-array index count (== 0)        | `0` |
+| CFG-08 three-signal fired (clash log + absent liveness + 422) | `Yes` — `GateACompositionE2ETests.BadConfig_GateAIncompatible_ClashLogged_LivenessAbsent_Start422` GREEN (ES clash log via `attributes.{OriginalFormat}` + `attributes.ProcessorId=b4277f0d-2f0f-4689-a4fc-112eb3cbb67d` scoped to `service.name=processor-badconfig`; `skp:{badId}` stably absent; orchestration-start 422) |
+| CFG-09 (Gate-A-pass + `skp:{sampleId}` present + 204) | `Yes` — `GateACompositionE2ETests.SampleCompatible_GateAPasses_Healthy_Start204` GREEN (Gate-A-pass + `skp:{sampleId}` present + 204) |
+| Gate exit code (== 0)                            | `0` |
+| Run date                                         | `2026-06-13` |
+| Operator                                         | Claude Code (automated close run, user-authorized "verify and approve by yourself") |
+
+**Per-run cadence:** Run 1 Exit=0 Passed=568 (10m03s); Run 2 Exit=0 Passed=568 (10m11s); Run 3 Exit=0 Passed=568 (9m01s).
 
 > The three SHA values + the `Passed` count + the `skp-dlq-1` depth + the `skp:msg:*` count mirror the
 > gate's operator-append line printed on PASS. If any run is RED or any SHA mismatches, capture the failure
@@ -233,15 +239,17 @@ BEFORE == AFTER, `skp-dlq-1` depth == 0, `skp:msg:*` count == 0, AND the CFG-08 
 both-fired is recorded in Step 4 above — and **ONLY** by the operator. Until then they stay `[ ]` in
 `.planning/REQUIREMENTS.md`.
 
-- [ ] **CFG-08** — Live RealStack: an orchestration that includes the Gate-A-incompatible
+- [x] **CFG-08** — Live RealStack: an orchestration that includes the Gate-A-incompatible
       `processor-badconfig` is BLOCKED at orchestration start with **422**, proven by the three-signal
       causation — (a) the Gate A clash log in Elasticsearch scoped to `service.name == processor-badconfig`
       (causation: boot + Gate-A-ran), (b) `skp:{badId}` stably absent across > one heartbeat interval
       (mechanism: withheld `MarkHealthy`), (c) orchestration-start 422 (outcome) — asserted by
       `GateACompositionE2ETests.BadConfig_GateAIncompatible_ClashLogged_LivenessAbsent_Start422`.
-- [ ] **CFG-09** — Live RealStack: a compatible `processor-sample` (`SampleConfig` COVERS
+      **TICKED 2026-06-13 — GREEN N=3 close run (exit 0), Step-4 record block above.**
+- [x] **CFG-09** — Live RealStack: a compatible `processor-sample` (`SampleConfig` COVERS
       `gateA-sample-compatible`) Gate-A-passes → `skp:{sampleId}` Healthy → orchestration start returns
       **204**, asserted by `GateACompositionE2ETests.SampleCompatible_GateAPasses_Healthy_Start204`.
+      **TICKED 2026-06-13 — GREEN N=3 close run (exit 0), Step-4 record block above.**
 
 These remain unticked in `.planning/REQUIREMENTS.md` until the operator records the GREEN run in Step 4.
 On a recorded GREEN run, flip `[ ]` → `[x]` here AND in `.planning/REQUIREMENTS.md`, referencing the Step-4
@@ -278,18 +286,23 @@ Three threat surfaces are mitigated by this runbook + the cloned gate:
 
 ### 1. Live N×GREEN close-gate run — gates CFG-08 / CFG-09
 expected: After the clean host build (Step 1, so host hash == container hash for BOTH Sample and BadConfig) and the `--profile badconfig` rebuild from a clean redis keyspace (Step 2), `pwsh -File scripts/phase-58-close.ps1` exits `0` — 3 consecutive GREEN runs with identical `Passed` fact count, triple-SHA (psql `\l` / redis `--scan` / rabbitmq `list_queues`) BEFORE == AFTER net-zero (no badconfig SHA exclusion), `skp-dlq-1` depth == 0, `skp:msg:*` count == 0, at Release + Debug 0-warning. The CFG-08 three-signal (ES clash log scoped to `processor-badconfig` + `skp:{badId}` stably absent + orchestration-start 422) and CFG-09 (Gate-A-pass + `skp:{sampleId}` present + 204) RealStack facts both pass live. Record the 3 SHA values + Passed count + DLQ depth + `skp:msg:*` count + the CFG-08/09 signals in the Step 4 record block, then tick CFG-08/CFG-09 in REQUIREMENTS.md.
-result: PENDING — operator-gated; not yet executed.
+result: PASS — 2026-06-13. `scripts/phase-58-close.ps1` exited `0`: N=3 consecutive GREEN at an identical `Passed` fact count of 568, triple-SHA BEFORE == AFTER held (psql `ed52e389…`, redis `e3b0c442…`, rabbitmq `88000972…`), `skp-dlq-1` depth == 0, `skp:msg:*` count == 0, Release + Debug 0-warning. CFG-08 three-signal (ES clash log scoped to `processor-badconfig` via `attributes.{OriginalFormat}` + `attributes.ProcessorId` + `skp:{badId}` absent + orchestration-start 422) and CFG-09 (Gate-A-pass + `skp:{sampleId}` present + 204) both GREEN. CFG-08/CFG-09 ticked in REQUIREMENTS.md.
 
 ## Summary
 
 total: 1
-passed: 0
+passed: 1
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-None recorded yet — the live run has not been executed. If the operator's run is RED or any SHA mismatches,
-record the failure detail here and return for gap closure rather than ticking CFG-08/CFG-09.
+None. The live N=3 GREEN close gate passed (exit 0). One mid-run fix surfaced and was applied before the
+PASS: the Gate-A clash-log ES poll in `GateACompositionE2ETests` queried `match: body "Gate A
+incompatibility"`, but otel maps the message under the nested `body.text` (not phrase-searchable as a flat
+`body`), so the first run RED'd at the ES poll. Fixed to the proven structured-attribute query (term on
+`attributes.{OriginalFormat}` + `attributes.ProcessorId` scoped to `service.name == processor-badconfig` —
+commit `bfa5a65`). Gate A's product behavior was always correct; only the test's ES query convention was
+wrong. After the fix both GateAComposition tests verified 2/2 GREEN, then the full N=3 gate passed.
