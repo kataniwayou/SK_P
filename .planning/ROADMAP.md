@@ -103,7 +103,7 @@ Plans:
 - [x] 55-01-PLAN.md — clone phase-49 close gate → phase-55-close.ps1 (composite removed, skp:msg:* count==0 added) + operator runbook (TEST-02)
 - [x] 55-02-PLAN.md — adapt SC1 (slot-array index + A19 net-zero), retag SC3, delete composite sweeps (TEST-01)
 - [x] 55-03-PLAN.md — rewrite SC2 (3-state + both-key DELETE) + organic recovery test (TEST-01)
-- [ ] 55-04-PLAN.md — autonomous build gate (D-08) + operator-gated live N=3×GREEN close run (D-09)
+- [x] 55-04-PLAN.md — autonomous build gate (D-08) + operator-gated live N=3×GREEN close run (D-09)
 
 ## ✅ v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume (SHIPPED 2026-06-07)
 
