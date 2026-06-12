@@ -29,7 +29,9 @@
   2. The framework deserializes the dispatch `payload` into the author's typed config before invoking the transform; a payload that does not deserialize into the config type surfaces as a deterministic failure (not a silent corruption).
   3. `Processor.Sample` is migrated to the typed-config seam as the worked example — the old raw-string `ProcessAsync(string validatedData, string payload)` deserialize is removed (clean break), and `Processor.Sample` still completes a round-trip.
   4. Solution builds 0-warning (Release + Debug); the hermetic suite is green with the new seam.
-**Plans**: TBD
+**Plans**: 2 plans (2 waves)
+- [ ] 56-01-PLAN.md — Framework typed-config seam (empty marker + shared options + generic deserialize layer) + Processor.Sample clean-break migration (CFG-01, CFG-02)
+- [ ] 56-02-PLAN.md — Hermetic suite migration to the typed seam + deser-failure StepFailed fact + 0-warning dual-config build & full-suite gate (CFG-01, CFG-02)
 
 #### Phase 57: Startup Config-Schema Fetch + Gate A
 **Goal**: At startup the processor fetches the `ConfigSchemaId` definition (extending Loop B at `ProcessorStartupOrchestrator.cs:124`, lifting the D-05 "never read the config schema id" carve-out) and stores it on `ProcessorContext`; Gate A then validates that the concrete config type *covers* that definition. On incompatibility the processor never reaches Healthy (withholds `MarkHealthy`, terminal — not retried); a missing definition stays transient (retry, boot-before-register); a null `ConfigSchemaId` skips Gate A. The spec-locked TOCTOU policy (immutability or re-validate-on-change) closes the schema-mutation window between this startup check and a later orchestration-start Gate B check.
