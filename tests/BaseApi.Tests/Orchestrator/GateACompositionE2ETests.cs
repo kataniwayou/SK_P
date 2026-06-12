@@ -106,6 +106,12 @@ public sealed class GateACompositionE2ETests
         // first upgrades "absent liveness" below from coincidence ("maybe it's just down") to causation
         // ("Gate A withheld health"). Scope to the badconfig service.name + match the shipped message text.
         using var es = new ElasticsearchTestClient();
+        // otel maps the rendered message under the nested "body.text" object, which is NOT
+        // phrase-searchable (the proven CorrelationPropagationE2ETests / OrchestrationLogsE2ETests
+        // precedent — never `match` on "body"). Pin the STRUCTURED log via `term`s: the badconfig
+        // service.name + this run's ProcessorId (per-test-scoped, robust to prior ES history) + the
+        // shipped {OriginalFormat} template (ProcessorStartupOrchestrator.cs:188). The rendered text is
+        // then asserted in C# via GetRawText() (which includes body.text + {OriginalFormat}).
         var clashLogQuery = $$"""
           {
             "size": 5,
@@ -114,7 +120,8 @@ public sealed class GateACompositionE2ETests
               "bool": {
                 "must": [
                   { "term": { "resource.attributes.service.name": "processor-badconfig" } },
-                  { "match": { "body": "Gate A incompatibility" } }
+                  { "term": { "attributes.ProcessorId": "{{badId}}" } },
+                  { "term": { "attributes.{OriginalFormat}": "Gate A incompatibility for processor {ProcessorId} config schema {ConfigSchemaId}: {Clash}" } }
                 ]
               }
             }
