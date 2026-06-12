@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v5.0.0
 milestone_name: Recovery Re-architecture — messageId slot-array + 3-state keeper
 status: executing
-stopped_at: Completed 55-03-PLAN.md
-last_updated: "2026-06-12T08:28:33.052Z"
+stopped_at: Phase 55-04 build gate (D-08) PASSED; STOPPED at 55-04 Task 2 operator close-gate checkpoint (D-09)
+last_updated: "2026-06-12T08:39:41.623Z"
 last_activity: 2026-06-12
 progress:
   total_phases: 6
   completed_phases: 5
   total_plans: 19
-  completed_plans: 18
+  completed_plans: 19
   percent: 95
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 ## Current Position
 
 Milestone: v5.0.0 (Recovery Re-architecture — messageId slot-array + 3-state keeper) — STARTED 2026-06-11. Breaking successor to v4.0.0's recovery core (supersedes Model B); source of truth `docs/design/2026-06-08-processor-keeper-recovery-redesign.md` → "Recovery Re-architecture (A18)" (LOCKED). Phases continue at 50.
-Phase: 55 (live-proof-close-gate) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
+Phase: 55 (live-proof-close-gate) — EXECUTING (at operator close-gate)
+Plan: 4 of 4 — 55-04 autonomous build gate (D-08) PASSED; STOPPED at the Task 2 operator close-gate checkpoint (D-09)
+Status: AWAITING OPERATOR — the live N=3xGREEN triple-SHA close run (`pwsh -File scripts/phase-55-close.ps1` against the rebuilt v5 docker stack) is operator-gated by design. All 4 plans authored + hermetically green (Release+Debug 0-warning, hermetic suite 529 GREEN, RealStack compiles-but-excluded, close script parses). TEST-01/TEST-02 stay UNTICKED until the operator's recorded GREEN run per 55-HUMAN-UAT.md. Phase 55 / v5.0.0 milestone close is operator-gated (every prior milestone close — Phase 39/49 — deferred the live run identically).
 Last activity: 2026-06-12
 
 ### Roadmap Evolution
@@ -1426,9 +1426,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T08:28:24.991Z
-Stopped at: Completed 55-03-PLAN.md
-Resume file: None
+Last session: 2026-06-12T08:39:41.606Z
+Stopped at: Phase 55-04 build gate (D-08) PASSED; STOPPED at 55-04 Task 2 operator close-gate checkpoint (D-09)
+Resume file: .planning/phases/55-live-proof-close-gate/55-04-PLAN.md
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
