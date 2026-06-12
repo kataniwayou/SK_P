@@ -58,7 +58,12 @@ Plans:
   1. RealStack E2E: an orchestration whose graph includes a config-incompatible (never-Healthy) processor is blocked at orchestration start with 422 via the existing `ProcessorLivenessValidator` ("absent").
   2. RealStack E2E: a config-compatible processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker (the negative-control).
   3. The milestone close gate holds — N-consecutive-GREEN + triple-SHA (psql/redis/rabbitmq) BEFORE==AFTER net-zero — at Release + Debug 0-warning.
-**Plans**: TBD
+**Plans**: 5 plans (3 waves)
+- [ ] 58-01-PLAN.md - Processor.BadConfig project (clashing TConfig, distinct SourceHash) + SK_P.sln (CFG-08)
+- [ ] 58-02-PLAN.md - Two-schema GET-or-create seed helpers + compatible Sample seed path + SC1/2/3 retag Phase 58 (CFG-09)
+- [ ] 58-03-PLAN.md - Profile-gated processor-badconfig compose service + Gate-A composition E2E (CFG-08 clash-log+absent+422 / CFG-09 204) (CFG-08, CFG-09)
+- [ ] 58-04-PLAN.md - phase-58-close.ps1 (verbatim phase-55 triple-SHA + two-schema/two-processor CREATE-IF-ABSENT seed) (CFG-08, CFG-09)
+- [ ] 58-05-PLAN.md - 58-HUMAN-UAT.md operator runbook + live N=3 GREEN close gate (ticks CFG-08, CFG-09) (CFG-08, CFG-09)
 
 ## 🚧 v5.0.0 Recovery Re-architecture — messageId slot-array + 3-state keeper (In Progress — started 2026-06-11)
 
