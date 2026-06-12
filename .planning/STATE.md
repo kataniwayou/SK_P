@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v6.0.0
 milestone_name: Config & Payload Validation Hardening
-status: defining_requirements
+status: roadmap_complete
 stopped_at: ""
 last_updated: "2026-06-12"
 last_activity: 2026-06-12
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -21,18 +21,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 55 — live-proof-close-gate
+**Current focus:** Phase 56 — typed-base-config-seam (v6.0.0 roadmap complete; planning next)
 
 ## Current Position
 
 Milestone: v6.0.0 (Config & Payload Validation Hardening) — STARTED 2026-06-12. Breaking change to the BaseProcessor author contract (typed base-config seam) + startup config-schema compatibility gate (Gate A); complements the shipped WebAPI Gate B (`PayloadConfigSchemaValidator`). Phases continue at 56.
-Phase: Not started (defining requirements)
+Phase: 56 — Typed Base-Config Seam (not started — next: /gsd-plan-phase 56)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-12 — Milestone v6.0.0 started
+Status: Roadmap complete — 3 phases (56-58), 10/10 CFG requirements mapped (100% coverage)
+Last activity: 2026-06-12 — v6.0.0 roadmap created (phases 56-58)
 
 ### Roadmap Evolution
 
+- 2026-06-12 — **v6.0.0 roadmap created** — 3 phases (56-58), standard granularity, 10/10 CFG requirements mapped (no orphans). Dependency-driven order: **56** Typed Base-Config Seam (CFG-01/02 — the prerequisite seam) → **57** Startup Config-Schema Fetch + Gate A (CFG-03/04 fetch, CFG-05/06/07 Gate A, CFG-10 TOCTOU folded in — all touch the startup config-schema definition) → **58** Orchestration-Gate Integration Proof & Close (CFG-08/09 — live 422-block + compatible-starts-normally, then the close gate). Three open decisions (Gate A direction/fidelity, terminal-unhealthy mechanics, TOCTOU policy) deferred to /gsd-spec-phase. Next: `/gsd-plan-phase 56`.
 - 2026-06-12 — **Milestone v6.0.0 started** (Config & Payload Validation Hardening): base config-class seam on `BaseProcessor` (authors inherit a typed config; the framework deserializes the dispatch payload into it, replacing the raw-string seam) + startup config-schema fetch (Loop B also reads `ConfigSchemaId`, lifting the D-05 carve-out) + **Gate A** (config-type↔config-schema compat → withhold `MarkHealthy` on mismatch → no L2 liveness → orchestration-start `ProcessorLivenessValidator` blocks 422). Null `ConfigSchemaId` skips Gate A (null-is-skip). Complements the shipped WebAPI **Gate B** (`PayloadConfigSchemaValidator`). v5.0.0 (phases 50-55) shipped/complete. Breaking author-contract change → major bump. Phases continue at **56**.
 - 2026-06-12 — **Phase 54 inserted** (`54-terminal-index-delete`): active terminal reclaim of the `L2[messageId]` allocation index — the processor happy-path tail deletes both the source `L2[entryId]` and the `L2[messageId]` index in one atomic multi-key `DEL`; exhaustion `PERSIST`s the index + escalates to a keeper `DELETE` now carrying `{messageId, entryId}` (both keys deleted atomically). Restores v4 CLEANUP-grade deterministic net-zero that A18's TTL-only index reclaim gave up. Design-doc amendment **A19** (LOCKED 2026-06-12). The live-proof + close-gate phase was **renumbered 54→55**. New reqs GC-01/02/03; TEST-01/02 reassigned to Phase 55. Milestone now phases 50-55 (6 phases). Worst case = duplicate message on a source-step crash-before-ack (A16-accepted).
 - 2026-06-11 — ROADMAP.md reconciled: v4.0.0 milestone + phases 43-49 backfilled into the Milestones list, a v4.0.0 section, the Progress table, and the execution-order line (the table had drifted, stopping at Phase 42 despite 43-49 having shipped). Documentation only — no phase content changed.

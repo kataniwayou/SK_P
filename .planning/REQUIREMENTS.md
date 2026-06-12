@@ -49,4 +49,19 @@ Guarantee that any processor which reaches *Healthy* can deserialize every orche
 
 ## Traceability
 
-_(Filled by the roadmapper — each CFG-NN mapped to exactly one phase.)_
+Each CFG requirement is mapped to exactly one phase (100% coverage, no orphans). Phases continue at 56.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| CFG-01 | Phase 56 — Typed Base-Config Seam | Pending |
+| CFG-02 | Phase 56 — Typed Base-Config Seam | Pending |
+| CFG-03 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
+| CFG-04 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
+| CFG-05 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
+| CFG-06 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
+| CFG-07 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
+| CFG-08 | Phase 58 — Orchestration-Gate Integration Proof & Close | Pending |
+| CFG-09 | Phase 58 — Orchestration-Gate Integration Proof & Close | Pending |
+| CFG-10 | Phase 57 — Startup Config-Schema Fetch + Gate A | Pending |
+
+**Coverage:** 10/10 CFG requirements mapped — no orphans, no duplicates.

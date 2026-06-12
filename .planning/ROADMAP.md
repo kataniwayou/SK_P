@@ -9,7 +9,49 @@
 - ✅ **v3.6.0 Idempotent Execution — Exactly-Once-Effect Round-Trip** — Phases 31-32.1 (shipped 2026-06-05) — see [milestones/v3.6.0-ROADMAP.md](milestones/v3.6.0-ROADMAP.md)
 - ✅ **v3.7.0 Keeper — L2-Outage Dead-Letter Recovery & Workflow Pause/Resume** — Phases 33-42 (shipped 2026-06-07) — see [milestones/v3.7.0-ROADMAP.md](milestones/v3.7.0-ROADMAP.md)
 - ✅ **v4.0.0 Processor Pre/In/Post-Process + Keeper Recovery Redesign** — Phases 43-49 (shipped 2026-06-11) — see [milestones/v4.0.0-ROADMAP.md](milestones/v4.0.0-ROADMAP.md)
-- 🚧 **v5.0.0 Recovery Re-architecture — messageId slot-array + 3-state keeper** — Phases 50-55 (in progress — started 2026-06-11) — supersedes v4.0.0 Model-B recovery; source of truth [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) A18 + A19
+- ✅ **v5.0.0 Recovery Re-architecture — messageId slot-array + 3-state keeper** — Phases 50-55 (shipped 2026-06-12) — supersedes v4.0.0 Model-B recovery; source of truth [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) A18 + A19
+- 🚧 **v6.0.0 Config & Payload Validation Hardening** — Phases 56-58 (in progress — started 2026-06-12) — typed base-config seam on `BaseProcessor` + startup config-schema compatibility **Gate A** (withholds processor *Healthy* on config-type↔config-schema mismatch); complements the shipped WebAPI **Gate B** (`PayloadConfigSchemaValidator`); source of truth: locked Gate A / Gate B analysis (2026-06-12)
+
+## 🚧 v6.0.0 Config & Payload Validation Hardening (In Progress — started 2026-06-12)
+
+**Milestone Goal:** Guarantee that any processor which reaches *Healthy* can deserialize every orchestration-admitted payload — by giving authors a **typed base-config seam** on `BaseProcessor` (the framework deserializes the dispatch `payload` into the author's typed config, replacing the raw-string `ProcessAsync(string validatedData, string payload)` seam at `BaseProcessor.cs:29`) and gating processor health on a startup **config-schema↔config-type compatibility check (Gate A)**. On a Gate A incompatibility the processor withholds `MarkHealthy` (the latch is one-way — `ProcessorContext.cs:83-89`), so its liveness heartbeat no-ops (`ProcessorLivenessHeartbeat.cs:70`), no `skp:{id}` L2 key is written, and the existing orchestration-start `ProcessorLivenessValidator` blocks any workflow using that processor (422). Config incompatibility is **terminal** (permanent, not retry-transient like a missing definition); a null `ConfigSchemaId` skips Gate A (null-is-skip). Complements the already-shipped WebAPI **Gate B** (`PayloadConfigSchemaValidator`, `payload ⊨ ConfigSchemaId` at orchestration start, RETAINED UNCHANGED). Net effect: `payload ⊨ ConfigSchemaId` (Gate B) ∧ `ConfigSchemaId ⊨ configType` (Gate A) ⟹ the delivered payload always deserializes — runtime payload-deserialization exceptions become impossible except for in-transit payload mutation. **Breaking change** to the `BaseProcessor` author contract (like v4.0.0's Pre/In/Post seam break). Phases continue at **56**.
+
+**Source of truth:** Locked Gate A / Gate B analysis (this milestone's planning conversation, 2026-06-12). Requirements: [REQUIREMENTS.md](REQUIREMENTS.md) (10 CFG reqs). Three open decisions are deliberately deferred to `/gsd-spec-phase`: (1) Gate A compatibility direction/fidelity; (2) terminal-unhealthy mechanics (the latch is binary — likely "withhold Healthy + a separate diagnostic"); (3) TOCTOU policy (CFG-10 — immutability vs re-validate-on-change).
+
+**Build order (locked, dependency-driven — the config-seam is the prerequisite that makes Gate A possible):** 56 (typed base-config seam) → 57 (startup config-schema fetch + Gate A + TOCTOU policy) → 58 (orchestration-gate integration proof + live close).
+
+#### Phase 56: Typed Base-Config Seam
+**Goal**: Processor authors declare configuration as a typed class inheriting a framework-provided base config; the framework deserializes the dispatch `payload` into that typed config and supplies it to the author's transform — replacing the raw-string `payload` parameter. `Processor.Sample` is the migrated worked example. This is the prerequisite seam that makes a config-type↔config-schema compatibility check (Gate A, Phase 57) possible.
+**Depends on**: — (first phase of v6.0.0; builds on the shipped v5.0.0 `BaseProcessor` pipeline)
+**Requirements**: CFG-01, CFG-02
+**Success Criteria** (what must be TRUE):
+  1. A processor author can declare its configuration as a typed class inheriting a framework-provided base config, and override the transform to receive that typed config instance (no raw `payload` string in the author seam).
+  2. The framework deserializes the dispatch `payload` into the author's typed config before invoking the transform; a payload that does not deserialize into the config type surfaces as a deterministic failure (not a silent corruption).
+  3. `Processor.Sample` is migrated to the typed-config seam as the worked example — the old raw-string `ProcessAsync(string validatedData, string payload)` deserialize is removed (clean break), and `Processor.Sample` still completes a round-trip.
+  4. Solution builds 0-warning (Release + Debug); the hermetic suite is green with the new seam.
+**Plans**: TBD
+
+#### Phase 57: Startup Config-Schema Fetch + Gate A
+**Goal**: At startup the processor fetches the `ConfigSchemaId` definition (extending Loop B at `ProcessorStartupOrchestrator.cs:124`, lifting the D-05 "never read the config schema id" carve-out) and stores it on `ProcessorContext`; Gate A then validates that the concrete config type *covers* that definition. On incompatibility the processor never reaches Healthy (withholds `MarkHealthy`, terminal — not retried); a missing definition stays transient (retry, boot-before-register); a null `ConfigSchemaId` skips Gate A. The spec-locked TOCTOU policy (immutability or re-validate-on-change) closes the schema-mutation window between this startup check and a later orchestration-start Gate B check.
+**Depends on**: Phase 56 (the typed config seam must exist before its type can be compared against the config-schema definition)
+**Requirements**: CFG-03, CFG-04, CFG-05, CFG-06, CFG-07, CFG-10
+**Success Criteria** (what must be TRUE):
+  1. When `ConfigSchemaId` is non-null, startup fetches the config-schema definition over the bus and stores it on the processor context; a missing definition is transient (the startup loop retries on `SchemaDefinitionNotFound`/timeout exactly as for input/output definitions — boot-before-register tolerated).
+  2. Gate A validates that the concrete config type covers the fetched config-schema definition (every payload valid under `ConfigSchemaId` deserializes into the config type — direction/fidelity locked during spec).
+  3. On a Gate A incompatibility the processor never reaches Healthy — `MarkHealthy` is withheld, the heartbeat no-ops (`ProcessorLivenessHeartbeat.cs:70`), no `skp:{id}` L2 key is written, the reason is logged, and the incompatibility is terminal (not retried like a missing definition).
+  4. A processor with a null `ConfigSchemaId` skips Gate A entirely and reaches Healthy on identity + input/output definitions alone (null-is-skip, matching `ProcessorStartupOrchestrator.cs:127-128` and `PayloadConfigSchemaValidator.cs:42`).
+  5. The config-schema definition mutation window between the startup Gate A check and a later orchestration-start Gate B check is closed by the spec-locked TOCTOU policy (immutability or re-validate-on-change), with a test recording the chosen mechanism.
+**Plans**: TBD
+
+#### Phase 58: Orchestration-Gate Integration Proof & Close
+**Goal**: A real-stack end-to-end proof that Gate A composes with the existing orchestration-start liveness gate — a config-incompatible (never-Healthy) processor blocks orchestration start with 422 via `ProcessorLivenessValidator` ("absent"), while a config-compatible processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally (Gate A is not a false-positive blocker) — sealed behind the milestone close gate.
+**Depends on**: Phase 57 (Gate A must withhold/grant Healthy before the orchestration-start gate integration can be proven end-to-end)
+**Requirements**: CFG-08, CFG-09
+**Success Criteria** (what must be TRUE):
+  1. RealStack E2E: an orchestration whose graph includes a config-incompatible (never-Healthy) processor is blocked at orchestration start with 422 via the existing `ProcessorLivenessValidator` ("absent").
+  2. RealStack E2E: a config-compatible processor reaches Healthy, writes its L2 liveness, and its orchestrations start normally — proving Gate A is not a false-positive blocker (the negative-control).
+  3. The milestone close gate holds — N-consecutive-GREEN + triple-SHA (psql/redis/rabbitmq) BEFORE==AFTER net-zero — at Release + Debug 0-warning.
+**Plans**: TBD
 
 ## 🚧 v5.0.0 Recovery Re-architecture — messageId slot-array + 3-state keeper (In Progress — started 2026-06-11)
 
@@ -469,7 +511,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 → 31.1 → 32 → 32.1 → 33 → 34 → 35 → 36 → 37 → 38 → 39 → 40 → 41 → 42 → 43 → 44 → 45 → 46 → 47 → 48 → 49 → 50 → 51 → 52 → 53 → 54
+Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 → 31.1 → 32 → 32.1 → 33 → 34 → 35 → 36 → 37 → 38 → 39 → 40 → 41 → 42 → 43 → 44 → 45 → 46 → 47 → 48 → 49 → 50 → 51 → 52 → 53 → 54 → 55 → 56 → 57 → 58
 
 | Phase | Milestone | Plans Complete | Status   | Completed  |
 | ----- | --------- | -------------- | -------- | ---------- |
@@ -516,6 +558,10 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 52. 3-State Keeper | v5.0.0 | 3/3 | Complete    | 2026-06-11 |
 | 53. Model-B Teardown | v5.0.0 | 3/3 | Complete    | 2026-06-11 |
 | 54. Live Proof & Close Gate | v5.0.0 | 4/4 | Complete    | 2026-06-11 |
+| 55. Live Proof & Close Gate | v5.0.0 | 4/4 | Complete    | 2026-06-12 |
+| 56. Typed Base-Config Seam | v6.0.0 | 0/0 | Not started | — |
+| 57. Startup Config-Schema Fetch + Gate A | v6.0.0 | 0/0 | Not started | — |
+| 58. Orchestration-Gate Integration Proof & Close | v6.0.0 | 0/0 | Not started | — |
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 shipped 2026-06-02 (6 phases 25-30, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip + runtime/business metrics) — note: formal archival (ROADMAP/MILESTONES/tag) deferred. v3.6.0 shipped 2026-06-05 (4 phases 31-32.1, Idempotent Execution — exactly-once-effect round-trip via deterministic `H` + effect-first `flag[H]` dedup at both hops; cancelled circuit-breaker built then reverted to plain dead-lettering). Next milestone planning begins with `/gsd-new-milestone`.*
