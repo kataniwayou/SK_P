@@ -4,14 +4,14 @@ milestone: v6.0.0
 milestone_name: Config & Payload Validation Hardening
 status: planning
 stopped_at: Phase 58 context gathered
-last_updated: "2026-06-12T21:28:23.396Z"
+last_updated: "2026-06-12T21:59:07.525Z"
 last_activity: 2026-06-12
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 6
+  total_plans: 11
   completed_plans: 6
-  percent: 100
+  percent: 55
 ---
 
 # Project State
@@ -1457,4 +1457,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 57 (startup-config-schema-fetch-gate-a) — 4 plans — 2026-06-12T19:15:43.077Z
+**Planned Phase:** 58 (orchestration-gate-integration-proof-close) — 5 plans — 2026-06-12T21:59:07.512Z
