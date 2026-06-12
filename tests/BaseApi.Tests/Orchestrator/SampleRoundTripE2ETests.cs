@@ -211,7 +211,7 @@ public sealed class SampleRoundTripE2ETests
 
     // ---- Liveness poll (Pitfall 3): wait for the REAL container's skp:{procId:D} Healthy heartbeat ----
 
-    private static async Task PollForHealthyLivenessAsync(Guid procId, CancellationToken ct)
+    internal static async Task PollForHealthyLivenessAsync(Guid procId, CancellationToken ct)
     {
         await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
         var db = mux.GetDatabase();
@@ -310,7 +310,7 @@ public sealed class SampleRoundTripE2ETests
 
     // ---- HTTP seeding helpers (Processor → Step → Workflow) — mirrors CorrelationPropagationE2ETests ----
 
-    private static async Task<Guid> SeedProcessorAsync(
+    internal static async Task<Guid> SeedProcessorAsync(
         HttpClient client, string sourceHash, CancellationToken ct, Guid? configSchemaId = null)
     {
         // D-08: register the GENUINE embedded hash (satisfies the DB ^[a-f0-9]{64}$ validator);
@@ -352,7 +352,7 @@ public sealed class SampleRoundTripE2ETests
     /// reuse its Id; POST only if absent. NEVER PUT — a referenced schema's Definition is FROZEN
     /// (PUT → 409, Phase-57 D-06 / SchemaService.cs); this helper is CREATE-IF-ABSENT only.
     /// </summary>
-    private static async Task<Guid> SeedConfigSchemaAsync(
+    internal static async Task<Guid> SeedConfigSchemaAsync(
         HttpClient client, string sentinelName, string definition, CancellationToken ct)
     {
         var all = await client.GetFromJsonAsync<List<SchemaReadDto>>("/api/v1/schemas", ct);
@@ -371,7 +371,7 @@ public sealed class SampleRoundTripE2ETests
         return created!.Id;
     }
 
-    private static async Task<Guid> SeedStepAsync(HttpClient client, Guid processorId, CancellationToken ct)
+    internal static async Task<Guid> SeedStepAsync(HttpClient client, Guid processorId, CancellationToken ct)
     {
         var dto = new StepCreateDto(
             Name: $"sample-step-{Guid.NewGuid():N}",
@@ -386,7 +386,7 @@ public sealed class SampleRoundTripE2ETests
         return step!.Id;
     }
 
-    private static async Task<Guid> SeedWorkflowAsync(
+    internal static async Task<Guid> SeedWorkflowAsync(
         HttpClient client, List<Guid> entryStepIds, string cron, CancellationToken ct)
     {
         var dto = new WorkflowCreateDto(
@@ -412,7 +412,7 @@ public sealed class SampleRoundTripE2ETests
     /// identical, MINUS the synthetic liveness seed helper (omitted by design — Pitfall 3:
     /// the real container heartbeats).
     /// </summary>
-    private sealed class RealStackWebAppFactory : Composition.Phase8WebAppFactory
+    internal sealed class RealStackWebAppFactory : Composition.Phase8WebAppFactory
     {
         private readonly Dictionary<string, string?> _prior = new();
 

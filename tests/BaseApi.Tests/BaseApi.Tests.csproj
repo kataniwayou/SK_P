@@ -148,6 +148,11 @@
          facts reflect the built Processor.Sample.dll to assert the embedded SourceHash attribute
          (IDENT-02) + prove SampleProcessor's single deterministic ProcessItem (SAMPLE-01). -->
     <ProjectReference Include="..\..\src\Processor.Sample\Processor.Sample.csproj" />
+    <!-- Phase 58 addition (Plan 58-03): the Gate-A INCOMPATIBLE subject Processor.BadConfig. The
+         CFG-08 composition E2E reflects the built Processor.BadConfig.dll to read its GENUINE embedded
+         SourceHash (the same way AssemblyMetadataSourceHashProvider does at runtime) so it seeds the
+         badconfig DB row the live container resolves identity against. -->
+    <ProjectReference Include="..\..\src\Processor.BadConfig\Processor.BadConfig.csproj" />
   </ItemGroup>
 
 </Project>
