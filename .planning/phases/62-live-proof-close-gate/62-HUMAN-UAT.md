@@ -10,11 +10,17 @@ updated: 2026-06-13
 
 ## Current Test
 
-PENDING — the autonomous artifacts (the cloned `scripts/phase-62-close.ps1`, this runbook, the
-`deploy.replicas: 2` reshape, the Phase-62 retags, the fabricated-key `GateKeyspaceE2ETests`, the
-0-warning Release+Debug build gate) are authored and machine-verified. **The live N=3xGREEN close run +
-the four multi-container lifecycle proofs are operator-gated and have NOT been run yet.** TEST-01 / TEST-02
-/ TEST-03 stay `[ ]` in `.planning/REQUIREMENTS.md` until the operator records a GREEN run in Step 4.
+BLOCKED ON A VERIFIED GAP (2026-06-13). The live run was executed (operator-supervised via Claude Code):
+the **close gate (TEST-03) PASSED** — N=3×604 GREEN, triple-SHA `psql \l` / `redis --scan` / `rabbitmq
+list_queues` BEFORE==AFTER, `skp-dlq-1` depth 0, `skp:msg:*` count 0 — and **TEST-01a** (two healthy
+replicas self-register) + **TEST-02** (`/health/live` 200 + summary) passed live. **TEST-01b FAILED**: a
+durably-broken (Gate-A-clash) replica is observable as `Unhealthy` only for its ~60s startup-TTL window,
+then goes **absent** — the liveness-timestamp refresh is coupled to `IsHealthy` (the heartbeat is
+`IsHealthy`-gated; the startup terminal-clash path returns without handing off to a refresh loop). This is
+a **Phase-60 product gap**, not a Phase-62 test/runbook issue — see
+`62-GAP-liveness-refresh-coupling.md`. **TEST-01c was not run** (blocked by the same gap). TEST-01 /
+TEST-02 / TEST-03 stay `[ ]` in `.planning/REQUIREMENTS.md` and this file stays `status: pending` until the
+Phase-60 fix lands and the live proof is re-run clean.
 
 **Phase:** 62-live-proof-close-gate
 **Milestone:** v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog)
@@ -280,22 +286,27 @@ run is the artifact that gates the TEST-01/TEST-02/TEST-03 tick.
 
 | Field                                            | Value |
 |--------------------------------------------------|-------|
-| psql `\l` SHA-256 (BEFORE == AFTER)              | `<fill on PASS>` |
-| redis `--scan` SHA-256 (BEFORE == AFTER)         | `<fill on PASS>` (`^skp:proc:` prefix excluded — 2 Sample replicas + index + badconfig replica + index; `_bus_` not applicable to redis) |
-| rabbitmq `list_queues` SHA-256 (BEFORE == AFTER) | `<fill on PASS>` (transient `_bus_` queues excluded) |
-| `Passed` fact count (identical across all 3 runs)| `<fill>` (Run 1 = N, Run 2 = N, Run 3 = N) |
-| `skp-dlq-1` depth (== 0)                         | `<fill>` |
-| `skp:msg:*` slot-array index count (== 0)        | `<fill>` |
-| TEST-01a two replicas self-register (SMEMBERS = 2 + Healthy per-instance) | `<Yes/No + observed instanceIds>` |
-| TEST-01b durably-broken replica `status=Unhealthy` (NOT absent) | `<Yes/No + observed badId>` |
-| TEST-01c dead-replica GET→null after >30s + SMEMBERS shrinks (lazy SREM) | `<Yes/No>` |
-| TEST-02-probe-live `/health/live` 200 + summary keys in body | `<Yes/No + replica name>` |
-| Gate exit code (== 0)                            | `<fill>` |
-| Sample / BadConfig embedded SourceHash / procId  | `<fill sampleHash / procId / badConfigHash / badId>` |
-| Run date                                         | `<fill>` |
-| Operator                                         | `<fill>` |
+| psql `\l` SHA-256 (BEFORE == AFTER)              | `eae042b559e4bbfceb041df15aba70fc31a46490cb935d44b41ecc73fad6e8b9` ✅ HELD |
+| redis `--scan` SHA-256 (BEFORE == AFTER)         | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` ✅ HELD (`^skp:proc:` prefix excluded; empty-set SHA = clean keyspace) |
+| rabbitmq `list_queues` SHA-256 (BEFORE == AFTER) | `ccc40a5ed808c5f3a66b47dd2c4c8617fda462fa8160578d9cfa16c664877a9e` ✅ HELD (`_bus_` excluded; steady-state queues incl. live Sample + stable fabricated-test queue) |
+| `Passed` fact count (identical across all 3 runs)| **604** ✅ (Run 1 = 604, Run 2 = 604, Run 3 = 604) |
+| `skp-dlq-1` depth (== 0)                         | `0` ✅ |
+| `skp:msg:*` slot-array index count (== 0)        | `0` ✅ |
+| TEST-01a two replicas self-register (SMEMBERS = 2 + Healthy per-instance) | **Yes** ✅ — instanceIds `604e8c283200`, `4bfe2a739f0a`, both `status=Healthy` |
+| TEST-01b durably-broken replica `status=Unhealthy` (NOT absent) | **No** ❌ **GAP** — `Unhealthy` observable only ~60s post-(re)start (instanceId `0553fe4a4749`), then key TTL-expires → **absent** (no refresh). Phase-60 liveness-refresh coupling — see `62-GAP-liveness-refresh-coupling.md` |
+| TEST-01c dead-replica GET→null after >30s + SMEMBERS shrinks (lazy SREM) | **Not run** — blocked pending the Phase-60 gap fix |
+| TEST-02-probe-live `/health/live` 200 + summary keys in body | **Yes** ✅ — replica `sk_p4-processor-sample-1`, 200 + `inputSchema/outputSchema/configSchema = SUCCESS` |
+| Gate exit code (== 0)                            | `0` ✅ (close gate PASSED) |
+| Sample / BadConfig embedded SourceHash / procId  | Sample `536d086839ffaf8c40f523aec427c0c91ca12fdbb5114be77a2bc6c0cc98a189` / `2f6f59b0-2125-4e4a-9fd9-d849441ef91e`; BadConfig `f059e6e1b935cbab0b6217176c32f3b8615a09af622c2f322f9d76ecafd60d69` / `67462a01-fca9-4793-8ad4-4eae6fc22152` |
+| Run date                                         | 2026-06-13 |
+| Operator                                         | User (operator-supervised, executed via Claude Code) |
 
-**Per-run cadence:** Run 1 Exit=0 Passed=N (Xm Ys); Run 2 Exit=0 Passed=N (Xm Ys); Run 3 Exit=0 Passed=N (Xm Ys).
+**Per-run cadence:** Run 1 Exit=0 Passed=604 (~9m 08s); Run 2 Exit=0 Passed=604 (~8m 48s); Run 3 Exit=0 Passed=604 (~9m 23s).
+
+> **VERDICT:** close gate net-zero (TEST-03) + TEST-01a + TEST-02 PASSED; **TEST-01b is a verified
+> Phase-60 product gap** (alive-but-unhealthy replica not refreshed → absent + false watchdog-stale) and
+> **TEST-01c is blocked** on it. TEST-01/02/03 remain **unticked**; this file stays `status: pending` until
+> the Phase-60 fix lands and the live proof is re-run clean. See `62-GAP-liveness-refresh-coupling.md`.
 
 > The three SHA values + the `Passed` count + the `skp-dlq-1` depth + the `skp:msg:*` count mirror the
 > gate's operator-append line printed on PASS. If any run is RED or any SHA mismatches, OR any lifecycle
@@ -360,21 +371,37 @@ Four threat surfaces are mitigated by this runbook + the cloned gate:
 
 ### 1. Live N×GREEN close-gate run + four lifecycle proofs — gates TEST-01 / TEST-02 / TEST-03
 expected: After the clean host build (Step 1, so host hash == container hash for BOTH Sample and BadConfig) and the `--profile badconfig` two-replica rebuild from a clean redis keyspace (Step 2), `pwsh -File scripts/phase-62-close.ps1` exits `0` — 3 consecutive GREEN runs with identical `Passed` fact count, triple-SHA (psql `\l` / redis `--scan` with `^skp:proc:` excluded / rabbitmq `list_queues`) BEFORE == AFTER net-zero, `skp-dlq-1` depth == 0, `skp:msg:*` count == 0, at Release + Debug 0-warning. The four lifecycle proofs (TEST-01a two replicas self-register; TEST-01b badconfig durably Unhealthy; TEST-01c dead-replica >30s TTL-expiry + lazy SREM; TEST-02-probe-live `/health/live` 200 + summary) all pass live OUTSIDE the close window. Record the 3 SHA values + Passed count + DLQ depth + `skp:msg:*` count + the four lifecycle outcomes in the Step 4 record block, then tick TEST-01/TEST-02/TEST-03 in REQUIREMENTS.md.
-result: PENDING — operator-gated; the live N=3xGREEN close run + the four lifecycle proofs have NOT been run.
+result: ISSUE (2026-06-13) — close gate (TEST-03) PASSED net-zero N=3×604 GREEN; TEST-01a + TEST-02 passed live; **TEST-01b FAILED** (alive-but-unhealthy replica not refreshed → absent, a Phase-60 gap) and **TEST-01c not run** (blocked). TEST-01/02/03 NOT ticked. See Gaps + `62-GAP-liveness-refresh-coupling.md`.
 
 ## Summary
 
 total: 1
 passed: 0
-issues: 0
-pending: 1
+issues: 1
+pending: 0
 skipped: 0
 blocked: 0
 
 ## Gaps
 
-None known at authoring time. The autonomous artifacts (close script, runbook, reshape, retags, fabricated-key
-tests, 0-warning build gate) are complete and machine-verified. The live N=3 GREEN close gate + the four
-multi-container lifecycle proofs are the pending operator gate (D-15). Any failure surfaced during the live
-run (non-zero exit, SHA drift, DLQ depth, warning, or a lifecycle-proof assertion) must be captured in Step 4
-and returned for gap closure rather than ticking the requirements.
+### G-62-01 — Liveness-timestamp refresh coupled to `IsHealthy` (Phase-60 product gap) — OPEN
+
+Surfaced by **TEST-01b** during the live close run (2026-06-13). A durably-broken (Gate-A-clash)
+replica writes its `Unhealthy` per-instance key only during the ~60s startup-TTL window, then goes
+**absent** — the heartbeat is `IsHealthy`-gated (`ProcessorLivenessHeartbeat.cs:76`) and the startup
+orchestrator's terminal-clash path returns without handing off to a refresh loop. Consequences: (1) an
+unhealthy replica is `absent` rather than observably `Unhealthy` to the orchestration-start gate
+(STATE-03 / RF-01 intent unmet — the gate still blocks via absent=not-healthy, so functional protection
+holds); (2) the self-watchdog's L1 timestamp goes stale for an **alive** loop, so `/health/live` would
+falsely report *"liveness loop stale"* and trigger a needless K8s restart (PROBE intent unmet).
+
+Liveness-timestamp refresh must be **identity-gated, not health-gated**: once identity resolves, refresh
+the timestamp every interval writing the **current** status (Healthy or Unhealthy). Full root-cause,
+evidence, affected files, and the recommended fix are in `62-GAP-liveness-refresh-coupling.md`.
+
+**Routing:** Phase-60 (`60-…dual-loop-writer-in-memory-l1-liveness-record`) fix — plan a fix phase, then
+re-run this runbook (Steps 1–5) clean before ticking TEST-01/02/03 and sealing v7.0.0.
+
+**Not affected (stays):** the close gate (TEST-03) net-zero PASS, TEST-01a, TEST-02, and the Phase-62
+test fixes committed this run (fabricated-key liveness-index isolation + stable per-test processor
+identities for rabbitmq net-zero).
