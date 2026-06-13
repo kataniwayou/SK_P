@@ -408,7 +408,7 @@ docker exec $name wget -qO- http://localhost:8082/health/live
 
 **All other claims in this research are VERIFIED against source files (file:line cited) — no user confirmation needed.**
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does the durably-broken (badconfig) replica's `/health/live` report Healthy or Unhealthy?**
    - What we know: the watchdog (`LivenessWatchdogHealthCheck.cs`) maps null/STALE L1 → Unhealthy; it does NOT check `status`. A looping-unhealthy startup keeps L1 FRESH (timestamp refreshed each iteration) with `status=Unhealthy`. So the watchdog returns **Healthy** ("the loop is alive") for a badconfig replica — by design (the probe detects a STOPPED loop, not an unhealthy verdict).
