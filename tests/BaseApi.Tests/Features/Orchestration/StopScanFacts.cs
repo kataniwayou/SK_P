@@ -5,6 +5,7 @@ using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
 using BaseApi.Tests.TestHelpers;
+using Messaging.Contracts.Projections;
 using StackExchange.Redis;
 using Xunit;
 
@@ -105,12 +106,16 @@ public sealed class StopScanFacts : IClassFixture<HarnessWebAppFactory>
             var start = await client.PostAsJsonAsync(
                 "/api/v1/orchestration/start", new List<Guid> { wfId }, ct);
             Assert.Equal(HttpStatusCode.NoContent, start.StatusCode);
+            // Phase 61 (D-06/11): the externally self-registered liveness now lives in the per-instance
+            // keyspace (skp:proc:{procId} index + skp:proc:{procId}:{instanceId}); the legacy flat
+            // skp:{procId} key was retired with the contract.
+            var procIndex = L2ProjectionKeys.InstanceIndex(procId);
             Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}"), "root present after Start");
             Assert.True(await db.KeyExistsAsync($"{prefix}{wfId}:{stepId}"), "per-step present after Start");
-            Assert.True(await db.KeyExistsAsync($"{prefix}{procId}"), "processor present (externally self-registered)");
+            Assert.True(await db.KeyExistsAsync(procIndex), "processor liveness index present (externally self-registered)");
 
             // Stop is delete-if-present (WEBAPI-SUPPRESS-01): the present root is deleted, then the
-            // tolerant GET-and-follow cleanup GCs the per-step keys; the processor is NEVER deleted
+            // tolerant GET-and-follow cleanup GCs the per-step keys; the processor liveness is NEVER deleted
             // (TTL'd); the parent index is SREM'd.
             var stop = await client.PostAsJsonAsync(
                 "/api/v1/orchestration/stop", new List<Guid> { wfId }, ct);
@@ -119,7 +124,7 @@ public sealed class StopScanFacts : IClassFixture<HarnessWebAppFactory>
             // Inverted contract (D-06).
             Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}"), "root deleted post-Stop");
             Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepId}"), "per-step deleted post-Stop");
-            Assert.True(await db.KeyExistsAsync($"{prefix}{procId}"), "processor RETAINED post-Stop (TTL)");
+            Assert.True(await db.KeyExistsAsync(procIndex), "processor liveness RETAINED post-Stop (TTL)");
         }
         finally
         {

@@ -6,6 +6,7 @@ using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
 using BaseApi.Tests.Composition;
 using BaseApi.Tests.TestHelpers;
+using Messaging.Contracts.Projections;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
@@ -120,8 +121,9 @@ public sealed class StopGateFacts : IClassFixture<HarnessWebAppFactory>
         var db = _factory.RedisMultiplexer.GetDatabase();
         Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}"), "root key must be deleted");
         Assert.False(await db.KeyExistsAsync($"{prefix}{wfId}:{stepId}"), "step key must be deleted");
-        // ORCH-STOP-04 rev — processor keys are NEVER deleted by cleanup.
-        Assert.True(await db.KeyExistsAsync($"{prefix}{procId}"), "processor key must be retained");
+        // ORCH-STOP-04 rev — processor liveness keys are NEVER deleted by cleanup. Phase 61 (D-06/11):
+        // the externally self-registered liveness now lives in the per-instance index (skp:proc:{procId}).
+        Assert.True(await db.KeyExistsAsync(L2ProjectionKeys.InstanceIndex(procId)), "processor liveness must be retained");
     }
 
     // ----------------------------- WEBAPI-SUPPRESS-01: mixed batch is per-id delete-if-present -----------------------------
