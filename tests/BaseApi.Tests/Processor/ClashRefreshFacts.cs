@@ -221,10 +221,12 @@ public sealed class ClashRefreshFacts : IClassFixture<RedisFixture>
         for (var i = 0; i < 4; i++)
         {
             run.Token.ThrowIfCancellationRequested();
-            run.Clock.Advance(TimeSpan.FromSeconds(10)); // one refresh interval
-            await Task.Delay(20, ct);                    // let the loop continuation re-SET
-
-            var entry = await ReadEntryAsync(db, perInstance, ct);
+            var previous = timestamps[^1];
+            // Poll on the observable post-condition (the re-SET timestamp advancing past the last captured
+            // value) instead of a fixed wall-clock sleep, so a slow continuation + Redis SET round-trip under
+            // CI load cannot make the read race the write (IN-02). Each poll iteration re-advances the fake
+            // clock by one interval (mirroring AdvanceUntilAsync) so a not-yet-parked Task.Delay still fires.
+            var entry = await PollUntilTimestampAdvancesAsync(db, perInstance, run.Clock, previous, ct);
             AssertRefreshEntry(entry);                   // every refreshed entry: Unhealthy / interval=10 / config=Fail
             timestamps.Add(entry.Timestamp);
         }
@@ -270,15 +272,14 @@ public sealed class ClashRefreshFacts : IClassFixture<RedisFixture>
 
         // Advance one refresh interval so the L1 record is a REFRESHED interval=10 Unhealthy entry whose
         // timestamp == the fake clock's now (the loop stamps clock.GetUtcNow() on each re-SET).
-        run.Clock.Advance(TimeSpan.FromSeconds(10));
-        await Task.Delay(20, ct);
-
-        var refreshed = run.L1.Current;
-        Assert.NotNull(refreshed);
-        AssertRefreshEntry(refreshed!);   // fresh interval=10 Unhealthy / config=Fail
+        var beforeRefresh = run.L1.Current?.Timestamp ?? DateTime.MinValue;
+        // Poll on the L1 record's timestamp advancing past the pre-advance value rather than a fixed sleep,
+        // so a slow continuation cannot race the read (IN-02). The helper advances the fake clock each poll.
+        var refreshed = await PollUntilL1AdvancesAsync(run.L1, run.Clock, beforeRefresh, ct);
+        AssertRefreshEntry(refreshed);    // fresh interval=10 Unhealthy / config=Fail
 
         // Real watchdog over the refreshed L1 + the SAME clock (no extra advance ⇒ now == Timestamp ⇒ fresh).
-        var sp = BuildWatchdogProvider(refreshed!, run.Clock);
+        var sp = BuildWatchdogProvider(refreshed, run.Clock);
         var result = await new LivenessWatchdogHealthCheck(sp).CheckHealthAsync(new HealthCheckContext(), ct);
 
         // The verdict is unchanged (D-03): a refreshed-but-Unhealthy replica reads LIVE, NOT "loop stale".
@@ -310,8 +311,10 @@ public sealed class ClashRefreshFacts : IClassFixture<RedisFixture>
         var run = await DriveIntoRefreshLoopAsync(procId, perInstance, index, ct);
 
         // Pump one interval so the loop is genuinely parked inside the Task.Delay(refreshPeriod, clock, ...).
-        run.Clock.Advance(TimeSpan.FromSeconds(10));
-        await Task.Delay(20, ct);
+        // Poll on the L1 timestamp advancing (a completed re-SET ⇒ the loop has looped back to its delay)
+        // rather than a fixed sleep, so a slow continuation cannot race the cancellation below (IN-02).
+        var beforePump = run.L1.Current?.Timestamp ?? DateTime.MinValue;
+        await PollUntilL1AdvancesAsync(run.L1, run.Clock, beforePump, ct);
 
         var executeTask = run.Orchestrator.ExecuteTask; // the BackgroundService loop task
 
@@ -352,6 +355,58 @@ public sealed class ClashRefreshFacts : IClassFixture<RedisFixture>
         var entry = System.Text.Json.JsonSerializer.Deserialize<ProcessorLivenessEntry>(raw!);
         Assert.NotNull(entry);
         return entry!;
+    }
+
+    /// <summary>
+    /// Polls the per-instance Redis key until its deserialized <c>Timestamp</c> advances strictly past
+    /// <paramref name="previous"/> (the observable post-condition that the refresh loop's continuation has
+    /// completed a re-SET). Each iteration re-advances the <see cref="FakeTimeProvider"/> by one interval
+    /// (mirroring <c>AdvanceUntilAsync</c>) so a Task.Delay parked after our first advance still fires, then
+    /// lets the continuation run — bounded by a wall-clock deadline so a never-firing loop fails fast instead
+    /// of hanging on the CTS deadline (IN-02 — replaces a fixed <c>Task.Delay(20)</c> sleep).
+    /// </summary>
+    private static async Task<ProcessorLivenessEntry> PollUntilTimestampAdvancesAsync(
+        IDatabase db, RedisKey key, FakeTimeProvider clock, DateTime previous, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var raw = await db.StringGetAsync(key);
+            if (raw.HasValue)
+            {
+                var entry = System.Text.Json.JsonSerializer.Deserialize<ProcessorLivenessEntry>(raw!);
+                if (entry is not null && entry.Timestamp > previous)
+                    return entry;
+            }
+            Assert.True(DateTime.UtcNow < deadline,
+                $"refresh re-SET timestamp did not advance past {previous.Ticks:D} within the poll deadline");
+            clock.Advance(TimeSpan.FromSeconds(10)); // release a Task.Delay parked after the prior advance
+            await Task.Delay(5, ct);                 // let the loop continuation run on the thread pool
+        }
+    }
+
+    /// <summary>
+    /// Polls the in-memory <see cref="ProcessorLivenessState"/> until <c>Current.Timestamp</c> advances
+    /// strictly past <paramref name="previous"/> (the loop's L1 update has landed). Each iteration re-advances
+    /// the <see cref="FakeTimeProvider"/> by one interval (mirroring <c>AdvanceUntilAsync</c>), bounded by a
+    /// wall-clock deadline (IN-02 — replaces a fixed <c>Task.Delay(20)</c> sleep).
+    /// </summary>
+    private static async Task<ProcessorLivenessEntry> PollUntilL1AdvancesAsync(
+        ProcessorLivenessState l1, FakeTimeProvider clock, DateTime previous, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+            var current = l1.Current;
+            if (current is not null && current.Timestamp > previous)
+                return current;
+            Assert.True(DateTime.UtcNow < deadline,
+                $"L1 Current.Timestamp did not advance past {previous.Ticks:D} within the poll deadline");
+            clock.Advance(TimeSpan.FromSeconds(10)); // release a Task.Delay parked after the prior advance
+            await Task.Delay(5, ct);                 // let the loop continuation run on the thread pool
+        }
     }
 
     /// <summary>Clash-status invariants common to every published clash entry (initial stamp + every refresh).</summary>
