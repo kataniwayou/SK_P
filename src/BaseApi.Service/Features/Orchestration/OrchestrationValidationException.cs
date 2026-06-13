@@ -72,7 +72,8 @@ public sealed partial class OrchestrationValidationException : Exception
             $"Assignment '{assignmentId}' payload does not conform to its config schema.",
             new PayloadConfigSchemaOffending(assignmentId, errors));
 
-    /// <summary>Processor-liveness gate — a participating processor's L2 entry is absent or stale.</summary>
+    /// <summary>Processor-liveness gate (GATE-03) — no discovered replica of a participating processor is
+    /// present AND Healthy AND fresh; <paramref name="reason"/> is the aggregate count-only breakdown.</summary>
     public static OrchestrationValidationException ProcessorNotLive(Guid procId, string reason)
         => new(
             "processorLiveness",
@@ -93,5 +94,7 @@ public sealed record SchemaEdgeOffending(Guid parentStepId, Guid childStepId);
 /// <summary>Offending payload for the "payloadConfigSchema" gate — assignment id + flattened messages.</summary>
 public sealed record PayloadConfigSchemaOffending(Guid assignmentId, IReadOnlyList<string> errors);
 
-/// <summary>Offending payload for the "processorLiveness" gate — processor id + reason ("absent"|"stale"|"malformed").</summary>
+/// <summary>Offending payload for the "processorLiveness" gate — processor id + an aggregate count-only
+/// reason ("no healthy replica (N checked: A absent, U unhealthy, S stale, M malformed)"). The reason
+/// carries per-state COUNTS only — never instanceIds, connection strings, or stack traces (T-14-02 / V7).</summary>
 public sealed record ProcessorLivenessOffending(Guid procId, string reason);
