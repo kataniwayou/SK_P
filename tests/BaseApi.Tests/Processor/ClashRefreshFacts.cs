@@ -247,6 +247,10 @@ public sealed class ClashRefreshFacts : IClassFixture<RedisFixture>
         Assert.Equal(LivenessStatus.Unhealthy, run.L1.Current!.Status);
         Assert.True(run.L1.Current.Timestamp > first.Timestamp,
             $"L1 Current.Timestamp ({run.L1.Current.Timestamp.Ticks}) should advance past the first captured ({first.Timestamp.Ticks})");
+
+        // IN-03: despite N refresh iterations re-writing the index, the per-test InstanceIndex SET holds
+        // exactly one member — the writer's SADD is idempotent (locks in the idempotency guarantee).
+        Assert.Equal(1, await db.SetLengthAsync(index));
     }
 
     /// <summary>
