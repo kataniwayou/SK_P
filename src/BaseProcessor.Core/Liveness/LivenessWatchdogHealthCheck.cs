@@ -15,8 +15,10 @@ namespace BaseProcessor.Core.Liveness;
 /// <list type="bullet">
 ///   <item><c>Current == null</c> ⇒ Unhealthy ("liveness loop not started") — the loop crashed before its
 ///   first write (D-02).</item>
-///   <item><c>now &gt; Current.Timestamp + Current.Interval×2</c> ⇒ Unhealthy ("liveness loop stale") — the
-///   loop went silent (D-03, identical math to the orchestration-start gate).</item>
+///   <item><c>now &gt;= Current.Timestamp + Current.Interval×2</c> ⇒ Unhealthy ("liveness loop stale") — the
+///   loop went silent (D-03 / WR-01, identical math to the orchestration-start gate: fresh iff
+///   <c>deadline &gt; now</c>, stale at-or-past the boundary instant — agreeing with the gate's
+///   <c>deadline &lt;= now =&gt; stale</c>).</item>
 ///   <item>else ⇒ Healthy ("live").</item>
 /// </list>
 /// </para>
@@ -60,7 +62,9 @@ public sealed class LivenessWatchdogHealthCheck : IHealthCheck
         };
 
         var now = clock.GetUtcNow().UtcDateTime;                            // D-03: same clock discipline as writer + gate
-        if (now > current.Timestamp.AddSeconds(current.Interval * 2))
+        // WR-01: fresh iff deadline > now — boundary-aligned with the gate's `deadline <= now => stale`
+        // (ProcessorLivenessValidator.cs). Strict `>=` here so both sides agree at the exact boundary instant.
+        if (now >= current.Timestamp.AddSeconds(current.Interval * 2))
         {
             return Task.FromResult(HealthCheckResult.Unhealthy("liveness loop stale", data: data));
         }
