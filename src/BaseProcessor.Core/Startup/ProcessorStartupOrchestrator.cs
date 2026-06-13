@@ -225,9 +225,37 @@ public sealed class ProcessorStartupOrchestrator(
             // the naive per-schema Outcome would be all-Success ⇒ Create derives Healthy. The Gate-A outcome is
             // `configSchema` (D-04), so on a clash we feed configOutcome=Fail explicitly — the only way the
             // terminal-unhealthy replica is published as Unhealthy (Create derives status from the summary).
-            await WriteUnhealthyAsync(configOutcomeOverride: SchemaOutcome.Fail);
+            await WriteUnhealthyAsync(configOutcomeOverride: SchemaOutcome.Fail); // initial stamp (unchanged)
             gate.MarkReady();   // readiness green — NO K8s crash-loop (D-09). MarkHealthy + bind NOT reached.
-            return;             // terminal — Gate A is not retried (D-11); the definition is immutable (D-05).
+
+            // 62.1 D-01 (option b) / G-62-01: the terminal-clash replica stays alive but never serves. Instead of
+            // a terminal return; (which let the per-instance L2 key TTL-expire → absent, and the L1 record go stale
+            // → the self-watchdog falsely "loop stale"), keep re-stamping the SAME static unhealthy entry
+            // (config=Fail, others resolved) with a FRESH timestamp every IntervalSeconds (D-02 → recorded
+            // interval 10 → TTL max(10×2, Ttl-floor 30)=30) so the L2 gate key stays present+Unhealthy
+            // (STATE-03, not absent — the gate still BLOCKS per D-05) and the L1 record never goes stale
+            // (the self-watchdog reads it as live, not falsely "loop stale" — PROBE-02). The summary read is on
+            // THIS orchestrator thread (WR-03 safe). Cadence honors stoppingToken exactly like the heartbeat
+            // (D-06); a Redis fault on a refresh write is the shared writer's log-and-continue. Gate A is still
+            // never retried (D-11) — only the timestamp refreshes; the static Unhealthy status does not.
+            var refreshPeriod = TimeSpan.FromSeconds(options.Value.IntervalSeconds);
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(refreshPeriod, clock, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    return; // shutdown — exit the refresh loop cleanly (D-06)
+                }
+
+                await WriteUnhealthyAsync(
+                    configOutcomeOverride: SchemaOutcome.Fail,
+                    recordedIntervalSeconds: options.Value.IntervalSeconds); // D-02: steady-state cadence 10
+            }
+
+            return; // stoppingToken already cancelled before the first delay — clean exit (D-06)
         }
 
         // --- Completion (D-02/D-03): identity + all required non-null definitions resolved + Gate A passed/skipped. ---
