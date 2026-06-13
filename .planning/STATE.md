@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
-status: executing
-stopped_at: Completed 62.1-01-PLAN.md
-last_updated: "2026-06-13T20:54:40.934Z"
+status: verifying
+stopped_at: Completed 62.1-02-PLAN.md
+last_updated: "2026-06-13T21:21:51.370Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
 Phase: 62.1 (decouple-liveness-refresh-from-ishealthy) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-13
 
 > v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -969,6 +969,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 62 P01 | 2min | 2 tasks | 5 files |
 | Phase 62 P02 | 14min | 2 tasks | 2 files |
 | Phase 62.1 P01 | ~2 min | 2 tasks | 1 files |
+| Phase 62.1 P02 | ~30 min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1397,6 +1398,8 @@ Recent decisions affecting current work:
 - Phase 62-01: SC1/SC2/SC3 + GateAComposition retagged [Trait("Phase","62")] (RealStack trait preserved) — v5/v6 regression sealed into the Phase-62 live close gate
 - 62-02: deterministic fabricated-key gate-verdict proof (GateKeyspaceE2ETests) drives the in-process ProcessorLivenessValidator via crafted per-instance Redis keys — admit/422/malformed, counts-only no-info-leak, distinct throwaway procId per test, skp:proc index net-zero SREM teardown
 - Phase 62.1-01: Gate-A-clash terminal return replaced by IntervalSeconds-cadence unhealthy-refresh loop (D-01 option b) — keeps L2 key present+Unhealthy + L1 fresh, fixing G-62-01 false 'loop stale'
+- 62.1-02 D-A: initial clash stamp records startup anchor interval=30; interval=10 is the refresh loop's signature — assert clash STATUS on the initial stamp, the full refresh signature (interval=10) on each re-SET
+- 62.1-02 D-C: filtered runs use the xUnit-v3/MTP native --filter-class flag (dotnet test --filter VSTest property is ignored under Microsoft.Testing.Platform — warning MTP0001)
 
 ### Roadmap Milestone Log
 
@@ -1500,8 +1503,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T20:54:40.918Z
-Stopped at: Completed 62.1-01-PLAN.md
+Last session: 2026-06-13T21:21:41.864Z
+Stopped at: Completed 62.1-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.

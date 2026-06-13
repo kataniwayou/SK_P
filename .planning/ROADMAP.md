@@ -107,7 +107,7 @@ Plans:
 
 Plans:
 - [x] 62.1-01-PLAN.md — Product fix: parameterize WriteUnhealthyAsync recorded-interval + replace the Gate-A-clash `return;` with a cancellation-safe IntervalSeconds-cadence unhealthy-refresh loop (G-62-01, STATE-03, PROBE-02) ✅ 2026-06-13 (b1ede90, 35e6d71)
-- [ ] 62.1-02-PLAN.md — Hermetic ClashRefreshFacts: re-SET-each-interval + TTL-reset + L1-advance, watchdog-verdict-unchanged (reads "live"), clean shutdown (G-62-01, STATE-03, PROBE-02, TEST-01)
+- [x] 62.1-02-PLAN.md — Hermetic ClashRefreshFacts: re-SET-each-interval + TTL-reset + L1-advance, watchdog-verdict-unchanged (reads "live"), clean shutdown (G-62-01, STATE-03, PROBE-02, TEST-01) ✅ 2026-06-14 (1458e80, 083945e)
 
 #### Phase 56: Typed Base-Config Seam
 **Goal**: Processor authors declare configuration as a typed class inheriting a framework-provided base config; the framework deserializes the dispatch `payload` into that typed config and supplies it to the author's transform — replacing the raw-string `payload` parameter. `Processor.Sample` is the migrated worked example. This is the prerequisite seam that makes a config-type↔config-schema compatibility check (Gate A, Phase 57) possible.
