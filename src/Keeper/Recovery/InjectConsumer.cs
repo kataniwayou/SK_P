@@ -16,8 +16,8 @@ namespace Keeper.Recovery;
 /// gating happens at the endpoint (D-04).</summary>
 public sealed class InjectConsumer(
     IConnectionMultiplexer redis, ISendEndpointProvider sendProvider,
-    IOptions<RetryOptions> retryOptions, IOptions<RecoveryOptions> recoveryOptions)
-    : RecoveryConsumerBase<KeeperInject>(redis, sendProvider, retryOptions, recoveryOptions)
+    IOptions<RetryOptions> retryOptions)
+    : RecoveryConsumerBase<KeeperInject>(redis, sendProvider, retryOptions)
 {
     protected override async Task HandleAsync(KeeperInject m, CancellationToken ct)
     {

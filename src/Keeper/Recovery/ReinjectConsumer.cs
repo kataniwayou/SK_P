@@ -21,9 +21,9 @@ namespace Keeper.Recovery;
 /// value without pulling the blob.</summary>
 public sealed class ReinjectConsumer(
     IConnectionMultiplexer redis, ISendEndpointProvider sendProvider,
-    IOptions<RetryOptions> retryOptions, IOptions<RecoveryOptions> recoveryOptions,
+    IOptions<RetryOptions> retryOptions,
     KeeperMetrics metrics, ILogger<ReinjectConsumer> logger)
-    : RecoveryConsumerBase<KeeperReinject>(redis, sendProvider, retryOptions, recoveryOptions)
+    : RecoveryConsumerBase<KeeperReinject>(redis, sendProvider, retryOptions)
 {
     protected override async Task HandleAsync(KeeperReinject m, CancellationToken ct)
     {

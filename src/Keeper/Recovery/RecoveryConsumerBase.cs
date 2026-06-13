@@ -11,9 +11,9 @@ namespace Keeper.Recovery;
 /// Owns the one surviving cross-cutting concern so each subclass body is just its distinct state op:
 /// <list type="number">
 ///   <item>D-04 RetryLoop — the <see cref="Guard{T}"/>/<see cref="Guard"/> helpers wrap each L2 op + Send
-///   in the relocated <see cref="RetryLoop"/> and re-throw <c>.Error</c> on exhaustion, so a give-up
-///   dead-letters to skp-dlq-1 via the inherited ConsolidatedErrorTransportFilter (no per-consumer
-///   ConfigureError).</item>
+///   in the relocated <see cref="RetryLoop"/> and re-throw <c>.Error</c> on exhaustion. The endpoint carries
+///   NO bus retry / NO ConfigureError (symmetric with the exec path), so a give-up throw falls out of
+///   <c>Consume</c> to RabbitMQ nack-requeue (broker redelivery) — no dead-letter, no skp-dlq-1.</item>
 /// </list>
 /// Phase 52 (D-04/D-09): the bounded once-at-entry gate-wait was REMOVED — gating now happens at the
 /// keeper-recovery ENDPOINT (pause/resume driven by the BIT loop), so <c>Consume</c> dispatches straight
@@ -22,8 +22,7 @@ namespace Keeper.Recovery;
 public abstract class RecoveryConsumerBase<TMessage>(
     IConnectionMultiplexer redis,
     ISendEndpointProvider sendProvider,
-    IOptions<RetryOptions> retryOptions,
-    IOptions<RecoveryOptions> recoveryOptions) : IConsumer<TMessage>
+    IOptions<RetryOptions> retryOptions) : IConsumer<TMessage>
     where TMessage : class, IKeeperRecoverable
 {
     // IN-02: resolve the logical database once per consumer lifetime (redis is a DI singleton, so the
@@ -31,10 +30,6 @@ public abstract class RecoveryConsumerBase<TMessage>(
     protected IDatabase Db { get; } = redis.GetDatabase();
     protected ISendEndpointProvider Send => sendProvider;
     protected int RetryLimit => retryOptions.Value.Limit;
-
-    /// <summary>The keeper-wide exhaustion posture (D-01). Read by the endpoint policy wiring (Plan 02);
-    /// exposed here so the base ctor's <c>recoveryOptions</c> is observed and subclasses can branch on it.</summary>
-    protected ExhaustionPolicy ExhaustionPolicy => recoveryOptions.Value.ExhaustionPolicy;
 
     public Task Consume(ConsumeContext<TMessage> context)
         => HandleAsync(context.Message, context.CancellationToken);   // gate now enforced at the ENDPOINT (D-04)
@@ -44,7 +39,7 @@ public abstract class RecoveryConsumerBase<TMessage>(
     protected abstract Task HandleAsync(TMessage m, CancellationToken ct);
 
     /// <summary>D-04: run <paramref name="op"/> through the bounded <see cref="RetryLoop"/> and re-throw the
-    /// surfaced exhaustion error so the give-up dead-letters to skp-dlq-1.</summary>
+    /// surfaced exhaustion error so the give-up falls out of <c>Consume</c> to broker nack-requeue.</summary>
     protected async Task<T> Guard<T>(Func<Task<T>> op, CancellationToken ct)
     {
         var outcome = await RetryLoop.ExecuteAsync(op, RetryLimit, ct);
