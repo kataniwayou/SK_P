@@ -14,11 +14,14 @@ Make processor liveness multi-replica-accurate and self-healing: L2 reflects eve
 - [ ] **KEY-01**: Processor liveness is stored at a per-instance key `skp:proc:{processorId}:{instanceId}`, replacing the single last-write-wins key `skp:{processorId}` (one key per replica, no cross-replica overwrite).
 - [ ] **KEY-02**: A per-processor instance-index Redis SET `skp:proc:{processorId}` lists the live instanceIds; each replica `SADD`s its own instanceId on its first liveness write (mirrors the Phase-22 workflow parent-index discipline).
 - [ ] **KEY-03**: `instanceId` is the pod identity, resolved via the existing `POD_NAME → HOSTNAME → MachineName → GUID` resolution (reused, no new mechanism).
-- [ ] **KEY-04**: The per-instance value is liveness-only — `inputDefinition`/`outputDefinition` are dropped from L2 (no consumer reads them from L2; the processor validates against its own in-memory L1 copy).
+- [x] **KEY-04
+**: The per-instance value is liveness-only — `inputDefinition`/`outputDefinition` are dropped from L2 (no consumer reads them from L2; the processor validates against its own in-memory L1 copy).
 
 ### Liveness State Model (STATE)
-- [ ] **STATE-01**: The liveness `status` is two-valued (`healthy` / `unhealthy`).
-- [ ] **STATE-02**: Each liveness entry carries a per-schema `summary` `{ inputSchema, outputSchema, configSchema ∈ SUCCESS | FAIL }`; any `FAIL` ⇒ `unhealthy`. `configSchema` reuses the v6.0.0 Gate A startup config-compat outcome; a null schema id is treated as not-failing (null-is-skip).
+- [x] **STATE-01
+**: The liveness `status` is two-valued (`healthy` / `unhealthy`).
+- [x] **STATE-02
+**: Each liveness entry carries a per-schema `summary` `{ inputSchema, outputSchema, configSchema ∈ SUCCESS | FAIL }`; any `FAIL` ⇒ `unhealthy`. `configSchema` reuses the v6.0.0 Gate A startup config-compat outcome; a null schema id is treated as not-failing (null-is-skip).
 - [ ] **STATE-03**: A starting or failed replica **writes** its `unhealthy` entry — L2 reflects a restarting replica as `unhealthy`, never absent (removes the current "only a Healthy replica writes" rule).
 
 ### Dual-Loop Writer (LOOP)
