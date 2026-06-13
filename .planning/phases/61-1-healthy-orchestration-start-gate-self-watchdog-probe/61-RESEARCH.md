@@ -455,7 +455,7 @@ Verified callers of the three symbols being deleted (so the planner can sequence
 
 **Note:** Every other claim is `[VERIFIED: in-repo source]` or `[VERIFIED: StackExchange.Redis upstream]`. A1 is actually a *correction* of an additional_context implication (the new pins are NOT yet present) — the planner should add them.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Where does the new pure-unit gate test live, and does it reuse `FakeRedis`?**
    - What we know: `FakeRedis` (NSubstitute, Keeper namespace) is a reusable stateful double; the gate facts use real Redis.
