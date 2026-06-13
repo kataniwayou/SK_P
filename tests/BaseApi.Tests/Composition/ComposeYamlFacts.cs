@@ -134,8 +134,14 @@ public sealed class ComposeYamlFacts
     public void ComposeYaml_Has_ProcessorSample_Service_Block()
     {
         var content = ComposeYamlContent();
-        Assert.Contains("container_name: sk-processor-sample", content);
+        // Phase 62 (D-01) — processor-sample was reshaped to a 2-replica tier mirroring the
+        // keeper: `container_name` was DELETED (a named container cannot scale) and
+        // `deploy.replicas: 2` added. Assert the build context + the replica directive,
+        // block-scoped via the same TEMPERED-greedy window the keeper guard uses (`(?:(?!^  \S).)*?`
+        // refuses to cross a `^  \S` top-level service header) so a neighbouring tier's deploy:
+        // block can never false-pass.
         Assert.Matches(new Regex(@"dockerfile:\s*src/Processor\.Sample/Dockerfile"), content);
+        Assert.Matches(new Regex(@"(?ms)^  processor-sample:(?:(?!^  \S).)*?deploy:\s*\n\s*replicas:\s*2"), content);
     }
 
     [Fact]
