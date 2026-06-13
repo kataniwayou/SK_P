@@ -4,7 +4,7 @@ milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
 status: paused
 stopped_at: Phase 62.1 context gathered
-last_updated: "2026-06-13T20:36:36.111Z"
+last_updated: "2026-06-13T20:49:11.677Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
@@ -1507,4 +1507,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 62 (live-proof-close-gate) — 3 plans — 2026-06-13T16:11:26.490Z
+**Planned Phase:** 62.1 (Decouple liveness refresh from IsHealthy) — 2 plans — 2026-06-13T20:49:11.663Z
