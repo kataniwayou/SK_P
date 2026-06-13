@@ -34,7 +34,7 @@ public static class L2ProjectionKeys
 
     public static string Root(Guid workflowId) => $"{Prefix}{workflowId:D}";
 
-    public static string Step(Guid workflowId, Guid stepId) => $"{Prefix}{workflowId}:{stepId}";
+    public static string Step(Guid workflowId, Guid stepId) => $"{Prefix}{workflowId:D}:{stepId:D}";
 
     /// <summary>KEY-01: the per-INSTANCE processor-liveness key — <c>skp:proc:{processorId:D}:{instanceId}</c>.
     /// The <c>proc:</c> discriminator marks the per-replica liveness scheme (the legacy flat
