@@ -245,7 +245,7 @@ public sealed class ProcessorStartupOrchestrator(
                 {
                     await Task.Delay(refreshPeriod, clock, stoppingToken);
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
                 {
                     return; // shutdown — exit the refresh loop cleanly (D-06)
                 }
