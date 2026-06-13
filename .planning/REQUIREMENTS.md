@@ -92,11 +92,11 @@ REQ-IDs are filled into phases by the roadmapper (Step 10). Every requirement ma
 | LOOP-03 | Phase 60 | Complete |
 | LOOP-04 | Phase 60 | Complete |
 | L1-01 | Phase 60 | Complete |
-| GATE-01 | Phase 61 | Pending |
-| GATE-02 | Phase 61 | Pending |
-| GATE-03 | Phase 61 | Pending |
-| PROBE-01 | Phase 61 | Pending |
-| PROBE-02 | Phase 61 | Pending |
+| GATE-01 | Phase 61 | Complete |
+| GATE-02 | Phase 61 | Complete |
+| GATE-03 | Phase 61 | Complete |
+| PROBE-01 | Phase 61 | Complete |
+| PROBE-02 | Phase 61 | Complete |
 | TEST-01 | Phase 62 | Pending |
 | TEST-02 | Phase 62 | Pending |
 | TEST-03 | Phase 62 | Pending |
