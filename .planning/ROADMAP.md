@@ -98,6 +98,17 @@ Plans:
 
 **Build order (locked, dependency-driven — the config-seam is the prerequisite that makes Gate A possible):** 56 (typed base-config seam) → 57 (startup config-schema fetch + Gate A + TOCTOU policy) → 58 (orchestration-gate integration proof + live close).
 
+### Phase 62.1: Decouple liveness refresh from IsHealthy (INSERTED)
+
+**Goal:** Decouple the processor liveness-timestamp refresh from `IsHealthy` so an alive-but-unhealthy replica (Gate-A clash) stays observably Unhealthy (never absent) and is not falsely restarted by the self-watchdog. Concretely: replace the Gate-A-clash terminal `return;` in `ProcessorStartupOrchestrator` with a cancellation-safe refresh loop that re-stamps the same static unhealthy entry (config=Fail) with a fresh timestamp every IntervalSeconds (10s) until shutdown. Fixes gap G-62-01; restores STATE-03 (observable-unhealthy-not-absent) and PROBE-02 (no false self-watchdog restart). Hermetic test coverage only — the live TEST-01b/TEST-01c re-proof is handed back to a Phase-62 close-gate re-run (D-04).
+**Requirements**: G-62-01 (restores STATE-03, PROBE-02, LOOP-02; re-enables TEST-01)
+**Depends on:** Phase 62
+**Plans:** 2 plans (2 waves)
+
+Plans:
+- [ ] 62.1-01-PLAN.md — Product fix: parameterize WriteUnhealthyAsync recorded-interval + replace the Gate-A-clash `return;` with a cancellation-safe IntervalSeconds-cadence unhealthy-refresh loop (G-62-01, STATE-03, PROBE-02)
+- [ ] 62.1-02-PLAN.md — Hermetic ClashRefreshFacts: re-SET-each-interval + TTL-reset + L1-advance, watchdog-verdict-unchanged (reads "live"), clean shutdown (G-62-01, STATE-03, PROBE-02, TEST-01)
+
 #### Phase 56: Typed Base-Config Seam
 **Goal**: Processor authors declare configuration as a typed class inheriting a framework-provided base config; the framework deserializes the dispatch `payload` into that typed config and supplies it to the author's transform — replacing the raw-string `payload` parameter. `Processor.Sample` is the migrated worked example. This is the prerequisite seam that makes a config-type↔config-schema compatibility check (Gate A, Phase 57) possible.
 **Depends on**: — (first phase of v6.0.0; builds on the shipped v5.0.0 `BaseProcessor` pipeline)
