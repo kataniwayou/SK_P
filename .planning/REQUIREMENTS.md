@@ -59,7 +59,8 @@ Make processor liveness multi-replica-accurate and self-healing: L2 reflects eve
 ### Live-Proof Capstone (TEST)
 - [x] **TEST-01
 **: RealStack E2E proves the per-instance keyspace live — two replicas of one processor each write a distinct `skp:proc:{processorId}:{instanceId}` key and `SADD` themselves to the `skp:proc:{processorId}` index; a starting/failed replica is observable as `unhealthy` (never absent); a dead replica's key TTL-expires and is lazily `SREM`'d.
-- [ ] **TEST-02**: RealStack E2E proves the gate + probe live — orchestration start admits a workflow when ≥1 required-processor replica is healthy-and-fresh (even with an unhealthy/stale sibling) and is blocked 422 + RFC 7807 when none qualify; the self-watchdog probe returns `unhealthy` + the per-schema `summary` when the in-memory L1 record is stale beyond the active-interval ×2 grace.
+- [x] **TEST-02
+**: RealStack E2E proves the gate + probe live — orchestration start admits a workflow when ≥1 required-processor replica is healthy-and-fresh (even with an unhealthy/stale sibling) and is blocked 422 + RFC 7807 when none qualify; the self-watchdog probe returns `unhealthy` + the per-schema `summary` when the in-memory L1 record is stale beyond the active-interval ×2 grace.
 - [x] **TEST-03
 **: The milestone close gate holds — N=3 consecutive GREEN + triple-SHA (psql `\l` / redis-cli `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER net-zero, DLQ depth 0, at Release + Debug 0-warning.
 
