@@ -70,7 +70,10 @@
   3. When no replica satisfies the gate, orchestration start is blocked with **422 + RFC 7807** (genuine Redis faults still surface as 500, not 422); an absent/TTL-expired index member is skipped and lazily `SREM`'d from the index.
   4. The processor's liveness probe reads the in-memory L1 record and reports `unhealthy` when the L1 timestamp is stale beyond the active-interval ×2 grace — a silently-crashed startup or heartbeat loop makes the probe fail while the host process stays up.
   5. The probe returns the per-schema `summary` in its response body (so the future K8s restart trigger has the diagnostic it needs).
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 61-01-PLAN.md - Swap validator to SMEMBERS->GET-each >=1-healthy gate + aggregate 422 reason + D-11 legacy teardown + re-point gate tests (GATE-01/02/03)
+- [ ] 61-02-PLAN.md - Self-watchdog LivenessWatchdogHealthCheck + generic HealthCheckDescriptor seam + AddBaseProcessor registration + unit test (PROBE-01/02)
+- [ ] 61-03-PLAN.md - Processor /health/live Generic-Host integration proof: null/stale Unhealthy, fresh Healthy + summary in body (PROBE-01/02)
 **UI hint**: yes
 
 #### Phase 62: Live Proof & Close Gate
