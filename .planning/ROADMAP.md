@@ -54,7 +54,11 @@
   3. On startup success the heartbeat loop starts; each heartbeat iteration refreshes the entry's timestamp in **both** L2 and L1, with health **frozen `healthy`** (no mid-life re-validation — monotonic within a process, reset on restart).
   4. Liveness intervals are split into a `startup_interval` and a `heartbeat_interval` (the `Ttl` knob retained), and each liveness entry records its active interval so downstream staleness math can adapt to which loop wrote it.
   5. The in-memory L1 liveness record (`timestamp`, active `interval`, `status`, `summary`) is updated by BOTH loops on every iteration and is the single source the self-watchdog probe (Phase 61) reads.
-**Plans**: TBD
+**Plans**: 4 plans
+- [ ] 60-01-PLAN.md - Config interval split (StartupInterval=30, Interval/Ttl retained) + lock-free L1 holder + binding/state tests (LOOP-03, L1-01)
+- [ ] 60-02-PLAN.md - Shared internal writer: L2 SET(perInstance, TTL=max(interval*2,Ttl)) + index SADD + L1 Update + log-and-continue; writer facts (LOOP-03, LOOP-04)
+- [ ] 60-03-PLAN.md - Heartbeat swap to per-instance frozen-healthy entry via shared writer; remove old ProcessorProjection write; re-point heartbeat facts (LOOP-02, LOOP-04)
+- [ ] 60-04-PLAN.md - Orchestrator inline unhealthy write per iteration + DI registration + 3 ctor-site facts + AddBaseProcessor descriptors + StartupUnhealthyWriteFacts (STATE-03, LOOP-01)
 
 #### Phase 61: ≥1-Healthy Orchestration-Start Gate + Self-Watchdog Probe
 **Goal**: Two reader-side consumers of the reshaped keyspace land. (a) The **WebAPI orchestration-start gate** discovers a processor's replicas via `SMEMBERS skp:proc:{processorId}`, `GET`s each per-instance key, and admits the processor iff **≥1** replica is **present AND `status=healthy` AND non-stale** (`timestamp + interval×2 > now`) — a present-but-unhealthy or stale replica fails *that* replica (presence no longer implies live); when none qualify, orchestration start is blocked **422 + RFC 7807**, and an absent/TTL-expired index member is skipped and lazily `SREM`'d (self-healing). (b) The **self-watchdog liveness probe** reads the in-memory L1 record and reports `unhealthy` when the L1 timestamp is stale beyond the active-interval ×2 grace (detecting a silently-crashed startup/heartbeat loop while the host stays up), returning the per-schema `summary` in its body. K8s probe wiring is future; this delivers the probe semantics.
