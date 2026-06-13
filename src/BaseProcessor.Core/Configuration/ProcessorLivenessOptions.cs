@@ -4,21 +4,28 @@ namespace BaseProcessor.Core.Configuration;
 
 /// <summary>
 /// CONFIG-01 / CONFIG-02: the processor liveness/heartbeat + execution-data knobs, bound from the
-/// <c>"Processor"</c> config section. Five INDEPENDENT seconds-int auto-properties with baked defaults
+/// <c>"Processor"</c> config section. Six INDEPENDENT seconds-int auto-properties with baked defaults
 /// (mirrors <c>RedisProjectionOptions</c>).
 ///
 /// <para>
-/// The bound config keys are <c>Interval</c>/<c>Ttl</c>/<c>RequestTimeout</c>/<c>BackoffCap</c>/<c>ExecutionDataTtl</c>
+/// The bound config keys are <c>Interval</c>/<c>StartupInterval</c>/<c>Ttl</c>/<c>RequestTimeout</c>/<c>BackoffCap</c>/<c>ExecutionDataTtl</c>
 /// (no <c>Seconds</c> suffix); the property names carry the <c>Seconds</c> suffix for clarity, so
 /// each property declares a <see cref="ConfigurationKeyNameAttribute"/> mapping it to the bare key.
 /// </para>
 /// </summary>
 public sealed class ProcessorLivenessOptions
 {
-    /// <summary>Heartbeat delay in seconds (CONFIG-01; default 10). Written as the L2 <c>interval</c>
-    /// field, used by the reader's <c>timestamp + interval×2</c> staleness math.</summary>
+    /// <summary>Heartbeat delay in seconds (CONFIG-01 / D-11; default 10). Written as the L2 <c>interval</c>
+    /// field on <c>healthy</c> heartbeat entries, used by the reader's <c>timestamp + interval×2</c>
+    /// staleness math.</summary>
     [ConfigurationKeyName("Interval")]
     public int IntervalSeconds { get; set; } = 10;
+
+    /// <summary>Startup-loop staleness anchor in seconds (D-12; default 30 = BackoffCap). Recorded as the
+    /// <c>interval</c> on the orchestrator's <c>unhealthy</c> entries so the Phase-61 staleness math + the
+    /// derived TTL cover the slowest backoff write.</summary>
+    [ConfigurationKeyName("StartupInterval")]
+    public int StartupIntervalSeconds { get; set; } = 30;
 
     /// <summary>Sliding liveness-key expiry in seconds (CONFIG-01; default 30). INDEPENDENT of
     /// <see cref="IntervalSeconds"/> — the SET..EX TTL on <c>skp:{processorId:D}</c>.</summary>
