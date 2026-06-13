@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
-status: planning
-stopped_at: Phase 60 context gathered
-last_updated: "2026-06-13T10:16:45.271Z"
+status: executing
+stopped_at: Completed 60-01-PLAN.md
+last_updated: "2026-06-13T11:14:59.058Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 6
-  completed_plans: 2
-  percent: 33
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), and v6.0.0 (typed base-config seam + Gate A config-schema compatibility).**
-**Current focus:** Phase 59 — per-instance-l2-keyspace-two-state-liveness-value
+**Current focus:** Phase 60 — dual-loop-writer-in-memory-l1-liveness-record
 
 ## Current Position
 
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
-Phase: 60
-Plan: 4 plans in 3 waves (verified — Ready to execute)
+Phase: 60 (dual-loop-writer-in-memory-l1-liveness-record) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
 Last activity: 2026-06-13
 
@@ -679,7 +679,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [█████░░░░░] 50%
 
 ### Milestone Phases (v3.4.0)
 
@@ -956,6 +956,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 58 P58-05 | 12min | 2 tasks | 3 files |
 | Phase 59 P01 | 28m | 3 tasks | 4 files |
 | Phase 59 P02 | 9m | 3 tasks | 4 files |
+| Phase 60 P01 | 53min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1367,6 +1368,8 @@ Recent decisions affecting current work:
 - Phase 58 (v6.0.0) close: live N=3 GREEN close gate PASSED 2026-06-13 (exit 0) — triple-SHA BEFORE==AFTER psql ed52e389/redis e3b0c442/rabbitmq 88000972, 568 facts x3, skp-dlq-1 depth 0, skp:msg:* 0; CFG-08 three-signal 422 + CFG-09 204 both live-proven and ticked. Mid-run Rule-1 fix (bfa5a65): Gate-A clash-log ES query corrected from match:body to term on attributes.{OriginalFormat}+ProcessorId scoped to service.name=processor-badconfig (otel nests message under body.text — not phrase-searchable); Gate A product behavior always correct.
 - Phase 59-01: ProcessorLivenessEntry is a new isolated record (D-01), not a reshape of ProcessorProjection — timestamp/interval/status duplicated from the SHARED LivenessProjection by design; Create is the single STATE-01/02 invariant point (any Fail=>Unhealthy, null-is-skip=>Success); SchemaOutcome string-const SoT (D-02, no enum); definitions absent by construction (KEY-04).
 - Phase 59-02: D-04 shared instanceId resolver lives in Messaging.Contracts.Identity (overrides stale Phase-30 'wrong home' comment); two observability copies + ResolveInstanceIdFacts left for a deferred dedupe sweep
+- Phase 60: StartupInterval baked default 30 (BackoffCap anchor, D-12); Interval (10 heartbeat) + Ttl (30 floor) unchanged
+- Phase 60: L1 liveness holder is a new dedicated singleton (NOT on IProcessorContext), lock-free volatile-ref-swap (D-08/10)
 
 ### Roadmap Milestone Log
 
@@ -1470,9 +1473,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 60 context gathered
-Resume file: --resume-file
+Last session: 2026-06-13T11:14:50.672Z
+Stopped at: Completed 60-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.

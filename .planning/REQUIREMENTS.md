@@ -30,11 +30,13 @@ Make processor liveness multi-replica-accurate and self-healing: L2 reflects eve
 ### Dual-Loop Writer (LOOP)
 - [ ] **LOOP-01**: The startup loop writes the replica's liveness entry (to both L2 and L1) on every iteration, with `status`/`summary` reflecting current schema-resolution progress (`unhealthy` until identity + all non-null schemas resolve).
 - [ ] **LOOP-02**: On startup success the processor starts the heartbeat loop; each heartbeat iteration refreshes the entry's timestamp (to both L2 and L1). Health is frozen `healthy` once the heartbeat loop starts — monotonic within a process, reset on restart (no mid-life re-validation).
-- [ ] **LOOP-03**: Liveness intervals are split into `startup_interval` (startup-loop cadence) and `heartbeat_interval` (heartbeat cadence); each entry records its active interval so downstream staleness math adapts. The existing `Ttl` knob is retained.
+- [x] **LOOP-03
+**: Liveness intervals are split into `startup_interval` (startup-loop cadence) and `heartbeat_interval` (heartbeat cadence); each entry records its active interval so downstream staleness math adapts. The existing `Ttl` knob is retained.
 - [ ] **LOOP-04**: Each per-instance key is written with a TTL; a dead replica's key TTL-expires. The per-instance key's TTL is the source of truth for liveness — the index SET is only a discovery hint.
 
 ### In-Memory L1 Liveness (L1)
-- [ ] **L1-01**: The processor maintains an in-memory L1 liveness record (`timestamp`, active `interval`, `status`, `summary`), updated by BOTH loops on every iteration — the source the self-watchdog probe reads.
+- [x] **L1-01
+**: The processor maintains an in-memory L1 liveness record (`timestamp`, active `interval`, `status`, `summary`), updated by BOTH loops on every iteration — the source the self-watchdog probe reads.
 
 ### Orchestration-Start Gate (GATE)
 - [ ] **GATE-01**: The WebAPI orchestration-start validator discovers a processor's replicas by `SMEMBERS skp:proc:{processorId}` and reads each per-instance key (no prior knowledge of instanceIds required).
