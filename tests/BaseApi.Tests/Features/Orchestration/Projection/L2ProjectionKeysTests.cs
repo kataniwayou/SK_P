@@ -17,6 +17,7 @@ public sealed class L2ProjectionKeysTests
     private static readonly Guid Workflow = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid Step = Guid.Parse("22222222-2222-2222-2222-222222222222");
     private static readonly Guid Processor = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    private const string Instance = "pod-abc-123";
 
     [Fact]
     public void ParentIndex_Returns_Bare_Prefix()
@@ -43,6 +44,24 @@ public sealed class L2ProjectionKeysTests
     {
         Assert.Equal("skp:33333333-3333-3333-3333-333333333333", L2ProjectionKeys.Processor(Processor));
     }
+
+    [Fact]
+    public void PerInstance_Produces_Prefix_Proc_Processor_Colon_Instance()
+        => Assert.Equal(
+            "skp:proc:33333333-3333-3333-3333-333333333333:pod-abc-123",
+            L2ProjectionKeys.PerInstance(Processor, Instance));   // KEY-01
+
+    [Fact]
+    public void InstanceIndex_Produces_Prefix_Proc_Processor()
+        => Assert.Equal(
+            "skp:proc:33333333-3333-3333-3333-333333333333",
+            L2ProjectionKeys.InstanceIndex(Processor));           // KEY-02
+
+    [Fact]
+    public void PerInstance_Is_Prefixed_By_Its_InstanceIndex()    // Phase-61 SMEMBERS->GET forward-fit
+        => Assert.StartsWith(
+            L2ProjectionKeys.InstanceIndex(Processor) + ":",
+            L2ProjectionKeys.PerInstance(Processor, Instance));
 
     [Fact]
     public void Root_And_Processor_Are_ByteIdentical_For_Same_Guid()
