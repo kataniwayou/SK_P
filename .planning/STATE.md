@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
 status: executing
-stopped_at: Completed 62-02-PLAN.md
+stopped_at: "62-03-PLAN.md Tasks 1-3 complete; PAUSED at Task 4 blocking operator checkpoint (live N=3 GREEN close run, D-15)"
 last_updated: "2026-06-13T16:40:03.521Z"
 last_activity: 2026-06-13
 progress:
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
 Phase: 62 (live-proof-close-gate) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: PAUSED at Task 4 — blocking operator checkpoint (human-verify). Autonomous Tasks 1-3 complete + committed (scripts/phase-62-close.ps1 cloned with D-09 prefix exclusion + AST-valid; 62-HUMAN-UAT.md runbook authored, status: pending; build gate PASSED — Release+Debug 0-warning, hermetic 591/591 green). The ~50-min live N=3×GREEN close run + the four multi-container lifecycle proofs are operator-gated (D-15). TEST-01/02/03 remain UNTICKED until the operator records a GREEN run per 62-HUMAN-UAT.md. Resume signal: "approved - N=3 GREEN recorded" (3 SHAs + Passed count) or a failure description.
 Last activity: 2026-06-13
 
 > v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
