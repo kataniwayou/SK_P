@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
-status: planning
-stopped_at: Phase 62 context gathered
-last_updated: "2026-06-13T16:11:26.502Z"
+status: executing
+stopped_at: Completed 62-01-PLAN.md
+last_updated: "2026-06-13T16:24:44.112Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 12
-  completed_plans: 9
-  percent: 75
+  completed_plans: 10
+  percent: 83
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), and v6.0.0 (typed base-config seam + Gate A config-schema compatibility).**
-**Current focus:** Phase 61 — 1-healthy-orchestration-start-gate-self-watchdog-probe
+**Current focus:** Phase 62 — live-proof-close-gate
 
 ## Current Position
 
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
-Phase: 62
-Plan: Not started
-Status: Ready to plan
+Phase: 62 (live-proof-close-gate) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
 Last activity: 2026-06-13
 
 > v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -679,7 +679,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [████████░░] 83%
 
 ### Milestone Phases (v3.4.0)
 
@@ -965,6 +965,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 61 P01 | 37min | 3 tasks | 24 files |
 | Phase 61 P02 | 21min | 2 tasks | 5 files |
 | Phase 61 P03 | 4min | 2 tasks | 2 files |
+| Phase 62 P01 | 2min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1389,6 +1390,8 @@ Recent decisions affecting current work:
 - Phase 61-02: generic HealthCheckDescriptor seam in BaseConsole.Core (outer-registered, inner-listener-folded) — any console surfaces an outer-state live check without the leaf referencing the concrete type
 - Phase 61-02: LivenessWatchdogHealthCheck reads L1 (IProcessorLivenessState.Current) via the outer provider AT CHECK TIME; null/stale -> Unhealthy, fresh -> Healthy, per-schema summary in HealthCheckResult.Data (PROBE-01/02)
 - 61-03: processor /health/live integration proof — AddBaseProcessor surfaces the watchdog descriptor end-to-end (null/stale->503, fresh->200+summary), fixture strips the two startup/heartbeat loops to boot in-process without an embedded SourceHash
+- Phase 62-01: processor-sample compose tier reshaped to deploy.replicas:2 (no fixed container_name, mirrors keeper) — default docker compose up runs 2 processor-sample replicas; badconfig tier untouched
+- Phase 62-01: SC1/SC2/SC3 + GateAComposition retagged [Trait("Phase","62")] (RealStack trait preserved) — v5/v6 regression sealed into the Phase-62 live close gate
 
 ### Roadmap Milestone Log
 
@@ -1492,9 +1495,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 62 context gathered
-Resume file: --resume-file
+Last session: 2026-06-13T16:24:33.876Z
+Stopped at: Completed 62-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
