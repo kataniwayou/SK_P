@@ -21,6 +21,8 @@ namespace Messaging.Contracts.Projections;
 ///   <item><description>Root: <c>{Prefix}{workflowId}</c></description></item>
 ///   <item><description>Step: <c>{Prefix}{workflowId}:{stepId}</c></description></item>
 ///   <item><description>Processor: <c>{Prefix}{processorId}</c></description></item>
+///   <item><description>PerInstance: <c>{Prefix}proc:{processorId:D}:{instanceId}</c> — KEY-01, the per-replica liveness key.</description></item>
+///   <item><description>InstanceIndex: <c>{Prefix}proc:{processorId:D}</c> — KEY-02, the per-processor instance-index SET key (prefix of PerInstance).</description></item>
 ///   <item><description>ExecutionData: <c>{Prefix}data:{entryId:D}</c> — the sole GUID-keyed data builder (D-08; the legacy 64-hex content-addressed string overload was removed in v4.0.0).</description></item>
 ///   <item><description>MessageIndex: <c>{Prefix}msg:{messageId:D}</c> — the processor-owned slot-array allocation-index key (D-04; a Redis HASH of int-slot → entryId, D-05). No TTL baked in.</description></item>
 /// </list>
@@ -36,6 +38,19 @@ public static class L2ProjectionKeys
     public static string Step(Guid workflowId, Guid stepId) => $"{Prefix}{workflowId}:{stepId}";
 
     public static string Processor(Guid processorId) => $"{Prefix}{processorId}";
+
+    /// <summary>KEY-01: the per-INSTANCE processor-liveness key — <c>skp:proc:{processorId:D}:{instanceId}</c>.
+    /// The <c>proc:</c> discriminator distinguishes the per-replica scheme from the legacy flat
+    /// <see cref="Processor"/> key. <paramref name="instanceId"/> is the already-resolved pod identity
+    /// (see <c>Messaging.Contracts.Identity.InstanceId.Resolve</c>) — a plain string, NOT a Guid.</summary>
+    public static string PerInstance(Guid processorId, string instanceId)
+        => $"{Prefix}proc:{processorId:D}:{instanceId}";
+
+    /// <summary>KEY-02: the per-processor instance-index SET key — <c>skp:proc:{processorId:D}</c> — that
+    /// the Phase-60 writer SADDs each replica's instanceId into and the Phase-61 gate SMEMBERS. It is the
+    /// exact prefix (before the trailing <c>:{instanceId}</c>) of <see cref="PerInstance"/>.</summary>
+    public static string InstanceIndex(Guid processorId)
+        => $"{Prefix}proc:{processorId:D}";
 
     /// <summary>D-08: the sole GUID-keyed L2 data builder — <c>skp:data:{entryId:D}</c> (no TTL baked
     /// in; caller concern). The legacy 64-hex content-addressed string overload was removed in v4.0.0.</summary>
