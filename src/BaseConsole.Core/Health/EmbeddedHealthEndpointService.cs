@@ -83,8 +83,9 @@ internal sealed class EmbeddedHealthEndpointService : IHostedService
         // register none, so GetServices returns empty and their /health/live is unchanged (D-01 scope).
         foreach (var d in _outer.GetServices<HealthCheckDescriptor>())
         {
-            var captured = d;
-            hc.AddCheck(captured.Name, captured.Factory(_outer), tags: captured.Tags);
+            // IN-04: Factory is invoked eagerly here (not deferred into a captured lambda), and the foreach
+            // iteration variable is per-iteration scoped since C# 5 — no closure hazard, so no defensive copy.
+            hc.AddCheck(d.Name, d.Factory(_outer), tags: d.Tags);
         }
 
         _app = builder.Build();
