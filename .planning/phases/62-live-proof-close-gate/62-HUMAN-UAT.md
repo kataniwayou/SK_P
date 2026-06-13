@@ -384,7 +384,16 @@ blocked: 0
 
 ## Gaps
 
-### G-62-01 — Liveness-timestamp refresh coupled to `IsHealthy` (Phase-60 product gap) — OPEN
+### G-62-01 — Liveness-timestamp refresh coupled to `IsHealthy` (Phase-60 product gap) — OPEN (product fix landed in Phase 62.1; live re-run pending)
+
+> **Phase 62.1 update (2026-06-14):** The product fix HAS landed —
+> `62.1-decouple-liveness-refresh-from-ishealthy` replaced the Gate-A-clash terminal `return;` in
+> `ProcessorStartupOrchestrator` with a cancellation-safe refresh loop that re-stamps the Unhealthy
+> per-instance key every `IntervalSeconds` (10s) until shutdown (commits `35e6d71`, `b1ede90`), and
+> added hermetic regression coverage `ClashRefreshFacts` (commits `1458e80`, `083945e`). Per CONTEXT
+> D-04 the live TEST-01b/TEST-01c re-proof was DEFERRED to a Phase-62 close-gate re-run — it has NOT
+> yet been executed. This gap therefore stays **OPEN** and this file stays `status: pending` until the
+> operator re-runs Steps 1–5 clean and records a GREEN TEST-01b/TEST-01c.
 
 Surfaced by **TEST-01b** during the live close run (2026-06-13). A durably-broken (Gate-A-clash)
 replica writes its `Unhealthy` per-instance key only during the ~60s startup-TTL window, then goes
