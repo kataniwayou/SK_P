@@ -51,8 +51,10 @@ Make processor liveness multi-replica-accurate and self-healing: L2 reflects eve
 **: When no replica satisfies the gate, orchestration start is blocked with **422 + RFC 7807**; an absent/TTL-expired index member is skipped and lazily `SREM`'d from the index (self-healing).
 
 ### Self-Watchdog Probe (PROBE)
-- [ ] **PROBE-01**: The processor's liveness probe reads the in-memory L1 record and reports `unhealthy` when the L1 timestamp is stale beyond the active-interval ×2 grace — detecting a silently-crashed startup or heartbeat loop while the host process stays up.
-- [ ] **PROBE-02**: The probe returns the per-schema `summary` in its response body. (K8s liveness-probe wiring + restart policy is future; this milestone delivers the probe semantics so the restart trigger exists.)
+- [x] **PROBE-01
+**: The processor's liveness probe reads the in-memory L1 record and reports `unhealthy` when the L1 timestamp is stale beyond the active-interval ×2 grace — detecting a silently-crashed startup or heartbeat loop while the host process stays up.
+- [x] **PROBE-02
+**: The probe returns the per-schema `summary` in its response body. (K8s liveness-probe wiring + restart policy is future; this milestone delivers the probe semantics so the restart trigger exists.)
 
 ### Live-Proof Capstone (TEST)
 - [ ] **TEST-01**: RealStack E2E proves the per-instance keyspace live — two replicas of one processor each write a distinct `skp:proc:{processorId}:{instanceId}` key and `SADD` themselves to the `skp:proc:{processorId}` index; a starting/failed replica is observable as `unhealthy` (never absent); a dead replica's key TTL-expires and is lazily `SREM`'d.

@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
 status: executing
-stopped_at: Completed 61-01-PLAN.md
-last_updated: "2026-06-13T13:48:48.321Z"
+stopped_at: Completed 61-02-PLAN.md
+last_updated: "2026-06-13T14:13:48.509Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 9
-  completed_plans: 7
-  percent: 78
+  completed_plans: 8
+  percent: 89
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
 Phase: 61 (1-healthy-orchestration-start-gate-self-watchdog-probe) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-06-13
 
@@ -679,7 +679,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 78%
+Progress: [█████████░] 89%
 
 ### Milestone Phases (v3.4.0)
 
@@ -962,6 +962,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 60-dual-loop-writer-in-memory-l1-liveness-record P03 | 9min | 2 tasks | 3 files |
 | Phase 60 P60-04 | 28min | 3 tasks | 7 files |
 | Phase 61 P01 | 37min | 3 tasks | 24 files |
+| Phase 61 P02 | 21min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1383,6 +1384,8 @@ Recent decisions affecting current work:
 - Phase 60-04: L1 holder + writer registered singletons; orchestrator + heartbeat as concrete singletons via ActivatorUtilities factory (instanceId injected once) surfaced as IHostedService — DI gap closed
 - Phase 61-01: per-replica orchestration-start gate (SMEMBERS skp:proc:{procId} -> GET-each ProcessorLivenessEntry -> admit iff >=1 Healthy+fresh); aggregate count-only 422 reason; absent-only fire-and-forget lazy SREM; 422-vs-500 split preserved in the CALLER (validator throws only OrchestrationValidationException)
 - Phase 61-01: D-11 teardown complete — L2ProjectionKeys.Processor + RedisProjectionKeys.Processor forwarder + ProcessorProjection record deleted; SHARED LivenessProjection untouched; 15 compile-break caller files re-pointed onto the per-replica keyspace (Rule 3)
+- Phase 61-02: generic HealthCheckDescriptor seam in BaseConsole.Core (outer-registered, inner-listener-folded) — any console surfaces an outer-state live check without the leaf referencing the concrete type
+- Phase 61-02: LivenessWatchdogHealthCheck reads L1 (IProcessorLivenessState.Current) via the outer provider AT CHECK TIME; null/stale -> Unhealthy, fresh -> Healthy, per-schema summary in HealthCheckResult.Data (PROBE-01/02)
 
 ### Roadmap Milestone Log
 
@@ -1486,8 +1489,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T13:48:38.137Z
-Stopped at: Completed 61-01-PLAN.md
+Last session: 2026-06-13T14:13:32.444Z
+Stopped at: Completed 61-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
