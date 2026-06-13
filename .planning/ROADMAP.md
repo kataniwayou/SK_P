@@ -25,7 +25,7 @@
 
 - [ ] **Phase 59: Per-Instance L2 Keyspace & Two-State Liveness Value** — Reshape the L2 liveness contract to per-instance keys + an instance-index SET, with a two-state `status` + per-schema `summary` value (definitions dropped).
 - [x] **Phase 60: Dual-Loop Writer + In-Memory L1 Liveness Record** — Startup + heartbeat loops both write the (per-instance, TTL'd) entry to L2 + L1 each iteration; startup writes `unhealthy`; split startup/heartbeat intervals; frozen-healthy. ✓ All 4 plans complete; dual-loop writer + L1 holder wired + DI gap closed; Phase=60 17/17 GREEN.
-- [ ] **Phase 61: ≥1-Healthy Orchestration-Start Gate + Self-Watchdog Probe** — WebAPI gate iterates the instance index and admits iff ≥1 replica is healthy-and-fresh (lazy-prune stale); the processor's liveness probe fails on stale L1.
+- [x] **Phase 61: ≥1-Healthy Orchestration-Start Gate + Self-Watchdog Probe** — WebAPI gate iterates the instance index and admits iff ≥1 replica is healthy-and-fresh (lazy-prune stale); the processor's liveness probe fails on stale L1.
 - [ ] **Phase 62: Live Proof & Close Gate** — Real-stack E2E proof of the reshaped per-replica liveness + the triple-SHA `psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues` net-zero close gate (N=3 GREEN).
 
 ### Phase Details
@@ -72,8 +72,8 @@
   5. The probe returns the per-schema `summary` in its response body (so the future K8s restart trigger has the diagnostic it needs).
 **Plans**: 3 plans
 - [x] 61-01-PLAN.md - Swap validator to SMEMBERS->GET-each >=1-healthy gate + aggregate 422 reason + D-11 legacy teardown + re-point gate tests (GATE-01/02/03) ✓ per-replica gate live; ProcessorProjection/Processor builder+forwarder deleted (LivenessProjection untouched); Phase=61 unit + re-pointed real-Redis facts green; Debug+Release 0-warning; commits 35dec7e, 6b62128, 222cc35
-- [ ] 61-02-PLAN.md - Self-watchdog LivenessWatchdogHealthCheck + generic HealthCheckDescriptor seam + AddBaseProcessor registration + unit test (PROBE-01/02)
-- [ ] 61-03-PLAN.md - Processor /health/live Generic-Host integration proof: null/stale Unhealthy, fresh Healthy + summary in body (PROBE-01/02)
+- [x] 61-02-PLAN.md - Self-watchdog LivenessWatchdogHealthCheck + generic HealthCheckDescriptor seam + AddBaseProcessor registration + unit test (PROBE-01/02) ✓ watchdog reads L1 (null/stale->Unhealthy, summary in Data); generic HealthCheckDescriptor seam folded by embedded listener; Phase=61 unit green; Debug+Release 0-warning; commits d750465, 5483150
+- [x] 61-03-PLAN.md - Processor /health/live Generic-Host integration proof: null/stale Unhealthy, fresh Healthy + summary in body (PROBE-01/02) ✓ AddBaseProcessor surfaces watchdog on embedded /health/live end-to-end (null/stale->503, fresh->200+summary, no-secrets); Phase=61 integration 4/4 green; Release 0-warning; commits 3001dec, 47f256c
 **UI hint**: yes
 
 #### Phase 62: Live Proof & Close Gate
