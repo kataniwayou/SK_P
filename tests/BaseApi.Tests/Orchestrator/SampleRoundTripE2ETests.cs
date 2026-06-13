@@ -254,6 +254,32 @@ public sealed class SampleRoundTripE2ETests
             $"compose stack incl. processor-sample is up healthy.");
     }
 
+    // ---- Fabricated per-instance liveness seed (Phase 62 D-04 / craft-redis-state, Phase-61 WR-01/WR-02 style) ----
+    // Writes a CALLER-built ProcessorLivenessEntry directly into host Redis as a per-instance key
+    // (skp:proc:{procId:D}:{instanceId}) + SADDs the instanceId into the instance-index SET
+    // (skp:proc:{procId:D}), then registers BOTH for net-zero teardown. This drives the in-process gate
+    // (ProcessorLivenessValidator) verdict deterministically — no container, no timing race. The entry is
+    // built by the caller via ProcessorLivenessEntry.Create(...) (the ONLY sanctioned construction path)
+    // so the wire shape/casing round-trips through the reader's deserialization. The
+    // RealStackNetZeroSweepFixture does NOT sweep skp:proc:* — every fabricated key + index member is the
+    // test's own cleanup responsibility, so both are registered here (RESEARCH Pitfall 6).
+    internal static async Task SeedFabricatedLivenessAsync(
+        RealStackWebAppFactory factory,
+        Guid procId,
+        string instanceId,
+        ProcessorLivenessEntry entry,
+        CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
+        var db = mux.GetDatabase();
+        var key = L2ProjectionKeys.PerInstance(procId, instanceId);
+        await db.StringSetAsync(key, JsonSerializer.Serialize(entry), TimeSpan.FromSeconds(60));
+        await db.SetAddAsync(L2ProjectionKeys.InstanceIndex(procId), instanceId);
+        factory.L2KeysToCleanup.Add(key);                          // net-zero: delete the per-instance key
+        factory.InstanceIndexMembersToSrem.Add((procId, instanceId)); // net-zero: SREM the index member
+    }
+
     // ---- Round-trip output poll: a NEW skp:data:* key appears after Start ----
 
     private static async Task<RedisKey?> PollForNewExecutionDataKeyAsync(
@@ -474,9 +500,20 @@ public sealed class SampleRoundTripE2ETests
         /// <summary>Shared <c>skp:</c> parent-index members this test SADDed (via Start) to SREM on teardown.</summary>
         public List<RedisValue> ParentIndexMembersToSrem { get; } = new();
 
+        /// <summary>
+        /// Fabricated per-processor instance-index members (<c>skp:proc:{procId:D}</c>) to SREM on teardown
+        /// (Phase 62 D-04). DISTINCT from <see cref="ParentIndexMembersToSrem"/> — that SREMs the BARE
+        /// <c>skp:</c> parent index, NOT the per-processor <c>skp:proc:{procId}</c> instance index. The
+        /// <see cref="RealStackNetZeroSweepFixture"/> does not sweep <c>skp:proc:*</c>, so every fabricated
+        /// index member registered by <see cref="SeedFabricatedLivenessAsync"/> is SREM'd here, drained on
+        /// the SAME teardown connection (no second multiplexer) so a fabricated member never pollutes a
+        /// later test's gate <c>SMEMBERS</c> (RESEARCH Pitfall 6 / T-62-04).
+        /// </summary>
+        public List<(Guid ProcId, RedisValue Member)> InstanceIndexMembersToSrem { get; } = new();
+
         public override async ValueTask DisposeAsync()
         {
-            if (L2KeysToCleanup.Count > 0 || ParentIndexMembersToSrem.Count > 0)
+            if (L2KeysToCleanup.Count > 0 || ParentIndexMembersToSrem.Count > 0 || InstanceIndexMembersToSrem.Count > 0)
             {
                 await using var cleanupMux = await ConnectionMultiplexer.ConnectAsync(HostRedisFull);
                 var db = cleanupMux.GetDatabase();
@@ -487,6 +524,10 @@ public sealed class SampleRoundTripE2ETests
                 if (ParentIndexMembersToSrem.Count > 0)
                 {
                     await db.SetRemoveAsync(L2ProjectionKeys.ParentIndex(), ParentIndexMembersToSrem.ToArray());
+                }
+                foreach (var (procId, member) in InstanceIndexMembersToSrem)
+                {
+                    await db.SetRemoveAsync(L2ProjectionKeys.InstanceIndex(procId), member);
                 }
             }
             Restore();
