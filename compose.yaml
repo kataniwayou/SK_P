@@ -266,7 +266,8 @@ services:
     build:
       context: .
       dockerfile: src/Processor.Sample/Dockerfile
-    container_name: sk-processor-sample
+    deploy:
+      replicas: 2
     restart: unless-stopped
     depends_on:
       rabbitmq:
