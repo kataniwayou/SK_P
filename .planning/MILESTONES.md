@@ -1,5 +1,24 @@
 # Steps API — Milestones
 
+## v6.0.0 Config & Payload Validation Hardening (Shipped: 2026-06-13)
+
+**Phases completed:** 3 phases, 11 plans, 21 tasks
+
+**Requirements:** 10/10 CFG satisfied (CFG-01..10) · **Audit:** passed · **Close gate:** Phase-58 live N=3 GREEN, triple-SHA net-zero
+
+**Known deferred items at close:** 25 (all carried over from prior shipped milestones v3.x — UAT/verification gaps on phases 08/09/32–40 + 1 stale debug session; none in v6.0.0 scope — see STATE.md → Deferred Items)
+
+**Key accomplishments:**
+
+- **Typed base-config seam (CFG-01/02):** reshaped the `BaseProcessor` author seam from a raw-string config parameter to a framework-deserialized typed config instance (`BaseProcessor<TConfig>` + empty marker `ProcessorConfig` with one canonical `JsonSerializerOptions`); migrated `Processor.Sample` onto it with the old raw-string seam removed (clean break).
+- **Startup config-schema fetch (CFG-03/04):** Loop B now fetches the `ConfigSchemaId` definition onto `ProcessorContext.ConfigDefinition`, lifting the D-05 carve-out; a missing definition stays transient (per-Id retry, boot-before-register tolerated).
+- **Gate A compatibility check (CFG-05/06/07):** `ConfigSchemaCoverageCheck` performs a real `schema ⊨ TConfig` structural walk under the exact serializer name+type rules (18 rule-table rows green, spike-confirmed CLASH verdicts); on a clash the processor stays up but never reaches Healthy (`MarkHealthy` withheld, no bind, one Error log, terminal); null `ConfigSchemaId` skips Gate A.
+- **TOCTOU closure (CFG-10):** a schema `Definition` freezes the moment any `ProcessorEntity` FK references it — `SchemaService.UpdateAsync` rejects a referenced-schema body change with `SchemaDefinitionFrozenException` → RFC-7807 409, closing the Gate-A↔Gate-B mutation window by construction; Name/Description and unreferenced-draft edits still flow.
+- **Orchestration-gate integration proof (CFG-08/09):** new `Processor.BadConfig` container (behind a `badconfig` compose profile) + `GateACompositionE2ETests` prove live that a config-incompatible processor is blocked 422 at orchestration start (three-signal: ES clash log + `skp:{badId}` absent + 422) while a compatible one reaches Healthy and starts 204 — Gate A is not a false-positive blocker.
+- **Sealed behind the close gate:** Phase-58 operator-gated N=3 consecutive GREEN run, triple-SHA (psql/redis/rabbitmq) BEFORE==AFTER net-zero, DLQ depth 0, both build configs 0-warning.
+
+---
+
 ## v4.0.0 Processor Pre/In/Post-Process + Keeper Recovery Redesign (Shipped: 2026-06-11)
 
 **Phases completed:** 7 phases, 27 plans, 60 tasks

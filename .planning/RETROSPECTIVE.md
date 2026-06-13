@@ -154,6 +154,45 @@ A multi-replica `Keeper` console that self-heals the autonomous execution loop t
 - Sessions: ~3 days (2026-06-05 → 2026-06-07), 220 commits (137 docs — heavy planning/artifact churn across 10 phases incl. 3 gap-closure).
 - Notable: small source delta (+6,287 / −48 across 75 src+test files) for a whole new console + recovery engine — most of the new surface is the `Keeper` project + shared handler; the rest reuses v3.4.0/v3.6.0 tiers unchanged.
 
+## Milestone: v6.0.0 — Config & Payload Validation Hardening
+
+**Shipped:** 2026-06-13
+**Phases:** 3 (56-58) | **Plans:** 11 | **Commits:** ~50 (13 feat) | **Timeline:** ~1 day (2026-06-12 → 2026-06-13)
+
+### What Was Built
+A breaking `BaseProcessor` author-contract change that makes runtime payload-deserialization exceptions structurally impossible (except in-transit mutation). Authors now inherit a typed `ProcessorConfig` and the framework deserializes the dispatch payload into it (replacing the raw-string seam); at startup the processor fetches the `ConfigSchemaId` definition and **Gate A** (`ConfigSchemaCoverageCheck`) validates `schema ⊨ configType` — on a clash it withholds `MarkHealthy` (terminal), so no L2 liveness is written and the existing orchestration-start `ProcessorLivenessValidator` blocks the workflow 422. TOCTOU closed by frozen-once-referenced schema immutability (409). Composes with the shipped WebAPI Gate B into the transitive invariant `payload ⊨ ConfigSchemaId ∧ ConfigSchemaId ⊨ configType ⟹ payload deserializes`. Proven live in Phase 58 (config-incompatible → 422; compatible → 204) behind an N=3 triple-SHA net-zero close gate.
+
+### What Worked
+- **Spike-locks-the-rule-table (Phase 57 Wave 0).** Before implementing the covers-checker, a blocking spike drove the 3 highest-risk `System.Text.Json` type-clash verdicts (string-enum→CLR-enum, number↔int, null→non-nullable value-type) through the *real* `ProcessorConfig.SerializerOptions` and confirmed them empirically — so the 18-row rule table encoded measured behavior, not assumed behavior.
+- **Conservative-by-design coverage check.** Gate A flags only a real both-present clash and defaults unwalked constructs (tuple items, `$ref`/`allOf`/`oneOf`/`anyOf` composition) to FINE — never a false-positive block — and is SSRF-safe (no `Evaluate`, no external `$ref`). The INFO-level gaps are documented, not silent.
+- **Faithful-clone negative subject behind a compose profile.** `Processor.BadConfig` is a byte-faithful `Processor.Sample` clone whose only delta is a clashing `BadConfig(int Quantity)` TConfig + its own embedded SourceHash (distinct procId), gated behind a `badconfig` compose profile so it never joins the default dev stack — a clean, isolated CFG-08 subject.
+- **Three-signal causation for the live block proof.** CFG-08 didn't just assert 422 — it proved *why*: ES Gate-A clash log scoped to `service.name=processor-badconfig` + `skp:{badId}` stably absent across >1 heartbeat + Start 422. The negative control (CFG-09 → 204) rules out a false-positive gate.
+- **Net-zero close-gate protocol reused verbatim.** `phase-58-close.ps1` cloned the proven phase-55 triple-SHA protocol + the two-schema/two-processor CREATE-IF-ABSENT seed — N=3 GREEN, BEFORE==AFTER, DLQ 0, first time.
+
+### What Was Inefficient
+- **3-source requirements drift, again.** `CFG-05` was exercised GREEN in 57-02 but its `requirements-completed` marking was deferred to "avoid over-claiming a partially-wired requirement"; 57-03 then wired it but listed CFG-03/04/06/07 and forgot CFG-05. The audit's SUMMARY-frontmatter cross-check flagged it as `partial → verify manually`; manual verification confirmed it satisfied. Bookkeeping, not implementation — but the recurring pattern (v3.3/3.4/3.6/3.7 all had verification/UAT status drift) shows up here as requirements-frontmatter drift.
+- **VALIDATION strategy docs never status-updated post-execution.** Phases 57/58 carry `nyquist_compliant` / task-status columns left at their pre-execution values (57 `wave_0_complete:false` with tasks ⬜ pending; 58 `status:draft`), so the audit's Nyquist scan reads them PARTIAL even though the actual tests are green. Discovery-only/advisory, but the docs lie about state.
+- **ROADMAP plan-checkbox drift.** 57-03-PLAN's checkbox sat `[ ]` despite full execution (commits + SUMMARY exist) — the same post-execution doc-hygiene lag.
+- **Observability query path untested until the live gate.** The CFG-08 ES clash-log poll used `match: body`, but OTel nests the rendered message under `body.text` (not phrase-searchable) — the test never matched. Caught and fixed at the live N=3 run (`bfa5a65`, switched to `term` on `attributes.{OriginalFormat}`). Gate A's product behavior was always correct; the *test's* assumption about the log shape wasn't.
+- **`milestone.complete` arg quirk** — the `gsd-sdk query` wrapper rejected the version arg; had to call `gsd-tools.cjs milestone complete` directly. (And the accomplishments extractor pulled one malformed "Rule 1 - Bug" line into MILESTONES.md — hand-cleaned.)
+
+### Patterns Established
+- **Spike-locks-the-rule-table** — when a check models an external contract (here STJ deserialization), drive the highest-risk verdicts through the real serializer in a Wave-0 spike *before* encoding the rule table; the spike facts become permanent regression rows.
+- **Conservative-never-false-positive gate** — a startup compatibility gate defaults the unmodeled to "compatible" so it can only ever block a *proven* clash; unwalked constructs are documented INFO gaps, never silent blocks.
+- **Two-gate transitive invariant** — compose an existing gate (B: payload⊨schema) with a new one (A: schema⊨type) so the product guarantee (payload deserializes) is provable, with each gate retained unchanged.
+- **Faithful-clone-behind-a-profile negative subject** — for a "this is correctly blocked" proof, clone the known-good subject with the single adversarial delta + a distinct identity, gated out of the default stack.
+
+### Key Lessons
+1. **Tick `requirements-completed` in the same plan that wires the requirement to GREEN.** CFG-05's "defer marking to avoid over-claiming" was reasonable in 57-02 but created an orphan when 57-03 forgot to pick it up — the audit caught it, but the fix is: the wiring plan owns the tick.
+2. **Update VALIDATION task-status (and the ROADMAP checkbox) at phase close, not just the SUMMARY.** Four+ milestones of the same drift; the strategy docs read as PARTIAL/incomplete long after the work is green.
+3. **Test the observability assertion path early.** An E2E proof that polls logs/metrics is only as good as its query — exercise the otel field shape (`body.text` vs `body`, `attributes.*`) in a hermetic or early-live pass, not at the expensive N=3 close gate.
+4. **A breaking author-contract change rides cleanly on a prerequisite-seam-first build order.** 56 (typed seam) → 57 (Gate A over that type) → 58 (compose + prove) meant each phase had a solid, already-green substrate — the clean-break removal in 56 never had to be revisited.
+
+### Cost Observations
+- Model mix: orchestration/execution on Opus (profile `quality`); audit/verifiers on Sonnet.
+- Sessions: ~1 day, intensive (2026-06-12 17:10 → 2026-06-13 04:06); 93 files changed (+11,303 / −205).
+- Notable: a small, surgical milestone (3 phases) for a breaking contract change — most of the delta is the new `BaseProcessor<TConfig>` layer + `ConfigSchemaCoverageCheck` (441 lines) + the BadConfig subject + tests; the existing pipeline/orchestrator tiers were reused unchanged.
+
 ## Cross-Milestone Trends
 
 ### Process Evolution

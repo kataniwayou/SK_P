@@ -2,34 +2,34 @@
 gsd_state_version: 1.0
 milestone: v6.0.0
 milestone_name: Config & Payload Validation Hardening
-status: milestone_complete
+status: completed
 stopped_at: Completed 58-05-PLAN.md
-last_updated: "2026-06-12T23:47:18.754Z"
-last_activity: 2026-06-12
+last_updated: "2026-06-13T06:39:14.711Z"
+last_activity: 2026-06-13
 progress:
   total_phases: 3
-  completed_phases: 4
+  completed_phases: 3
   total_plans: 11
   completed_plans: 11
-  percent: 133
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-08 — v4.0.0 started)
+See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 
-**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), and v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume).**
-**Current focus:** Phase 58 — orchestration-gate-integration-proof-close
+**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), and v6.0.0 (typed base-config seam + Gate A config-schema compatibility).**
+**Current focus:** Planning the next milestone (run `/gsd-new-milestone`).
 
 ## Current Position
 
-Milestone: v6.0.0 (Config & Payload Validation Hardening) — STARTED 2026-06-12. Breaking change to the BaseProcessor author contract (typed base-config seam) + startup config-schema compatibility gate (Gate A); complements the shipped WebAPI Gate B (`PayloadConfigSchemaValidator`). Phases continue at 56.
-Phase: 58
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-12
+Milestone: v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md. Breaking BaseProcessor author-contract change (typed base-config seam) + startup config-schema compatibility Gate A, complementing the shipped WebAPI Gate B.
+Phase: — (milestone complete)
+Plan: —
+Status: Milestone complete — ready for /gsd-new-milestone
+Last activity: 2026-06-13
 
 ### Roadmap Evolution
 
@@ -42,6 +42,8 @@ Last activity: 2026-06-12
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
 ## Deferred Items
+
+Re-affirmed at **v6.0.0 close (2026-06-13)** — 25 open artifacts surfaced by the pre-close audit are all carried over from prior shipped milestones (v3.x); none belong to v6.0.0 (phases 56–58, all clean: UAT/verification passed). Acknowledged and deferred again.
 
 Items acknowledged and deferred at milestone close on 2026-06-07 (audit `tech_debt`, 0 functional blockers — all consolidated into the passed Phase-39 close gate, or advisory/by-design):
 
