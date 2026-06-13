@@ -62,7 +62,7 @@ completed: 2026-06-13
 ## Accomplishments
 - **Authored `58-HUMAN-UAT.md`** (Task 1, committed `6faa169`) — the operator runbook cloning the proven 55-HUMAN-UAT structure with the v6/badconfig deltas: clean host build (host SourceHash == container hash, D-12), `--profile badconfig` bring-up of all five contract-changed services, `pwsh -File scripts/phase-58-close.ps1` from a clean redis keyspace, the Step-4 record block, the CFG-08 three-signal causation note, and a DoD that ticks CFG-08/CFG-09 only after a GREEN run.
 - **Live N=3 GREEN close gate PASSED (exit 0), recorded.** Triple-SHA BEFORE==AFTER held — psql `ed52e389…`, redis `e3b0c442…` (net-zero keyspace; only the excluded Sample liveness key `skp:f985ffcb-…`; no badconfig exclusion needed — Gate A withheld its liveness), rabbitmq `88000972…`. 568 identical `Passed` facts across all 3 runs (Smell-A guard held: Run 1 568/10m03s, Run 2 568/10m11s, Run 3 568/9m01s). `skp-dlq-1` depth 0, `skp:msg:*` slot-index 0.
-- **CFG-08 three-signal fired live** — `GateACompositionE2ETests.BadConfig_GateAIncompatible_ClashLogged_LivenessAbsent_Start422` GREEN: ES clash log (via `attributes.{OriginalFormat}` + `attributes.ProcessorId=b4277f0d-…` scoped to `service.name=processor-badconfig`) + `skp:{badId}` stably absent + orchestration-start 422.
+- **CFG-08 three-signal fired live** — `GateACompositionE2ETests.BadConfig_GateAIncompatible_ClashLogged_LivenessAbsent_Start422` GREEN: ES clash log (via `attributes.{OriginalFormat}` + `attributes.ProcessorId=bf95c4f6-…` scoped to `service.name=processor-badconfig`) + `skp:{badId}` stably absent + orchestration-start 422.
 - **CFG-09 fired live** — `GateACompositionE2ETests.SampleCompatible_GateAPasses_Healthy_Start204` GREEN: Gate-A-pass + `skp:{sampleId}` present + 204.
 - **CFG-08/CFG-09 ticked `[x]` in REQUIREMENTS.md** with live-proof references; traceability rows flipped Pending -> Complete. Runbook frontmatter flipped `status: pending` -> `passed`.
 
@@ -90,12 +90,23 @@ completed: 2026-06-13
 **1. [Rule 1 - Bug] Gate-A clash-log ES query searched the wrong field (match on body vs term on the structured attribute)**
 - **Found during:** Task 2 (the operator's live N=3 close run — the FIRST run RED'd at `GateACompositionE2ETests.cs:124`).
 - **Issue:** The CFG-08 clash-log assertion polled Elasticsearch with `match: body "Gate A incompatibility"`. The otel pipeline maps the log message under the nested `body.text` field (and the structured message-template / parameters under `attributes.*`), so a `match` on a flat `body` field never matched — the poll timed out and the test failed even though Gate A had correctly logged the incompatibility. This was a **test-convention bug, not a product bug**: Gate A's Error log at `ProcessorStartupOrchestrator.cs:187` fires correctly and the container booted (the whole point of CFG-08's "causation" signal — distinguishing "Gate A withheld health" from "container down").
-- **Fix:** Switched the ES poll to the proven structured-attribute query — a `term` on `attributes.{OriginalFormat}` (the message template otel preserves verbatim) plus `attributes.ProcessorId=b4277f0d-2f0f-4689-a4fc-112eb3cbb67d`, scoped to `service.name == processor-badconfig`. This is the same convention the rest of the suite uses for otel-log presence assertions.
+- **Fix:** Switched the ES poll to the proven structured-attribute query — a `term` on `attributes.{OriginalFormat}` (the message template otel preserves verbatim) plus `attributes.ProcessorId=bf95c4f6-06e8-4bef-8ed1-23b685294634`, scoped to `service.name == processor-badconfig`. This is the same convention the rest of the suite uses for otel-log presence assertions.
 - **Files modified:** `tests/.../GateACompositionE2ETests.cs`
 - **Verification:** After the fix, both GateAComposition tests verified 2/2 GREEN live, then the full N=3 close gate passed (exit 0, 568 facts x3, triple-SHA held).
 - **Committed in:** `bfa5a65` (fix(58-03): query Gate-A clash log via term on {OriginalFormat}, not match on body)
 
 ---
+
+## Addendum — Code-review `--all` fixes + close-gate re-proof (2026-06-13)
+
+After phase completion, the advisory code review (`58-REVIEW.md`: 0 critical / 1 warning / 6 info) was fixed in two passes:
+- **WR-01** (`38d5128`) — registered `skp-dlq-1` for purge-on-teardown in the SC2 data-gone path (behavior-preserving; makes the teardown self-healing).
+- **IN-02** (`6c9a326`) — promoted `BadConfigProcessor.ProcessAsync`'s documented dead-path log `LogInformation` → `LogWarning`.
+- **IN-03** (`b3781ae`) — close-script DLQ-depth parse hardened to a single split (mirrors the proven `ReadQueueDepthAsync`; `-1` sentinel preserved).
+- **IN-06** (`018fd7c`) — removed the retired GAP-49-8 `skp:*:{wfId}:*` composite-key sweep from `SampleRoundTripE2ETests` (aligns the capstone factory with its SC1/2/3 clones).
+- IN-01 moot (resolved by WR-01); IN-04/IN-05 by-design (no action).
+
+Because **IN-02 edits a `.cs` file folded into `Processor.BadConfig`'s embedded SourceHash**, the hash shifted (`4a0d44a3…` → `03eb170b…`) and the seeded procId changed (`b4277f0d…` → `bf95c4f6…`). The badconfig image was rebuilt and the **N=3 close gate was re-run to re-prove CFG-08/CFG-09 against the new identity** — PASS (exit 0): 568 facts ×3 (8m35s / 10m07s / 9m52s), triple-SHA BEFORE==AFTER held (psql `ed52e389…` / redis `e3b0c442…` net-zero / rabbitmq `88000972…`), `skp-dlq-1` depth 0, `skp:msg:*` 0, Release+Debug 0-warning. All invariant values are byte-identical to the pre-fix run (only the badId/SourceHash changed). The 58-HUMAN-UAT.md record block was updated to the new identity. (One earlier re-run attempt was aborted because its BEFORE snapshot caught the keeper's transient `skp:data:{guid}` BIT-probe key — a pre-existing close-gate flakiness, resolved by a full-stack restart + verified-clean BEFORE.)
 
 **Total deviations:** 1 auto-fixed (1 bug — Rule 1).
 **Impact on plan:** The fix was necessary for the CFG-08 assertion to observe the real (correct) Gate-A log; it corrected the test's ES query convention only. Gate A's product behavior was always correct. No scope creep, no product-code change.

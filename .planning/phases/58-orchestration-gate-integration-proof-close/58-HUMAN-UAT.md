@@ -218,13 +218,16 @@ run is the artifact that gates the CFG-08/CFG-09 tick.
 | `Passed` fact count (identical across all 3 runs)| `568` (Run 1 = 568, Run 2 = 568, Run 3 = 568) |
 | `skp-dlq-1` depth (== 0)                         | `0` |
 | `skp:msg:*` slot-array index count (== 0)        | `0` |
-| CFG-08 three-signal fired (clash log + absent liveness + 422) | `Yes` — `GateACompositionE2ETests.BadConfig_GateAIncompatible_ClashLogged_LivenessAbsent_Start422` GREEN (ES clash log via `attributes.{OriginalFormat}` + `attributes.ProcessorId=b4277f0d-2f0f-4689-a4fc-112eb3cbb67d` scoped to `service.name=processor-badconfig`; `skp:{badId}` stably absent; orchestration-start 422) |
+| CFG-08 three-signal fired (clash log + absent liveness + 422) | `Yes` — `GateACompositionE2ETests.BadConfig_GateAIncompatible_ClashLogged_LivenessAbsent_Start422` GREEN (ES clash log via `attributes.{OriginalFormat}` + `attributes.ProcessorId=bf95c4f6-06e8-4bef-8ed1-23b685294634` scoped to `service.name=processor-badconfig`; `skp:{badId}` stably absent; orchestration-start 422) |
 | CFG-09 (Gate-A-pass + `skp:{sampleId}` present + 204) | `Yes` — `GateACompositionE2ETests.SampleCompatible_GateAPasses_Healthy_Start204` GREEN (Gate-A-pass + `skp:{sampleId}` present + 204) |
 | Gate exit code (== 0)                            | `0` |
+| BadConfig embedded SourceHash / procId           | `03eb170b61cfeb5c30074336a61904ad01813f8b72fea7f9cb74b0e0d0e3ef66` / `bf95c4f6-06e8-4bef-8ed1-23b685294634` |
 | Run date                                         | `2026-06-13` |
 | Operator                                         | Claude Code (automated close run, user-authorized "verify and approve by yourself") |
 
-**Per-run cadence:** Run 1 Exit=0 Passed=568 (10m03s); Run 2 Exit=0 Passed=568 (10m11s); Run 3 Exit=0 Passed=568 (9m01s).
+**Per-run cadence:** Run 1 Exit=0 Passed=568 (8m35s); Run 2 Exit=0 Passed=568 (10m07s); Run 3 Exit=0 Passed=568 (9m52s).
+
+> **Re-proof note (2026-06-13):** This recorded GREEN run is the **re-run after the code-review `--all` fixes**. Finding IN-02 promoted the `BadConfig.ProcessAsync` dead-path log to `LogWarning`, which shifted `Processor.BadConfig`'s embedded SourceHash (`4a0d44a3…` → `03eb170b…`) and therefore its seeded procId (`b4277f0d…` → `bf95c4f6…`). The badconfig image was rebuilt and the N=3 gate re-run to re-prove CFG-08/CFG-09 against the new identity; all three SHA invariants, the 568-fact count, the DLQ depth, and the slot-index count are byte-identical to the pre-fix run (only the badId/SourceHash changed, as expected). The earlier pre-fix GREEN run (procId `b4277f0d…`) is superseded by this one.
 
 > The three SHA values + the `Passed` count + the `skp-dlq-1` depth + the `skp:msg:*` count mirror the
 > gate's operator-append line printed on PASS. If any run is RED or any SHA mismatches, capture the failure
