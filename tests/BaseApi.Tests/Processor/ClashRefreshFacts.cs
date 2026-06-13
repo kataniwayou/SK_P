@@ -247,6 +247,104 @@ public sealed class ClashRefreshFacts : IClassFixture<RedisFixture>
             $"L1 Current.Timestamp ({run.L1.Current.Timestamp.Ticks}) should advance past the first captured ({first.Timestamp.Ticks})");
     }
 
+    /// <summary>
+    /// Fact D (watchdog verdict UNCHANGED — D-03 / PROBE-02): take a REFRESHED <c>l1.Current</c> from a driven
+    /// clash run (a fresh interval=10 Unhealthy entry whose timestamp is the fake clock's now), feed it to a real
+    /// <see cref="LivenessWatchdogHealthCheck"/> over a stub provider returning that L1 + the SAME
+    /// <see cref="FakeTimeProvider"/>, and assert the verdict is <see cref="HealthStatus.Healthy"/> "live" — NOT
+    /// "liveness loop stale". A refreshed-but-Unhealthy replica reads LIVE; the config=Fail outcome rides in the
+    /// watchdog Data (status in the body, verdict stays live). This is the regression guard that the Plan-01 fix
+    /// does NOT re-introduce the false-restart bug (the watchdog code is asserted, never modified).
+    /// </summary>
+    [Fact]
+    public async Task RefreshedUnhealthy_L1_Reads_Live_On_Unmodified_Watchdog_With_ConfigFail_In_Data()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var procId = Guid.NewGuid();
+        var perInstance = L2ProjectionKeys.PerInstance(procId, InstanceId);
+        var index = L2ProjectionKeys.InstanceIndex(procId);
+        _redis.Track(perInstance);
+        _redis.Track(index);
+
+        await using var run = await DriveIntoRefreshLoopAsync(procId, perInstance, index, ct);
+
+        // Advance one refresh interval so the L1 record is a REFRESHED interval=10 Unhealthy entry whose
+        // timestamp == the fake clock's now (the loop stamps clock.GetUtcNow() on each re-SET).
+        run.Clock.Advance(TimeSpan.FromSeconds(10));
+        await Task.Delay(20, ct);
+
+        var refreshed = run.L1.Current;
+        Assert.NotNull(refreshed);
+        AssertRefreshEntry(refreshed!);   // fresh interval=10 Unhealthy / config=Fail
+
+        // Real watchdog over the refreshed L1 + the SAME clock (no extra advance ⇒ now == Timestamp ⇒ fresh).
+        var sp = BuildWatchdogProvider(refreshed!, run.Clock);
+        var result = await new LivenessWatchdogHealthCheck(sp).CheckHealthAsync(new HealthCheckContext(), ct);
+
+        // The verdict is unchanged (D-03): a refreshed-but-Unhealthy replica reads LIVE, NOT "loop stale".
+        Assert.Equal(HealthStatus.Healthy, result.Status);
+        Assert.Equal("live", result.Description);
+
+        // PROBE-02: the config=Fail outcome rides in the watchdog Data (status in the body, verdict stays live).
+        Assert.True(result.Data.ContainsKey("configSchema"));
+        Assert.Equal(SchemaOutcome.Fail, result.Data["configSchema"]);
+    }
+
+    /// <summary>
+    /// Fact E (clean shutdown — D-06): drive the clash path into the refresh loop, then cancel the
+    /// <c>stoppingToken</c> via <see cref="ProcessorStartupOrchestrator.StopAsync"/>. Assert StopAsync completes
+    /// without throwing within the CTS deadline AND the BackgroundService's <c>ExecuteTask</c> reaches a
+    /// completed, NON-faulted state — i.e. the refresh loop exited via the OperationCanceledException → return
+    /// path (D-06), not by leaking an exception.
+    /// </summary>
+    [Fact]
+    public async Task Refresh_Loop_Shuts_Down_Cleanly_On_Cancellation()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var procId = Guid.NewGuid();
+        var perInstance = L2ProjectionKeys.PerInstance(procId, InstanceId);
+        var index = L2ProjectionKeys.InstanceIndex(procId);
+        _redis.Track(perInstance);
+        _redis.Track(index);
+
+        var run = await DriveIntoRefreshLoopAsync(procId, perInstance, index, ct);
+
+        // Pump one interval so the loop is genuinely parked inside the Task.Delay(refreshPeriod, clock, ...).
+        run.Clock.Advance(TimeSpan.FromSeconds(10));
+        await Task.Delay(20, ct);
+
+        var executeTask = run.Orchestrator.ExecuteTask; // the BackgroundService loop task
+
+        // StopAsync cancels the stoppingToken — the refresh loop's OperationCanceledException catch returns.
+        var stop = run.Orchestrator.StopAsync(ct);
+        await stop;                       // completes within the CTS deadline (no hang)
+        Assert.True(stop.IsCompletedSuccessfully, "StopAsync should complete without throwing (clean shutdown, D-06)");
+
+        // The background task is completed and NOT faulted (the loop returned cleanly, no leaked exception).
+        Assert.NotNull(executeTask);
+        Assert.True(executeTask!.IsCompleted);
+        Assert.False(executeTask.IsFaulted, "the refresh loop must exit via cancellation → return, not a leaked exception (D-06)");
+
+        // Tear down the harness (orchestrator already stopped above).
+        await run.DisposeAsync();
+    }
+
+    /// <summary>
+    /// Mirrors <c>LivenessWatchdogHealthCheckTests.BuildProvider</c>: a stub <see cref="IServiceProvider"/>
+    /// returning the supplied refreshed L1 holder + the SAME <see cref="FakeTimeProvider"/> the refresh loop
+    /// stamped against, so the watchdog's freshness math runs on identical clock state (D-03).
+    /// </summary>
+    private static IServiceProvider BuildWatchdogProvider(ProcessorLivenessEntry current, FakeTimeProvider clock)
+    {
+        var state = Substitute.For<IProcessorLivenessState>();
+        state.Current.Returns(current);
+
+        var sp = Substitute.For<IServiceProvider>();
+        sp.GetService(typeof(IProcessorLivenessState)).Returns(state);
+        sp.GetService(typeof(TimeProvider)).Returns(clock);
+        return sp;
+    }
+
     private static async Task<ProcessorLivenessEntry> ReadEntryAsync(IDatabase db, RedisKey key, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
