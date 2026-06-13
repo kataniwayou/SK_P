@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using BaseConsole.Core.Health;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
@@ -296,6 +297,15 @@ public sealed class ProcessorStartupOrchestrator(
     /// </summary>
     private async Task WriteUnhealthyAsync(string? configOutcomeOverride = null)
     {
+        // IN-01: the override is contractually a SchemaOutcome const (not an arbitrary string) — any non-FAIL
+        // value silently passes Create's any-Fail check and would publish the replica Healthy. Guard the
+        // single internal caller's invariant in Debug builds without changing the (correct) runtime path.
+        Debug.Assert(
+            configOutcomeOverride is null
+                or SchemaOutcome.Success
+                or SchemaOutcome.Fail,
+            $"configOutcomeOverride must be a SchemaOutcome const, was '{configOutcomeOverride}'.");
+
         if (context.Id is not { } procId) return; // D-02: no processorId before Loop A resolves identity
 
         static string Outcome(Guid? id, string? def) =>
