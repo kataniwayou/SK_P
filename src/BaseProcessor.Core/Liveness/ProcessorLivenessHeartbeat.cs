@@ -97,10 +97,12 @@ public sealed class ProcessorLivenessHeartbeat : BackgroundService
                 {
                     // Resilience (D-11 / T-26-10): log-and-CONTINUE; never throw, never return. Belt-and-braces
                     // — the writer also catches, but a fault must never crash the host or stop the loop.
+                    // WR-02: log the gate-captured local `id` (the exact value the failed write used),
+                    // not the _context.Id property re-read — keeps the diagnostic and the write in lock-step.
                     _logger.LogWarning(
                         ex,
                         "Liveness heartbeat write failed for processor {ProcessorId}; will retry next beat",
-                        _context.Id);
+                        id);
                 }
             }
 
