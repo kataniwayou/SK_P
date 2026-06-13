@@ -434,8 +434,18 @@ try {
     # the E2E teardown — NO gate-side purge_queue — so a teardown regression surfaces here as depth>0.
     $depthRaw = docker exec sk-rabbitmq rabbitmqctl -q list_queues name messages | Out-String
     foreach ($q in @('skp-dlq-1')) {                          # ConsolidatedErrorTransportFilter.Dlq1 — sole surviving DLQ (Phase 53)
-        $line  = ($depthRaw -split "`n" | Where-Object { $_ -match "^\s*$([regex]::Escape($q))\s+\d+\s*$" })
-        $depth = if ($line -match "\s+(\d+)\s*$") { [int]$Matches[1] } else { -1 }
+        # IN-03: parse the rabbitmqctl row ONCE — split on tab/whitespace and index the message-count
+        # column (cols[1]), mirroring the proven ReadQueueDepthAsync (split on \t, take cols[1]). A
+        # no-match / parse-failure keeps the -1 sentinel so the $depth -ne 0 invariant treats it as a violation.
+        $depth = -1
+        foreach ($row in ($depthRaw -split "`n")) {
+            $cols = $row -split "\s+" | Where-Object { $_ -ne '' }
+            if ($cols.Length -ge 2 -and $cols[0] -eq $q) {
+                $parsed = 0
+                if ([int]::TryParse($cols[1], [ref]$parsed)) { $depth = $parsed }
+                break
+            }
+        }
         if ($depth -ne 0) {
             Write-Host "DLQ depth invariant VIOLATED: $q depth=$depth (expected 0)" -ForegroundColor Red
             $allGood = $false
