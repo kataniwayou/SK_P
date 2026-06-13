@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
-status: executing
-stopped_at: Completed 60-03-PLAN.md
-last_updated: "2026-06-13T11:36:00.615Z"
+status: verifying
+stopped_at: Completed 60-04-PLAN.md (Phase 60 complete)
+last_updated: "2026-06-13T12:08:32.960Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 5
-  percent: 83
+  completed_plans: 6
+  percent: 100
 ---
 
 # Project State
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
 Phase: 60 (dual-loop-writer-in-memory-l1-liveness-record) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-13
 
 > v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -679,7 +679,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [████████░░] 83%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -959,6 +959,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 60 P01 | 53min | 2 tasks | 5 files |
 | Phase 60 P60-02 | 3min | 2 tasks | 2 files |
 | Phase 60-dual-loop-writer-in-memory-l1-liveness-record P03 | 9min | 2 tasks | 3 files |
+| Phase 60 P60-04 | 28min | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -1376,6 +1377,8 @@ Recent decisions affecting current work:
 - 60-02: ProcessorLivenessWriter is public sealed so AddSingleton + AddBaseProcessorFacts descriptor assert work cross-assembly without InternalsVisibleTo
 - Heartbeat (60-03) ctor takes a caller-resolved instanceId (DI passes InstanceId.Resolve(); tests pin a deterministic one) so facts can assert the exact PerInstance key
 - Removed LivenessReaderRoundTripFacts (60-03): D-05 severs the heartbeat->flat-key->old-validator loop; validator keeps mock-based coverage in ProcessorLivenessFacts; per-instance round-trip lands with the Phase-61 reader swap
+- Phase 60-04: orchestrator writes inline unhealthy per resolution iteration via the shared writer; pass/skip pre-bind write dropped (would publish Healthy before the bind — EXEC-01/D-04); Gate-A clash forces configOutcome=Fail
+- Phase 60-04: L1 holder + writer registered singletons; orchestrator + heartbeat as concrete singletons via ActivatorUtilities factory (instanceId injected once) surfaced as IHostedService — DI gap closed
 
 ### Roadmap Milestone Log
 
@@ -1479,8 +1482,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T11:35:59.660Z
-Stopped at: Completed 60-03-PLAN.md
+Last session: 2026-06-13T12:08:24.093Z
+Stopped at: Completed 60-04-PLAN.md (Phase 60 complete)
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.

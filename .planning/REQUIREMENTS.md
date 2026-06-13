@@ -25,10 +25,12 @@ Make processor liveness multi-replica-accurate and self-healing: L2 reflects eve
 **: The liveness `status` is two-valued (`healthy` / `unhealthy`).
 - [x] **STATE-02
 **: Each liveness entry carries a per-schema `summary` `{ inputSchema, outputSchema, configSchema ∈ SUCCESS | FAIL }`; any `FAIL` ⇒ `unhealthy`. `configSchema` reuses the v6.0.0 Gate A startup config-compat outcome; a null schema id is treated as not-failing (null-is-skip).
-- [ ] **STATE-03**: A starting or failed replica **writes** its `unhealthy` entry — L2 reflects a restarting replica as `unhealthy`, never absent (removes the current "only a Healthy replica writes" rule).
+- [x] **STATE-03
+**: A starting or failed replica **writes** its `unhealthy` entry — L2 reflects a restarting replica as `unhealthy`, never absent (removes the current "only a Healthy replica writes" rule).
 
 ### Dual-Loop Writer (LOOP)
-- [ ] **LOOP-01**: The startup loop writes the replica's liveness entry (to both L2 and L1) on every iteration, with `status`/`summary` reflecting current schema-resolution progress (`unhealthy` until identity + all non-null schemas resolve).
+- [x] **LOOP-01
+**: The startup loop writes the replica's liveness entry (to both L2 and L1) on every iteration, with `status`/`summary` reflecting current schema-resolution progress (`unhealthy` until identity + all non-null schemas resolve).
 - [x] **LOOP-02
 **: On startup success the processor starts the heartbeat loop; each heartbeat iteration refreshes the entry's timestamp (to both L2 and L1). Health is frozen `healthy` once the heartbeat loop starts — monotonic within a process, reset on restart (no mid-life re-validation).
 - [x] **LOOP-03
