@@ -40,7 +40,9 @@
   3. The per-instance liveness value is liveness-only — it carries `status ∈ {healthy, unhealthy}` and a `summary` `{inputSchema, outputSchema, configSchema}` each `SUCCESS|FAIL` (any FAIL ⇒ `status=unhealthy`; null schema id ⇒ not-failing); `inputDefinition`/`outputDefinition` no longer appear in the L2 value (a serialization/shape test confirms their absence).
   4. The `configSchema` summary field is derived from the v6.0.0 Gate A startup config-compat outcome (not recomputed), and a null `ConfigSchemaId` is treated as not-failing (null-is-skip), consistent with input/output schemas.
   5. Solution builds 0-warning (Release + Debug); the hermetic suite is green against the reshaped contract.
-**Plans**: TBD
+**Plans**: 2 plans (Wave 1, parallel - zero file overlap)
+- [ ] 59-01-PLAN.md - Value contract: LivenessStatus.Unhealthy + SchemaOutcome SoT + ProcessorLivenessEntry record + Create factory + shape/invariant tests (KEY-04, STATE-01, STATE-02)
+- [ ] 59-02-PLAN.md - Keyspace + identity: PerInstance/InstanceIndex key builders + shared InstanceId.Resolve() SoT + golden/resolver tests (KEY-01, KEY-02, KEY-03)
 
 #### Phase 60: Dual-Loop Writer + In-Memory L1 Liveness Record
 **Goal**: The processor's startup loop and heartbeat loop **both** write the per-instance liveness entry to L2 **and** update an in-memory **L1 liveness record** on every iteration, and the startup loop writes its entry as `unhealthy` from its first iteration (so a starting/failed replica is visible in L2 as `unhealthy`, never absent). Each replica `SADD`s its own `instanceId` to the instance-index SET on its first liveness write; each per-instance key carries a TTL (the source-of-truth liveness signal). Liveness intervals split into `startup_interval` (startup cadence) and `heartbeat_interval` (heartbeat cadence), each entry records its active interval, and health is **frozen `healthy`** once the heartbeat loop starts (timestamp-only refresh thereafter — monotonic within a process, reset on restart). Builds on the Phase 59 keyspace/value shape.
