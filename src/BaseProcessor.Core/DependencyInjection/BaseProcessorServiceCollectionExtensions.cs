@@ -1,5 +1,6 @@
 using BaseConsole.Core.Configuration;
 using BaseConsole.Core.DependencyInjection;
+using BaseConsole.Core.Health;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
 using BaseProcessor.Core.Liveness;
@@ -140,6 +141,18 @@ public static class BaseProcessorServiceCollectionExtensions
         //     orchestrator (unhealthy writer) and the heartbeat (healthy writer) every iteration, read by the
         //     Phase-61 self-watchdog probe. Singleton — one volatile-ref-swap record per replica.
         services.AddSingleton<IProcessorLivenessState, ProcessorLivenessState>();
+
+        // 6a''. Phase 61 (PROBE-01/02 / D-05): surface the self-watchdog on the embedded /health/live via the
+        //       generic BaseConsole.Core descriptor seam. The factory bridges the OUTER provider so the check
+        //       resolves the singleton IProcessorLivenessState (6a above) + TimeProvider (step 4) AT CHECK TIME
+        //       (never captured at registration — mirrors BusReadyHealthCheck(_outer), RESEARCH Pitfall 4). The
+        //       "live" tag means the UNCHANGED /health/live Predicate picks it up automatically; it arrives
+        //       transitively via AddBaseProcessor (Processor.* Program.cs do no per-app health wiring).
+        //       Orchestrator/Keeper register NO descriptor, so their /health/live stays self-only (D-01).
+        services.AddSingleton(new HealthCheckDescriptor(
+            Name: "liveness-watchdog",
+            Tags: new[] { "live" },
+            Factory: outer => new LivenessWatchdogHealthCheck(outer)));
 
         // 6a'. Phase 60 (LOOP-03/04 / D-09/11/13/15): the single shared liveness write path both loops call
         //      (L2 SET(perInstance, derived TTL) + idempotent index SADD + unconditional L1 Update +
