@@ -483,21 +483,23 @@ Two test families exist and both are reused:
 | A3 | The L1 holder should be `Update`d even when the L2 write faults (the in-process watchdog should reflect latest truth) | Code Examples / Open Q3 | MEDIUM — affects what the Phase-61 probe sees on a Redis outage; a reasonable alternative is L1-mirrors-L2-success. Planner/discuss should confirm. |
 | A4 | The shared internal writer is preferred over two private helpers | multiple | LOW — CONTEXT explicitly leaves this to discretion ("encouraged but not mandated"); either is acceptable. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Pre-Gate-A `configSchema` outcome convention (A1).**
+> All three resolved during planning (2026-06-13); resolutions encoded in the plans as noted.
+
+1. **Pre-Gate-A `configSchema` outcome convention (A1).** — **RESOLVED** (60-04-PLAN.md objective + `WriteUnhealthyAsync` action)
    - What we know: `configSchema` = Gate A outcome (D-04), but Gate A runs after Loop B; `Create` treats null-config as Success. During the resolution window before Gate A, `ConfigDefinition` may be null (unresolved) or resolved-but-not-yet-Gate-A-checked.
    - What's unclear: whether a non-null-but-unresolved config id should surface as `FAIL` (treated like input/output) or be deferred.
-   - Recommendation: treat config like input/output during startup (`Fail` if non-null & unresolved, `Success` if null), and after Gate A use the actual Gate A outcome. Status is `Unhealthy` throughout startup regardless, so this only affects the diagnostic field. Confirm in planning.
+   - **Resolution:** treat config like input/output during startup (`Fail` if non-null & unresolved, `Success` if null), and after Gate A use the actual Gate A outcome. Status is `Unhealthy` throughout startup regardless, so this only affects the diagnostic field.
 
-2. **L1 update ordering on Redis fault (A3).**
+2. **L1 update ordering on Redis fault (A3).** — **RESOLVED** (60-02-PLAN.md objective + `key_links`)
    - What we know: the probe (Phase 61) reads L1 to detect a silently-crashed loop.
    - What's unclear: should L1 reflect the latest *attempted* write (update L1 unconditionally) or the latest *successful* L2 write (update L1 only after SET succeeds)?
-   - Recommendation: update L1 unconditionally (the watchdog wants in-process liveness, not Redis reachability). Surface to discuss-phase if the probe semantics in Phase 61 depend on it.
+   - **Resolution:** update L1 **unconditionally** (before the L2 try block) — the watchdog wants in-process liveness, not Redis reachability.
 
-3. **Heartbeat ctor growth vs shared writer injection.**
+3. **Heartbeat ctor growth vs shared writer injection.** — **RESOLVED** (60-02/03/04 — single injected `ProcessorLivenessWriter`)
    - What we know: routing both loops through one injected writer is cleanest (Pitfall 6).
-   - Recommendation: inject the shared writer + instanceId into both `BackgroundService`s; the writer owns Redis + L1 holder + options. Minimizes per-loop ctor churn and guarantees identical disciplines.
+   - **Resolution:** inject the shared `ProcessorLivenessWriter` + instanceId into both `BackgroundService`s; the writer owns Redis + L1 holder + options. Minimizes per-loop ctor churn and guarantees identical disciplines.
 
 ## Sources
 
