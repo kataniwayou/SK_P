@@ -135,6 +135,13 @@ public sealed class ProcessorStartupOrchestrator(
             {
                 logger.LogWarning("Identity request timed out; retrying in {Delay}", delay);
             }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // WR-01: boot-before-register — a transient bus/transport fault (broker reconnect,
+                // MassTransitException, connection drop) must NOT fault this BackgroundService and take the
+                // host down. Re-loop on backoff, preserving the shutdown-cancellation return path above.
+                logger.LogWarning(ex, "Identity request faulted transiently; retrying in {Delay}", delay);
+            }
 
             var next = await BackoffAsync(delay, cap, stoppingToken);
             if (next is not { } d) return; // shutdown requested mid-backoff
@@ -181,6 +188,13 @@ public sealed class ProcessorStartupOrchestrator(
                 catch (RequestTimeoutException)
                 {
                     logger.LogWarning("Schema request for {SchemaId} timed out; retrying in {Delay}", id, delay);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    // WR-01: boot-before-register — a transient bus/transport fault must NOT fault this
+                    // BackgroundService and take the host down. Re-loop on backoff, preserving the
+                    // shutdown-cancellation return path below.
+                    logger.LogWarning(ex, "Schema request for {SchemaId} faulted transiently; retrying in {Delay}", id, delay);
                 }
 
                 var next = await BackoffAsync(delay, cap, stoppingToken);
