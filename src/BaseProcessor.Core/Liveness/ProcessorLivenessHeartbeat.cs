@@ -1,111 +1,104 @@
-using System.Text.Json;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
+using Messaging.Contracts.Identity;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using StackExchange.Redis;
 
 namespace BaseProcessor.Core.Liveness;
 
 /// <summary>
-/// The only-when-Healthy liveness heartbeat (LIVE-01..06). A <see cref="BackgroundService"/> that, every
-/// <see cref="ProcessorLivenessOptions.IntervalSeconds"/>, writes/refreshes the FROZEN
-/// <see cref="ProcessorProjection"/> to the shared <c>skp:{processorId}</c> key (via
-/// <see cref="L2ProjectionKeys.Processor(System.Guid)"/>) with a sliding TTL — so the unchanged v3.4.0
-/// <c>ProcessorLivenessValidator</c> reads the processor as live.
+/// The only-when-Healthy liveness heartbeat (LIVE-01..06 / LOOP-02). A <see cref="BackgroundService"/>
+/// that, every <see cref="ProcessorLivenessOptions.IntervalSeconds"/>, builds a FROZEN-Healthy
+/// <see cref="ProcessorLivenessEntry"/> (all-SUCCESS summary => <see cref="LivenessStatus.Healthy"/>,
+/// active interval = <see cref="ProcessorLivenessOptions.IntervalSeconds"/>/10) and routes it through the
+/// SHARED <see cref="ProcessorLivenessWriter"/> (Plan 02) — so the L2 per-instance SET, the index SADD, the
+/// L1 Update, and the derived TTL all come for free and match the startup writer (the two loops cannot drift).
 ///
 /// <para>
-/// <b>Healthy gate (LIVE-04 / T-26-09):</b> a beat writes ONLY when
-/// <see cref="IProcessorContext.IsHealthy"/> and the Id is populated. A not-yet-Healthy replica no-ops the
-/// tick (writes nothing) so the orchestrator sees it as <c>absent</c>.
+/// <b>Healthy gate (LIVE-04 / D-14 / T-26-09 / T-60-08):</b> a beat writes ONLY when
+/// <see cref="IProcessorContext.IsHealthy"/> and the Id is populated. The gate is the sole authorization
+/// signal for the <c>healthy</c> write; a not-yet-Healthy replica no-ops the tick (writes nothing) so the
+/// gate reader sees it as <c>absent</c>.
 /// </para>
 /// <para>
-/// <b>Sliding SET (LIVE-02/06):</b> each beat refreshes the timestamp from the injected
-/// <see cref="TimeProvider"/> and re-applies the configured TTL via a blind whole-value
-/// <c>StringSetAsync(..., expiry: TtlSeconds)</c> — last-write-wins, NO lock / read-modify-write.
+/// <b>Frozen-healthy (D-14 / WR-03 / T-60-11):</b> the beat does NOT re-read context definition props on the
+/// heartbeat thread — it feeds a fixed all-SUCCESS summary into <see cref="ProcessorLivenessEntry.Create"/>,
+/// which derives <see cref="LivenessStatus.Healthy"/>. No cross-thread stale read.
 /// </para>
 /// <para>
-/// <b>Interval in SECONDS (LIVE-03):</b> the written <c>liveness.interval</c> equals
-/// <see cref="ProcessorLivenessOptions.IntervalSeconds"/> (seconds, NOT milliseconds) so the reader's
-/// <c>timestamp + interval*2</c> staleness math holds.
+/// <b>Per-instance contract (D-05 / Pitfall 5 / T-60-10):</b> the OLD flat per-processor projection /
+/// flat-liveness-key write is GONE — there is NO dual-write. The writer owns the
+/// per-instance key (<c>skp:proc:{id}:{instanceId}</c>), its index SET, and the derived TTL
+/// (<c>max(10*2, Ttl-floor) = 30</c>, D-13 / T-60-09 — the key always outlives the inter-beat gap).
 /// </para>
 /// <para>
-/// <b>Resilience (D-11 / T-26-10):</b> a Redis fault on a beat is logged-and-continued — the host never
-/// crashes and the loop keeps beating (the soft-dep multiplexer is built with <c>abortConnect=false</c>).
+/// <b>Resilience (D-11 / T-26-10):</b> a Redis fault on a beat is logged-and-continued here (belt-and-braces;
+/// the writer also catches) — the host never crashes and the loop keeps beating.
 /// </para>
 /// </summary>
 public sealed class ProcessorLivenessHeartbeat : BackgroundService
 {
-    private readonly IConnectionMultiplexer _redis;
+    private readonly ProcessorLivenessWriter _writer;
     private readonly IProcessorContext _context;
     private readonly ProcessorLivenessOptions _options;
     private readonly TimeProvider _clock;
     private readonly ILogger<ProcessorLivenessHeartbeat> _logger;
+    private readonly string _instanceId;
 
     public ProcessorLivenessHeartbeat(
-        IConnectionMultiplexer redis,
+        ProcessorLivenessWriter writer,
         IProcessorContext context,
         IOptions<ProcessorLivenessOptions> options,
         TimeProvider clock,
         ILogger<ProcessorLivenessHeartbeat> logger)
     {
-        _redis   = redis ?? throw new ArgumentNullException(nameof(redis));
+        _writer  = writer ?? throw new ArgumentNullException(nameof(writer));
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _clock   = clock ?? throw new ArgumentNullException(nameof(clock));
         _logger  = logger ?? throw new ArgumentNullException(nameof(logger));
+        // KEY-03: resolve the per-replica instance identity ONCE at ctor — available from boot.
+        _instanceId = InstanceId.Resolve();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var opts = _options;
-        var period = TimeSpan.FromSeconds(opts.IntervalSeconds);
+        var period = TimeSpan.FromSeconds(_options.IntervalSeconds);
 
         while (!stoppingToken.IsCancellationRequested)
         {
-            // Healthy gate (LIVE-04 / T-26-09) — only a Healthy, identified replica writes; a
-            // not-yet-Healthy replica no-ops this tick (it does NOT wait — a no-op tick is correct).
+            // Healthy gate (LIVE-04 / D-14 / T-26-09) — only a Healthy, identified replica writes the
+            // healthy value; a not-yet-Healthy replica no-ops this tick (it does NOT wait — a no-op tick
+            // is correct).
             if (_context.IsHealthy && _context.Id is { } id)
             {
                 try
                 {
-                    // SAME clock the reader uses — mirrors RedisProjectionWriter.cs:60 and the
-                    // ProcessorLivenessValidator `now` read (Pitfall 2).
+                    // SAME clock the reader uses (Pitfall 2).
                     var now = _clock.GetUtcNow().UtcDateTime;
 
-                    // REUSE the frozen records (D-09); interval written in SECONDS (LIVE-03, NOT
-                    // milliseconds); status is the shared LivenessStatus.Healthy const (never a literal).
-                    var projection = new ProcessorProjection(
-                        _context.InputDefinition,
-                        _context.OutputDefinition,
-                        new LivenessProjection(now, opts.IntervalSeconds, LivenessStatus.Healthy));
+                    // Frozen healthy (D-14): all outcomes SUCCESS => Create derives Healthy. Does NOT
+                    // re-read context definition props (WR-03 / T-60-11). Active interval = heartbeat
+                    // IntervalSeconds (D-12) — baked into the entry so the writer derives TTL = max(10*2, 30).
+                    var entry = ProcessorLivenessEntry.Create(
+                        inputOutcome:  SchemaOutcome.Success,
+                        outputOutcome: SchemaOutcome.Success,
+                        configOutcome: SchemaOutcome.Success,
+                        timestamp:     now,
+                        interval:      _options.IntervalSeconds);
 
-                    var json = JsonSerializer.Serialize(projection);
-                    var db = _redis.GetDatabase();
-
-                    // Sliding SET..EX (LIVE-02): blind whole-value SET, no lock/RMW (LIVE-06). The key
-                    // is built via L2ProjectionKeys.Processor — never a literal.
-                    //
-                    // BY DESIGN: stoppingToken is deliberately NOT threaded into the write (StringSetAsync
-                    // has no CancellationToken overload). Shutdown does not cancel an in-flight write — a
-                    // hung-but-not-dead Redis bounds shutdown latency by StackExchange.Redis' own command
-                    // timeout, NOT by stoppingToken. The token is observed only at the Task.Delay below.
-                    // This keeps the D-11 log-and-continue contract simple (no OperationCanceledException
-                    // disambiguation in the catch); the command timeout is the intended upper bound.
-                    await db.StringSetAsync(
-                        L2ProjectionKeys.Processor(id),
-                        json,
-                        expiry: TimeSpan.FromSeconds(opts.TtlSeconds));
+                    // Shared writer (Plan 02): SET(perInstance, ttl=max(20,30)=30) + idempotent SADD + L1 Update.
+                    await _writer.WriteAsync(id, _instanceId, entry);
                 }
                 catch (Exception ex)
                 {
-                    // Resilience (D-11 / T-26-10): log-and-CONTINUE; never throw, never return. A dead
-                    // Redis must not crash the host (soft-dep abortConnect=false).
+                    // Resilience (D-11 / T-26-10): log-and-CONTINUE; never throw, never return. Belt-and-braces
+                    // — the writer also catches, but a fault must never crash the host or stop the loop.
                     _logger.LogWarning(
                         ex,
-                        "Liveness write failed for processor {ProcessorId}; will retry next beat",
+                        "Liveness heartbeat write failed for processor {ProcessorId}; will retry next beat",
                         _context.Id);
                 }
             }
