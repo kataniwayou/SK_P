@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
-status: defining_requirements
-stopped_at: Milestone v7.0.0 started (defining requirements)
-last_updated: "2026-06-13T00:00:00.000Z"
-last_activity: 2026-06-13
+status: planning
+stopped_at: Phase 59 context gathered
+last_updated: "2026-06-13T07:59:32.430Z"
+last_activity: 2026-06-13 — v7.0.0 roadmap created (4 phases, 59-62)
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 100
 ---
 
 # Project State
@@ -1465,9 +1465,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T23:47:09.056Z
-Stopped at: Completed 58-05-PLAN.md
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 59 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
