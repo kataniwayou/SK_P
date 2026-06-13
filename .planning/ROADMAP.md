@@ -84,7 +84,11 @@
   1. RealStack E2E: two replicas of one processor each write a distinct per-instance key `skp:proc:{processorId}:{instanceId}` and `SADD` themselves to the instance-index SET; a starting/failed replica is observable in L2 as `unhealthy` (never absent), and a dead replica's key TTL-expires + is lazily `SREM`'d. (TEST-01)
   2. RealStack E2E: orchestration start admits a workflow when **≥1** required-processor replica is healthy-and-fresh (even with an unhealthy/stale sibling) and is blocked **422 + RFC 7807** when no replica qualifies; the self-watchdog probe returns `unhealthy` + the per-schema `summary` when the in-memory L1 record is stale beyond the active-interval ×2 grace. (TEST-02)
   3. The milestone close gate holds — N=3 consecutive GREEN + triple-SHA (psql `\l` / redis-cli `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER net-zero, DLQ depth 0 — at Release + Debug 0-warning. (TEST-03)
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
+Plans:
+- [ ] 62-01-PLAN.md — compose processor-sample → deploy.replicas:2 (D-01) + retag SC1/SC2/SC3 + GateAComposition to Phase 62 (D-10) (TEST-01, TEST-03)
+- [ ] 62-02-PLAN.md — fabricated-key gate-verdict RealStack tests (≥1-healthy admit / 422-when-none / malformed→422) + SeedFabricatedLivenessAsync helper (D-04) (TEST-01, TEST-02)
+- [ ] 62-03-PLAN.md — clone phase-62-close.ps1 (D-09 ^skp:proc: prefix exclusion) + 62-HUMAN-UAT.md runbook + autonomous build gate; operator-gated live N=3×GREEN close run (D-08/12/14/15) (TEST-01, TEST-02, TEST-03)
 
 ## ✅ v6.0.0 Config & Payload Validation Hardening (SHIPPED 2026-06-13)
 
