@@ -29,7 +29,8 @@ Make processor liveness multi-replica-accurate and self-healing: L2 reflects eve
 
 ### Dual-Loop Writer (LOOP)
 - [ ] **LOOP-01**: The startup loop writes the replica's liveness entry (to both L2 and L1) on every iteration, with `status`/`summary` reflecting current schema-resolution progress (`unhealthy` until identity + all non-null schemas resolve).
-- [ ] **LOOP-02**: On startup success the processor starts the heartbeat loop; each heartbeat iteration refreshes the entry's timestamp (to both L2 and L1). Health is frozen `healthy` once the heartbeat loop starts — monotonic within a process, reset on restart (no mid-life re-validation).
+- [x] **LOOP-02
+**: On startup success the processor starts the heartbeat loop; each heartbeat iteration refreshes the entry's timestamp (to both L2 and L1). Health is frozen `healthy` once the heartbeat loop starts — monotonic within a process, reset on restart (no mid-life re-validation).
 - [x] **LOOP-03
 **: Liveness intervals are split into `startup_interval` (startup-loop cadence) and `heartbeat_interval` (heartbeat cadence); each entry records its active interval so downstream staleness math adapts. The existing `Ttl` knob is retained.
 - [x] **LOOP-04
