@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
-status: verifying
+status: ready_to_plan
 stopped_at: Completed 60-04-PLAN.md (Phase 60 complete)
 last_updated: "2026-06-13T12:08:32.960Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
   completed_plans: 6
-  percent: 100
+  percent: 75
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 ## Current Position
 
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
-Phase: 60 (dual-loop-writer-in-memory-l1-liveness-record) — EXECUTING
-Plan: 4 of 4
-Status: Phase complete — ready for verification
+Phase: 61
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-13
 
 > v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -708,7 +708,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 201
+- Total plans completed: 205
 - Average duration: —
 - Total execution time: —
 
@@ -771,6 +771,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 57 | 4 | - | - |
 | 58 | 5 | - | - |
 | 59 | 2 | - | - |
+| 60 | 4 | - | - |
 
 **Recent Trend:**
 
