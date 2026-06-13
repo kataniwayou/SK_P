@@ -1,17 +1,17 @@
 ---
 gsd_state_version: 1.0
-milestone: v6.0.0
-milestone_name: Config & Payload Validation Hardening
-status: completed
-stopped_at: Completed 58-05-PLAN.md
-last_updated: "2026-06-13T06:39:14.711Z"
+milestone: v7.0.0
+milestone_name: Per-Replica Processor Liveness & Self-Watchdog
+status: defining_requirements
+stopped_at: Milestone v7.0.0 started (defining requirements)
+last_updated: "2026-06-13T00:00:00.000Z"
 last_activity: 2026-06-13
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 11
-  completed_plans: 11
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -21,15 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), and v6.0.0 (typed base-config seam + Gate A config-schema compatibility).**
-**Current focus:** Planning the next milestone (run `/gsd-new-milestone`).
+**Current focus:** v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — defining requirements (`/gsd-new-milestone` in progress).
 
 ## Current Position
 
-Milestone: v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md. Breaking BaseProcessor author-contract change (typed base-config seam) + startup config-schema compatibility Gate A, complementing the shipped WebAPI Gate B.
-Phase: — (milestone complete)
+Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
+Phase: Not started (defining requirements)
 Plan: —
-Status: Milestone complete — ready for /gsd-new-milestone
-Last activity: 2026-06-13
+Status: Defining requirements
+Last activity: 2026-06-13 — Milestone v7.0.0 started
+
+> v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
 ### Roadmap Evolution
 
