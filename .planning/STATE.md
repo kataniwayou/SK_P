@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
-status: executing
-stopped_at: "62-03-PLAN.md Tasks 1-3 complete; PAUSED at Task 4 blocking operator checkpoint (live N=3 GREEN close run, D-15)"
-last_updated: "2026-06-13T16:40:03.521Z"
+status: paused
+stopped_at: Phase 62.1 context gathered
+last_updated: "2026-06-13T20:36:36.111Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 12
-  completed_plans: 11
-  percent: 92
+  completed_plans: 12
+  percent: 100
 ---
 
 # Project State
@@ -35,6 +35,7 @@ Last activity: 2026-06-13
 
 ### Roadmap Evolution
 
+- 2026-06-13 — **Phase 62.1 inserted** after Phase 62 (URGENT, decimal): `decouple-liveness-refresh-from-ishealthy`. Fixes the Phase-60 liveness-refresh gap **G-62-01** surfaced by the Phase-62 live close run — liveness-timestamp refresh is `IsHealthy`-gated, so an alive-but-unhealthy (Gate-A-clash) replica stops being refreshed → its L2 gate key expires (absent, not observably Unhealthy) and its L1 watchdog timestamp goes stale (false "liveness loop stale" → needless K8s restart). Make refresh **identity-gated** (write current Healthy/Unhealthy status every interval), then re-run the Phase-62 close gate + the four lifecycle proofs to seal v7.0.0. TEST-01/02/03 stay unticked until then. Root cause + fix: `.planning/phases/62-live-proof-close-gate/62-GAP-liveness-refresh-coupling.md`.
 - 2026-06-13 — **v7.0.0 roadmap created** — 4 phases (59-62), standard granularity, 17/17 functional requirements mapped (no orphans, no duplicates). Dependency-driven order (locked design): **59** Per-Instance L2 Keyspace & Two-State Liveness Value (KEY-01/02/03/04 per-instance key + instance-index SET + podId resolution + definitions-dropped, STATE-01/02 two-state status + per-schema summary — the prerequisite keyspace/value reshape) → **60** Dual-Loop Writer + In-Memory L1 Liveness Record (STATE-03 unhealthy-is-written, LOOP-01/02/03/04 startup+heartbeat write to L2+L1 each iteration / SADD instanceId / split startup+heartbeat intervals / per-key TTL=source-of-truth / frozen-healthy, L1-01 in-memory record) → **61** ≥1-Healthy Orchestration-Start Gate + Self-Watchdog Probe (GATE-01/02/03 SMEMBERS→GET-each→≥1 healthy-and-fresh→422 + lazy-SREM, PROBE-01/02 L1-staleness watchdog + summary in body) → **62** Live Proof & Close Gate (capstone: RealStack E2E of the reshaped per-replica liveness + triple-SHA psql/redis/rabbitmq net-zero N=3 GREEN; a 3-req TEST-01/02/03 live-proof set introduced for its criteria). Builds on v6.0.0 Gate A (its outcome → the `configSchema` summary field). Next: `/gsd-plan-phase 59`.
 - 2026-06-12 — **v6.0.0 roadmap created** — 3 phases (56-58), standard granularity, 10/10 CFG requirements mapped (no orphans). Dependency-driven order: **56** Typed Base-Config Seam (CFG-01/02 — the prerequisite seam) → **57** Startup Config-Schema Fetch + Gate A (CFG-03/04 fetch, CFG-05/06/07 Gate A, CFG-10 TOCTOU folded in — all touch the startup config-schema definition) → **58** Orchestration-Gate Integration Proof & Close (CFG-08/09 — live 422-block + compatible-starts-normally, then the close gate). Three open decisions (Gate A direction/fidelity, terminal-unhealthy mechanics, TOCTOU policy) deferred to /gsd-spec-phase. Next: `/gsd-plan-phase 56`.
 - 2026-06-12 — **Milestone v6.0.0 started** (Config & Payload Validation Hardening): base config-class seam on `BaseProcessor` (authors inherit a typed config; the framework deserializes the dispatch payload into it, replacing the raw-string seam) + startup config-schema fetch (Loop B also reads `ConfigSchemaId`, lifting the D-05 carve-out) + **Gate A** (config-type↔config-schema compat → withhold `MarkHealthy` on mismatch → no L2 liveness → orchestration-start `ProcessorLivenessValidator` blocks 422). Null `ConfigSchemaId` skips Gate A (null-is-skip). Complements the shipped WebAPI **Gate B** (`PayloadConfigSchemaValidator`). v5.0.0 (phases 50-55) shipped/complete. Breaking author-contract change → major bump. Phases continue at **56**.
@@ -1497,9 +1498,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T16:39:56.664Z
-Stopped at: Completed 62-02-PLAN.md
-Resume file: None
+Last session: --stopped-at
+Stopped at: Phase 62.1 context gathered
+Resume file: --resume-file
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
