@@ -234,16 +234,12 @@ public static class BaseProcessorServiceCollectionExtensions
     /// carry the identical value. The shared <c>AddBaseConsoleObservability</c> resolves the id once but
     /// does not expose it, so this is a documented capture using the IDENTICAL env precedence.
     /// <para>
-    /// DRIFT GUARD (IN-03) — this precedence expression is now mirrored in FOUR places that MUST change
-    /// in lock-step: (1) <c>BaseConsole.Core/DependencyInjection/BaseConsoleObservabilityExtensions.cs</c>
-    /// (<c>ResolveInstanceId</c>), (2) <c>BaseApi.Core/DependencyInjection/ObservabilityServiceCollectionExtensions.cs</c>
-    /// (<c>ResolveInstanceId</c>), (3) the hermetic mirror <c>tests/BaseApi.Tests/Observability/ResolveInstanceIdFacts.cs</c>
-    /// (<c>Resolve</c>), and (4) HERE. Edit all four together.
+    /// IN-03 — this holder copy now DELEGATES to the Phase-60 single source of truth
+    /// <see cref="InstanceId.Resolve"/> (the same SoT this class already calls at the DI site), so the
+    /// precedence lives in ONE implementation. The remaining OTel observability copies in
+    /// <c>BaseConsole.Core</c> / <c>BaseApi.Core</c> (and their hermetic mirror) stay as-is for now; they
+    /// remain byte-identical to <see cref="InstanceId.Resolve"/>.
     /// </para>
     /// </summary>
-    private static string ResolveInstanceIdForHolder() =>
-        Environment.GetEnvironmentVariable("POD_NAME")
-        ?? Environment.GetEnvironmentVariable("HOSTNAME")
-        ?? Environment.MachineName
-        ?? Guid.NewGuid().ToString("N");   // IN-03: mirrors the 3 existing copies — keep in lock-step
+    private static string ResolveInstanceIdForHolder() => InstanceId.Resolve();
 }
