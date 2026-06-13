@@ -57,7 +57,10 @@ internal sealed class ProcessorLivenessValidator
 
                 ProcessorLivenessEntry? entry;
                 try { entry = JsonSerializer.Deserialize<ProcessorLivenessEntry>(raw!); }
-                catch (JsonException) { malformed++; continue; }          // WR-01: never a 500
+                // WR-02: any deserialization failure on EXTERNAL data => malformed (422), never a 500.
+                // JsonSerializer can also throw NotSupportedException (unsupported type-conversion path);
+                // the GET that produced `raw` already succeeded, so no RedisException originates here.
+                catch (Exception ex) when (ex is JsonException or NotSupportedException) { malformed++; continue; }
                 if (entry?.Summary is null) { malformed++; continue; }    // null-shape => fail that replica
                 if (entry.Status != LivenessStatus.Healthy) { unhealthy++; continue; }
                 if (entry.Timestamp.AddSeconds(entry.Interval * 2) <= now) { stale++; continue; }
