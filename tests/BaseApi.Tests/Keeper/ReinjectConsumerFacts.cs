@@ -47,7 +47,7 @@ public sealed class ReinjectConsumerFacts
 
         var consumer = new ReinjectConsumer(
             RecoveryTestKit.Mux(db), send,
-            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery(),
+            RecoveryTestKit.Retry(),
             RecoveryTestKit.Metrics(), NullLogger<ReinjectConsumer>.Instance);
 
         await consumer.Consume(Ctx(m, ct));
@@ -98,7 +98,7 @@ public sealed class ReinjectConsumerFacts
 
         var consumer = new ReinjectConsumer(
             RecoveryTestKit.Mux(db), send,
-            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery(),
+            RecoveryTestKit.Retry(),
             metrics, NullLogger<ReinjectConsumer>.Instance);
 
         await consumer.Consume(Ctx(m, ct));   // D-06: no throw

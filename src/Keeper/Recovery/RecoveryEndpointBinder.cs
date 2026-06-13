@@ -20,13 +20,13 @@ namespace Keeper.Recovery;
 /// <para>
 /// <b>Endpoint config (symmetric exec-path posture):</b> the callback registers the SHARED
 /// <see cref="Partitioner"/> on the <see cref="IKeeperRecoverable"/> 4-tuple (three <c>UsePartitioner&lt;T&gt;</c>)
-/// and the three <c>ConfigureConsumer&lt;T&gt;</c> — and NOTHING else. There is NO <c>UseMessageRetry</c> and
-/// NO <c>ConfigureError</c>: the in-code <see cref="RecoveryConsumerBase{TMessage}.Guard"/> RetryLoop is the
-/// ONLY retry, and on exhaustion it re-throws out of <c>Consume</c> so the delivery falls through to RabbitMQ
-/// nack-requeue (broker redelivery) — no <c>_error</c>, no <c>skp-dlq-1</c> dead-letter. This makes the
-/// keeper-recovery endpoint symmetric with the processor dispatch / orchestrator result endpoints (A18
-/// "no bus retry / no error transport on the execution path"). KEEP-04 pause/resume is SEPARATE (D-05): a
-/// closed gate simply isn't consuming, so nothing redelivers while paused.
+/// and the three <c>ConfigureConsumer&lt;T&gt;</c> — and NOTHING else. There is NO bus-level message-retry and
+/// NO error-transport config on the endpoint: the in-code <see cref="RecoveryConsumerBase{TMessage}.Guard"/>
+/// RetryLoop is the ONLY retry, and on exhaustion it re-throws out of <c>Consume</c> so the delivery falls
+/// through to RabbitMQ nack-requeue (broker redelivery) — no <c>_error</c>, no <c>skp-dlq-1</c> dead-letter.
+/// This makes the keeper-recovery endpoint symmetric with the processor dispatch / orchestrator result
+/// endpoints (A18 "no bus retry / no error transport on the execution path"). KEEP-04 pause/resume is
+/// SEPARATE (D-05): a closed gate simply isn't consuming, so nothing redelivers while paused.
 /// </para>
 /// <para>
 /// <b>Startup posture (Pitfall 3, decided):</b> the endpoint is connected STARTED (the simplest posture,
@@ -54,9 +54,9 @@ public sealed class RecoveryEndpointBinder(
 
         var handle = connector.ConnectReceiveEndpoint(KeeperQueues.Recovery, (ctx, cfg) =>
         {
-            // No UseMessageRetry, no ConfigureError — symmetric with the processor dispatch / orchestrator
-            // result endpoints. The in-code Guard RetryLoop is the only retry; a Guard-exhaust throw falls
-            // through to broker nack-requeue (no in-process retry, no dead-letter, no skp-dlq-1).
+            // No bus-level message-retry, no error-transport config — symmetric with the processor dispatch /
+            // orchestrator result endpoints. The in-code Guard RetryLoop is the only retry; a Guard-exhaust
+            // throw falls through to broker nack-requeue (no in-process retry, no dead-letter, no skp-dlq-1).
             cfg.UsePartitioner<KeeperReinject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
             cfg.UsePartitioner<KeeperInject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
             cfg.UsePartitioner<KeeperDelete>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));

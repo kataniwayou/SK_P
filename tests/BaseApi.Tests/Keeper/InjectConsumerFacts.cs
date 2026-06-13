@@ -24,7 +24,7 @@ public sealed class InjectConsumerFacts
         var send = new RecoveryTestKit.CapturingSendProvider();
         var consumer = new InjectConsumer(
             RecoveryTestKit.Mux(db), send,
-            RecoveryTestKit.Retry(), RecoveryTestKit.Recovery());
+            RecoveryTestKit.Retry());
 
         var m = new KeeperInject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {

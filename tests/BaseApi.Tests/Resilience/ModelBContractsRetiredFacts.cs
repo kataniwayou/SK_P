@@ -129,7 +129,8 @@ public sealed class ModelBContractsRetiredFacts
     public void No_bus_retry_or_error_transport_on_execution_path_endpoints()
     {
         foreach (var rel in new[] { Path.Combine("src","Orchestrator","Consumers"),
-                                    Path.Combine("src","BaseProcessor.Core","Startup") })
+                                    Path.Combine("src","BaseProcessor.Core","Startup"),
+                                    Path.Combine("src","Keeper","Recovery") })
         {
             var dir = Path.Combine(RepoRoot(), rel);
             Assert.True(Directory.Exists(dir), $"bad anchor: {dir}");
@@ -149,13 +150,15 @@ public sealed class ModelBContractsRetiredFacts
     }
 
     /// <summary>
-    /// FACT 7 (D-03 / SC-2) — SOURCE-SCAN. The consolidated error filter is keeper-local: the
-    /// BaseConsole.Core global callback file carries NO ConfigureError, and RecoveryEndpointBinder DOES.
-    /// RED on the pre-teardown tree (the filter is still global and not yet in the binder); Wave-1 turns it GREEN.
+    /// FACT 7 (SYMMETRIC-KEEPER-EXEC-PATH) — SOURCE-SCAN. The keeper-recovery endpoint is now SYMMETRIC with
+    /// the exec path: the BaseConsole.Core global callback carries NO ConfigureError, AND the
+    /// RecoveryEndpointBinder carries NEITHER ConfigureError NOR UseMessageRetry — a Guard-exhaust throw
+    /// falls through to broker nack-requeue, no error transport / no bus retry anywhere on the recovery path.
+    /// (This INVERTS the prior keeper-local-error assertion: the binder no longer dead-letters to skp-dlq-1.)
     /// </summary>
     [Fact]
     [Trait("Phase", "53")]
-    public void ConfigureError_is_keeper_local_only()
+    public void Keeper_recovery_endpoint_is_symmetric_no_retry_no_error_transport()
     {
         var global = Path.Combine(RepoRoot(), "src", "BaseConsole.Core",
             "DependencyInjection", "MessagingServiceCollectionExtensions.cs");
@@ -164,7 +167,10 @@ public sealed class ModelBContractsRetiredFacts
         Assert.True(File.Exists(binder), $"bad anchor: {binder}");
 
         Assert.DoesNotContain("ConfigureError", File.ReadAllText(global));   // removed from global callback
-        Assert.Contains("ConfigureError", File.ReadAllText(binder));         // moved keeper-local
+
+        var binderSrc = File.ReadAllText(binder);
+        Assert.DoesNotContain("ConfigureError", binderSrc);    // symmetric: no error transport on the binder
+        Assert.DoesNotContain("UseMessageRetry", binderSrc);   // symmetric: no bus retry on the binder
     }
 
     /// <summary>

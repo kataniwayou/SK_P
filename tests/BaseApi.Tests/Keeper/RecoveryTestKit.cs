@@ -35,10 +35,6 @@ internal static class RecoveryTestKit
     public static IOptions<RetryOptions> Retry(int limit = 3) =>
         Options.Create(new RetryOptions { Limit = limit });
 
-    /// <summary>Phase 52 (D-09): RecoveryOptions no longer carries GateWaitSeconds.</summary>
-    public static IOptions<RecoveryOptions> Recovery() =>
-        Options.Create(new RecoveryOptions { PartitionCount = 8 });
-
     /// <summary>A real <see cref="KeeperMetrics"/> built from a real <see cref="IMeterFactory"/> (mirrors
     /// the ProcessorMetricsFacts construction idiom) so consumer facts can pass a live counter and observe
     /// it via a <see cref="System.Diagnostics.Metrics.MeterListener"/>.</summary>
