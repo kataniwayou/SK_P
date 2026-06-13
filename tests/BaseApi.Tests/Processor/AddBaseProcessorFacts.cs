@@ -2,6 +2,7 @@ using BaseConsole.Core.Health;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.DependencyInjection;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Liveness;
 using BaseProcessor.Core.Processing;
 using BaseProcessor.Core.Startup;
 using MassTransit;
@@ -62,6 +63,18 @@ public sealed class AddBaseProcessorFacts
             d.ImplementationType == typeof(ProcessorContext) &&
             d.Lifetime == ServiceLifetime.Singleton);
 
+        // Phase 60 (L1-01 / D-08): IProcessorLivenessState -> ProcessorLivenessState (singleton L1 holder).
+        Assert.Contains(services, d =>
+            d.ServiceType == typeof(IProcessorLivenessState) &&
+            d.ImplementationType == typeof(ProcessorLivenessState) &&
+            d.Lifetime == ServiceLifetime.Singleton);
+
+        // Phase 60 (LOOP-03/04 / D-09): the shared ProcessorLivenessWriter is a singleton (public sealed —
+        // no InternalsVisibleTo needed for the descriptor assert).
+        Assert.Contains(services, d =>
+            d.ServiceType == typeof(ProcessorLivenessWriter) &&
+            d.Lifetime == ServiceLifetime.Singleton);
+
         // ISourceHashProvider -> AssemblyMetadataSourceHashProvider (IDENT-03).
         Assert.Contains(services, d =>
             d.ServiceType == typeof(ISourceHashProvider) &&
@@ -71,10 +84,16 @@ public sealed class AddBaseProcessorFacts
         // TimeProvider registered (idempotent TryAddSingleton).
         Assert.Contains(services, d => d.ServiceType == typeof(TimeProvider));
 
-        // The startup orchestrator is the registered IHostedService.
+        // The startup orchestrator + heartbeat are registered as IHostedServices. Phase 60: each is now a
+        // CONCRETE singleton built via an ActivatorUtilities factory (to inject the plain-string instanceId)
+        // then surfaced as an IHostedService — so the IHostedService descriptor carries an ImplementationFactory
+        // (no ImplementationType). Assert the observable concrete-type singleton descriptors instead.
         Assert.Contains(services, d =>
-            d.ServiceType == typeof(IHostedService) &&
-            d.ImplementationType == typeof(ProcessorStartupOrchestrator));
+            d.ServiceType == typeof(ProcessorStartupOrchestrator) &&
+            d.Lifetime == ServiceLifetime.Singleton);
+        Assert.Contains(services, d =>
+            d.ServiceType == typeof(ProcessorLivenessHeartbeat) &&
+            d.Lifetime == ServiceLifetime.Singleton);
 
         // ProcessorLivenessOptions bound from the "Processor" section (CONFIG-01). The MassTransit
         // container is IAsyncDisposable — dispose via `await using`.

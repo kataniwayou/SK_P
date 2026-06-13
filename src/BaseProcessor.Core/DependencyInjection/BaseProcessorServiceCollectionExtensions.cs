@@ -190,22 +190,28 @@ public static class BaseProcessorServiceCollectionExtensions
         // 7 / 7b. Phase 60 (D-01/02 / KEY-03): resolve the per-replica instanceId ONCE (env-precedence SoT,
         //         available from boot) and pass the SAME value to BOTH grown ctors so the two loops write the
         //         IDENTICAL {instanceId} per-instance key (one replica identity). The instanceId is a plain
-        //         string — NOT container-resolvable — so each hosted service is registered via an
-        //         ActivatorUtilities factory that resolves the shared writer (6a') + the rest from DI and
-        //         supplies this instanceId. This closes the cross-plan DI gap the writer/heartbeat ctors left.
+        //         string — NOT container-resolvable — so each background service is registered as a CONCRETE
+        //         singleton via an ActivatorUtilities factory that resolves the shared writer (6a') + the rest
+        //         from DI and supplies this instanceId, then surfaced as an IHostedService by resolving that
+        //         singleton. The concrete-type singleton descriptor (asserted by AddBaseProcessorFacts) keeps
+        //         the registration observable even though the factory carries no ImplementationType. This closes
+        //         the cross-plan DI gap the writer/heartbeat ctors left.
         var instanceId = InstanceId.Resolve();
 
         // 7. The two-loop startup orchestrator (identity-by-SourceHash + per-non-null-schema definition). Its
         //    grown ctor now takes the shared ProcessorLivenessWriter + the caller-resolved instanceId, so it
         //    writes the inline `unhealthy` per-instance entry per resolution iteration (STATE-03 / LOOP-01).
-        services.AddHostedService(sp =>
+        services.AddSingleton(sp =>
             ActivatorUtilities.CreateInstance<ProcessorStartupOrchestrator>(sp, instanceId));
+        services.AddHostedService(sp => sp.GetRequiredService<ProcessorStartupOrchestrator>());
 
         // 7b. The only-when-Healthy liveness heartbeat (LIVE-01..06 / LOOP-02 / D-14): the frozen-healthy beat
         //     now writes the per-instance ProcessorLivenessEntry via the same shared writer (old flat skp:{id}
-        //     write gone); registered via the SAME factory shape so writer + instanceId resolve (DI gap closed).
-        services.AddHostedService(sp =>
+        //     write gone); registered via the SAME concrete-singleton + hosted-service shape so writer +
+        //     instanceId resolve (DI gap closed).
+        services.AddSingleton(sp =>
             ActivatorUtilities.CreateInstance<ProcessorLivenessHeartbeat>(sp, instanceId));
+        services.AddHostedService(sp => sp.GetRequiredService<ProcessorLivenessHeartbeat>());
 
         // 8. D-02: remove the base library's StartupCompletionService so MarkReady fires when the
         //    processor reaches Healthy (orchestrator completion), NOT at bare host start. The removal
