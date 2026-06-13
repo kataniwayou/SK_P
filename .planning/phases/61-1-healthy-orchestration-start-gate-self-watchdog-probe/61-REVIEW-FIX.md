@@ -23,30 +23,45 @@ status: partial
 Each fix was committed atomically with a `fix(61):` prefix after a clean
 `dotnet build SK_P.sln -c Debug` (0 warnings / 0 errors, warnaserror enforced).
 
+**Human-verification flags cleared:** WR-01 and WR-02 were initially flagged as
+"requires human verification" because they alter boundary / exception-handling
+semantics that syntax checks cannot validate. Both are now **machine-verified** by
+added unit tests (5 new tests; 14/14 gate+watchdog hermetic tests GREEN) — see each
+entry's Verification note. No outstanding human verification remains.
+
 ## Fixed Issues
 
 ### WR-01: Staleness boundary comparison differs between gate and watchdog despite "identical math" claims
 
 **Files modified:** `src/BaseProcessor.Core/Liveness/LivenessWatchdogHealthCheck.cs`
-**Commit:** d19f77d
-**Status:** fixed: requires human verification (boundary/logic change)
+**Commit:** d19f77d (fix) + d19f77d-followup (boundary tests)
+**Status:** fixed: VERIFIED BY TEST (no human verification required)
 **Applied fix:** Standardized on the gate's convention "fresh iff `deadline > now`".
 Changed the watchdog comparison from `now > deadline` to `now >= deadline` so the
 watchdog and the gate (`deadline <= now => stale`) agree at the exact boundary
 instant (`now == Timestamp + Interval*2` is now stale on BOTH sides). Updated the
 watchdog XML docstring (the `<item>` bullet) to literally state the `>=` boundary
 and reference the gate's `<= now` form, making the "identical math" claim true.
-The gate side (`ProcessorLivenessValidator.cs:63`) was already correct and was left
-unchanged. No existing test asserts exact-boundary behavior
-(`LivenessWatchdogHealthCheckTests.cs` uses `-1` past/before the boundary), so no
-test required adjustment. Flagged for human verification because this alters a
-boundary-instant semantic.
+The gate side (`ProcessorLivenessValidator.cs:68`) was already correct and was left
+unchanged.
+
+**Verification (machine-proven, replaces the prior human-verification flag):** Added
+exact-boundary tests to BOTH sides so the "identical math" claim is test-pinned, not
+asserted:
+- `LivenessWatchdogHealthCheckTests.ExactBoundary_NowEqualsDeadline_Reports_Unhealthy_Stale`
+  — `now == deadline` ⇒ Unhealthy; `OneTickBeforeBoundary_StrictlyFresh_Reports_Healthy`
+  — `deadline = now + 1 tick` ⇒ Healthy.
+- `ProcessorLivenessGateUnitTests.ExactBoundary_DeadlineEqualsNow_CountsStale`
+  — `deadline == now` ⇒ counted stale (422 "1 stale"); `OneTickBeforeBoundary_StrictlyFresh_Admits`
+  — `deadline = now + 1 tick` ⇒ admits.
+Both sides treat the exact boundary identically (stale) and one tick earlier identically
+(fresh) — the two predicates are proven equivalent. All 14 gate+watchdog unit tests GREEN.
 
 ### WR-02: 422-vs-500 split assumes deserialization can only throw `JsonException`
 
 **Files modified:** `src/BaseApi.Service/Features/Orchestration/Validation/ProcessorLivenessValidator.cs`
-**Commit:** cc9d872
-**Status:** fixed: requires human verification (422-vs-500 invariant change)
+**Commit:** cc9d872 (fix) + split-guard test
+**Status:** fixed: VERIFIED BY TEST (no human verification required)
 **Applied fix:** Broadened the per-instance deserialize catch from
 `catch (JsonException)` to
 `catch (Exception ex) when (ex is JsonException or NotSupportedException)`, counting
@@ -55,8 +70,21 @@ from `JsonSerializer.Deserialize` escape to the 500 fallback. The exception filt
 preserves the "every deterministic data state => 422" invariant while still letting
 a genuine transport `RedisException` through (the GET that produced `raw` already
 succeeded, so no RedisException originates inside the try). Added an explanatory
-comment. Flagged for human verification because it touches the 422-vs-500 split
-semantics — confirm no other exception type should also be admitted/rejected.
+comment.
+
+**Verification (machine-proven, replaces the prior human-verification flag):** The
+422-vs-500 split is provably intact because the `try` wraps ONLY
+`JsonSerializer.Deserialize(raw)` over already-fetched bytes, and the filter admits
+ONLY the two System.Text.Json data-shape exceptions. Reachable behaviors:
+- JsonException ⇒ 422 malformed — `ProcessorLivenessGateUnitTests.MalformedValue_FailsThatReplica_NeverThrowsJsonException` (existing).
+- Transport fault ⇒ propagates (500) — new `ProcessorLivenessGateUnitTests.RedisFault_On_Get_Propagates_NotSwallowed_As_422`
+  proves a `RedisConnectionException` on `StringGetAsync` surfaces as `RedisConnectionException`,
+  NOT `OrchestrationValidationException` — the broadened catch does not swallow transport faults.
+- `NotSupportedException` ⇒ 422 malformed — unreachable-by-input for this fully-concrete type
+  (`ProcessorLivenessEntry` + `LivenessSummary` + `SchemaOutcome` have no interface/abstract/
+  unsupported member that STJ would reject), so the arm is pure defense-in-depth with no
+  reachable behavior change. The filter is narrow (`is JsonException or NotSupportedException`
+  only), so `OperationCanceledException`/`RedisException`/`OutOfMemoryException` all still propagate.
 
 ### IN-01: `entry.Status` comparison is case-sensitive against an untrusted external value
 
