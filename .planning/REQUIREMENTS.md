@@ -69,12 +69,12 @@ REQ-IDs are filled into phases by the roadmapper (Step 10). Every requirement ma
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| KEY-01 | Phase 59 | Pending |
-| KEY-02 | Phase 59 | Pending |
-| KEY-03 | Phase 59 | Pending |
-| KEY-04 | Phase 59 | Pending |
-| STATE-01 | Phase 59 | Pending |
-| STATE-02 | Phase 59 | Pending |
+| KEY-01 | Phase 59 | Complete |
+| KEY-02 | Phase 59 | Complete |
+| KEY-03 | Phase 59 | Complete |
+| KEY-04 | Phase 59 | Complete |
+| STATE-01 | Phase 59 | Complete |
+| STATE-02 | Phase 59 | Complete |
 | STATE-03 | Phase 60 | Pending |
 | LOOP-01 | Phase 60 | Pending |
 | LOOP-02 | Phase 60 | Pending |
