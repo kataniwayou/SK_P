@@ -1,6 +1,5 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Reflection;
 using System.Text.Json;
 using BaseApi.Tests.Observability.Helpers;
 using Messaging.Contracts.Projections;
@@ -27,8 +26,9 @@ namespace BaseApi.Tests.Orchestrator;
 /// <c>ICollectionFixture&lt;RealStackNetZeroSweepFixture&gt;</c>). No new harness is authored.
 /// </para>
 /// <para>
-/// Each test uses a DISTINCT throwaway <c>procId</c> (a fresh DB Processor row seeded against the genuine
-/// embedded Sample SourceHash) so its fabricated <c>skp:proc:{procId}</c> instance index never collides
+/// Each test uses a DISTINCT throwaway <c>procId</c> (a fresh DB Processor row seeded against a UNIQUE
+/// per-test SourceHash — NOT the genuine embedded Sample hash, which GET-or-create resolves to the live
+/// processor-sample's own procId) so its fabricated <c>skp:proc:{procId}</c> instance index never collides
 /// with a live replica's index (RESEARCH Pitfall 6 / T-62-04). The fixture does NOT sweep
 /// <c>skp:proc:*</c>, so every fabricated per-instance key + index member is registered for teardown.
 /// </para>
@@ -55,6 +55,18 @@ public sealed class GateKeyspaceE2ETests
     // ONLY by Test C's deliberate malformed write (the helper requires a valid entry).
     private const string HostRedis = "localhost:6380,abortConnect=false,connectTimeout=5000";
 
+    // Stable per-test throwaway SourceHashes (64 lowercase hex, ^[a-f0-9]{64}$). FIXED (not random) so
+    // SeedProcessorAsync's GET-or-create reuses the SAME procId every run: its per-procId dispatch queue is
+    // then steady-state (present in BOTH the close gate's BEFORE and AFTER rabbitmq snapshots) — a fresh
+    // random procId instead churns a NEW durable dispatch queue each run, violating the gate's rabbitmq
+    // list_queues SHA (observed live in the Phase-62 gate). Distinct per test so each fabricated
+    // skp:proc index is isolated from the others AND from the live processor-sample replicas (which
+    // heartbeat under the GENUINE embedded hash's procId — RESEARCH Pitfall 6 / T-62-04). NONE equals the
+    // genuine Sample hash, so no live container ever self-registers under these procIds.
+    private static readonly string TestAHash = new('a', 64);
+    private static readonly string TestBHash = new('b', 64);
+    private static readonly string TestCHash = new('c', 64);
+
     /// <summary>
     /// Test A: a single Healthy+fresh replica ADMITS (204) even alongside a fabricated unhealthy and a
     /// fabricated stale sibling — the gate's first-qualifier-wins short-circuit
@@ -69,7 +81,7 @@ public sealed class GateKeyspaceE2ETests
         await factory.InitializeAsync();
         using var client = factory.CreateClient();
 
-        var (procId, stepId, wfId) = await SeedWorkflowGraphAsync(factory, client, ct);
+        var (procId, stepId, wfId) = await SeedWorkflowGraphAsync(factory, client, TestAHash, ct);
 
         // Fabricate THREE per-instance keys on this throwaway procId: one healthy (admits), one unhealthy
         // (any Fail => Unhealthy), one stale ((now-25)+20 = now-5 <= now => stale). Build via the Create
@@ -103,7 +115,7 @@ public sealed class GateKeyspaceE2ETests
         await factory.InitializeAsync();
         using var client = factory.CreateClient();
 
-        var (procId, stepId, wfId) = await SeedWorkflowGraphAsync(factory, client, ct);
+        var (procId, stepId, wfId) = await SeedWorkflowGraphAsync(factory, client, TestBHash, ct);
 
         // Fabricate ONLY non-qualifying siblings: an unhealthy + a stale key, no healthy => no qualifier.
         var now = DateTime.UtcNow;
@@ -139,7 +151,7 @@ public sealed class GateKeyspaceE2ETests
         await factory.InitializeAsync();
         using var client = factory.CreateClient();
 
-        var (procId, stepId, wfId) = await SeedWorkflowGraphAsync(factory, client, ct);
+        var (procId, stepId, wfId) = await SeedWorkflowGraphAsync(factory, client, TestCHash, ct);
 
         // Write a deliberately malformed per-instance value + SADD the member, then register BOTH for
         // teardown (the Task-1 helper only accepts a valid ProcessorLivenessEntry, so craft this one inline).
@@ -161,24 +173,24 @@ public sealed class GateKeyspaceE2ETests
     }
 
     // ---- Shared seed: a DISTINCT throwaway Processor row + step + workflow (the gate participant) ----
-    // Drives identity via the genuine embedded Sample SourceHash (SeedProcessorAsync is GET-or-create on
-    // that fixed hash). The fabricated keys (per test) are what make each procId's verdict deterministic;
-    // the workflow's only participant is THIS procId so the gate evaluates exactly the fabricated index.
+    // Identity is driven by the caller's STABLE per-test sourceHash (TestAHash/TestBHash/TestCHash — never
+    // the genuine embedded Sample hash): SeedProcessorAsync is GET-or-create on the hash, and the genuine
+    // hash resolves to the SAME procId the live processor-sample replicas heartbeat against, whose real
+    // Healthy index members would poison the fabricated-only scenarios. A distinct, FIXED hash yields one
+    // stable fresh procId per test, so the gate evaluates EXACTLY this test's fabricated index AND the
+    // per-procId dispatch queue stays steady-state across runs (the workflow's only participant is THIS procId).
     private static async Task<(Guid ProcId, Guid StepId, Guid WfId)> SeedWorkflowGraphAsync(
         SampleRoundTripE2ETests.RealStackWebAppFactory factory,
         HttpClient client,
+        string sourceHash,
         CancellationToken ct)
     {
-        var hash = typeof(global::Processor.Sample.SampleProcessor).Assembly
-            .GetCustomAttributes<AssemblyMetadataAttribute>()
-            .First(a => a.Key == "SourceHash").Value!;
-
         var schemaId = await SampleRoundTripE2ETests.SeedConfigSchemaAsync(
             client,
             SampleRoundTripE2ETests.SampleCompatibleSchemaName,
             SampleRoundTripE2ETests.SampleCompatibleSchemaDefinition,
             ct);
-        var procId = await SampleRoundTripE2ETests.SeedProcessorAsync(client, hash, ct, configSchemaId: schemaId);
+        var procId = await SampleRoundTripE2ETests.SeedProcessorAsync(client, sourceHash, ct, configSchemaId: schemaId);
         var stepId = await SampleRoundTripE2ETests.SeedStepAsync(client, procId, ct);
         var wfId = await SampleRoundTripE2ETests.SeedWorkflowAsync(
             client, new List<Guid> { stepId }, cron: "* * * * *", ct);
