@@ -1,6 +1,5 @@
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
-using Messaging.Contracts.Identity;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -52,15 +51,17 @@ public sealed class ProcessorLivenessHeartbeat : BackgroundService
         IProcessorContext context,
         IOptions<ProcessorLivenessOptions> options,
         TimeProvider clock,
+        string instanceId,
         ILogger<ProcessorLivenessHeartbeat> logger)
     {
         _writer  = writer ?? throw new ArgumentNullException(nameof(writer));
         _context = context ?? throw new ArgumentNullException(nameof(context));
         _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _clock   = clock ?? throw new ArgumentNullException(nameof(clock));
+        // KEY-03: the per-replica instance identity, resolved ONCE by the caller (InstanceId.Resolve() at
+        // the DI site — available from boot) and passed in, so a test can pin a deterministic instanceId.
+        _instanceId = instanceId ?? throw new ArgumentNullException(nameof(instanceId));
         _logger  = logger ?? throw new ArgumentNullException(nameof(logger));
-        // KEY-03: resolve the per-replica instance identity ONCE at ctor — available from boot.
-        _instanceId = InstanceId.Resolve();
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
