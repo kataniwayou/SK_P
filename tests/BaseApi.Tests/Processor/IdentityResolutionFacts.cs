@@ -1,6 +1,7 @@
 using BaseConsole.Core.Health;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Liveness;
 using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Startup;
 using MassTransit;
@@ -14,6 +15,7 @@ using NSubstitute;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
+using StackExchange.Redis;
 using Xunit;
 
 namespace BaseApi.Tests.Processor;
@@ -71,7 +73,8 @@ public sealed class IdentityResolutionFacts
 
             var orchestrator = new ProcessorStartupOrchestrator(
                 identityClient, schemaClient, sourceHash, context, gate, StubConnector(),
-                StubMeterProviderHolder(), StubConfigTypeProvider(), options, fakeClock,
+                StubMeterProviderHolder(), StubConfigTypeProvider(), StubLivenessWriter(), "pod-test",
+                options, fakeClock,
                 NullLogger<ProcessorStartupOrchestrator>.Instance);
 
             // Drive the orchestrator. The two leading NotFound replies trigger two backoff delays
@@ -159,6 +162,17 @@ public sealed class IdentityResolutionFacts
     /// no <c>Mode</c> property (or a string <c>Mode</c>) is covered.
     /// </summary>
     internal sealed record GateAStubConfig(GateAMode Mode) : ProcessorConfig;
+
+    /// <summary>
+    /// A real <see cref="ProcessorLivenessWriter"/> over a STUB <see cref="IConnectionMultiplexer"/> whose
+    /// <c>GetDatabase()</c> faults — for the resolution/bind facts that do not assert on the L2 write. The
+    /// writer's log-and-continue swallows the fault (it Updates only the local L1 holder), so the orchestrator's
+    /// inline <c>WriteUnhealthyAsync</c> at each iteration is a harmless no-op against Redis and the facts still
+    /// prove resolution/bind without a real Redis. Mirrors the existing <see cref="StubConnector"/> seam shape.
+    /// </summary>
+    internal static ProcessorLivenessWriter StubLivenessWriter() =>
+        new(Substitute.For<IConnectionMultiplexer>(), new ProcessorLivenessState(),
+            Options.Create(new ProcessorLivenessOptions()), NullLogger<ProcessorLivenessWriter>.Instance);
 
     internal static MeterProviderHolder StubMeterProviderHolder()
     {

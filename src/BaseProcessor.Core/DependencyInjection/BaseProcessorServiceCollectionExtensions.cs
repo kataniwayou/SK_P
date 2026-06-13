@@ -9,6 +9,7 @@ using BaseProcessor.Core.Startup;
 using MassTransit;
 using Messaging.Contracts;
 using Messaging.Contracts.Configuration;
+using Messaging.Contracts.Identity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -135,6 +136,18 @@ public static class BaseProcessorServiceCollectionExtensions
         //    heartbeat (reader).
         services.AddSingleton<IProcessorContext, ProcessorContext>();
 
+        // 6a. Phase 60 (L1-01 / D-08/09/10): the in-memory L1 liveness holder, updated by BOTH the startup
+        //     orchestrator (unhealthy writer) and the heartbeat (healthy writer) every iteration, read by the
+        //     Phase-61 self-watchdog probe. Singleton — one volatile-ref-swap record per replica.
+        services.AddSingleton<IProcessorLivenessState, ProcessorLivenessState>();
+
+        // 6a'. Phase 60 (LOOP-03/04 / D-09/11/13/15): the single shared liveness write path both loops call
+        //      (L2 SET(perInstance, derived TTL) + idempotent index SADD + unconditional L1 Update +
+        //      log-and-continue). public sealed → AddSingleton<ProcessorLivenessWriter>() resolves and the
+        //      AddBaseProcessorFacts descriptor assert works without InternalsVisibleTo. IConnectionMultiplexer
+        //      (its Redis dep) is already registered by AddBaseConsole; IProcessorLivenessState by 6a above.
+        services.AddSingleton<ProcessorLivenessWriter>();
+
         // 6b. LOG-04: the ProcessorId log enricher — a custom OTel BaseProcessor<LogRecord> that appends
         //     ProcessorId from the singleton IProcessorContext.Id to EVERY processor LogRecord (null-safe
         //     — nothing before identity resolves). DI-RESOLVED so it reads the SINGLETON IProcessorContext
@@ -174,12 +187,25 @@ public static class BaseProcessorServiceCollectionExtensions
             return new MeterProviderHolder(hostProvider, instanceId, version);
         });
 
-        // 7. The two-loop startup orchestrator (identity-by-SourceHash + per-non-null-schema definition).
-        services.AddHostedService<ProcessorStartupOrchestrator>();
+        // 7 / 7b. Phase 60 (D-01/02 / KEY-03): resolve the per-replica instanceId ONCE (env-precedence SoT,
+        //         available from boot) and pass the SAME value to BOTH grown ctors so the two loops write the
+        //         IDENTICAL {instanceId} per-instance key (one replica identity). The instanceId is a plain
+        //         string — NOT container-resolvable — so each hosted service is registered via an
+        //         ActivatorUtilities factory that resolves the shared writer (6a') + the rest from DI and
+        //         supplies this instanceId. This closes the cross-plan DI gap the writer/heartbeat ctors left.
+        var instanceId = InstanceId.Resolve();
 
-        // 7b. The only-when-Healthy liveness heartbeat (LIVE-01..06) — consumes the populated
-        //     IProcessorContext, writes the frozen ProcessorProjection to skp:{id} with a sliding TTL.
-        services.AddHostedService<ProcessorLivenessHeartbeat>();
+        // 7. The two-loop startup orchestrator (identity-by-SourceHash + per-non-null-schema definition). Its
+        //    grown ctor now takes the shared ProcessorLivenessWriter + the caller-resolved instanceId, so it
+        //    writes the inline `unhealthy` per-instance entry per resolution iteration (STATE-03 / LOOP-01).
+        services.AddHostedService(sp =>
+            ActivatorUtilities.CreateInstance<ProcessorStartupOrchestrator>(sp, instanceId));
+
+        // 7b. The only-when-Healthy liveness heartbeat (LIVE-01..06 / LOOP-02 / D-14): the frozen-healthy beat
+        //     now writes the per-instance ProcessorLivenessEntry via the same shared writer (old flat skp:{id}
+        //     write gone); registered via the SAME factory shape so writer + instanceId resolve (DI gap closed).
+        services.AddHostedService(sp =>
+            ActivatorUtilities.CreateInstance<ProcessorLivenessHeartbeat>(sp, instanceId));
 
         // 8. D-02: remove the base library's StartupCompletionService so MarkReady fires when the
         //    processor reaches Healthy (orchestrator completion), NOT at bare host start. The removal

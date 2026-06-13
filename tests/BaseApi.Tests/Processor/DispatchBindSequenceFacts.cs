@@ -278,6 +278,7 @@ public sealed class DispatchBindSequenceFacts
                 // Gate A reflects over GateAStubConfig (its Mode is a CLR enum) — so a config schema declaring
                 // Mode as a string-enum CLASHES (row #13); a null config def or a schema without Mode is covered.
                 IdentityResolutionFacts.StubConfigTypeProvider(typeof(IdentityResolutionFacts.GateAStubConfig)),
+                IdentityResolutionFacts.StubLivenessWriter(), "pod-test",
                 options, clock, logger);
 
             await orchestrator.StartAsync(cts.Token);
@@ -341,6 +342,7 @@ public sealed class DispatchBindSequenceFacts
             var orchestrator = new ProcessorStartupOrchestrator(
                 identityClient, schemaClient, sourceHash, context, gate, connector,
                 IdentityResolutionFacts.StubMeterProviderHolder(), IdentityResolutionFacts.StubConfigTypeProvider(),
+                IdentityResolutionFacts.StubLivenessWriter(), "pod-test",
                 options, clock,
                 NullLogger<ProcessorStartupOrchestrator>.Instance);
 

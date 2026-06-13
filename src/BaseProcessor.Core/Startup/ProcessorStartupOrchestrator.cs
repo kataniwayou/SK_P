@@ -1,10 +1,12 @@
 using BaseConsole.Core.Health;
 using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Identity;
+using BaseProcessor.Core.Liveness;
 using BaseProcessor.Core.Observability;
 using BaseProcessor.Core.Processing;
 using MassTransit;
 using Messaging.Contracts;
+using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -69,6 +71,8 @@ public sealed class ProcessorStartupOrchestrator(
     IReceiveEndpointConnector endpointConnector,
     MeterProviderHolder meterProviderHolder,
     IConfigTypeProvider configType,
+    ProcessorLivenessWriter writer,
+    string instanceId,
     IOptions<ProcessorLivenessOptions> options,
     TimeProvider clock,
     ILogger<ProcessorStartupOrchestrator> logger) : BackgroundService
@@ -113,6 +117,12 @@ public sealed class ProcessorStartupOrchestrator(
                     }
                     logger.LogInformation("Identity resolved for hash {Hash}: processor {ProcessorId}",
                         hash, found.Message.Id);
+
+                    // STATE-03 / LOOP-01 / D-02: the FIRST inline unhealthy write — context.Id is now non-null,
+                    // so a starting/restarting replica is visible in L2 as `unhealthy` from this first
+                    // post-identity iteration (never absent). Subsequent Loop-B iterations + the Gate-A paths
+                    // re-write it as per-schema progress advances.
+                    await WriteUnhealthyAsync();
                     break;
                 }
 
@@ -146,6 +156,12 @@ public sealed class ProcessorStartupOrchestrator(
 
             while (!stoppingToken.IsCancellationRequested)
             {
+                // LOOP-01 / D-02: rewrite the unhealthy entry at EACH Loop-B iteration so the L2 summary
+                // tracks per-schema progress (a still-null definition => Fail, a resolved one => Success)
+                // while any non-null schema remains unresolved — status stays Unhealthy. Rides the existing
+                // backoff iterations (no new timer — D-03).
+                await WriteUnhealthyAsync();
+
                 try
                 {
                     var resp = await schemaClient.GetResponse<SchemaDefinitionFound, SchemaDefinitionNotFound>(
@@ -187,6 +203,12 @@ public sealed class ProcessorStartupOrchestrator(
             logger.LogError(
                 "Gate A incompatibility for processor {ProcessorId} config schema {ConfigSchemaId}: {Clash}",
                 context.Id, context.ConfigSchemaId, coverage.ClashDetail);
+            // LOOP-01 / D-02 / D-04: the terminal-clash replica stays UP but never serves — publish it in L2 as
+            // `unhealthy` so the Phase-61 gate fails it on `status`. The config definitions are RESOLVED here, so
+            // the naive per-schema Outcome would be all-Success ⇒ Create derives Healthy. The Gate-A outcome is
+            // `configSchema` (D-04), so on a clash we feed configOutcome=Fail explicitly — the only way the
+            // terminal-unhealthy replica is published as Unhealthy (Create derives status from the summary).
+            await WriteUnhealthyAsync(configOutcomeOverride: SchemaOutcome.Fail);
             gate.MarkReady();   // readiness green — NO K8s crash-loop (D-09). MarkHealthy + bind NOT reached.
             return;             // terminal — Gate A is not retried (D-11); the definition is immutable (D-05).
         }
@@ -232,5 +254,50 @@ public sealed class ProcessorStartupOrchestrator(
         }
 
         return TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, cap.TotalSeconds));
+    }
+
+    /// <summary>
+    /// STATE-03 / LOOP-01 / D-01/02/03/04: write the inline <c>unhealthy</c> per-instance liveness entry for the
+    /// CURRENT resolution iteration through the shared <see cref="ProcessorLivenessWriter"/>, so a starting /
+    /// restarting / clashed replica is visible in L2 (never absent from the first post-identity iteration).
+    ///
+    /// <para>
+    /// Building the per-schema <c>summary</c> from <c>context</c>'s definition props is safe ONLY here — the
+    /// orchestrator owns the single-threaded resolution state (WR-03 forbids reading them from another thread
+    /// before <c>IsHealthy</c>). Per-schema outcome mirrors <see cref="ProcessorLivenessEntry.Create"/>'s
+    /// null-is-skip: a null schema id ⇒ <see cref="SchemaOutcome.Success"/>; a non-null-but-still-unresolved id
+    /// (definition null) ⇒ <see cref="SchemaOutcome.Fail"/>; a resolved definition ⇒
+    /// <see cref="SchemaOutcome.Success"/>. <c>configSchema</c> is the Gate-A outcome (D-04): during the
+    /// resolution window it tracks resolution like input/output (Open Q1 RESOLVED), and on a Gate-A clash the
+    /// caller passes <paramref name="configOutcomeOverride"/> = <see cref="SchemaOutcome.Fail"/> so the terminal
+    /// replica is published <see cref="LivenessStatus.Unhealthy"/> (Create derives status from the summary, so a
+    /// Fail is the only way to keep an all-resolved-but-clashed replica Unhealthy).
+    /// </para>
+    /// <para>
+    /// D-02 guard: no write before Loop A resolves identity (<c>context.Id</c> null ⇒ no processorId ⇒ no key).
+    /// The recorded interval is <see cref="ProcessorLivenessOptions.StartupIntervalSeconds"/> (30, D-12) ⇒ the
+    /// writer derives TTL = max(30×2, Ttl-floor) = 60 (D-13). Resilience (LOOP-01) is the shared writer's
+    /// log-and-continue — a dead Redis must NOT crash the host or abort resolution.
+    /// </para>
+    /// </summary>
+    private async Task WriteUnhealthyAsync(string? configOutcomeOverride = null)
+    {
+        if (context.Id is not { } procId) return; // D-02: no processorId before Loop A resolves identity
+
+        static string Outcome(Guid? id, string? def) =>
+            id is null ? SchemaOutcome.Success            // null-is-skip ⇒ Success
+                       : def is null ? SchemaOutcome.Fail // non-null but not-yet-resolved ⇒ Fail
+                                     : SchemaOutcome.Success; // resolved ⇒ Success
+
+        var now = clock.GetUtcNow().UtcDateTime; // SAME clock the reader uses
+        var entry = ProcessorLivenessEntry.Create(
+            inputOutcome:  Outcome(context.InputSchemaId,  context.InputDefinition),
+            outputOutcome: Outcome(context.OutputSchemaId, context.OutputDefinition),
+            configOutcome: configOutcomeOverride ?? Outcome(context.ConfigSchemaId, context.ConfigDefinition),
+            timestamp:     now,
+            interval:      options.Value.StartupIntervalSeconds); // D-12: startup anchor = BackoffCap (30s)
+
+        // Shared writer (Plan 02): SET(perInstance, ttl=max(60,30)=60) + idempotent SADD + L1 Update + log-and-continue.
+        await writer.WriteAsync(procId, instanceId, entry);
     }
 }

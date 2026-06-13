@@ -113,7 +113,8 @@ public sealed class SchemaResolutionFacts
         var orchestrator = new ProcessorStartupOrchestrator(
             identityClient, schemaClient, sourceHash, context, gate,
             IdentityResolutionFacts.StubConnector(), IdentityResolutionFacts.StubMeterProviderHolder(),
-            IdentityResolutionFacts.StubConfigTypeProvider(), options, clock,
+            IdentityResolutionFacts.StubConfigTypeProvider(), IdentityResolutionFacts.StubLivenessWriter(), "pod-test",
+            options, clock,
             NullLogger<ProcessorStartupOrchestrator>.Instance);
 
         await orchestrator.StartAsync(ct);
