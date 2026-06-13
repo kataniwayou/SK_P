@@ -62,7 +62,9 @@ internal sealed class ProcessorLivenessValidator
                 // the GET that produced `raw` already succeeded, so no RedisException originates here.
                 catch (Exception ex) when (ex is JsonException or NotSupportedException) { malformed++; continue; }
                 if (entry?.Summary is null) { malformed++; continue; }    // null-shape => fail that replica
-                if (entry.Status != LivenessStatus.Healthy) { unhealthy++; continue; }
+                // IN-01: explicit ordinal compare — case-sensitivity is intentional (writer is the sole
+                // producer and always emits the LivenessStatus.Healthy const). Made self-documenting.
+                if (!string.Equals(entry.Status, LivenessStatus.Healthy, StringComparison.Ordinal)) { unhealthy++; continue; }
                 if (entry.Timestamp.AddSeconds(entry.Interval * 2) <= now) { stale++; continue; }
                 qualified = true; break;                                  // >=1 healthy+fresh => PASS
             }
