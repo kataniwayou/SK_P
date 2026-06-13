@@ -1,6 +1,7 @@
 using BaseConsole.Core.DependencyInjection;
 using BaseProcessor.Core.DependencyInjection;
 using BaseProcessor.Core.Liveness;
+using BaseProcessor.Core.Startup;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -49,6 +50,53 @@ public class ProcessorConsoleTestHostFixture : ConsoleTestHostFixture
         builder.AddBaseConsoleObservability(builder.Configuration);          // metrics-only OTel (no tracer)
         builder.Services.AddBaseProcessor(builder.Configuration);            // identity + liveness + dispatch + heartbeat (+ watchdog descriptor)
         builder.Services.AddSingleton<BaseProcessorBase, SampleProcessor>(); // the ONE concrete transform seam
+
+        // [Rule 3 - Blocking] The two processor background loops (ProcessorStartupOrchestrator +
+        // ProcessorLivenessHeartbeat) are removed so the in-process test host BOOTS. The startup
+        // orchestrator's first act is AssemblyMetadataSourceHashProvider.Get(), which reads the ENTRY
+        // assembly's [assembly: AssemblyMetadata("SourceHash", ...)] — emitted only onto a real
+        // Processor.<Purpose>.dll by the Phase-28 MSBuild embed target, never onto the BaseApi.Tests entry
+        // assembly. Without it the orchestrator throws inside Host.StartAsync and the fixture cannot start.
+        // These loops are IRRELEVANT to this proof: the test seeds the L1 holder DIRECTLY via SeedLiveness
+        // (the loops are the only OTHER L1 writers), and the watchdog/listener wiring under proof is
+        // registered separately by AddBaseProcessor (the live-tagged HealthCheckDescriptor + the embedded
+        // EmbeddedHealthEndpointService) and is left intact. We strip ONLY these two hosted services by
+        // their concrete singleton type so the embedded listener + MassTransit bus hosted services survive.
+        RemoveHostedService<ProcessorStartupOrchestrator>(builder.Services);
+        RemoveHostedService<ProcessorLivenessHeartbeat>(builder.Services);
+    }
+
+    /// <summary>
+    /// Removes the <c>IHostedService</c> wrapper that resolves the concrete singleton <typeparamref name="T"/>
+    /// (registered by <c>AddBaseProcessor</c> as <c>AddHostedService(sp =&gt; sp.GetRequiredService&lt;T&gt;())</c>)
+    /// PLUS the concrete singleton itself — without disturbing the embedded health listener or the MassTransit
+    /// bus hosted service. The wrapper carries no <c>ImplementationType</c> (factory registration), so it is
+    /// matched by invoking the factory against a probe provider that returns a sentinel: instead we match the
+    /// concrete singleton descriptor by type and the hosted wrapper by its declaring-assembly factory.
+    /// </summary>
+    private static void RemoveHostedService<T>(IServiceCollection services) where T : class, IHostedService
+    {
+        // 1. Drop the hosted-service wrapper whose factory was authored in BaseProcessor.Core's composition
+        //    root (the `sp => sp.GetRequiredService<T>()` lambda) AND whose service type is IHostedService.
+        //    The lambda's closure method declaring-type lives in the BaseProcessor.Core assembly, distinct
+        //    from MassTransit's own assembly and from BaseConsole.Core (the embedded listener), so this
+        //    matches only the two processor loops. We further disambiguate the two by also removing the
+        //    concrete singleton of T below; the wrapper resolving a now-absent T would throw, so remove both.
+        foreach (var d in services
+                     .Where(d => d.ServiceType == typeof(IHostedService)
+                              && d.ImplementationFactory is not null
+                              && d.ImplementationFactory.Method.DeclaringType?.Assembly == typeof(T).Assembly)
+                     .ToList())
+        {
+            services.Remove(d);
+        }
+
+        // 2. Drop the concrete singleton (registered via ActivatorUtilities.CreateInstance factory). Matched
+        //    by ServiceType == typeof(T) so only THIS loop's singleton is removed.
+        foreach (var d in services.Where(d => d.ServiceType == typeof(T)).ToList())
+        {
+            services.Remove(d);
+        }
     }
 
     /// <summary>
