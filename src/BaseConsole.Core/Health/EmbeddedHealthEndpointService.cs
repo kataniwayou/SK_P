@@ -72,10 +72,20 @@ internal sealed class EmbeddedHealthEndpointService : IHostedService
         // Bridge to the OUTER bus health so /health/ready reflects real bus state (Open-Q 1).
         builder.Services.AddSingleton(new BusReadyHealthCheck(_outer));
 
-        builder.Services.AddHealthChecks()
+        var hc = builder.Services.AddHealthChecks()
             .AddCheck("self", () => HealthCheckResult.Healthy(), tags: new[] { "live" })       // live = self-only
             .AddCheck<StartupHealthCheck>("startup", tags: new[] { "startup" })                // startup = host gate
             .AddCheck<BusReadyHealthCheck>("bus-ready", tags: new[] { "ready" });              // ready = bus state
+
+        // D-05: fold each OUTER-registered descriptor into the inner container; the factory bridges _outer in.
+        // The seam is GENERIC — BaseConsole.Core carries no reference to any concrete check type. A "live"-tagged
+        // descriptor is picked up automatically by the unchanged /health/live Predicate below. Orchestrator/Keeper
+        // register none, so GetServices returns empty and their /health/live is unchanged (D-01 scope).
+        foreach (var d in _outer.GetServices<HealthCheckDescriptor>())
+        {
+            var captured = d;
+            hc.AddCheck(captured.Name, captured.Factory(_outer), tags: captured.Tags);
+        }
 
         _app = builder.Build();
 
