@@ -40,7 +40,9 @@ public sealed class StopCleanupFacts : IClassFixture<Phase8WebAppFactory>
 
     private static string RootKey(Guid wf) => L2ProjectionKeys.Root(wf);
     private static string StepKey(Guid wf, Guid step) => L2ProjectionKeys.Step(wf, step);
-    private static string ProcKey(Guid proc) => L2ProjectionKeys.Processor(proc);
+    // Phase 61 D-11: the L2ProjectionKeys.Processor builder was deleted. This fact only needs an arbitrary
+    // skp:-prefixed key the workflow-graph cleanup must NOT touch; inline the legacy flat shape it produced.
+    private static string ProcKey(Guid proc) => $"{L2ProjectionKeys.Prefix}{proc}";
 
     private async Task SeedRootAsync(IDatabase db, Guid wf, List<Guid> entryStepIds, CancellationToken ct)
     {

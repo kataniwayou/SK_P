@@ -30,7 +30,7 @@ namespace BaseApi.Tests.Processor;
 ///   <item><b>Fact 1 (STATE-03/LOOP-01):</b> PerInstance key present, <see cref="LivenessStatus.Unhealthy"/>, interval 30.</item>
 ///   <item><b>Fact 2 (D-04):</b> summary tracks progress — the unresolved input schema is <see cref="SchemaOutcome.Fail"/>.</item>
 ///   <item><b>Fact 3 (LOOP-04/D-15):</b> the index SET contains the instanceId (SADD).</item>
-///   <item><b>Fact 4 (D-05):</b> the OLD flat <see cref="L2ProjectionKeys.Processor"/> key is NOT written.</item>
+///   <item><b>Fact 4 (D-05):</b> the OLD flat <c>skp:{procId}</c> key is NOT written (its builder was deleted in Phase 61, D-11).</item>
 ///   <item><b>Fact 5 (LOOP-01 resilience):</b> a dead-Redis writer logs-and-continues — resolution still reaches Healthy.</item>
 /// </list>
 /// Net-zero: both the per-instance key AND its (per-test-unique) index SET key are tracked — deleting the
@@ -105,7 +105,8 @@ public sealed class StartupUnhealthyWriteFacts : IClassFixture<RedisFixture>
         var index = L2ProjectionKeys.InstanceIndex(procId);
         _redis.Track(perInstance);                 // net-zero teardown (D-23)
         _redis.Track(index);                       // deleting the SET key removes the SADD'd member
-        _redis.Track(L2ProjectionKeys.Processor(procId)); // belt-and-braces: track the OLD key (must stay absent)
+        var legacyFlatKey = $"{L2ProjectionKeys.Prefix}{procId}"; // Phase 61 D-11: builder deleted — inline the old shape
+        _redis.Track(legacyFlatKey);                       // belt-and-braces: track the OLD key (must stay absent)
         var db = _redis.Multiplexer.GetDatabase();
 
         // Identity Found immediately with a NON-NULL input schema id (output/config null) — Loop B queries the
@@ -175,7 +176,9 @@ public sealed class StartupUnhealthyWriteFacts : IClassFixture<RedisFixture>
             Assert.Contains(InstanceId, members.Select(m => (string)m!));
 
             // Fact 4 (D-05): the OLD flat Processor key is NEVER written by the orchestrator.
-            Assert.False(await db.KeyExistsAsync(L2ProjectionKeys.Processor(procId)));
+            // Phase 61 D-11: the L2ProjectionKeys.Processor builder was deleted with the legacy contract;
+            // the old shape is inlined so this absence regression still holds.
+            Assert.False(await db.KeyExistsAsync(legacyFlatKey));
 
             // L1 mirrors L2 (L1-01 / D-09): the in-memory holder carries the same unhealthy record.
             Assert.NotNull(l1.Current);

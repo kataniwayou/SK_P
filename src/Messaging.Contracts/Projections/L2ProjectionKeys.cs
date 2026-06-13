@@ -7,9 +7,9 @@ namespace Messaging.Contracts.Projections;
 /// consume ONE shape — a future GUID-format/suffix change cannot silently desynchronize them.
 /// <para>
 /// The scheme is FLAT: a single prefix followed by GUID(s), with NO type
-/// discriminator (D-02). Consequently <see cref="Root"/> and <see cref="Processor"/> produce
-/// byte-identical strings for the same GUID — they are disambiguated only by their
-/// GUID namespace (a workflow id is never a processor id). GUIDs render in the default
+/// discriminator (D-02). The live liveness builders are the per-replica <see cref="PerInstance"/> +
+/// <see cref="InstanceIndex"/> pair (the legacy flat <c>Processor(Guid)</c> builder was deleted in
+/// Phase 61, D-11 — the per-replica reshape's reader swapped off it). GUIDs render in the default
 /// <c>Guid.ToString()</c> ("D") format — hyphenated — NOT the "N" (32-digit) format; <see cref="Root"/>
 /// makes this explicit with the <c>:D</c> format specifier (byte-identical to a bare interpolation).
 /// The prefix is now a compile-time <c>const Prefix = "skp:"</c> owned HERE (D-01, Phase 22),
@@ -20,7 +20,6 @@ namespace Messaging.Contracts.Projections;
 ///   <item><description>ParentIndex: <c>{Prefix}</c> (the bare prefix — the parent-index SET key)</description></item>
 ///   <item><description>Root: <c>{Prefix}{workflowId}</c></description></item>
 ///   <item><description>Step: <c>{Prefix}{workflowId}:{stepId}</c></description></item>
-///   <item><description>Processor: <c>{Prefix}{processorId}</c></description></item>
 ///   <item><description>PerInstance: <c>{Prefix}proc:{processorId:D}:{instanceId}</c> — KEY-01, the per-replica liveness key.</description></item>
 ///   <item><description>InstanceIndex: <c>{Prefix}proc:{processorId:D}</c> — KEY-02, the per-processor instance-index SET key (prefix of PerInstance).</description></item>
 ///   <item><description>ExecutionData: <c>{Prefix}data:{entryId:D}</c> — the sole GUID-keyed data builder (D-08; the legacy 64-hex content-addressed string overload was removed in v4.0.0).</description></item>
@@ -37,12 +36,11 @@ public static class L2ProjectionKeys
 
     public static string Step(Guid workflowId, Guid stepId) => $"{Prefix}{workflowId}:{stepId}";
 
-    public static string Processor(Guid processorId) => $"{Prefix}{processorId}";
-
     /// <summary>KEY-01: the per-INSTANCE processor-liveness key — <c>skp:proc:{processorId:D}:{instanceId}</c>.
-    /// The <c>proc:</c> discriminator distinguishes the per-replica scheme from the legacy flat
-    /// <see cref="Processor"/> key. <paramref name="instanceId"/> is the already-resolved pod identity
-    /// (see <c>Messaging.Contracts.Identity.InstanceId.Resolve</c>) — a plain string, NOT a Guid.</summary>
+    /// The <c>proc:</c> discriminator marks the per-replica liveness scheme (the legacy flat
+    /// <c>Processor(Guid)</c> key was deleted in Phase 61, D-11). <paramref name="instanceId"/> is the
+    /// already-resolved pod identity (see <c>Messaging.Contracts.Identity.InstanceId.Resolve</c>) — a
+    /// plain string, NOT a Guid.</summary>
     public static string PerInstance(Guid processorId, string instanceId)
         => $"{Prefix}proc:{processorId:D}:{instanceId}";
 

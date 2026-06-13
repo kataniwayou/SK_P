@@ -346,21 +346,24 @@ public sealed class CorrelationPropagationE2ETests
         }
 
         /// <summary>
-        /// Phase 22: seeds a processor's self-registered L2 liveness entry (<c>skp:{procId}</c>) LIVE
-        /// directly into the HOST Redis (the same instance the orchestrator container reads). The Start
-        /// path's processor-liveness gate (Plan 04, runs before UpsertAsync) requires it, and the writer
-        /// no longer creates it (Plan 03 / PROC-NOCREATE-01). interval is SECONDS (now + 300*2 &gt; now).
-        /// The key is registered for net-zero teardown so the close-gate <c>redis-cli --scan</c> SHA holds.
+        /// Phase 61 (GATE-01/02/03, D-06/11): seeds a processor's per-replica liveness LIVE directly into the
+        /// HOST Redis (the same instance the orchestrator container reads). The Start path's processor-liveness
+        /// gate now SMEMBERS skp:proc:{procId} -> GETs each per-instance ProcessorLivenessEntry, so seed ONE
+        /// healthy+fresh replica: SADD the instance index + SET the per-instance entry. interval is SECONDS
+        /// (now + 300*2 &gt; now). Both keys are registered for net-zero teardown so the close-gate
+        /// <c>redis-cli --scan</c> SHA holds. The legacy flat skp:{procId}/ProcessorProjection seed was retired (D-11).
         /// </summary>
         public async Task SeedHostProcessorLiveAsync(Guid procId, CancellationToken ct)
         {
+            const string instanceId = "pod-seed-1";
             await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
-            var projection = new ProcessorProjection(
-                null, null, new LivenessProjection(DateTime.UtcNow, 300, "Live"));
-            await mux.GetDatabase().StringSetAsync(
-                L2ProjectionKeys.Processor(procId),
-                JsonSerializer.Serialize(projection));
-            L2KeysToCleanup.Add(L2ProjectionKeys.Processor(procId));
+            var db = mux.GetDatabase();
+            await db.SetAddAsync(L2ProjectionKeys.InstanceIndex(procId), instanceId);
+            await db.StringSetAsync(
+                L2ProjectionKeys.PerInstance(procId, instanceId),
+                JsonSerializer.Serialize(ProcessorLivenessEntry.Create(null, null, null, DateTime.UtcNow, 300)));
+            L2KeysToCleanup.Add(L2ProjectionKeys.InstanceIndex(procId));
+            L2KeysToCleanup.Add(L2ProjectionKeys.PerInstance(procId, instanceId));
         }
 
         private const string HostRedis = "localhost:6380,abortConnect=false,connectTimeout=5000";

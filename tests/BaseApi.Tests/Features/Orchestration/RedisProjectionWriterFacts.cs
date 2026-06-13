@@ -209,8 +209,9 @@ public sealed class RedisProjectionWriterFacts : IClassFixture<Phase8WebAppFacto
             Assert.Contains(wfId.ToString("D"), members.Select(m => m.ToString()));
 
             // --- PROC-NOCREATE-01: the writer creates ZERO processor keys ---
+            // Phase 61 D-11: the L2ProjectionKeys.Processor builder was deleted; inline the legacy flat shape.
             Assert.False(
-                await db.KeyExistsAsync(L2ProjectionKeys.Processor(procId)),
+                await db.KeyExistsAsync($"{L2ProjectionKeys.Prefix}{procId}"),
                 "writer must not create a processor key (PROC-NOCREATE-01 — external self-registration only)");
         }
         finally

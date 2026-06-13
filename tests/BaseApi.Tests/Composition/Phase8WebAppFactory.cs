@@ -142,10 +142,19 @@ public class Phase8WebAppFactory : WebAppFactory, IAsyncLifetime
     /// <param name="ct">Cancellation token (forwarded to the Redis write).</param>
     public async Task SeedLiveProcessorAsync(Guid procId, CancellationToken ct = default)
     {
+        // Phase 61 (GATE-01/02/03, D-06/11): the per-replica reshape's reader (ProcessorLivenessValidator)
+        // now discovers replicas via SMEMBERS skp:proc:{procId} -> GET-each per-instance ProcessorLivenessEntry.
+        // Seed ONE healthy+fresh replica: SADD the instance index + SET the per-instance entry. interval is
+        // SECONDS (now + 300*2 > now => fresh => Healthy). The legacy flat skp:{procId}/ProcessorProjection
+        // seed was retired with the contract (D-11).
+        const string instanceId = "pod-seed-1";
         var db = RedisMultiplexer.GetDatabase();
-        var projection = new ProcessorProjection(null, null, new LivenessProjection(DateTime.UtcNow, 300, "Live"));
-        await db.StringSetAsync(L2ProjectionKeys.Processor(procId), JsonSerializer.Serialize(projection));
-        TrackRedisKey(L2ProjectionKeys.Processor(procId));
+        await db.SetAddAsync(L2ProjectionKeys.InstanceIndex(procId), instanceId);
+        await db.StringSetAsync(
+            L2ProjectionKeys.PerInstance(procId, instanceId),
+            JsonSerializer.Serialize(ProcessorLivenessEntry.Create(null, null, null, DateTime.UtcNow, 300)));
+        TrackRedisKey(L2ProjectionKeys.InstanceIndex(procId));
+        TrackRedisKey(L2ProjectionKeys.PerInstance(procId, instanceId));
     }
 
     /// <summary>

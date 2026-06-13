@@ -326,29 +326,31 @@ public sealed class SC3PauseResumeOutageE2ETests
     // CLONED from SampleRoundTripE2ETests.cs:199-240. Used BOTH as the baseline gate AND as the D-02
     // blocking-teardown steady-state-re-established check after docker start.
 
+    // Phase 61 (GATE-01/02/03, D-06/11): per-replica liveness — SMEMBERS the index -> GET each per-instance
+    // ProcessorLivenessEntry -> accept on >=1 Healthy + fresh replica (the legacy flat skp:{procId} was retired).
     private static async Task PollForHealthyLivenessAsync(Guid procId, CancellationToken ct)
     {
         await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
         var db = mux.GetDatabase();
-        var key = L2ProjectionKeys.Processor(procId);
+        var index = L2ProjectionKeys.InstanceIndex(procId);
 
         var deadline = DateTime.UtcNow.AddMilliseconds(LivenessPollTimeoutMs);
         var delay = 500;
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
-            var raw = await db.StringGetAsync(key);
-            if (!raw.IsNullOrEmpty)
+            var members = await db.SetMembersAsync(index);
+            foreach (var member in members)
             {
-                var projection = JsonSerializer.Deserialize<ProcessorProjection>(raw!);
-                if (projection?.Liveness is { } live)
+                var raw = await db.StringGetAsync(L2ProjectionKeys.PerInstance(procId, member.ToString()));
+                if (raw.IsNullOrEmpty) continue;
+                var entry = JsonSerializer.Deserialize<ProcessorLivenessEntry>(raw!);
+                if (entry is { Status: LivenessStatus.Healthy })
                 {
-                    var age = DateTime.UtcNow - live.Timestamp.ToUniversalTime();
-                    var staleAfter = TimeSpan.FromSeconds(Math.Max(live.Interval, 1) * 3);
+                    var age = DateTime.UtcNow - entry.Timestamp.ToUniversalTime();
+                    var staleAfter = TimeSpan.FromSeconds(Math.Max(entry.Interval, 1) * 3);
                     if (age <= staleAfter)
-                    {
-                        return;   // the REAL container is Healthy — steady state established / re-established.
-                    }
+                        return;   // a REAL replica is Healthy — steady state established / re-established.
                 }
             }
 
@@ -357,8 +359,8 @@ public sealed class SC3PauseResumeOutageE2ETests
         }
 
         Assert.Fail(
-            $"The processor-sample container never wrote a fresh Healthy liveness key {key} within " +
-            $"{LivenessPollTimeoutMs}ms. Either the container is down, its embedded SourceHash diverges " +
+            $"The processor-sample container never wrote a fresh Healthy per-instance liveness key under {index} " +
+            $"within {LivenessPollTimeoutMs}ms. Either the container is down, its embedded SourceHash diverges " +
             $"from the host-built hash registered as the DB row, or (in teardown) the L2 outage did not heal. " +
             $"Ensure the full compose stack incl. processor-sample is up healthy and sk-redis is started.");
     }

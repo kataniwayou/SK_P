@@ -15,6 +15,4 @@ internal static class RedisProjectionKeys
     public static string Root(Guid workflowId) => L2ProjectionKeys.Root(workflowId);
 
     public static string Step(Guid workflowId, Guid stepId) => L2ProjectionKeys.Step(workflowId, stepId);
-
-    public static string Processor(Guid processorId) => L2ProjectionKeys.Processor(processorId);
 }

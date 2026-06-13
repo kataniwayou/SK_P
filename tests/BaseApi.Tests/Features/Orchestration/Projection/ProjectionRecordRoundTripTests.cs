@@ -104,21 +104,6 @@ public sealed class ProjectionRecordRoundTripTests
     }
 
     [Fact]
-    public void ProcessorProjection_Serializes_Null_InputDefinition_With_Exact_Field_Name()
-    {
-        var proc = new ProcessorProjection(
-            InputDefinition: null,
-            OutputDefinition: "{\"type\":\"object\"}",
-            Liveness: Liveness());
-
-        var json = JsonSerializer.Serialize(proc, Default);
-
-        Assert.Contains("\"inputDefinition\":null", json);
-        Assert.Contains("\"outputDefinition\":", json);
-        Assert.DoesNotContain("definitionIn", json);
-    }
-
-    [Fact]
     public void WorkflowRoot_RoundTrips_By_Value()
     {
         var root = new WorkflowRootProjection(
@@ -158,22 +143,5 @@ public sealed class ProjectionRecordRoundTripTests
         Assert.Equal(step.ProcessorId, rt.ProcessorId);
         Assert.Equal(step.Payload, rt.Payload);
         Assert.Equal(step.NextStepIds, rt.NextStepIds);
-    }
-
-    [Fact]
-    public void ProcessorProjection_RoundTrips_By_Value()
-    {
-        var proc = new ProcessorProjection(
-            InputDefinition: "{\"type\":\"string\"}",
-            OutputDefinition: null,
-            Liveness: Liveness());
-
-        var rt = JsonSerializer.Deserialize<ProcessorProjection>(
-            JsonSerializer.Serialize(proc, Default), Default);
-
-        Assert.NotNull(rt);
-        Assert.Equal(proc.InputDefinition, rt!.InputDefinition);
-        Assert.Equal(proc.OutputDefinition, rt.OutputDefinition);
-        Assert.Equal(proc.Liveness, rt.Liveness);
     }
 }

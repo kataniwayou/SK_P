@@ -209,35 +209,37 @@ public sealed class SampleRoundTripE2ETests
         catch { /* best-effort net-zero teardown */ }
     }
 
-    // ---- Liveness poll (Pitfall 3): wait for the REAL container's skp:{procId:D} Healthy heartbeat ----
+    // ---- Liveness poll (Pitfall 3): wait for the REAL container's per-instance Healthy heartbeat ----
+    // Phase 61 (GATE-01/02/03, D-06/11): the Phase-60 writer publishes per-replica liveness keys
+    // (skp:proc:{procId}:{instanceId}) + an instance-index SET (skp:proc:{procId}); the legacy flat
+    // skp:{procId}/ProcessorProjection key was retired (D-11). This poll now mirrors the gate: SMEMBERS
+    // the index -> GET each per-instance ProcessorLivenessEntry -> accept on >=1 Healthy + fresh replica.
 
     internal static async Task PollForHealthyLivenessAsync(Guid procId, CancellationToken ct)
     {
         await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
         var db = mux.GetDatabase();
-        var key = L2ProjectionKeys.Processor(procId);
+        var index = L2ProjectionKeys.InstanceIndex(procId);
 
         var deadline = DateTime.UtcNow.AddMilliseconds(LivenessPollTimeoutMs);
         var delay = 500;
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
-            var raw = await db.StringGetAsync(key);
-            if (!raw.IsNullOrEmpty)
+            var members = await db.SetMembersAsync(index);
+            foreach (var member in members)
             {
-                var projection = JsonSerializer.Deserialize<ProcessorProjection>(raw!);
-                // Freshness: the container is the source of truth; presence of a non-stale Healthy key
-                // means it resolved identity, bound its queue, and MarkHealthy'd (heartbeat writes only
-                // when IsHealthy). The interval is in SECONDS — accept the key if its timestamp is within
-                // a generous 2× interval window (mirrors the gate's freshness model).
-                if (projection?.Liveness is { } live)
+                var raw = await db.StringGetAsync(L2ProjectionKeys.PerInstance(procId, member.ToString()));
+                if (raw.IsNullOrEmpty) continue;
+                var entry = JsonSerializer.Deserialize<ProcessorLivenessEntry>(raw!);
+                // Freshness: a non-stale Healthy replica means it resolved identity, bound its queue, and
+                // MarkHealthy'd. interval is SECONDS — accept within a generous 3× window (mirrors the gate).
+                if (entry is { Status: LivenessStatus.Healthy })
                 {
-                    var age = DateTime.UtcNow - live.Timestamp.ToUniversalTime();
-                    var staleAfter = TimeSpan.FromSeconds(Math.Max(live.Interval, 1) * 3);
+                    var age = DateTime.UtcNow - entry.Timestamp.ToUniversalTime();
+                    var staleAfter = TimeSpan.FromSeconds(Math.Max(entry.Interval, 1) * 3);
                     if (age <= staleAfter)
-                    {
-                        return; // the REAL container is Healthy — Start's liveness gate will pass truthfully.
-                    }
+                        return; // a REAL replica is Healthy — Start's liveness gate will pass truthfully.
                 }
             }
 
@@ -246,8 +248,8 @@ public sealed class SampleRoundTripE2ETests
         }
 
         Assert.Fail(
-            $"The processor-sample container never wrote a fresh Healthy liveness key {key} within " +
-            $"{LivenessPollTimeoutMs}ms. Either the container is down, or its embedded SourceHash diverges " +
+            $"The processor-sample container never wrote a fresh Healthy per-instance liveness key under {index} " +
+            $"within {LivenessPollTimeoutMs}ms. Either the container is down, or its embedded SourceHash diverges " +
             $"from the host-built hash registered as the DB row (identity never resolved). Ensure the full " +
             $"compose stack incl. processor-sample is up healthy.");
     }

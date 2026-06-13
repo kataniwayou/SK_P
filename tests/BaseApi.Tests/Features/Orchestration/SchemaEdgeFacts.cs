@@ -38,16 +38,21 @@ public sealed class SchemaEdgeFacts : IClassFixture<HarnessWebAppFactory>
     public SchemaEdgeFacts(HarnessWebAppFactory factory) => _factory = factory;
 
     /// <summary>
-    /// Phase 22 (PROC-LIVE-01): seeds each participating processor's self-registered L2 entry
-    /// (<c>skp:{procId}</c>) live so the new processor-liveness gate — which runs AFTER schema-edge and
-    /// BEFORE UpsertAsync — does not reject the previously-204 path. interval is SECONDS (now + 300*2 &gt; now).
-    /// Tracks the key for known-key cleanup (D-23).
+    /// Phase 61 (GATE-01/02/03, D-06/11): seeds each participating processor's per-replica liveness so the
+    /// processor-liveness gate — which now SMEMBERS skp:proc:{procId} -> GETs each per-instance
+    /// ProcessorLivenessEntry — admits the previously-204 path. SADDs ONE healthy+fresh replica into the
+    /// instance index + SETs its per-instance entry. interval is SECONDS (now + 300*2 &gt; now). Tracks both
+    /// keys for known-key cleanup (D-23). The legacy flat skp:{procId}/ProcessorProjection seed was retired (D-11).
     /// </summary>
     private async Task SeedLiveAsync(IDatabase db, Guid procId)
     {
-        var projection = new ProcessorProjection(null, null, new LivenessProjection(DateTime.UtcNow, 300, "Live"));
-        await db.StringSetAsync(L2ProjectionKeys.Processor(procId), JsonSerializer.Serialize(projection));
-        _factory.TrackRedisKey(L2ProjectionKeys.Processor(procId));
+        const string instanceId = "pod-seed-1";
+        await db.SetAddAsync(L2ProjectionKeys.InstanceIndex(procId), instanceId);
+        await db.StringSetAsync(
+            L2ProjectionKeys.PerInstance(procId, instanceId),
+            JsonSerializer.Serialize(ProcessorLivenessEntry.Create(null, null, null, DateTime.UtcNow, 300)));
+        _factory.TrackRedisKey(L2ProjectionKeys.InstanceIndex(procId));
+        _factory.TrackRedisKey(L2ProjectionKeys.PerInstance(procId, instanceId));
     }
 
     /// <summary>Minimal valid draft-2020-12 schema body — type:object accepts any object payload.</summary>

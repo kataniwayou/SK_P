@@ -157,16 +157,19 @@ public sealed class HappyPathE2EFacts : IClassFixture<HarnessWebAppFactory>
             Assert.Empty(step.NextStepIds);                                  // terminal → [] not null
             Assert.Equal(StepEntryCondition.Always, step.EntryCondition);    // enum compare (int-backed, Always==4); NOT a "Always" string
 
-            // --- Per-processor keyspace --- PROC-NOCREATE-01: the writer creates ZERO processor keys.
-            // The skp:{procId} entry present is the EXTERNALLY-SEEDED self-registration (null defs, "Live"),
-            // NOT a writer-created one — the writer no longer touches this keyspace.
-            var procVal = await db.StringGetAsync($"{prefix}{procId}");
-            Assert.True(procVal.HasValue, "processor key is the externally self-registered entry");
-            var proc = JsonSerializer.Deserialize<ProcessorProjection>(procVal.ToString());
-            Assert.NotNull(proc);
-            Assert.Null(proc!.InputDefinition);   // externally seeded (source/sink) — NOT writer-populated from schema defs
-            Assert.Null(proc.OutputDefinition);
-            Assert.Equal("Live", proc.Liveness.Status);  // self-registration liveness, NOT the writer's "Pending"
+            // --- Per-replica liveness keyspace (Phase 61, GATE-01/02/03, D-06/11) --- PROC-NOCREATE-01:
+            // the writer creates ZERO liveness keys. The per-instance entry present is the EXTERNALLY-SEEDED
+            // self-registration (SeedLiveProcessorAsync), NOT a writer-created one. The legacy flat
+            // skp:{procId}/ProcessorProjection entry was retired with the contract (D-11): the gate now
+            // SMEMBERS skp:proc:{procId} -> GETs each per-instance ProcessorLivenessEntry.
+            const string instanceId = "pod-seed-1";   // mirrors Phase8WebAppFactory.SeedLiveProcessorAsync
+            var members = await db.SetMembersAsync(L2ProjectionKeys.InstanceIndex(procId));
+            Assert.Contains(instanceId, members.Select(m => m.ToString()));
+            var procVal = await db.StringGetAsync(L2ProjectionKeys.PerInstance(procId, instanceId));
+            Assert.True(procVal.HasValue, "per-instance liveness key is the externally self-registered entry");
+            var entry = JsonSerializer.Deserialize<ProcessorLivenessEntry>(procVal.ToString());
+            Assert.NotNull(entry);
+            Assert.Equal(LivenessStatus.Healthy, entry!.Status);   // healthy+fresh self-registration
         }
         finally
         {

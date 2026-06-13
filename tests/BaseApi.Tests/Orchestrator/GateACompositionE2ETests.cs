@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
+using System.Text.Json;
 using BaseApi.Tests.Observability.Helpers;
 using Messaging.Contracts.Projections;
 using StackExchange.Redis;
@@ -131,21 +132,30 @@ public sealed class GateACompositionE2ETests
         Assert.NotNull(clash);
         Assert.Contains("Gate A incompatibility", clash!.Value.GetRawText());
 
-        // ---- Signal (b): skp:{badId} STABLY ABSENT (the mechanism) ----
-        // The INVERSE of PollForHealthyLivenessAsync: read the liveness key across 3 windows spanning >
-        // one 10s heartbeat interval. Gate A withheld MarkHealthy, so the heartbeat never writes — the
-        // key must stay absent the WHOLE window. Fail if it EVER appears.
+        // ---- Signal (b): NO Healthy per-instance replica for badId (the mechanism) ----
+        // Phase 61 (GATE-01/02/03, D-06/11): the INVERSE of PollForHealthyLivenessAsync across 3 windows
+        // spanning > one 10s heartbeat interval. Gate A withheld MarkHealthy, so the heartbeat never writes a
+        // Healthy per-instance entry. SMEMBERS skp:proc:{badId} -> GET each -> NONE may be Healthy the WHOLE
+        // window. Fail if any Healthy replica EVER appears. (A starting replica may publish an Unhealthy entry
+        // — that is expected and must NOT trip this signal; only a Healthy entry would false-pass CFG-08.)
         await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);
         var db = mux.GetDatabase();
-        var livenessKey = L2ProjectionKeys.Processor(badId);
+        var badIndex = L2ProjectionKeys.InstanceIndex(badId);
         for (var i = 0; i < 3; i++)
         {
             ct.ThrowIfCancellationRequested();
-            var raw = await db.StringGetAsync(livenessKey);
-            Assert.True(
-                raw.IsNullOrEmpty,
-                $"skp:{badId} unexpectedly present — Gate A did NOT withhold MarkHealthy (the badconfig " +
-                $"processor went Healthy despite the config-schema clash, which would false-pass CFG-08).");
+            var members = await db.SetMembersAsync(badIndex);
+            foreach (var member in members)
+            {
+                var raw = await db.StringGetAsync(L2ProjectionKeys.PerInstance(badId, member.ToString()));
+                if (raw.IsNullOrEmpty) continue;
+                var entry = JsonSerializer.Deserialize<ProcessorLivenessEntry>(raw!);
+                Assert.False(
+                    entry is { Status: LivenessStatus.Healthy },
+                    $"a Healthy per-instance liveness replica for {badId} unexpectedly present — Gate A did NOT " +
+                    $"withhold MarkHealthy (the badconfig processor went Healthy despite the config-schema clash, " +
+                    $"which would false-pass CFG-08).");
+            }
             await Task.Delay(5_000, ct);
         }
 
