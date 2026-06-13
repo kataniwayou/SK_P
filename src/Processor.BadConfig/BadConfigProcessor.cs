@@ -22,7 +22,7 @@ public sealed class BadConfigProcessor(ILogger<BadConfigProcessor> logger) : Bas
         string validatedData, BadConfig? config, CancellationToken ct)
     {
         // Dead path — Gate A withholds the queue bind so this is never invoked. Trivial completed item.
-        logger.LogInformation("badconfig transform invoked (unexpected — Gate A should have withheld health)");
+        logger.LogWarning("badconfig transform invoked (unexpected — Gate A should have withheld health)");
 
         return Task.FromResult(new List<ProcessItem>
         {
