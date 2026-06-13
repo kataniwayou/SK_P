@@ -43,9 +43,12 @@ Make processor liveness multi-replica-accurate and self-healing: L2 reflects eve
 **: The processor maintains an in-memory L1 liveness record (`timestamp`, active `interval`, `status`, `summary`), updated by BOTH loops on every iteration — the source the self-watchdog probe reads.
 
 ### Orchestration-Start Gate (GATE)
-- [ ] **GATE-01**: The WebAPI orchestration-start validator discovers a processor's replicas by `SMEMBERS skp:proc:{processorId}` and reads each per-instance key (no prior knowledge of instanceIds required).
-- [ ] **GATE-02**: A processor passes the gate iff **≥1** replica is present AND `status=healthy` AND non-stale (`timestamp + interval×2 > now`); a present-but-`unhealthy` or stale replica fails *that* replica (presence no longer implies live).
-- [ ] **GATE-03**: When no replica satisfies the gate, orchestration start is blocked with **422 + RFC 7807**; an absent/TTL-expired index member is skipped and lazily `SREM`'d from the index (self-healing).
+- [x] **GATE-01
+**: The WebAPI orchestration-start validator discovers a processor's replicas by `SMEMBERS skp:proc:{processorId}` and reads each per-instance key (no prior knowledge of instanceIds required).
+- [x] **GATE-02
+**: A processor passes the gate iff **≥1** replica is present AND `status=healthy` AND non-stale (`timestamp + interval×2 > now`); a present-but-`unhealthy` or stale replica fails *that* replica (presence no longer implies live).
+- [x] **GATE-03
+**: When no replica satisfies the gate, orchestration start is blocked with **422 + RFC 7807**; an absent/TTL-expired index member is skipped and lazily `SREM`'d from the index (self-healing).
 
 ### Self-Watchdog Probe (PROBE)
 - [ ] **PROBE-01**: The processor's liveness probe reads the in-memory L1 record and reports `unhealthy` when the L1 timestamp is stale beyond the active-interval ×2 grace — detecting a silently-crashed startup or heartbeat loop while the host process stays up.
