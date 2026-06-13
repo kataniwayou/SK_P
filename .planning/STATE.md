@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
 status: executing
-stopped_at: Completed 60-01-PLAN.md
-last_updated: "2026-06-13T11:14:59.058Z"
+stopped_at: Completed 60-02-PLAN.md
+last_updated: "2026-06-13T11:22:09.907Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
   completed_phases: 1
   total_plans: 6
-  completed_plans: 3
-  percent: 50
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
 Phase: 60 (dual-loop-writer-in-memory-l1-liveness-record) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-06-13
 
@@ -679,7 +679,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [█████░░░░░] 50%
+Progress: [███████░░░] 67%
 
 ### Milestone Phases (v3.4.0)
 
@@ -957,6 +957,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 59 P01 | 28m | 3 tasks | 4 files |
 | Phase 59 P02 | 9m | 3 tasks | 4 files |
 | Phase 60 P01 | 53min | 2 tasks | 5 files |
+| Phase 60 P60-02 | 3min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1370,6 +1371,8 @@ Recent decisions affecting current work:
 - Phase 59-02: D-04 shared instanceId resolver lives in Messaging.Contracts.Identity (overrides stale Phase-30 'wrong home' comment); two observability copies + ResolveInstanceIdFacts left for a deferred dedupe sweep
 - Phase 60: StartupInterval baked default 30 (BackoffCap anchor, D-12); Interval (10 heartbeat) + Ttl (30 floor) unchanged
 - Phase 60: L1 liveness holder is a new dedicated singleton (NOT on IProcessorContext), lock-free volatile-ref-swap (D-08/10)
+- 60-02: L1 holder Updated unconditionally before/independent of Redis (Open Q3 resolved) — watchdog wants latest in-process truth, not Redis reachability
+- 60-02: ProcessorLivenessWriter is public sealed so AddSingleton + AddBaseProcessorFacts descriptor assert work cross-assembly without InternalsVisibleTo
 
 ### Roadmap Milestone Log
 
@@ -1473,8 +1476,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-13T11:14:50.672Z
-Stopped at: Completed 60-01-PLAN.md
+Last session: 2026-06-13T11:22:09.894Z
+Stopped at: Completed 60-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.

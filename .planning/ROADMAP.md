@@ -56,7 +56,7 @@
   5. The in-memory L1 liveness record (`timestamp`, active `interval`, `status`, `summary`) is updated by BOTH loops on every iteration and is the single source the self-watchdog probe (Phase 61) reads.
 **Plans**: 4 plans
 - [ ] 60-01-PLAN.md - Config interval split (StartupInterval=30, Interval/Ttl retained) + lock-free L1 holder + binding/state tests (LOOP-03, L1-01)
-- [ ] 60-02-PLAN.md - Shared internal writer: L2 SET(perInstance, TTL=max(interval*2,Ttl)) + index SADD + L1 Update + log-and-continue; writer facts (LOOP-03, LOOP-04)
+- [x] 60-02-PLAN.md - Shared internal writer: L2 SET(perInstance, TTL=max(interval*2,Ttl)) + index SADD + L1 Update + log-and-continue; writer facts (LOOP-03, LOOP-04) ✓ ProcessorLivenessWriter (public sealed) + 5 ProcessorLivenessWriterFacts; Phase=60 12/12 GREEN, Release+Debug 0/0 warnaserror; LOOP-03/04; commits 70d0ff0, 9d8cdb8
 - [ ] 60-03-PLAN.md - Heartbeat swap to per-instance frozen-healthy entry via shared writer; remove old ProcessorProjection write; re-point heartbeat facts (LOOP-02, LOOP-04)
 - [ ] 60-04-PLAN.md - Orchestrator inline unhealthy write per iteration + DI registration + 3 ctor-site facts + AddBaseProcessor descriptors + StartupUnhealthyWriteFacts (STATE-03, LOOP-01)
 
