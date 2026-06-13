@@ -106,7 +106,7 @@ Plans:
 **Plans:** 2 plans (2 waves)
 
 Plans:
-- [ ] 62.1-01-PLAN.md — Product fix: parameterize WriteUnhealthyAsync recorded-interval + replace the Gate-A-clash `return;` with a cancellation-safe IntervalSeconds-cadence unhealthy-refresh loop (G-62-01, STATE-03, PROBE-02)
+- [x] 62.1-01-PLAN.md — Product fix: parameterize WriteUnhealthyAsync recorded-interval + replace the Gate-A-clash `return;` with a cancellation-safe IntervalSeconds-cadence unhealthy-refresh loop (G-62-01, STATE-03, PROBE-02) ✅ 2026-06-13 (b1ede90, 35e6d71)
 - [ ] 62.1-02-PLAN.md — Hermetic ClashRefreshFacts: re-SET-each-interval + TTL-reset + L1-advance, watchdog-verdict-unchanged (reads "live"), clean shutdown (G-62-01, STATE-03, PROBE-02, TEST-01)
 
 #### Phase 56: Typed Base-Config Seam
