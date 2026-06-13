@@ -39,6 +39,11 @@ Make processor liveness multi-replica-accurate and self-healing: L2 reflects eve
 - [ ] **PROBE-01**: The processor's liveness probe reads the in-memory L1 record and reports `unhealthy` when the L1 timestamp is stale beyond the active-interval ×2 grace — detecting a silently-crashed startup or heartbeat loop while the host process stays up.
 - [ ] **PROBE-02**: The probe returns the per-schema `summary` in its response body. (K8s liveness-probe wiring + restart policy is future; this milestone delivers the probe semantics so the restart trigger exists.)
 
+### Live-Proof Capstone (TEST)
+- [ ] **TEST-01**: RealStack E2E proves the per-instance keyspace live — two replicas of one processor each write a distinct `skp:proc:{processorId}:{instanceId}` key and `SADD` themselves to the `skp:proc:{processorId}` index; a starting/failed replica is observable as `unhealthy` (never absent); a dead replica's key TTL-expires and is lazily `SREM`'d.
+- [ ] **TEST-02**: RealStack E2E proves the gate + probe live — orchestration start admits a workflow when ≥1 required-processor replica is healthy-and-fresh (even with an unhealthy/stale sibling) and is blocked 422 + RFC 7807 when none qualify; the self-watchdog probe returns `unhealthy` + the per-schema `summary` when the in-memory L1 record is stale beyond the active-interval ×2 grace.
+- [ ] **TEST-03**: The milestone close gate holds — N=3 consecutive GREEN + triple-SHA (psql `\l` / redis-cli `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER net-zero, DLQ depth 0, at Release + Debug 0-warning.
+
 ## Future Requirements (deferred)
 
 - **K8s liveness-probe wiring** — pointing the actual Kubernetes liveness probe at the watchdog endpoint with a restart policy (semantics built this milestone; deployment wiring deferred).
@@ -58,22 +63,25 @@ REQ-IDs are filled into phases by the roadmapper (Step 10). Every requirement ma
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| KEY-01 | TBD | Pending |
-| KEY-02 | TBD | Pending |
-| KEY-03 | TBD | Pending |
-| KEY-04 | TBD | Pending |
-| STATE-01 | TBD | Pending |
-| STATE-02 | TBD | Pending |
-| STATE-03 | TBD | Pending |
-| LOOP-01 | TBD | Pending |
-| LOOP-02 | TBD | Pending |
-| LOOP-03 | TBD | Pending |
-| LOOP-04 | TBD | Pending |
-| L1-01 | TBD | Pending |
-| GATE-01 | TBD | Pending |
-| GATE-02 | TBD | Pending |
-| GATE-03 | TBD | Pending |
-| PROBE-01 | TBD | Pending |
-| PROBE-02 | TBD | Pending |
+| KEY-01 | Phase 59 | Pending |
+| KEY-02 | Phase 59 | Pending |
+| KEY-03 | Phase 59 | Pending |
+| KEY-04 | Phase 59 | Pending |
+| STATE-01 | Phase 59 | Pending |
+| STATE-02 | Phase 59 | Pending |
+| STATE-03 | Phase 60 | Pending |
+| LOOP-01 | Phase 60 | Pending |
+| LOOP-02 | Phase 60 | Pending |
+| LOOP-03 | Phase 60 | Pending |
+| LOOP-04 | Phase 60 | Pending |
+| L1-01 | Phase 60 | Pending |
+| GATE-01 | Phase 61 | Pending |
+| GATE-02 | Phase 61 | Pending |
+| GATE-03 | Phase 61 | Pending |
+| PROBE-01 | Phase 61 | Pending |
+| PROBE-02 | Phase 61 | Pending |
+| TEST-01 | Phase 62 | Pending |
+| TEST-02 | Phase 62 | Pending |
+| TEST-03 | Phase 62 | Pending |
 
-**Coverage:** 17 requirements across 6 categories (KEY, STATE, LOOP, L1, GATE, PROBE) — to be mapped by the roadmapper.
+**Coverage:** 17 functional requirements across 6 categories (KEY, STATE, LOOP, L1, GATE, PROBE) — all mapped, no orphans/duplicates: **Phase 59** KEY-01/02/03/04 + STATE-01/02 · **Phase 60** STATE-03 + LOOP-01/02/03/04 + L1-01 · **Phase 61** GATE-01/02/03 + PROBE-01/02. Plus a 3-req live-proof capstone set (**Phase 62** TEST-01/02/03). 17/17 functional coverage validated by the roadmapper (2026-06-13).

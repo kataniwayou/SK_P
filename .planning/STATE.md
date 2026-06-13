@@ -7,7 +7,7 @@ stopped_at: Milestone v7.0.0 started (defining requirements)
 last_updated: "2026-06-13T00:00:00.000Z"
 last_activity: 2026-06-13
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -26,15 +26,16 @@ See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 ## Current Position
 
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
-Phase: Not started (defining requirements)
+Phase: Phase 59 — Per-Instance L2 Keyspace & Two-State Liveness Value (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-13 — Milestone v7.0.0 started
+Status: Roadmap created (phases 59-62) — ready to plan Phase 59
+Last activity: 2026-06-13 — v7.0.0 roadmap created (4 phases, 59-62)
 
 > v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
 ### Roadmap Evolution
 
+- 2026-06-13 — **v7.0.0 roadmap created** — 4 phases (59-62), standard granularity, 17/17 functional requirements mapped (no orphans, no duplicates). Dependency-driven order (locked design): **59** Per-Instance L2 Keyspace & Two-State Liveness Value (KEY-01/02/03/04 per-instance key + instance-index SET + podId resolution + definitions-dropped, STATE-01/02 two-state status + per-schema summary — the prerequisite keyspace/value reshape) → **60** Dual-Loop Writer + In-Memory L1 Liveness Record (STATE-03 unhealthy-is-written, LOOP-01/02/03/04 startup+heartbeat write to L2+L1 each iteration / SADD instanceId / split startup+heartbeat intervals / per-key TTL=source-of-truth / frozen-healthy, L1-01 in-memory record) → **61** ≥1-Healthy Orchestration-Start Gate + Self-Watchdog Probe (GATE-01/02/03 SMEMBERS→GET-each→≥1 healthy-and-fresh→422 + lazy-SREM, PROBE-01/02 L1-staleness watchdog + summary in body) → **62** Live Proof & Close Gate (capstone: RealStack E2E of the reshaped per-replica liveness + triple-SHA psql/redis/rabbitmq net-zero N=3 GREEN; a 3-req TEST-01/02/03 live-proof set introduced for its criteria). Builds on v6.0.0 Gate A (its outcome → the `configSchema` summary field). Next: `/gsd-plan-phase 59`.
 - 2026-06-12 — **v6.0.0 roadmap created** — 3 phases (56-58), standard granularity, 10/10 CFG requirements mapped (no orphans). Dependency-driven order: **56** Typed Base-Config Seam (CFG-01/02 — the prerequisite seam) → **57** Startup Config-Schema Fetch + Gate A (CFG-03/04 fetch, CFG-05/06/07 Gate A, CFG-10 TOCTOU folded in — all touch the startup config-schema definition) → **58** Orchestration-Gate Integration Proof & Close (CFG-08/09 — live 422-block + compatible-starts-normally, then the close gate). Three open decisions (Gate A direction/fidelity, terminal-unhealthy mechanics, TOCTOU policy) deferred to /gsd-spec-phase. Next: `/gsd-plan-phase 56`.
 - 2026-06-12 — **Milestone v6.0.0 started** (Config & Payload Validation Hardening): base config-class seam on `BaseProcessor` (authors inherit a typed config; the framework deserializes the dispatch payload into it, replacing the raw-string seam) + startup config-schema fetch (Loop B also reads `ConfigSchemaId`, lifting the D-05 carve-out) + **Gate A** (config-type↔config-schema compat → withhold `MarkHealthy` on mismatch → no L2 liveness → orchestration-start `ProcessorLivenessValidator` blocks 422). Null `ConfigSchemaId` skips Gate A (null-is-skip). Complements the shipped WebAPI **Gate B** (`PayloadConfigSchemaValidator`). v5.0.0 (phases 50-55) shipped/complete. Breaking author-contract change → major bump. Phases continue at **56**.
 - 2026-06-12 — **Phase 54 inserted** (`54-terminal-index-delete`): active terminal reclaim of the `L2[messageId]` allocation index — the processor happy-path tail deletes both the source `L2[entryId]` and the `L2[messageId]` index in one atomic multi-key `DEL`; exhaustion `PERSIST`s the index + escalates to a keeper `DELETE` now carrying `{messageId, entryId}` (both keys deleted atomically). Restores v4 CLEANUP-grade deterministic net-zero that A18's TTL-only index reclaim gave up. Design-doc amendment **A19** (LOCKED 2026-06-12). The live-proof + close-gate phase was **renumbered 54→55**. New reqs GC-01/02/03; TEST-01/02 reassigned to Phase 55. Milestone now phases 50-55 (6 phases). Worst case = duplicate message on a source-step crash-before-ack (A16-accepted).

@@ -11,6 +11,71 @@
 - ✅ **v4.0.0 Processor Pre/In/Post-Process + Keeper Recovery Redesign** — Phases 43-49 (shipped 2026-06-11) — see [milestones/v4.0.0-ROADMAP.md](milestones/v4.0.0-ROADMAP.md)
 - ✅ **v5.0.0 Recovery Re-architecture — messageId slot-array + 3-state keeper** — Phases 50-55 (shipped 2026-06-12) — supersedes v4.0.0 Model-B recovery; source of truth [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) A18 + A19
 - ✅ **v6.0.0 Config & Payload Validation Hardening** — Phases 56-58 (shipped 2026-06-13) — typed base-config seam on `BaseProcessor` + startup config-schema compatibility **Gate A** (withholds processor *Healthy* on config-type↔config-schema mismatch); complements the shipped WebAPI **Gate B** (`PayloadConfigSchemaValidator`); 10/10 CFG requirements, Phase-58 live close gate N=3 GREEN; see [milestones/v6.0.0-ROADMAP.md](milestones/v6.0.0-ROADMAP.md)
+- 🚧 **v7.0.0 Per-Replica Processor Liveness & Self-Watchdog** — Phases 59-62 (in progress, started 2026-06-13) — per-instance L2 liveness keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single `skp:{processorId}`), two-state `status`+per-schema `summary` written by both startup+heartbeat loops, in-memory L1 record, WebAPI ≥1-healthy orchestration-start gate, self-watchdog probe; 17 reqs (KEY/STATE/LOOP/L1/GATE/PROBE); builds on v6.0.0 Gate A
+
+## 🚧 v7.0.0 Per-Replica Processor Liveness & Self-Watchdog (In Progress — started 2026-06-13)
+
+**Milestone Goal:** Make processor liveness multi-replica-accurate and self-healing. Replace the single last-write-wins L2 liveness key `skp:{processorId}` with **per-instance keys** `skp:proc:{processorId}:{instanceId}` under a per-processor **instance-index SET** `skp:proc:{processorId}` (TTL = source of truth; index = discovery hint, lazily `SREM`'d when stale). The liveness value gains a **two-state `status`** (`healthy`/`unhealthy`) + a per-schema **`summary`** (`{inputSchema, outputSchema, configSchema ∈ SUCCESS|FAIL}`; any FAIL ⇒ unhealthy; `configSchema` reuses v6.0.0 Gate A's outcome) and is written by **BOTH** the startup loop (from its first iteration — so L2 reflects a *restarting* replica as `unhealthy`, never absent) and the heartbeat loop (timestamp refresh only; health frozen `healthy` once heartbeat starts, monotonic-within-process, reset-on-restart). An **in-memory L1 liveness record** is added (updated by both loops). The WebAPI orchestration-start gate becomes a **≥1-healthy-and-fresh** check across replicas (`SMEMBERS` the index → `GET` each per-instance key → pass iff ≥1 present + `status=healthy` + non-stale `timestamp + interval×2 > now`; present-but-unhealthy/stale fails *that* replica; lazy-`SREM` absent members). A **self-watchdog liveness probe** reads the L1 record's staleness (active-interval ×2 grace) so a silently-crashed loop ⇒ stale L1 ⇒ probe fails ⇒ (future) K8s pod restart. The `inputDefinition`/`outputDefinition` write-only dead weight is **dropped from L2** (the per-instance value is liveness-only). **Breaking change** to the processor liveness contract (keyspace + wire shape + WebAPI gate logic). Phases continue at **59**; builds directly on v6.0.0 Gate A.
+
+**Source of truth:** This milestone's planning conversation (2026-06-13), design confirmed point-by-point — per-instance keys + index, definitions dropped, unhealthy-is-written, frozen-healthy, self-watchdog. Requirements: [REQUIREMENTS.md](REQUIREMENTS.md) (17 reqs across KEY/STATE/LOOP/L1/GATE/PROBE).
+
+**Build order (locked, dependency-driven — the keyspace/value reshape is the prerequisite foundation):** 59 (L2 per-instance keyspace + two-state value reshape) → 60 (dual-loop writer + in-memory L1 + unhealthy-is-written) → 61 (WebAPI ≥1-healthy gate + self-watchdog probe) → 62 (live proof + close gate).
+
+### Phases
+
+- [ ] **Phase 59: Per-Instance L2 Keyspace & Two-State Liveness Value** — Reshape the L2 liveness contract to per-instance keys + an instance-index SET, with a two-state `status` + per-schema `summary` value (definitions dropped).
+- [ ] **Phase 60: Dual-Loop Writer + In-Memory L1 Liveness Record** — Startup + heartbeat loops both write the (per-instance, TTL'd) entry to L2 + L1 each iteration; startup writes `unhealthy`; split startup/heartbeat intervals; frozen-healthy.
+- [ ] **Phase 61: ≥1-Healthy Orchestration-Start Gate + Self-Watchdog Probe** — WebAPI gate iterates the instance index and admits iff ≥1 replica is healthy-and-fresh (lazy-prune stale); the processor's liveness probe fails on stale L1.
+- [ ] **Phase 62: Live Proof & Close Gate** — Real-stack E2E proof of the reshaped per-replica liveness + the triple-SHA `psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues` net-zero close gate (N=3 GREEN).
+
+### Phase Details
+
+#### Phase 59: Per-Instance L2 Keyspace & Two-State Liveness Value
+**Goal**: The L2 processor-liveness contract is reshaped from the single last-write-wins key `skp:{processorId}` to **per-instance keys** `skp:proc:{processorId}:{instanceId}` discovered through a per-processor **instance-index Redis SET** `skp:proc:{processorId}`, and the per-instance value becomes a **liveness-only** record carrying a two-state `status` (`healthy`/`unhealthy`) + a per-schema `summary` (`{inputSchema, outputSchema, configSchema ∈ SUCCESS|FAIL}`; any FAIL ⇒ unhealthy; `configSchema` sourced from v6.0.0 Gate A, null-is-skip). `instanceId` is the existing pod identity (`POD_NAME → HOSTNAME → MachineName → GUID`). `inputDefinition`/`outputDefinition` are dropped from L2. This is the prerequisite foundation the dual-loop writer (Phase 60) and the WebAPI gate (Phase 61) both consume.
+**Depends on**: — (first phase of v7.0.0; builds on the shipped v6.0.0 Gate A outcome + the v5.0.0 `L2ProjectionKeys`)
+**Requirements**: KEY-01, KEY-02, KEY-03, KEY-04, STATE-01, STATE-02
+**Success Criteria** (what must be TRUE):
+  1. `L2ProjectionKeys` exposes a per-instance liveness key builder `skp:proc:{processorId}:{instanceId}` plus the per-processor instance-index SET key `skp:proc:{processorId}` (golden-test-pinned), replacing the single `skp:{processorId}` key.
+  2. `instanceId` resolves from the existing `POD_NAME → HOSTNAME → MachineName → GUID` chain (reused, no new mechanism), and is the discriminator that makes two replicas of the same processor write to two distinct keys (no cross-replica overwrite).
+  3. The per-instance liveness value is liveness-only — it carries `status ∈ {healthy, unhealthy}` and a `summary` `{inputSchema, outputSchema, configSchema}` each `SUCCESS|FAIL` (any FAIL ⇒ `status=unhealthy`; null schema id ⇒ not-failing); `inputDefinition`/`outputDefinition` no longer appear in the L2 value (a serialization/shape test confirms their absence).
+  4. The `configSchema` summary field is derived from the v6.0.0 Gate A startup config-compat outcome (not recomputed), and a null `ConfigSchemaId` is treated as not-failing (null-is-skip), consistent with input/output schemas.
+  5. Solution builds 0-warning (Release + Debug); the hermetic suite is green against the reshaped contract.
+**Plans**: TBD
+
+#### Phase 60: Dual-Loop Writer + In-Memory L1 Liveness Record
+**Goal**: The processor's startup loop and heartbeat loop **both** write the per-instance liveness entry to L2 **and** update an in-memory **L1 liveness record** on every iteration, and the startup loop writes its entry as `unhealthy` from its first iteration (so a starting/failed replica is visible in L2 as `unhealthy`, never absent). Each replica `SADD`s its own `instanceId` to the instance-index SET on its first liveness write; each per-instance key carries a TTL (the source-of-truth liveness signal). Liveness intervals split into `startup_interval` (startup cadence) and `heartbeat_interval` (heartbeat cadence), each entry records its active interval, and health is **frozen `healthy`** once the heartbeat loop starts (timestamp-only refresh thereafter — monotonic within a process, reset on restart). Builds on the Phase 59 keyspace/value shape.
+**Depends on**: Phase 59 (the per-instance key + two-state value shape must exist before the loops can write to it)
+**Requirements**: STATE-03, LOOP-01, LOOP-02, LOOP-03, LOOP-04, L1-01
+**Success Criteria** (what must be TRUE):
+  1. The startup loop writes the replica's liveness entry to **both** L2 (the per-instance key) and the in-memory L1 record on every iteration, with `status=unhealthy` and a `summary` reflecting current schema-resolution progress (stays `unhealthy` until identity + all non-null schemas resolve) — a restarting replica is observable in L2 as `unhealthy`, never absent.
+  2. On its first liveness write each replica `SADD`s its own `instanceId` to `skp:proc:{processorId}` (mirroring the Phase-22 workflow parent-index discipline), and each per-instance key is written with a TTL so a dead replica's key TTL-expires (the index SET is only a discovery hint).
+  3. On startup success the heartbeat loop starts; each heartbeat iteration refreshes the entry's timestamp in **both** L2 and L1, with health **frozen `healthy`** (no mid-life re-validation — monotonic within a process, reset on restart).
+  4. Liveness intervals are split into a `startup_interval` and a `heartbeat_interval` (the `Ttl` knob retained), and each liveness entry records its active interval so downstream staleness math can adapt to which loop wrote it.
+  5. The in-memory L1 liveness record (`timestamp`, active `interval`, `status`, `summary`) is updated by BOTH loops on every iteration and is the single source the self-watchdog probe (Phase 61) reads.
+**Plans**: TBD
+
+#### Phase 61: ≥1-Healthy Orchestration-Start Gate + Self-Watchdog Probe
+**Goal**: Two reader-side consumers of the reshaped keyspace land. (a) The **WebAPI orchestration-start gate** discovers a processor's replicas via `SMEMBERS skp:proc:{processorId}`, `GET`s each per-instance key, and admits the processor iff **≥1** replica is **present AND `status=healthy` AND non-stale** (`timestamp + interval×2 > now`) — a present-but-unhealthy or stale replica fails *that* replica (presence no longer implies live); when none qualify, orchestration start is blocked **422 + RFC 7807**, and an absent/TTL-expired index member is skipped and lazily `SREM`'d (self-healing). (b) The **self-watchdog liveness probe** reads the in-memory L1 record and reports `unhealthy` when the L1 timestamp is stale beyond the active-interval ×2 grace (detecting a silently-crashed startup/heartbeat loop while the host stays up), returning the per-schema `summary` in its body. K8s probe wiring is future; this delivers the probe semantics.
+**Depends on**: Phase 60 (the gate reads the per-instance keys + index the loops populate; the probe reads the in-memory L1 record the loops maintain)
+**Requirements**: GATE-01, GATE-02, GATE-03, PROBE-01, PROBE-02
+**Success Criteria** (what must be TRUE):
+  1. The orchestration-start validator discovers replicas by `SMEMBERS skp:proc:{processorId}` and reads each per-instance key with no prior knowledge of instanceIds (replacing the single-key `present ⟺ live` read).
+  2. A processor passes the gate iff **≥1** replica is present AND `status=healthy` AND non-stale (`timestamp + interval×2 > now`); a present-but-`unhealthy` replica and a stale replica each fail *that* replica (a single healthy-and-fresh replica admits the workflow even when siblings are unhealthy/stale).
+  3. When no replica satisfies the gate, orchestration start is blocked with **422 + RFC 7807** (genuine Redis faults still surface as 500, not 422); an absent/TTL-expired index member is skipped and lazily `SREM`'d from the index.
+  4. The processor's liveness probe reads the in-memory L1 record and reports `unhealthy` when the L1 timestamp is stale beyond the active-interval ×2 grace — a silently-crashed startup or heartbeat loop makes the probe fail while the host process stays up.
+  5. The probe returns the per-schema `summary` in its response body (so the future K8s restart trigger has the diagnostic it needs).
+**Plans**: TBD
+**UI hint**: yes
+
+#### Phase 62: Live Proof & Close Gate
+**Goal**: A real-stack end-to-end proof that the reshaped per-replica liveness works live — two replicas of a processor each self-register a per-instance key under the instance index; a restarting replica is visible as `unhealthy`; orchestration start admits a workflow when ≥1 replica is healthy-and-fresh and blocks 422 when none are; the self-watchdog probe fails on a silently-stale L1 — sealed behind the milestone close gate (triple-SHA `psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues` BEFORE==AFTER net-zero, N=3 consecutive GREEN), mirroring shipped Phases 49/55/58.
+**Depends on**: Phase 61 (the full per-replica liveness + gate + probe path must exist before it can be proven live and closed)
+**Requirements**: TEST-01, TEST-02, TEST-03
+**Success Criteria** (what must be TRUE):
+  1. RealStack E2E: two replicas of one processor each write a distinct per-instance key `skp:proc:{processorId}:{instanceId}` and `SADD` themselves to the instance-index SET; a starting/failed replica is observable in L2 as `unhealthy` (never absent), and a dead replica's key TTL-expires + is lazily `SREM`'d. (TEST-01)
+  2. RealStack E2E: orchestration start admits a workflow when **≥1** required-processor replica is healthy-and-fresh (even with an unhealthy/stale sibling) and is blocked **422 + RFC 7807** when no replica qualifies; the self-watchdog probe returns `unhealthy` + the per-schema `summary` when the in-memory L1 record is stale beyond the active-interval ×2 grace. (TEST-02)
+  3. The milestone close gate holds — N=3 consecutive GREEN + triple-SHA (psql `\l` / redis-cli `--scan` / rabbitmqctl `list_queues`) BEFORE==AFTER net-zero, DLQ depth 0 — at Release + Debug 0-warning. (TEST-03)
+**Plans**: TBD
 
 ## ✅ v6.0.0 Config & Payload Validation Hardening (SHIPPED 2026-06-13)
 
