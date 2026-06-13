@@ -1,8 +1,8 @@
 ---
 phase: 59
 slug: per-instance-l2-keyspace-two-state-liveness-value
-status: draft
-nyquist_compliant: false
+status: approved
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-06-13
 ---
@@ -17,20 +17,20 @@ created: 2026-06-13
 
 | Property | Value |
 |----------|-------|
-| **Framework** | {xUnit / NUnit / MSTest — confirm from existing L2ProjectionKeys tests} |
-| **Config file** | {path or "none — existing test project"} |
-| **Quick run command** | `{dotnet test --filter on the new hermetic tests}` |
-| **Full suite command** | `{dotnet test of the contracts test project}` |
-| **Estimated runtime** | ~{N} seconds |
+| **Framework** | xUnit (Facts/Theory; hermetic, no real Redis/stack) |
+| **Config file** | existing `tests/BaseApi.Tests` project |
+| **Quick run command** | `dotnet build src/Messaging.Contracts/Messaging.Contracts.csproj -c Release -warnaserror` |
+| **Full suite command** | `dotnet test tests/BaseApi.Tests` |
+| **Estimated runtime** | ~seconds (hermetic unit tests) |
 
 ---
 
 ## Sampling Rate
 
-- **After every task commit:** Run `{quick run command}`
-- **After every plan wave:** Run `{full suite command}`
-- **Before `/gsd-verify-work`:** Full suite must be green + 0-warning Release/Debug build
-- **Max feedback latency:** {N} seconds
+- **After every task commit:** Run the task's `<automated>` command (Release build or targeted `dotnet test --filter`)
+- **After every plan wave:** Run `dotnet test tests/BaseApi.Tests`
+- **Before `/gsd-verify-work`:** Full suite green AND `dotnet build -c Release -warnaserror && dotnet build -c Debug -warnaserror` both 0-warning (SC-5 phase gate — both configs)
+- **Max feedback latency:** seconds (no E2E, no watch-mode)
 
 ---
 
@@ -38,20 +38,22 @@ created: 2026-06-13
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| {N}-01-01 | 01 | 1 | KEY-01/02 | — | golden key-string pinned | unit | `{command}` | ❌ W0 | ⬜ pending |
-| {N}-01-02 | 01 | 1 | KEY-04/STATE-01/02 | — | factory: any Fail⇒Unhealthy, null⇒Success | unit | `{command}` | ❌ W0 | ⬜ pending |
-| {N}-01-03 | 01 | 1 | STATE-01 | — | shape test: no inputDefinition/outputDefinition keys | unit | `{command}` | ❌ W0 | ⬜ pending |
+| 59-01-01 | 01 | 1 | STATE-01 | T-59-01 | `Unhealthy` const + `SchemaOutcome` SoT added additively | build | `dotnet build src/Messaging.Contracts/Messaging.Contracts.csproj -c Release -warnaserror` | ❌ W0 | ⬜ pending |
+| 59-01-02 | 01 | 1 | KEY-04/STATE-01/STATE-02 | T-59-02 | `ProcessorLivenessEntry` + `Create` factory: any Fail⇒Unhealthy, null⇒Success | build | `dotnet build src/Messaging.Contracts/Messaging.Contracts.csproj -c Release -warnaserror` | ❌ W0 | ⬜ pending |
+| 59-01-03 | 01 | 1 | KEY-04/STATE-01/STATE-02 | T-59-03 | shape test: no `inputDefinition`/`outputDefinition` keys; factory invariant theory | unit | `dotnet test tests/BaseApi.Tests --filter "FullyQualifiedName~ProcessorLivenessEntry"` | ❌ W0 | ⬜ pending |
+| 59-02-01 | 02 | 1 | KEY-01/KEY-02 | T-59-04 | `PerInstance`/`InstanceIndex` builders; legacy `Processor(Guid)` left in place | build | `dotnet build src/Messaging.Contracts/Messaging.Contracts.csproj -c Release -warnaserror` | ❌ W0 | ⬜ pending |
+| 59-02-02 | 02 | 1 | KEY-03 | T-59-05 | shared `InstanceId.Resolve()` SoT; byte-identical chain (`ToString("N")` fallback) | build | `dotnet build src/Messaging.Contracts/Messaging.Contracts.csproj -c Release -warnaserror` | ❌ W0 | ⬜ pending |
+| 59-02-03 | 02 | 1 | KEY-01/KEY-02/KEY-03 | T-59-06 | golden key-string pins (`skp:proc:` prefix) + resolver facts | unit | `dotnet test tests/BaseApi.Tests --filter "FullyQualifiedName~L2ProjectionKeys\|FullyQualifiedName~InstanceIdResolver"` | ❌ W0 | ⬜ pending |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky · Planner fills final task IDs/commands.*
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
 ---
 
 ## Wave 0 Requirements
 
-- [ ] Hermetic golden test for the new `PerInstance`/`InstanceIndex` key builders (mirror existing `L2ProjectionKeysTests`)
-- [ ] Serialization/shape test asserting `inputDefinition`/`outputDefinition` ABSENCE on the new value record
-- [ ] Factory invariant tests (Fail⇒Unhealthy, null⇒Success) for the smart-constructor
-- [ ] instanceId resolver tests (mirror existing `ResolveInstanceIdFacts` if present)
+- [ ] `ProcessorLivenessEntryFacts.cs` (new) — shape/absence test + factory invariant theory (KEY-04, STATE-01, STATE-02)
+- [ ] `InstanceIdResolverFacts.cs` (new) — resolver chain facts (KEY-03)
+- [ ] `L2ProjectionKeysTests.cs` (modified) — golden pins for new `PerInstance`/`InstanceIndex` builders (KEY-01, KEY-02)
 
 *All validation is hermetic (no real Redis/stack) per RESEARCH §Validation Architecture.*
 
@@ -69,11 +71,11 @@ created: 2026-06-13
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < {N}s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < ~10s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** {pending / approved YYYY-MM-DD}
+**Approval:** approved 2026-06-13
