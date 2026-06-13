@@ -166,6 +166,13 @@ public sealed class SC2RecoveryPathsE2ETests
             Assert.True(dlqAfter <= dlqBefore,
                 $"REINJECT data-gone: expected a silent drop (no dead-letter), but " +
                 $"{ConsolidatedErrorTransportFilter.Dlq1} depth climbed {dlqBefore} -> {dlqAfter}.");
+
+            // WR-01: defensively register skp-dlq-1 for purge-on-teardown. Today the data-gone path is a
+            // BY-DESIGN silent drop (D-06) so this purge is a no-op (nothing lands in the DLQ). But wiring it
+            // here makes the teardown self-healing: if a future contract change makes data-gone throw →
+            // dead-letter, the parked message is drained to net-zero locally instead of leaking to the
+            // close gate's skp-dlq-1 depth==0 invariant (~50min later) with no test-local signal.
+            factory.BrokerQueuesToPurge.Add(ConsolidatedErrorTransportFilter.Dlq1);
         }
 
         // =========================================================================================
