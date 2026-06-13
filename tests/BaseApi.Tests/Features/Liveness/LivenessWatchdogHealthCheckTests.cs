@@ -81,6 +81,36 @@ public sealed class LivenessWatchdogHealthCheckTests
         AssertSummaryDataPresent(result);
     }
 
+    [Fact]
+    public async Task ExactBoundary_NowEqualsDeadline_Reports_Unhealthy_Stale()
+    {
+        // WR-01: stale at-or-past the boundary instant — at the EXACT boundary (now == timestamp + interval*2)
+        // the watchdog reports Unhealthy, agreeing with the gate's `deadline <= now => stale`
+        // (ProcessorLivenessGateUnitTests.ExactBoundary_DeadlineEqualsNow_CountsStale).
+        var boundaryTimestamp = Now.AddSeconds(-(IntervalSeconds * 2)); // deadline == Now exactly
+        var entry = ProcessorLivenessEntry.Create(null, null, null, boundaryTimestamp, IntervalSeconds);
+
+        var result = await RunAsync(entry);
+
+        Assert.Equal(HealthStatus.Unhealthy, result.Status);
+        Assert.Equal("liveness loop stale", result.Description);
+        AssertSummaryDataPresent(result);
+    }
+
+    [Fact]
+    public async Task OneTickBeforeBoundary_StrictlyFresh_Reports_Healthy()
+    {
+        // WR-01: one tick before the boundary (deadline = now + 1 tick) is strictly fresh => Healthy.
+        var almostBoundary = Now.AddSeconds(-(IntervalSeconds * 2)).AddTicks(1); // deadline == Now + 1 tick
+        var entry = ProcessorLivenessEntry.Create(null, null, null, almostBoundary, IntervalSeconds);
+
+        var result = await RunAsync(entry);
+
+        Assert.Equal(HealthStatus.Healthy, result.Status);
+        Assert.Equal("live", result.Description);
+        AssertSummaryDataPresent(result);
+    }
+
     private static void AssertSummaryDataPresent(HealthCheckResult result)
     {
         // PROBE-02: the per-schema summary rides in the result Data dictionary.

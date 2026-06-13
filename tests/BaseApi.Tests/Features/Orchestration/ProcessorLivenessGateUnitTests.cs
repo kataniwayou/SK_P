@@ -157,6 +157,59 @@ public sealed class ProcessorLivenessGateUnitTests
         Assert.Contains("1 malformed", doc.RootElement.GetProperty("offending").GetProperty("reason").GetString());
     }
 
+    // --- GATE-02 (WR-01): exact freshness boundary ----------------------------------------------
+
+    [Fact]
+    public async Task ExactBoundary_DeadlineEqualsNow_CountsStale()
+    {
+        // WR-01: fresh iff deadline > now. At the EXACT boundary (deadline == now) the replica is STALE
+        // (deadline <= now). One replica at the boundary => no qualifier => 422 "1 stale" — this pins the
+        // gate side of the boundary that the self-watchdog (now >= deadline) must agree with.
+        var now = new DateTime(2026, 6, 13, 12, 0, 0, DateTimeKind.Utc);
+        var (validator, db) = BuildGate(now);
+        StubIndex(db, "inst-edge");
+        // Timestamp + Interval*2 == now exactly (300*2 = 600s before now).
+        StubMember(db, "inst-edge", Entry(LivenessStatus.Healthy, now.AddSeconds(-600), 300));
+
+        var ex = await Assert.ThrowsAsync<OrchestrationValidationException>(
+            () => validator.ValidateAsync(OneProcessor(), TestContext.Current.CancellationToken));
+        var json = JsonSerializer.Serialize(ex.ErrorsExtension);
+        using var doc = JsonDocument.Parse(json);
+        Assert.Contains("1 stale", doc.RootElement.GetProperty("offending").GetProperty("reason").GetString());
+    }
+
+    [Fact]
+    public async Task OneTickBeforeBoundary_StrictlyFresh_Admits()
+    {
+        // WR-01: a single tick before the boundary (deadline = now + 1 tick > now) is strictly fresh => admit.
+        var now = new DateTime(2026, 6, 13, 12, 0, 0, DateTimeKind.Utc);
+        var (validator, db) = BuildGate(now);
+        StubIndex(db, "inst-edge");
+        StubMember(db, "inst-edge", Entry(LivenessStatus.Healthy, now.AddSeconds(-600).AddTicks(1), 300));
+
+        // No throw == admit (deadline is one tick in the future).
+        await validator.ValidateAsync(OneProcessor(), TestContext.Current.CancellationToken);
+    }
+
+    // --- GATE-03 (WR-02): transport fault keeps the 422-vs-500 split ------------------------------
+
+    [Fact]
+    public async Task RedisFault_On_Get_Propagates_NotSwallowed_As_422()
+    {
+        // WR-02 guard: the broadened deserialize catch is `when (ex is JsonException or NotSupportedException)`
+        // ONLY — a genuine transport RedisException originates on StringGetAsync (OUTSIDE the try) and MUST
+        // propagate untouched to the caller's redisOp catch (=> 500), never collapse into the 422 gate.
+        var now = new DateTime(2026, 6, 13, 12, 0, 0, DateTimeKind.Utc);
+        var (validator, db) = BuildGate(now);
+        StubIndex(db, "inst-a");
+        db.StringGetAsync(L2ProjectionKeys.PerInstance(Proc, "inst-a"), Arg.Any<CommandFlags>())
+          .Returns<Task<RedisValue>>(_ => throw new RedisConnectionException(ConnectionFailureType.SocketFailure, "transport down"));
+
+        // It surfaces as RedisException (→ 500 at the caller), NOT OrchestrationValidationException (422).
+        await Assert.ThrowsAsync<RedisConnectionException>(
+            () => validator.ValidateAsync(OneProcessor(), TestContext.Current.CancellationToken));
+    }
+
     // --- GATE-03: absent-only lazy SREM ----------------------------------------------------------
 
     [Fact]
