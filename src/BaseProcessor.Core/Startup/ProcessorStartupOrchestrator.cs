@@ -292,12 +292,17 @@ public sealed class ProcessorStartupOrchestrator(
     /// </para>
     /// <para>
     /// D-02 guard: no write before Loop A resolves identity (<c>context.Id</c> null ⇒ no processorId ⇒ no key).
-    /// The recorded interval is <see cref="ProcessorLivenessOptions.StartupIntervalSeconds"/> (30, D-12) ⇒ the
-    /// writer derives TTL = max(30×2, Ttl-floor) = 60 (D-13). Resilience (LOOP-01) is the shared writer's
-    /// log-and-continue — a dead Redis must NOT crash the host or abort resolution.
+    /// The recorded interval is now PARAMETERIZABLE via <paramref name="recordedIntervalSeconds"/>: the default
+    /// (null) records <see cref="ProcessorLivenessOptions.StartupIntervalSeconds"/> (30, D-12) — the startup
+    /// anchor the still-backing-off Loop-A/Loop-B writes use, deriving TTL = max(30×2, Ttl-floor) = 60 (D-13).
+    /// The Gate-A-clash refresh loop (Phase 62.1 / D-02) passes
+    /// <see cref="ProcessorLivenessOptions.IntervalSeconds"/> (10) — the steady-state heartbeat cadence — so the
+    /// writer derives TTL = max(10×2, Ttl-floor 30) = 30. Only the recorded <c>interval</c> value changes; the
+    /// single shared <see cref="ProcessorLivenessWriter.WriteAsync"/> write discipline is untouched. Resilience
+    /// (LOOP-01) is the shared writer's log-and-continue — a dead Redis must NOT crash the host or abort resolution.
     /// </para>
     /// </summary>
-    private async Task WriteUnhealthyAsync(string? configOutcomeOverride = null)
+    private async Task WriteUnhealthyAsync(string? configOutcomeOverride = null, int? recordedIntervalSeconds = null)
     {
         // IN-01: the override is contractually a SchemaOutcome const (not an arbitrary string) — any non-FAIL
         // value silently passes Create's any-Fail check and would publish the replica Healthy. Guard the
@@ -321,7 +326,7 @@ public sealed class ProcessorStartupOrchestrator(
             outputOutcome: Outcome(context.OutputSchemaId, context.OutputDefinition),
             configOutcome: configOutcomeOverride ?? Outcome(context.ConfigSchemaId, context.ConfigDefinition),
             timestamp:     now,
-            interval:      options.Value.StartupIntervalSeconds); // D-12: startup anchor = BackoffCap (30s)
+            interval:      recordedIntervalSeconds ?? options.Value.StartupIntervalSeconds); // D-12/62.1 D-02: default startup anchor (30s); refresh loop passes IntervalSeconds (10s)
 
         // Shared writer (Plan 02): SET(perInstance, ttl=max(60,30)=60) + idempotent SADD + L1 Update + log-and-continue.
         await writer.WriteAsync(procId, instanceId, entry);
