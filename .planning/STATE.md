@@ -4,14 +4,14 @@ milestone: v7.0.0
 milestone_name: Per-Replica Processor Liveness & Self-Watchdog
 status: planning
 stopped_at: Phase 60 context gathered
-last_updated: "2026-06-13T09:50:36.934Z"
+last_updated: "2026-06-13T10:16:45.271Z"
 last_activity: 2026-06-13
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
+  total_plans: 6
   completed_plans: 2
-  percent: 100
+  percent: 33
 ---
 
 # Project State
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
 
 Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
 Phase: 60
-Plan: Not started
-Status: Ready to plan
+Plan: 4 plans in 3 waves (verified — Ready to execute)
+Status: Ready to execute
 Last activity: 2026-06-13
 
 > v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
@@ -1479,4 +1479,4 @@ Resume file: --resume-file
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 59 (per-instance-l2-keyspace-two-state-liveness-value) — 2 plans — 2026-06-13T08:29:49.413Z
+**Planned Phase:** 60 (dual-loop-writer-in-memory-l1-liveness-record) — 4 plans — 2026-06-13T10:16:45.260Z
