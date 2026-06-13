@@ -11,9 +11,12 @@ Make processor liveness multi-replica-accurate and self-healing: L2 reflects eve
 ## Requirements
 
 ### L2 Keyspace Reshape (KEY)
-- [ ] **KEY-01**: Processor liveness is stored at a per-instance key `skp:proc:{processorId}:{instanceId}`, replacing the single last-write-wins key `skp:{processorId}` (one key per replica, no cross-replica overwrite).
-- [ ] **KEY-02**: A per-processor instance-index Redis SET `skp:proc:{processorId}` lists the live instanceIds; each replica `SADD`s its own instanceId on its first liveness write (mirrors the Phase-22 workflow parent-index discipline).
-- [ ] **KEY-03**: `instanceId` is the pod identity, resolved via the existing `POD_NAME → HOSTNAME → MachineName → GUID` resolution (reused, no new mechanism).
+- [x] **KEY-01
+**: Processor liveness is stored at a per-instance key `skp:proc:{processorId}:{instanceId}`, replacing the single last-write-wins key `skp:{processorId}` (one key per replica, no cross-replica overwrite).
+- [x] **KEY-02
+**: A per-processor instance-index Redis SET `skp:proc:{processorId}` lists the live instanceIds; each replica `SADD`s its own instanceId on its first liveness write (mirrors the Phase-22 workflow parent-index discipline).
+- [x] **KEY-03
+**: `instanceId` is the pod identity, resolved via the existing `POD_NAME → HOSTNAME → MachineName → GUID` resolution (reused, no new mechanism).
 - [x] **KEY-04
 **: The per-instance value is liveness-only — `inputDefinition`/`outputDefinition` are dropped from L2 (no consumer reads them from L2; the processor validates against its own in-memory L1 copy).
 
