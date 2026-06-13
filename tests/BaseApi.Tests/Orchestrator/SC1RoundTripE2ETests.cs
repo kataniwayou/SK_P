@@ -27,7 +27,7 @@ namespace BaseApi.Tests.Orchestrator;
 /// <remarks>
 /// <para>
 /// This file is a near-wholesale clone of <see cref="SampleRoundTripE2ETests"/> (which already proves
-/// this exact round trip), re-tagged under <c>[Trait("Phase","58")]</c> so the Phase-58 close gate's
+/// this exact round trip), re-tagged under <c>[Trait("Phase","62")]</c> so the Phase-62 close gate's
 /// live run includes it while the hermetic suite (<c>Category!=RealStack</c>) still excludes it. The
 /// load-bearing clauses are preserved verbatim from the analog:
 /// </para>
@@ -69,7 +69,7 @@ namespace BaseApi.Tests.Orchestrator;
 /// </remarks>
 [Trait("Category", "E2E")]
 [Trait("Category", "RealStack")]   // hermetic filter (Category!=RealStack) excludes it
-[Trait("Phase", "58")]             // retagged into the phase-58 milestone close gate (was Phase 55)
+[Trait("Phase", "62")]             // retagged into the phase-62 milestone close gate (was Phase 58)
 [Collection("Observability")]
 public sealed class SC1RoundTripE2ETests
 {

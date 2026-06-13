@@ -50,7 +50,7 @@ namespace BaseApi.Tests.Orchestrator;
 /// </remarks>
 [Trait("Category", "E2E")]
 [Trait("Category", "RealStack")]   // hermetic filter (Category=RealStack) excludes it; the build gate still COMPILES it
-[Trait("Phase", "58")]
+[Trait("Phase", "62")]
 [Collection("Observability")]       // DisableParallelization + ICollectionFixture<RealStackNetZeroSweepFixture>
 public sealed class GateACompositionE2ETests
 {
