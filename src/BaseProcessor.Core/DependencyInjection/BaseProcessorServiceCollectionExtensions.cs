@@ -97,7 +97,7 @@ public static class BaseProcessorServiceCollectionExtensions
         //     Development environment.
         services.AddScoped<ProcessorPipeline>();
 
-        // 3. Liveness/heartbeat knobs (CONFIG-01) — four independent seconds-ints from the "Processor" section.
+        // 3. Liveness/heartbeat knobs (CONFIG-01) — six independent seconds-ints from the "Processor" section.
         services.Configure<ProcessorLivenessOptions>(cfg.GetSection("Processor"));
 
         // Phase 51 (D-04): the slot-array random-TTL knobs, SAME "Processor" section as the liveness knobs.

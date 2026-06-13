@@ -40,8 +40,10 @@ namespace BaseProcessor.Core.Startup;
 /// On a clash the processor STAYS UP but never serves: log ONE Error (D-10), fire
 /// <see cref="IStartupGate.MarkReady"/> (no K8s crash-loop — D-09), WITHHOLD
 /// <see cref="IProcessorContext.MarkHealthy"/>, do NOT bind the receive endpoint, and return (terminal,
-/// no retry — D-11). Because the heartbeat writes L2 only when <c>IsHealthy</c>, a clash means no
-/// <c>skp:{id}</c> key → the orchestration-start liveness gate reports "absent" → 422.
+/// no retry — D-11). On a clash the orchestrator WRITES an <c>unhealthy</c> per-instance key
+/// (<c>skp:proc:{id}:{instanceId}</c>) with <c>configOutcome=Fail</c>, so the orchestration-start liveness
+/// gate fails the replica on its <c>status</c> (not on "absent") → 422 (D-04 — the flat <c>skp:{id}</c>
+/// write is gone, D-05).
 /// </para>
 /// <para>
 /// <b>Completion (D-02/D-03 — EXEC-01, the load-bearing order):</b> on Gate A pass OR a null config id,

@@ -27,8 +27,11 @@ public sealed class ProcessorLivenessOptions
     [ConfigurationKeyName("StartupInterval")]
     public int StartupIntervalSeconds { get; set; } = 30;
 
-    /// <summary>Sliding liveness-key expiry in seconds (CONFIG-01; default 30). INDEPENDENT of
-    /// <see cref="IntervalSeconds"/> — the SET..EX TTL on <c>skp:{processorId:D}</c>.</summary>
+    /// <summary>Sliding liveness-key expiry floor in seconds (CONFIG-01; default 30). INDEPENDENT of
+    /// <see cref="IntervalSeconds"/> — the TTL floor folded into the per-instance key
+    /// (<c>skp:proc:{id}:{instanceId}</c>) via the writer's derived-TTL formula
+    /// <c>max(interval×2, TtlSeconds)</c> (the old flat <c>skp:{id}</c> write was removed this phase — D-05,
+    /// no dual-write).</summary>
     [ConfigurationKeyName("Ttl")]
     public int TtlSeconds { get; set; } = 30;
 
