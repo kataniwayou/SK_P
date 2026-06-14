@@ -2,7 +2,6 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using BaseApi.Tests.Observability.Analysis;
 using BaseApi.Tests.Observability.Helpers;
-using StackExchange.Redis;
 using Xunit;
 
 namespace BaseApi.Tests.Observability;
@@ -67,8 +66,6 @@ public sealed class AnalyzerE2ETests
     // V5 / T-66-07 — scenario-id whitelist. Validated BEFORE composing any filesystem path so a
     // caller-supplied id can never traverse out of the fixed reports dir (no '/', '\', '.', etc.).
     private static readonly Regex ScenarioIdPattern = new(@"^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
-
-    private const string HostRedisFull = "localhost:6380,abortConnect=false,connectTimeout=5000";
 
     [Fact]
     public async Task Analyze_HappyPath_Window_Yields_Pass()
