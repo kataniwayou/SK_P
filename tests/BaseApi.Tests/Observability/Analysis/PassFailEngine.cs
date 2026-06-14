@@ -120,6 +120,15 @@ public sealed class PassFailEngine
         var promImpliedRuns = (int)Math.Round(prom.DispatchSentDelta / LabelsPerRun);
         var corroborationDetail = new List<string>();
 
+        // ASYMMETRY (intentional, 67-03 / WR-01): only the POSITIVE direction (Prom implies MORE
+        // dispatched runs than ES observed STARTED) raises a warning, because that is precisely the
+        // dead-run signal this harness is built to detect (a run dispatched but never logging Step_A).
+        // The negative direction (ES STARTED > Prom implied — a dispatch under-count, a scrape gap, or
+        // ES double-counting correlationIds) is deliberately NOT a warning here: it cannot indicate a
+        // dead run, and Prom is corroboration-only (it never gates the verdict), so flagging it would
+        // add noise without protecting the binding outcome. If a future need arises to surface telemetry
+        // under-counting, guard `Math.Abs(deadRunExcess)` with a distinct, clearly-labelled message — do
+        // NOT fold it into this dead-run warning.
         var deadRunExcess = promImpliedRuns - startedRuns;
         if (deadRunExcess > CorroborationRunTolerance)
         {

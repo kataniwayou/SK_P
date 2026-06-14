@@ -127,7 +127,11 @@ public sealed class PassFailEngineFacts
     public void PromWindowEdge_OneRunMismatch_WithinTolerance_StaysClean()
     {
         // The documented ~1-run window-edge mismatch (e.g. Prom 81 = 9×9 ⇒ implied 9 vs ES 10, or the
-        // mirror: implied 11 vs ES 10). A ±1-run tolerance keeps corroboration clean and the verdict green.
+        // mirror implied 11 vs ES 10). A ±1-run tolerance keeps corroboration clean and the verdict green
+        // for a ±1 mismatch in EITHER direction. NOTE (WR-01): the warning that fires OUTSIDE tolerance is
+        // one-directional by design — only a POSITIVE excess (implied > started, the dead-run signal) is
+        // flagged; an out-of-tolerance NEGATIVE excess (started > implied) is intentionally not a warning
+        // (see the asymmetry note in PassFailEngine.cs). Within ±1, both directions stay clean regardless.
         var runs = Enumerable.Range(1, 10)
             .Select(i => RunTrace.FromLabels($"corr-{i}", AllNineLabels))
             .ToArray();
