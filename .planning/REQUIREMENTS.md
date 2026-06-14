@@ -21,9 +21,12 @@ Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestr
 **: The workflow create/update cron validator accepts the 6-field seconds form (previously rejected as non-5-field-standard), with the 5-field form still accepted.
 
 ### Processor Work & Structured Logging (PROC)
-- [ ] **PROC-01**: A processor step's payload carries an integer and a string; the framework deserializes the assignment payload into the typed config exposing both fields.
-- [ ] **PROC-02**: `ProcessAsync` generates a random number, adds it to the payload integer, and produces the sum as the step's completed result.
-- [ ] **PROC-03**: `ProcessAsync` emits a structured log entry tagged with the payload string `Step_<label>` and the computed sum, carrying `correlationId` + `stepId` (+ `workflowId`/`processorId`) so Elasticsearch can aggregate a run by correlationId and identify each step.
+- [x] **PROC-01
+**: A processor step's payload carries an integer and a string; the framework deserializes the assignment payload into the typed config exposing both fields.
+- [x] **PROC-02
+**: `ProcessAsync` generates a random number, adds it to the payload integer, and produces the sum as the step's completed result.
+- [x] **PROC-03
+**: `ProcessAsync` emits a structured log entry tagged with the payload string `Step_<label>` and the computed sum, carrying `correlationId` + `stepId` (+ `workflowId`/`processorId`) so Elasticsearch can aggregate a run by correlationId and identify each step.
 
 ### Fan-Out Workflow Seeder (WF)
 - [ ] **WF-01**: A seeder creates the fan-out workflow `A→B→C→{D1→E1→F1, D2→E2→F2}` (9 steps, entry A, fan-out at C, sinks F1+F2) with every step referencing one shared processor and the `*/30 * * * * *` cron.

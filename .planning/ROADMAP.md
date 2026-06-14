@@ -842,7 +842,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 ### Phases
 
 - [x] **Phase 63: Seconds-Granularity Cron** — Enable 6-field seconds-cron (`*/30 * * * * *`) end-to-end: `CronInterval` next-occurrence/interval math sub-minute (UTC) + the create/update validator accepts the 6-field form (5-field still accepted). ✓ completed 2026-06-14 (3 plans; CRON-01 + CRON-02; shared CronFieldForm detector consumed by both scheduler + validators).
-- [ ] **Phase 64: Processor Work & Structured Logging** — `SampleConfig` carries an int + string; `ProcessAsync` random-adds to the int and emits the sum; a `Step_<label>` structured log carries correlationId + stepId so ES can aggregate a run.
+- [x] **Phase 64: Processor Work & Structured Logging** — `SampleConfig` carries an int + string; `ProcessAsync` random-adds to the int and emits the sum; a `Step_<label>` structured log carries correlationId + stepId so ES can aggregate a run.
 - [ ] **Phase 65: Fan-Out Workflow Seeder & Clean-State Stack** — Idempotent seeder for the 9-step fan-out workflow (one shared processor, seconds-cron, `Step_*` payloads) + a minimal clean-state stack (single `processor-sample`, full infra+observability; flush/reset between runs).
 - [ ] **Phase 66: Prometheus + ES Analyzer & PASS/FAIL Engine** — Aggregate ES logs by correlationId into per-run traces (all 9 steps + both sinks?), detect MISSING/DUPLICATE vs total triggers, cross-check Prometheus counters, and emit a per-test report + automated PASS/FAIL verdict (Prom + ES only).
 - [ ] **Phase 67: Fault-Injection Harness** — Activate via `POST /api/v1/orchestration/start`, run a 5-minute/30s-cron window, inject each scenario's mid-run fault (container kill/restart) and let the system recover — fully automated end-to-end (clean → seed → activate → inject → observe → analyze → tear down), no human step.
@@ -874,7 +874,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   3. `ProcessAsync` emits exactly one structured log entry per execution tagged `Step_<label>` with the computed sum and carrying `correlationId` + `stepId` (+ `workflowId`/`processorId`), so an Elasticsearch query by `correlationId` returns one identifiable entry per step.
   4. Solution builds 0-warning (Release + Debug); the hermetic suite is green against the reshaped processor work + logging.
 **Plans**: 1 plan
-  - [ ] 64-01-PLAN.md — SampleConfig int+string reshape, sum transform + single Step_* structured log, 3-fact hermetic rewrite (Wave 1)
+  - [x] 64-01-PLAN.md — SampleConfig int+string reshape, sum transform + single Step_* structured log, 3-fact hermetic rewrite (Wave 1) ✓ SampleConfig(int Number, string? Label); ProcessAsync sum=(config?.Number ?? 0)+Random.Shared.Next(0,100) → {number,label} JSON Data + single LogInformation {StepLabel}+{Sum} (T-64-01 mitigated); CapturingLogger state-KVP capture; SampleProcessorFacts 3/3 GREEN, Debug+Release 0/0; PROC-01/02/03; commits b323286, ddbfd8b, 4fe6142
 
 #### Phase 65: Fan-Out Workflow Seeder & Clean-State Stack
 **Goal**: An idempotent seeder creates the fan-out workflow `A→B→C→{D1→E1→F1, D2→E2→F2}` (9 steps, entry A, fan-out at C, sinks F1+F2) with every step referencing **one** shared `processor-sample`, the `*/30 * * * * *` cron, and a `{ number, label:"Step_*" }` assignment payload per step — re-runnable without duplicating workflow/step/assignment rows — and the proof runs on a **minimal clean-state stack**: a single `processor-sample` (the redundant `processor-badconfig` excluded) alongside the full infra + observability tiers (postgres, redis, rabbitmq, otel-collector, elasticsearch, prometheus, orchestrator, keeper, baseapi-service), with each test started from clean state (Redis flushed, Postgres workflow/step/assignment rows reset, leftover/redundant processor containers removed) so a run's metrics and logs are attributable to that run only.
@@ -925,7 +925,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | Phase | Name | Plans | Status | Completed |
 | ----- | ---- | ----- | ------ | --------- |
 | 63 | Seconds-Granularity Cron | 3/3 | Complete    | 2026-06-14 |
-| 64 | Processor Work & Structured Logging | 0/TBD | Not started | — |
+| 64 | Processor Work & Structured Logging | 1/1 | Complete | PROC-01/02/03; SampleProcessorFacts 3/3 GREEN, Debug+Release 0/0 |
 | 65 | Fan-Out Workflow Seeder & Clean-State Stack | 0/TBD | Not started | — |
 | 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 0/TBD | Not started | — |
 | 67 | Fault-Injection Harness | 0/TBD | Not started | — |
