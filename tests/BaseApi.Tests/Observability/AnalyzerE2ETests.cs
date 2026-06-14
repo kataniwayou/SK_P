@@ -52,10 +52,6 @@ namespace BaseApi.Tests.Observability;
 [Collection("Observability")]
 public sealed class AnalyzerE2ETests
 {
-    // Prometheus is pull-based: SDK→collector OTLP export (~60s) + collector→Prometheus 15s scrape.
-    // A single immediate query MISSES the sample (Pitfall 5). Mirror the MetricsRoundTrip budget.
-    private const int PromPollTimeoutMs = 120_000;
-
     // D-05 drain: bounded settle after the observation window closes so in-flight runs finish their
     // 9-step traversal before scoring (Pitfall 4 — scoring mid-traversal would mis-flag a run MISSING).
     private const int DrainMs = 60_000;                // > worst-case 9-step traversal
