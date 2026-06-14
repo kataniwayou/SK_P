@@ -131,12 +131,18 @@ public sealed class AnalyzerE2ETests
         // snapshotUtc is the ES range upper bound. In window-pinned mode it is the recorded windowEnd
         // (so the ES range exactly matches the time-pinned Prom delta cohort). In standalone mode it is
         // captured HERE — before poll-to-stable — so the ES window is bounded by a stable timestamp that
-        // does not shift during polling. NOTE (standalone IN-04): the live Prom AFTER read (step 5) is
-        // taken after poll-to-stable completes, so a run dispatched between snapshotUtc and the AFTER read
-        // would be counted in DispatchSentDelta yet excluded from the ES range → scored MISSING. In the
-        // happy-path window this tail gap is negligible. (Window-pinned mode has no such gap — both Prom
-        // reads are pinned to the recorded bounds.)
+        // does not shift during polling.
         var snapshotUtc = windowPinned ? pinnedWindowEnd : DateTimeOffset.UtcNow;
+
+        // WR-02 fix (standalone only): take the live AFTER counter read NOW — at the SAME instant
+        // snapshotUtc is captured, BEFORE poll-to-stable — so the Prom delta cohort matches the ES
+        // [windowStart, snapshotUtc] range exactly. Previously the AFTER read happened post-poll, so a
+        // run dispatched in the tail gap between snapshotUtc and the AFTER read was counted in
+        // DispatchSentDelta yet excluded from the ES range → a spurious dead-run corroboration warning
+        // (under the old binding model, a spurious MISSING). Aligning the read closes that gap. Window-
+        // pinned mode is UNAFFECTED — both its Prom reads are pinned to the recorded bounds in step 5.
+        var standaloneAfter = windowPinned ? null : await ReadCounterSetAsync(prom, ct);
+
         var stepHits = await PollHitsToStableAsync(es, windowStartUtc, snapshotUtc, ct);
 
         // ── 4. ES READ (OBS-01) — group Step_* hits into per-run RunTraces by attributes.CorrelationId ─
@@ -144,11 +150,13 @@ public sealed class AnalyzerE2ETests
 
         // ── 5. PROM SNAPSHOTS + WINDOWED DELTAS (OBS-03) ─────────────────────────────────────────────
         //    Window-pinned (harness): instant-query BOTH counter sets AT the recorded window bounds.
-        //    Standalone (seam absent): keep the live BEFORE (step 2) and take a live AFTER read NOW.
+        //    Standalone (seam absent): keep the live BEFORE (step 2) and the live AFTER captured at
+        //    snapshotUtc (pre-poll, WR-02) — NOT a fresh post-poll read, so the Prom delta cohort
+        //    aligns with the ES [windowStart, snapshotUtc] range.
         var (beforeSet, afterSet) = windowPinned
             ? (await ReadCounterSetAsync(prom, ct, pinnedWindowStart),
                await ReadCounterSetAsync(prom, ct, pinnedWindowEnd))
-            : (before!, await ReadCounterSetAsync(prom, ct));
+            : (before!, standaloneAfter!);
         var promSnapshot = BuildSnapshot(beforeSet, afterSet);
 
         // ── 6. PROM CORROBORATION INPUT (67-03 — NO LONGER the per-run denominator) ──────────────────
