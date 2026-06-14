@@ -9,6 +9,7 @@ using MassTransit;
 using Messaging.Contracts;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using NSubstitute;
 using StackExchange.Redis;
 using Xunit;
@@ -91,8 +92,13 @@ public sealed class BitHealthLoopTests
         }
     }
 
-    private static BitHealthLoop NewLoop(L2ProbeRecovery probe, IL2HealthGate gate, IBus bus, RecoveryEndpointHandle holder) =>
-        new(probe, gate, bus, holder, ZeroDelay(), NullLogger<BitHealthLoop>.Instance);
+    // 260614-b5c: the two new ctor params (clock + liveness) default to real instances so the 7 existing
+    // edge facts compile + pass UNCHANGED; Fact A injects a shared FakeTimeProvider + KeeperLivenessState.
+    private static BitHealthLoop NewLoop(
+        L2ProbeRecovery probe, IL2HealthGate gate, IBus bus, RecoveryEndpointHandle holder,
+        TimeProvider? clock = null, IKeeperLivenessState? liveness = null) =>
+        new(probe, gate, bus, holder, ZeroDelay(), NullLogger<BitHealthLoop>.Instance,
+            clock ?? TimeProvider.System, liveness ?? new KeeperLivenessState());
 
     /// <summary>
     /// KEEP-04 (D-04): a populated <see cref="RecoveryEndpointHandle"/> over a substituted
@@ -274,5 +280,30 @@ public sealed class BitHealthLoopTests
 
         await endpoint.Received(1).Stop(Arg.Any<CancellationToken>());   // one healthy->unhealthy edge
         endpoint.Received(2).Start(Arg.Any<CancellationToken>());        // first-tick Start + unhealthy->healthy
+    }
+
+    // 260614-b5c (Fact A): the keeper self-watchdog stamp is UNCONDITIONAL — it fires every tick OUTSIDE the
+    // edge guard, including on an unhealthy tick. Script = exactly ONE unhealthy tick (RedisDown). prev=null
+    // -> unhealthy IS an edge, but the stamp must NOT depend on the edge: it advances purely because the loop
+    // ticked. A fresh FakeTimeProvider is pinned to a known instant; after the single unhealthy tick the
+    // KeeperLivenessState.Current must equal that instant — edge-gated stamp code would leave it null.
+    [Fact]
+    public async Task Stamp_Advances_Every_Tick_Including_Unhealthy()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var instant = new DateTime(2026, 6, 14, 5, 0, 0, DateTimeKind.Utc);
+        var clock = new FakeTimeProvider();
+        clock.SetUtcNow(new DateTimeOffset(instant));
+        var liveness = new KeeperLivenessState();
+
+        using var redis = new ScriptedRedis([RedisDown()]);   // ONLY an unhealthy tick
+        var probe = new L2ProbeRecovery(redis.Multiplexer);
+        var bus = Substitute.For<IBus>();
+        using var loop = NewLoop(probe, new L2HealthGate(), bus, FakeHandle().holder, clock, liveness);
+
+        await RunScriptThenStop(loop, redis, ct);
+
+        // The stamp fired on the unhealthy tick (non-null) and equals the pinned clock instant.
+        Assert.Equal(instant, liveness.Current);
     }
 }
