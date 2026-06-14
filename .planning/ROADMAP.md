@@ -859,7 +859,10 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   2. The create/update cron validator accepts the 6-field seconds form (a previously-rejected `*/30 * * * * *` now passes validation).
   3. The 5-field standard cron form is still accepted (no regression — both forms validate and schedule).
   4. Solution builds 0-warning (Release + Debug); the hermetic suite is green against the seconds-cron change.
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 63-01-PLAN.md — CronFieldForm shared detector + unit test (Wave 1)
+  - [ ] 63-02-PLAN.md — CronInterval rewire + */30 sub-minute fact (Wave 2)
+  - [ ] 63-03-PLAN.md — Both validators rewire + message update + tests (Wave 2)
 
 #### Phase 64: Processor Work & Structured Logging
 **Goal**: The shared `processor-sample` does observable, correlatable work. Its config (`SampleConfig`) carries an **integer** and a **string** (the framework deserializes the assignment payload into the typed config exposing both fields); `ProcessAsync` generates a random number, adds it to the payload integer, and produces the sum as the step's completed result; and it emits a **structured log entry** tagged with the payload string `Step_<label>` and the computed sum, carrying `correlationId` + `stepId` (plus `workflowId`/`processorId`) so Elasticsearch can aggregate a whole run by correlationId and identify each step. This is the second product code change and the data shape the analyzer (Phase 66) parses.
