@@ -151,16 +151,23 @@ public sealed class AnalyzerE2ETests
             : (before!, await ReadCounterSetAsync(prom, ct));
         var promSnapshot = BuildSnapshot(beforeSet, afterSet);
 
-        // ── 6. TRIGGER DENOMINATOR (D-04 / item #1) ──────────────────────────────────────────────────
+        // ── 6. PROM CORROBORATION INPUT (67-03 — NO LONGER the per-run denominator) ──────────────────
         //    Derive triggerCount from the orchestrator_dispatch_sent_total WINDOWED DELTA (rounded).
-        //    There is NO per-fire correlationId orchestrator log (item #1): the COUNT of missing runs is
-        //    detectable (dispatch_sent − complete), but the IDENTITY of a fully-missing run is NOT
-        //    recoverable from telemetry — a documented, accepted limitation (the engine reports the count).
+        //    67-03: this is CORROBORATION evidence only — the orchestrator dispatches once per STEP, so
+        //    DispatchSentDelta is ~9× the run count and must NOT be used as the per-run denominator (the
+        //    old conflation scored a perfect 10-run window as 71 "missing": 81 = 9×9 vs ES 10). The
+        //    BINDING denominator is the ES started-run count (distinct correlationIds with ≥1 Step_*
+        //    log) computed inside the engine from `traces`. The engine derives impliedRuns =
+        //    round(DispatchSentDelta / 9) for the corroboration cross-check. There is NO per-fire
+        //    correlationId orchestrator log (item #1), so the IDENTITY of a fully-dead run is NOT
+        //    recoverable — it surfaces as a non-fatal Prom corroboration warning, never named.
         var triggerCount = (int)Math.Round(promSnapshot.DispatchSentDelta);
 
-        // Precondition: at least one dispatch must have fired in the window. A zero triggerCount means
-        // the engine's reconciliation passes vacuously (0-missing, 0*9=0 completed required, etc.) even
-        // though the fan-out workflow precondition is broken. Fail LOUD here instead. (WR-04 fix.)
+        // Precondition: at least one dispatch must have fired in the window. A zero DispatchSentDelta
+        // AND zero ES traces would let the ES-binding verdict pass vacuously (0 started, 0 missing) even
+        // though the fan-out workflow precondition is broken. Fail LOUD here instead. (WR-04 fix —
+        // re-anchored on dispatch presence as the firing precondition; the ES started count remains the
+        // verdict denominator inside the engine.)
         Assert.True(triggerCount > 0,
             $"No dispatches observed in the window (DispatchSentDelta={promSnapshot.DispatchSentDelta}); " +
             "the fan-out workflow precondition is not satisfied.");

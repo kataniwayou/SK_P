@@ -1,25 +1,42 @@
 namespace BaseApi.Tests.Observability.Analysis;
 
 /// <summary>
-/// The pure correctness arbiter (OBS-01/02/03). A plain object — NO ES/Prom/Http/host dependency,
-/// NO IO — so every decision branch is provable with synthetic <see cref="RunTrace"/> +
-/// <see cref="PromCounterSnapshot"/> inputs (66-VALIDATION.md). The RealStack fixture (Plan 03)
-/// feeds it real parsed inputs; the hermetic facts (Plan 01 Task 3) feed synthetic ones and prove
-/// every branch fires, so a green RealStack run is trustworthy rather than vacuously green.
+/// The pure correctness arbiter (OBS-01/02/03), re-founded on the ES-binding model (67-03). A plain
+/// object — NO ES/Prom/Http/host dependency, NO IO — so every decision branch is provable with
+/// synthetic <see cref="RunTrace"/> + <see cref="PromCounterSnapshot"/> inputs (66-VALIDATION.md).
+/// The RealStack fixture (Plan 03) feeds it real parsed inputs; the hermetic facts feed synthetic
+/// ones so a green RealStack run is trustworthy rather than vacuously green.
 ///
 /// <para>
-/// <b>Decision logic</b> (D-03..D-08 + 66-RESEARCH Counter Reality):
+/// <b>Binding arbiter = ES (per-run), 67-03.</b> Aligns the engine with the fixture's documented
+/// design: "ES-primary completeness is the binding arbiter; Prom reconciliation is corroborating
+/// only." The previous engine conflated three Prom counters into the binding pass gate
+/// (triggerCount = DispatchSentDelta as the per-run denominator; ResultSentCompletedDelta ≥
+/// complete × 9; |DispatchSentDelta − triggerCount| as a gate). The orchestrator emits one dispatch
+/// per STEP, so DispatchSentDelta is ~9× the run count — using it as the per-run denominator made a
+/// perfectly-complete 10-run window score 71 "missing" (81 = 9×9 vs ES 10). Those three are retired
+/// from the binding gate; they survive only as corroboration math.
+/// </para>
+///
+/// <para>
+/// <b>Decision logic (ES-binding):</b>
 /// <list type="number">
-/// <item>COMPLETE (OBS-01): a run whose distinct StepLabel set equals the full 9-label set
+/// <item>STARTED (denominator): distinct correlationIds with ≥1 Step_* log — i.e. <c>runs.Count</c>
+///   (the fixture builds one <see cref="RunTrace"/> per correlationId that emitted any Step_* hit).</item>
+/// <item>COMPLETE (OBS-01): a started run whose distinct StepLabel set equals the full 9-label set
 ///   (necessarily both sinks Step_F1 + Step_F2).</item>
-/// <item>MISSING (OBS-02): <c>triggerCount − CompleteRuns</c>; &gt; 0 ⇒ Fail. The specific missing
-///   correlationId is NOT recoverable from telemetry (caveat, never named).</item>
-/// <item>DUPLICATE (OBS-02, fail-closed): ANY duplicate (correlationId, StepLabel) ⇒ Fail — the
-///   live dedupe counters are dormant, so no redelivery can be corroborated (D-06 → D-07).</item>
-/// <item>RECONCILE (OBS-03, D-08): on the LIVE counter set only — dispatch_sent == triggers AND
-///   result_sent_completed ≥ complete × 9 AND no unaccounted delta AND no non-completed terminal
-///   outcome. Dormant dedupe deltas feed NO arithmetic (reported Absent).</item>
-/// <item>VERDICT: Pass iff Missing == 0 AND no duplicate AND Reconciled.</item>
+/// <item>MISSING (OBS-02): <c>StartedRuns − CompleteRuns</c> — started-but-incomplete (1–8 labels);
+///   &gt; 0 ⇒ Fail. A FULLY-dead run (dispatched but never logging Step_A) never started in ES, so it
+///   is NOT in this count — it surfaces via the Prom corroboration warning instead.</item>
+/// <item>DUPLICATE (OBS-02, fail-closed, BINDING): ANY duplicate (correlationId, StepLabel) ⇒ Fail —
+///   the live dedupe counters are dormant, so no redelivery can be corroborated.</item>
+/// <item>PROM CORROBORATION (OBS-03, NON-BINDING, 67-03): compute impliedRuns =
+///   round(DispatchSentDelta / 9) and compare to StartedRuns within a ±1-run boundary tolerance. A
+///   positive excess beyond tolerance (impliedRuns − StartedRuns &gt; tolerance) — a dispatched run
+///   ES never observed — is a WARNING, NOT a Fail. Any non-completed terminal outcome is also a
+///   warning. The documented ~1-run window-edge mismatch (81 = 9×9 vs ES 10) is inside tolerance.</item>
+/// <item>VERDICT: Pass iff (every started run complete) AND (no duplicate). Prom corroboration is
+///   non-fatal — it never flips a green ES verdict.</item>
 /// </list>
 /// </para>
 /// </summary>
@@ -32,105 +49,143 @@ public sealed class PassFailEngine
     private static readonly HashSet<string> AllLabels = new(StringComparer.Ordinal)
     { "Step_A", "Step_B", "Step_C", "Step_D1", "Step_E1", "Step_F1", "Step_D2", "Step_E2", "Step_F2" };
 
-    /// <summary>
-    /// Tolerance for floating-point delta comparisons. The fixture derives triggerCount as
-    /// (int)Math.Round(promSnapshot.DispatchSentDelta), then the engine compares the un-rounded
-    /// double against that int. Using 0.5 tolerance instead of exact == prevents a fractional
-    /// residue (multi-series summation, float accumulation) from forcing a spurious Unreconciled
-    /// outcome. (WR-01 fix — 66-REVIEW.md.)
-    /// </summary>
-    private const double DeltaTolerance = 0.5;
-
-    /// <summary>Both sinks Step_F1 + Step_F2 required for COMPLETE → 9 COMPLETED effects per run.</summary>
+    /// <summary>Both sinks Step_F1 + Step_F2 required for COMPLETE → 9 distinct labels / dispatches per run.</summary>
     public const int LabelsPerRun = 9;
 
     /// <summary>
-    /// Score a set of per-correlationId traces against the live Prometheus counter deltas and the
-    /// expected trigger count, producing the single per-scenario <see cref="AnalyzerReport"/>.
-    /// PURE: no IO — the caller (fixture) writes the report.
+    /// Boundary tolerance (in RUNS) for the Prometheus corroboration cross-check. The orchestrator
+    /// emits one dispatch per step, so a window-edge run can be counted by Prom but fall just outside
+    /// the ES range (or vice versa) — the documented ~1-run Prom/ES window-edge mismatch (e.g. Prom
+    /// 81 = 9×9 ⇒ impliedRuns 9 vs ES StartedRuns 10). A ±1-run tolerance prevents that boundary
+    /// artifact from raising a spurious corroboration warning. (67-03 — replaces the old 0.5-count
+    /// DeltaTolerance, which operated on the now-retired binding delta arithmetic.)
     /// </summary>
+    public const int CorroborationRunTolerance = 1;
+
+    /// <summary>
+    /// Score a set of per-correlationId traces against the live Prometheus counter deltas, producing
+    /// the single per-scenario <see cref="AnalyzerReport"/>. PURE: no IO — the caller (fixture) writes
+    /// the report.
+    /// </summary>
+    /// <param name="runs">
+    /// One <see cref="RunTrace"/> per distinct correlationId that emitted ≥1 Step_* log — the
+    /// ES-binding STARTED set (the denominator).
+    /// </param>
+    /// <param name="prom">The windowed Prometheus counter deltas — corroboration evidence only (67-03).</param>
+    /// <param name="triggerCount">
+    /// The dispatch-derived count (round(DispatchSentDelta)) — kept as Prom corroboration evidence,
+    /// NOT the binding denominator. The orchestrator dispatches per step, so this is ~9× the run count.
+    /// </param>
+    /// <param name="scenarioId">The scenario id for the report + path.</param>
     public AnalyzerReport Analyze(IReadOnlyList<RunTrace> runs, PromCounterSnapshot prom,
                                   int triggerCount, string scenarioId)
     {
-        // 1. COMPLETE (OBS-01): distinct StepLabel set equals the full 9-label set (both sinks).
+        // ── ES-BINDING ARBITER (67-03) ────────────────────────────────────────────────────────────
+
+        // STARTED (denominator): distinct correlationIds with ≥1 Step_* log = one RunTrace each.
+        var startedRuns = runs.Count;
+
+        // COMPLETE (OBS-01): distinct StepLabel set equals the full 9-label set (both sinks).
         var complete = runs.Where(r => r.DistinctLabels.SetEquals(AllLabels)).ToList();
 
-        // 2. MISSING (OBS-02): count from the trigger denominator; identity is NOT recoverable.
-        var missing = triggerCount - complete.Count;
+        // MISSING (OBS-02): started-but-incomplete. Bound against the ES STARTED denominator — NOT the
+        // Prom dispatch count. A fully-dead run (never started in ES) is invisible here and surfaces
+        // only in the Prom corroboration warning below.
+        var missing = startedRuns - complete.Count;
         var missingDetail = new List<string>();
         if (missing > 0)
         {
             missingDetail.Add(
-                $"{missing} of {triggerCount} triggered run(s) did NOT reach COMPLETE (all 9 labels incl. both sinks Step_F1 + Step_F2).");
+                $"{missing} of {startedRuns} STARTED run(s) (distinct correlationId with ≥1 Step_* log) did NOT reach " +
+                "COMPLETE (all 9 labels incl. both sinks Step_F1 + Step_F2).");
             missingDetail.Add(
-                "The SPECIFIC missing correlationId is NOT recoverable from telemetry (no per-fire correlationId log — research item #1); the count is reported, the identity is not.");
+                "A fully-dead run (dispatched but never logging Step_A) never started in ES and is NOT in this count; " +
+                "it surfaces as a Prom corroboration WARNING (impliedRuns > startedRuns). The specific missing " +
+                "correlationId for such a run is NOT recoverable from telemetry (research item #1).");
         }
 
-        // 3. DUPLICATE (OBS-02, fail-closed): any duplicate (correlationId, StepLabel) is a FAIL.
-        //    No live dedupe counter can corroborate a redelivery (dormant) → un-corroboratable → fail-closed.
+        // DUPLICATE (OBS-02, fail-closed, BINDING): any duplicate (correlationId, StepLabel) is a FAIL.
+        // No live dedupe counter can corroborate a redelivery (dormant) → un-corroboratable → fail-closed.
         var duplicates = runs.Where(r => r.HasAnyDuplicateLabel).ToList();
         var dupFail = duplicates.Count > 0;
 
-        // 4. RECONCILE (OBS-03, D-08): LIVE counter set only; dormant dedupe deltas feed no arithmetic.
-        //    Epsilon tolerance (DeltaTolerance = 0.5) instead of exact == because the fixture derives
-        //    triggerCount as (int)Math.Round(DispatchSentDelta) and the engine re-compares the un-rounded
-        //    double. Any fractional residue from multi-series summation would otherwise force Unreconciled.
+        // ── PROM CORROBORATION (OBS-03, NON-BINDING, 67-03) ────────────────────────────────────────
+        // The three retired conflations (#1 DispatchSentDelta as per-run denom; #2 ResultSentCompleted
+        // ≥ complete × 9 as binding; #3 |DispatchSentDelta − triggerCount| as binding) survive ONLY as
+        // corroboration math here — they never gate the verdict.
         //
-        //    NOTE (IN-02): DispatchConsumedDelta and KeeperReinjectDroppedDelta are intentionally excluded
-        //    from this arithmetic — they are EVIDENCE-ONLY counters surfaced in the report for human review.
-        //    DispatchConsumed is the natural counterpart to DispatchSent but its reconciliation semantics
-        //    are deferred (open research item); including it here without a clear pass criterion would add
-        //    false-negative risk. The two dormant dedupe deltas (ResultDedupedDelta, DispatchDedupedDelta)
-        //    are also evidence-only (absent → null) and feed no arithmetic per the dormant-counter contract.
-        var nonCompletedTerminal = prom.NonCompletedOutcomes.Values.Any(v => v != 0);
-        var reconciled =
-            Math.Abs(prom.DispatchSentDelta - triggerCount) < DeltaTolerance
-            && prom.ResultSentCompletedDelta >= complete.Count * LabelsPerRun
-            && Math.Abs(UnaccountedDelta(prom)) < DeltaTolerance
-            && !nonCompletedTerminal;
-        var recon = reconciled ? ReconciliationOutcome.Reconciled : ReconciliationOutcome.Unreconciled;
+        //   impliedRuns = round(DispatchSentDelta / 9): the run count IMPLIED by the per-step dispatch
+        //   counter. A positive excess over StartedRuns beyond tolerance means Prom saw more runs
+        //   dispatched than ES observed start — i.e. a fully-dead run. WARNING, not a fail.
+        var promImpliedRuns = (int)Math.Round(prom.DispatchSentDelta / LabelsPerRun);
+        var corroborationDetail = new List<string>();
 
-        // 5. VERDICT: Pass iff zero-missing AND no duplicate AND reconciled.
-        var pass = missing == 0 && !dupFail && recon == ReconciliationOutcome.Reconciled;
+        var deadRunExcess = promImpliedRuns - startedRuns;
+        if (deadRunExcess > CorroborationRunTolerance)
+        {
+            corroborationDetail.Add(
+                $"Prom corroboration WARNING: DispatchSentDelta={prom.DispatchSentDelta} ⇒ ~{promImpliedRuns} dispatched run(s), " +
+                $"but ES observed only {startedRuns} STARTED run(s) (excess {deadRunExcess} > ±{CorroborationRunTolerance} tolerance). " +
+                "This is how a fully-dead run (dispatched, Step_A never logged) surfaces. NON-FATAL (Prom is corroborating only, 67-03).");
+        }
+
+        // Terminal non-completed processor outcomes (failed/cancelled/processing) are corroboration
+        // evidence (D-08) — surfaced as a WARNING, no longer fail-closed binding.
+        var nonCompletedOutcomes = prom.NonCompletedOutcomes.Where(kv => kv.Value != 0).ToList();
+        if (nonCompletedOutcomes.Count > 0)
+        {
+            var detail = string.Join(", ", nonCompletedOutcomes.Select(kv => $"{kv.Key}={kv.Value}"));
+            corroborationDetail.Add(
+                $"Prom corroboration WARNING: non-completed terminal outcome(s) observed ({detail}). " +
+                "NON-FATAL (Prom is corroborating only, 67-03).");
+        }
+
+        var recon = corroborationDetail.Count == 0
+            ? ReconciliationOutcome.Reconciled
+            : ReconciliationOutcome.Unreconciled;
+
+        // ── VERDICT (ES-binding; Prom corroboration is non-fatal) ──────────────────────────────────
+        var pass = missing == 0 && !dupFail;
         var verdict = pass ? Verdict.Pass : Verdict.Fail;
 
-        // 6. Build the report (no IO).
+        // Build the report (no IO).
         return new AnalyzerReport
         {
             ScenarioId = scenarioId,
             Verdict = verdict,
+            StartedRuns = startedRuns,
             TriggerCount = triggerCount,
             CompleteRuns = complete.Count,
             Missing = missing,
             MissingDetail = missingDetail,
             Duplicates = duplicates,
+            PromImpliedRuns = promImpliedRuns,
             Reconciliation = recon,
+            CorroborationDetail = corroborationDetail,
             Prom = prom,
             Traces = runs,
-            HumanSummary = BuildSummary(scenarioId, verdict, triggerCount, complete.Count, missing, dupFail, recon),
+            HumanSummary = BuildSummary(
+                scenarioId, verdict, startedRuns, complete.Count, missing, dupFail, recon, corroborationDetail),
         };
     }
 
-    /// <summary>
-    /// The dispatched-but-never-completed gap on the LIVE counters: dispatch_sent − result_consumed
-    /// that is NOT mirrored by reported redelivery. A non-zero imbalance is itself an UNRECONCILED
-    /// FAIL (D-08 fail-closed). Dormant dedupe deltas (null) are NOT subtracted — they feed no arithmetic.
-    /// </summary>
-    private static double UnaccountedDelta(PromCounterSnapshot prom)
-        => prom.DispatchSentDelta - prom.ResultConsumedDelta;
-
-    private static string BuildSummary(string scenarioId, Verdict verdict, int triggerCount,
-        int completeRuns, int missing, bool dupFail, ReconciliationOutcome recon)
+    private static string BuildSummary(string scenarioId, Verdict verdict, int startedRuns,
+        int completeRuns, int missing, bool dupFail, ReconciliationOutcome recon,
+        IReadOnlyList<string> corroborationDetail)
     {
         var reasons = new List<string>();
-        if (missing > 0) reasons.Add($"{missing} missing");
+        if (missing > 0) reasons.Add($"{missing} started-but-incomplete");
         if (dupFail) reasons.Add("unaccountable duplicate (fail-closed)");
-        if (recon == ReconciliationOutcome.Unreconciled) reasons.Add("Prom unreconciled");
 
         var driver = verdict == Verdict.Pass
-            ? "zero-missing, no duplicate, Prom reconciled"
+            ? "every started run complete, no duplicate (ES-binding)"
             : string.Join("; ", reasons);
 
-        return $"[{scenarioId}] {verdict}: {completeRuns}/{triggerCount} complete — {driver}.";
+        // Prom corroboration is reported alongside the (ES-binding) verdict, never as its cause.
+        var corroboration = recon == ReconciliationOutcome.Reconciled
+            ? "Prom corroboration clean"
+            : $"Prom corroboration WARNING [{corroborationDetail.Count}] (non-fatal)";
+
+        return $"[{scenarioId}] {verdict}: {completeRuns}/{startedRuns} started runs complete — {driver}; {corroboration}.";
     }
 }
