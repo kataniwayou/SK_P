@@ -915,7 +915,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   3. A single scenario runs fully automated end-to-end (clean → seed → activate → inject fault → observe → analyze → tear down) with no human verification step, producing the analyzer's report + verdict.
 **Plans**: 3 plans (2 waves)
 Plans:
-- [ ] 67-01-PLAN.md — D-16 env-var seam in AnalyzerE2ETests.cs (SCENARIO_ID/WINDOW_START_UTC/WINDOW_END_UTC, const/UtcNow fallback); Phase 66 standalone stays green (FAULT-01, FAULT-03)
+- [x] 67-01-PLAN.md — D-16 env-var seam in AnalyzerE2ETests.cs (SCENARIO_ID/WINDOW_START_UTC/WINDOW_END_UTC, const/UtcNow fallback); Phase 66 standalone stays green (FAULT-01, FAULT-03) (completed 2026-06-14 — seam in place + Release 0/0 -warnaserror; commit 55b2fef. Task-2 checkpoint resolved BY CONSTRUCTION: fallback proven live (no-env run wrote analyzer-reports/TEST-01.json via const default), but the full standalone analyzer-GREEN verdict was NOT achieved this session — DEFERRED to 67-03 under a controlled window. Three environmental findings handed to 67-02/67-03: MTP ignores `dotnet test --filter` → use `-- --filter-method`; phase-65-reset does not stop ghost orchestrator crons (NULL-payload fires, zero Step_* docs); `POST /orchestration/start` returned 422 for the fresh workflow)
 - [ ] 67-02-PLAN.md — Author scripts/phase-67-harness.ps1: scenario table (TEST-01/TEST-02) + clean->seed->psql-wf-id->204-gate->observe->whole-tier-crash->health-wait->analyze->teardown, exit mirrors analyzer verdict (FAULT-01, FAULT-02, FAULT-03)
 - [ ] 67-03-PLAN.md — Two reference runs: TEST-01 baseline-first (TriggerCount~10) then TEST-02 processor crash; each fully automated, produces a correctly-named verdict report (FAULT-01, FAULT-02, FAULT-03)
 
@@ -939,7 +939,7 @@ Plans:
 | 64 | Processor Work & Structured Logging | 1/1 | Complete    | 2026-06-14 |
 | 65 | Fan-Out Workflow Seeder & Clean-State Stack | 3/3 | Complete    | 2026-06-14 |
 | 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 3/3 | Complete    | 2026-06-14 |
-| 67 | Fault-Injection Harness | 0/TBD | Not started | — |
+| 67 | Fault-Injection Harness | 1/3 | In progress | 67-01 (seam by-construction; live verdict deferred to 67-03) |
 | 68 | Live Resilience Proof — 7 Scenarios (Capstone) | 0/TBD | Not started | — |
 
 **Coverage:** 23/23 v8.0.0 requirements mapped (CRON-01/02 → 63 · PROC-01/02/03 → 64 · WF-01/02 + ENV-01/02 → 65 · OBS-01/02/03/04 → 66 · FAULT-01/02/03 → 67 · TEST-01..07 → 68). No orphans, no duplicates.

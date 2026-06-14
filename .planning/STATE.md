@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
-current_plan: Not started
-status: planning
-stopped_at: Phase 67 context gathered
-last_updated: "2026-06-14T14:23:14.359Z"
-last_activity: 2026-06-14
+current_plan: 2
+status: executing
+stopped_at: "Plan 67-01 complete; next is 67-02 (author scripts/phase-67-harness.ps1). 67-02 MUST inherit: `-- --filter-method` (MTP), clean-orchestrator guarantee (no ghost crons), and resolve `/orchestration/start` 422."
+last_updated: "2026-06-14T19:02:27.918Z"
+last_activity: "2026-06-14 -- Plan 67-01 complete (D-16 env-var seam, commit 55b2fef). Task-2 checkpoint resolved BY CONSTRUCTION: fallback proven live (no-env → analyzer-reports/TEST-01.json via const default), but full standalone analyzer-GREEN verdict NOT achieved this session — DEFERRED to 67-03. Three environmental findings handed to 67-02/67-03: (1) MTP ignores `dotnet test --filter` → use `-- --filter-method`; (2) phase-65-reset does NOT stop ghost orchestrator crons (NULL-payload fires → zero Step_* docs → analyzer scored 66 triggered/0 complete/all-missing); (3) `POST /api/v1/orchestration/start` returned 422 for the fresh workflow (never registered)."
 progress:
   total_phases: 27
   completed_phases: 25
-  total_plans: 81
-  completed_plans: 81
-  percent: 100
+  total_plans: 84
+  completed_plans: 82
+  percent: 98
 ---
 
 # Project State
@@ -22,17 +22,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; v8.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), v6.0.0 (typed base-config seam + Gate A config-schema compatibility), and v7.0.0 (per-replica processor liveness + self-watchdog — closed audit-override, live close gate deferred to v8.0.0).**
-**Current focus:** Phase 66 — Plan 02 (next)
+**Current focus:** Phase 67 — fault-injection-harness
 
 ## Current Position
 
 Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove perfect (zero-missing, effect-once) recovery of a fan-out orchestrated workflow (A→B→C→{D1→E1→F1, D2→E2→F2}, one shared processor-sample, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios (happy path, processor/orchestrator/keeper/redis/rabbitmq/redis+rabbitmq crash), verified SOLELY from Prometheus metrics + Elasticsearch logs (aggregate by correlationId; missing/duplicate vs total triggers), fully automated. Prerequisite code change: enable 6-field seconds-cron. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
-Phase: 67
-Current Plan: Not started
+Phase: 67 (fault-injection-harness) — EXECUTING
+Current Plan: 2
 Total Plans: 3
-Plan: 3 of 3
-Status: Ready to plan
-Last activity: 2026-06-14
+Plan: 2 of 3
+Status: Executing Phase 67 — 67-01 complete (seam by-construction; live verdict deferred to 67-03)
+Last activity: 2026-06-14 -- Plan 67-01 complete (D-16 env-var seam, commit 55b2fef). Task-2 checkpoint resolved BY CONSTRUCTION: fallback proven live (no-env → analyzer-reports/TEST-01.json via const default), but full standalone analyzer-GREEN verdict NOT achieved this session — DEFERRED to 67-03. Three environmental findings handed to 67-02/67-03: (1) MTP ignores `dotnet test --filter` → use `-- --filter-method`; (2) phase-65-reset does NOT stop ghost orchestrator crons (NULL-payload fires → zero Step_* docs → analyzer scored 66 triggered/0 complete/all-missing); (3) `POST /api/v1/orchestration/start` returned 422 for the fresh workflow (never registered).
 
 > v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — ✅ CLOSED 2026-06-14 (audit-override). Phases 59–61 + 62.1 implemented & hermetically green (17 functional reqs). Phase-62 live proof + triple-SHA close gate NOT run — deferred, superseded by v8.0.0. Archives: milestones/v7.0.0-{ROADMAP,REQUIREMENTS}.md.
 
@@ -695,7 +695,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [██████████] 98%
 
 ### Milestone Phases (v3.4.0)
 
@@ -1551,13 +1551,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 67 context gathered
-Resume file: --resume-file
+Last session: 2026-06-14 — Completed 67-01-PLAN.md (D-16 analyzer env-var seam)
+Stopped at: Plan 67-01 complete; next is 67-02 (author scripts/phase-67-harness.ps1). 67-02 MUST inherit: `-- --filter-method` (MTP), clean-orchestrator guarantee (no ghost crons), and resolve `/orchestration/start` 422.
+Resume file: .planning/phases/67-fault-injection-harness/67-02-PLAN.md
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 66 (prometheus-es-analyzer-pass-fail-engine) — 3 plans — 2026-06-14T12:41:50.413Z
+**Planned Phase:** 67 (fault-injection-harness) — 3 plans — 2026-06-14T15:06:30.757Z
