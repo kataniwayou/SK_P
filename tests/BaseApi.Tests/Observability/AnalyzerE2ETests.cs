@@ -67,11 +67,25 @@ public sealed class AnalyzerE2ETests
     // caller-supplied id can never traverse out of the fixed reports dir (no '/', '\', '.', etc.).
     private static readonly Regex ScenarioIdPattern = new(@"^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
 
+    // D-16 env-var seam — parse a harness-supplied round-trip ("o"-format) timestamp to UTC, falling
+    // back to the caller's default (UtcNow) on null/empty/malformed input so the standalone Phase 66
+    // run (no env vars set) is byte-for-byte unchanged. AssumeUniversal|AdjustToUniversal normalizes
+    // the PowerShell-emitted ISO-8601 offset form to UTC; TryParse → false degrades to the fallback
+    // (T-67-04: a bad WINDOW_*_UTC value never crashes, it reverts to the self-window default).
+    private static DateTimeOffset ParseUtcOr(string? value, DateTimeOffset fallback) =>
+        DateTimeOffset.TryParse(
+            value,
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
+            out var parsed)
+            ? parsed
+            : fallback;
+
     [Fact]
     public async Task Analyze_HappyPath_Window_Yields_Pass()
     {
         var ct = TestContext.Current.CancellationToken;
-        var scenarioId = DefaultScenarioId;
+        var scenarioId = Environment.GetEnvironmentVariable("SCENARIO_ID") ?? DefaultScenarioId;
 
         // ── 1. SCENARIO ID + PATH-TRAVERSAL GUARD (Security V5 / T-66-07) ────────────────────────────
         //    Validate against the ^[A-Za-z0-9_-]+$ whitelist BEFORE composing any path. Compose the
@@ -90,7 +104,7 @@ public sealed class AnalyzerE2ETests
         // ── 2. PROM BEFORE-SNAPSHOT (windowing, A3 / Pitfall 3) ──────────────────────────────────────
         //    Task 1 confirmed counters are lifetime cumulative (FLUSHALL+heal, NO restart), so read the
         //    live counter set NOW (window start) to enable delta = after − before.
-        var windowStartUtc = DateTimeOffset.UtcNow;
+        var windowStartUtc = ParseUtcOr(Environment.GetEnvironmentVariable("WINDOW_START_UTC"), DateTimeOffset.UtcNow);
         var before = await ReadCounterSetAsync(prom, ct);
 
         // ── 3. DRAIN (D-05 / Pitfall 4) + POLL-TO-STABLE ─────────────────────────────────────────────
@@ -105,7 +119,7 @@ public sealed class AnalyzerE2ETests
         // snapshotUtc and the AFTER read would be counted in DispatchSentDelta (trigger denominator) yet
         // excluded from the ES range → scored MISSING. In the happy-path window this tail gap is negligible
         // (no new fires after the drain), so this is an accepted, documented limitation. (IN-04 note.)
-        var snapshotUtc = DateTimeOffset.UtcNow;
+        var snapshotUtc = ParseUtcOr(Environment.GetEnvironmentVariable("WINDOW_END_UTC"), DateTimeOffset.UtcNow);
         var stepHits = await PollHitsToStableAsync(es, windowStartUtc, snapshotUtc, ct);
 
         // ── 4. ES READ (OBS-01) — group Step_* hits into per-run RunTraces by attributes.CorrelationId ─
