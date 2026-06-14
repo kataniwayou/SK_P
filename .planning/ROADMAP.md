@@ -886,7 +886,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   3. The stack brings up exactly one `processor-sample` (no `processor-badconfig`) alongside the full infra + observability tiers, all healthy.
   4. The clean-state routine leaves a deterministic baseline before each run — Redis flushed, the workflow/step/assignment rows reset, and any leftover/redundant processor containers removed — so a subsequent run's metrics and logs are attributable to that run only.
 **Plans**: 3 plans
-- [ ] 65-01-PLAN.md — Self-verifying RealStack fan-out seeder fixture (WF-01, WF-02)
+- [x] 65-01-PLAN.md — Self-verifying RealStack fan-out seeder fixture (WF-01, WF-02) ✓ completed 2026-06-14 — FanOutSeederE2ETests: idempotent reverse-topo build (9 steps/8 edges/9 assignments, 1 shared processor-sample, `*/30 * * * * *` cron, sentinel `v8-fanout-proof`) + inline Npgsql self-verify (1/9/9/8/1, distinct proc=1, workflow_assignments=9, exact 8-edge set, F1/F2 zero-outgoing, 9 distinct `{int number, Step_* label}` payloads) + run-twice idempotency; live 1/1 GREEN; commits c9cc582, c16d5fe
 - [ ] 65-02-PLAN.md — Clean-state reset script: FLUSHALL + heal-wait + FK-safe psql DELETE + processor-set assert (ENV-02)
 - [ ] 65-03-PLAN.md — Minimal-stack bring-up script: compose up + 10-service health wait + zero-badconfig assert (ENV-01)
 

@@ -29,8 +29,10 @@ Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestr
 **: `ProcessAsync` emits a structured log entry tagged with the payload string `Step_<label>` and the computed sum, carrying `correlationId` + `stepId` (+ `workflowId`/`processorId`) so Elasticsearch can aggregate a run by correlationId and identify each step.
 
 ### Fan-Out Workflow Seeder (WF)
-- [ ] **WF-01**: A seeder creates the fan-out workflow `A→B→C→{D1→E1→F1, D2→E2→F2}` (9 steps, entry A, fan-out at C, sinks F1+F2) with every step referencing one shared processor and the `*/30 * * * * *` cron.
-- [ ] **WF-02**: Each of the 9 steps has an assignment carrying the `{ number, label:"Step_*" }` payload; the seeder is idempotent (re-runnable without duplicating workflow/step/assignment rows).
+- [x] **WF-01
+**: A seeder creates the fan-out workflow `A→B→C→{D1→E1→F1, D2→E2→F2}` (9 steps, entry A, fan-out at C, sinks F1+F2) with every step referencing one shared processor and the `*/30 * * * * *` cron.
+- [x] **WF-02
+**: Each of the 9 steps has an assignment carrying the `{ number, label:"Step_*" }` payload; the seeder is idempotent (re-runnable without duplicating workflow/step/assignment rows).
 
 ### Clean-State Test Stack (ENV)
 - [ ] **ENV-01**: The proof runs a minimal stack with a single `processor-sample` — the redundant `processor-badconfig` is excluded — alongside the full infra + observability tiers (postgres, redis, rabbitmq, otel-collector, elasticsearch, prometheus, orchestrator, keeper, baseapi-service).
