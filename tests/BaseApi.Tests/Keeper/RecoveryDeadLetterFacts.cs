@@ -1,4 +1,3 @@
-using BaseConsole.Core.Messaging;
 using global::Keeper;
 using global::Keeper.Recovery;
 using MassTransit;
@@ -18,18 +17,17 @@ namespace BaseApi.Tests.Keeper;
 /// <summary>
 /// SYMMETRIC-KEEPER-EXEC-PATH: a Keeper REINJECT whose L2 read raises a Redis INFRASTRUCTURE fault
 /// (NOT an absent/empty key — that is now a by-design DROP per Phase 52 D-06) must FAULT through the
-/// RetryLoop Guard on exhaustion and the faulted consume must NOT be dead-lettered. The keeper-recovery
-/// endpoint is now symmetric with the processor dispatch / orchestrator result endpoints: it carries NO
-/// bus <c>UseMessageRetry</c> and NO <c>ConfigureError</c>, so a Guard-exhaust throw falls out of
-/// <c>Consume</c> to broker nack-requeue — there is no consolidated <see cref="ConsolidatedFault"/> move,
-/// nothing lands in <c>skp-dlq-1</c>. This wires the real <see cref="ReinjectConsumer"/> on an in-memory
-/// <see cref="ITestHarness"/> with a throwing L2, with the production-shaped BARE endpoint (no retry/error
-/// callback), and asserts the message faults AND no ConsolidatedFault is produced.
+/// RetryLoop Guard on exhaustion, and the faulted consume must NOT be acked — it falls through to broker
+/// nack-requeue. The keeper-recovery endpoint is symmetric with the processor dispatch / orchestrator
+/// result endpoints: it carries NO bus <c>UseMessageRetry</c> and NO <c>ConfigureError</c>, so a
+/// Guard-exhaust throw falls out of <c>Consume</c> to broker nack-requeue. There is NO dead-letter tier at
+/// all — the consolidated <c>skp-dlq-1</c> queue was deleted (dead code), so nothing to dead-letter into.
+/// This wires the real <see cref="ReinjectConsumer"/> on an in-memory <see cref="ITestHarness"/> with a
+/// throwing L2, on the production-shaped BARE endpoint (no retry/error callback), and asserts the message
+/// faults (the nack-requeue shape).
 /// <para>
-/// The consolidated sink endpoint is still declared so the NEGATIVE ConsolidatedFault assertion is
-/// meaningful — the sink exists but nothing should ever land in it. Hermetic scope: in-memory proves the
-/// fault-and-no-dead-letter SHAPE; broker-literal nack-requeue / skp-dlq-1 depth==0 defers to the RealStack
-/// close gate.
+/// Hermetic scope: in-memory proves the fault-and-no-ack SHAPE; broker-literal nack-requeue defers to the
+/// RealStack close gate.
 /// </para>
 /// </summary>
 public sealed class RecoveryDeadLetterFacts
@@ -59,11 +57,6 @@ public sealed class RecoveryDeadLetterFacts
             {
                 x.AddConsumer<ReinjectConsumer>();
 
-                // The consolidated forensic sink is still declared so the NEGATIVE ConsolidatedFault
-                // assertion is meaningful — the sink exists but nothing should ever land in it.
-                x.AddHandler((ConsumeContext<ConsolidatedFault> _) => Task.CompletedTask)
-                    .Endpoint(e => e.Name = ConsolidatedErrorTransportFilter.Dlq1);
-
                 // NO AddConfigureEndpointsCallback wiring UseMessageRetry/ConfigureError — the production
                 // keeper-recovery binder is now BARE (symmetric with the exec path). A Guard-exhaust throw
                 // falls through to broker nack-requeue; nothing routes to skp-dlq-1.
@@ -92,16 +85,9 @@ public sealed class RecoveryDeadLetterFacts
 
             // The consumer's L2 read raises an infra fault → through Guard on exhaustion → faulted consume
             // (NOT a silent ack, NOT a drop — drops are the absent/empty STRLEN==0 case, D-06). The faulted
-            // delivery falls through to broker nack-requeue (no in-process retry, no error transport).
+            // delivery falls through to broker nack-requeue (no in-process retry, no error transport, and
+            // no dead-letter tier — skp-dlq-1 was deleted as dead code). The faulted consume IS the shape.
             Assert.True(await harness.Consumed.Any<KeeperReinject>(f => f.Exception is not null, ct));
-
-            // NO dead-letter in EITHER direction: with no ConfigureError on the bare endpoint, no
-            // ConsolidatedFault is produced within a bounded window — nothing lands in skp-dlq-1.
-            using var window = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            window.CancelAfter(TimeSpan.FromSeconds(2));
-            Assert.False(
-                await harness.Consumed.Any<ConsolidatedFault>(window.Token),
-                "Symmetric keeper-recovery endpoint must NOT dead-letter — no ConsolidatedFault may be produced (the faulted consume nack-requeues).");
         }
         finally { await harness.Stop(ct); }
     }

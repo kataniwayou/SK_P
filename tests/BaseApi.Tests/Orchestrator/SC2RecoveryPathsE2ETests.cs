@@ -6,7 +6,6 @@ using System.Text.Json;
 using BaseApi.Service.Features.Processor;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
-using BaseConsole.Core.Messaging;
 using MassTransit;
 using Messaging.Contracts;
 using Messaging.Contracts.Projections;
@@ -145,7 +144,7 @@ public sealed class SC2RecoveryPathsE2ETests
             var entryId = Guid.NewGuid();   // its skp:data:{entryId} is DELIBERATELY absent (STRLEN==0)
 
             // Read the DLQ depth BEFORE so we can assert it does NOT increment (data-gone is a drop, D-06).
-            var dlqBefore = await ReadQueueDepthAsync(ConsolidatedErrorTransportFilter.Dlq1, ct);
+            var dlqBefore = await ReadQueueDepthAsync("skp-dlq-1", ct);
 
             await endpoint.Send(new KeeperReinject(wfId, stepId, procId)
             {
@@ -162,17 +161,17 @@ public sealed class SC2RecoveryPathsE2ETests
             var originQueue = procId.ToString("D");
             var originDepth = await ReadQueueDepthAsync(originQueue, ct);
             Assert.Equal(0, originDepth);   // dropped, not re-injected
-            var dlqAfter = await ReadQueueDepthAsync(ConsolidatedErrorTransportFilter.Dlq1, ct);
+            var dlqAfter = await ReadQueueDepthAsync("skp-dlq-1", ct);
             Assert.True(dlqAfter <= dlqBefore,
                 $"REINJECT data-gone: expected a silent drop (no dead-letter), but " +
-                $"{ConsolidatedErrorTransportFilter.Dlq1} depth climbed {dlqBefore} -> {dlqAfter}.");
+                $"skp-dlq-1 depth climbed {dlqBefore} -> {dlqAfter}.");
 
             // WR-01: defensively register skp-dlq-1 for purge-on-teardown. Today the data-gone path is a
             // BY-DESIGN silent drop (D-06) so this purge is a no-op (nothing lands in the DLQ). But wiring it
             // here makes the teardown self-healing: if a future contract change makes data-gone throw →
             // dead-letter, the parked message is drained to net-zero locally instead of leaking to the
             // close gate's skp-dlq-1 depth==0 invariant (~50min later) with no test-local signal.
-            factory.BrokerQueuesToPurge.Add(ConsolidatedErrorTransportFilter.Dlq1);
+            factory.BrokerQueuesToPurge.Add("skp-dlq-1");
         }
 
         // =========================================================================================

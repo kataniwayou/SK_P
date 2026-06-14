@@ -6,8 +6,9 @@
 # SourceHashes (Processor.Sample.dll + Processor.BadConfig.dll), GET-or-creates TWO config-schema rows by
 # sentinel Name + TWO processor rows (CREATE-IF-ABSENT, never PUT), and is retitled to Phase 62 / v7.0.0.
 # The triple-SHA protocol (idempotent steady-state Processor-row seed, compose-health pre-flight, BOTH-config
-# 0-warning build gate, 3-consecutive-GREEN identical-fact-count cadence, triple-SHA BEFORE==AFTER, separate
-# DLQ depth==0, additive skp:msg:* count==0) is IDENTICAL to phase-58.
+# 0-warning build gate, 3-consecutive-GREEN identical-fact-count cadence, triple-SHA BEFORE==AFTER,
+# additive skp:msg:* count==0) is IDENTICAL to phase-58, MINUS the retired skp-dlq-1 depth probe (the
+# consolidated dead-letter tier was deleted as dead code — quick task 260614-9jd).
 #
 #   - Phase 3 D-15 byte-identical psql \l SHA-256 invariant (database LIST — a seeded Processor/Schema row
 #     is row-level, NOT db-level, so it does NOT move this SHA).
@@ -49,8 +50,7 @@
 #     when a container's bus reconnects after the SC3 redis outage — random transient names are not
 #     net-zero topology, so folding them into the SHA would churn it on any bus reconnect.
 #     NOTE (Pitfall 4): the name-SHA input stays `list_queues name` (NOT `name messages`) — folding the
-#     message-depth column into the SHA would churn it every run. The skp-dlq-1 depth==0 check below is a
-#     SEPARATE additive assertion that uses `list_queues name messages`.
+#     message-depth column into the SHA would churn it every run.
 #   - 3-consecutive-GREEN cadence (full suite, no Category filter — RealStack E2E run live), with an
 #     identical fact count across all 3 runs as a Smell-A guard.
 #
@@ -59,13 +59,11 @@
 # plus the E2E teardown (the E2E tests register every namespace into L2KeysToCleanup); this gate's job is
 # to SNAPSHOT-and-COMPARE the full unfiltered keyspace. There is deliberately NO destructive whole-db flush
 # and (other than the ^skp:proc: liveness exclusion) NO prefix filter on the scan — widening to the full
-# keyspace is what makes the slot-array index part of the SHA. Likewise the skp-dlq-1 depth==0 check is a
-# snapshot-and-compare assertion: the net-zero DLQ drain stays in the E2E teardown, NOT this gate (NO
-# gate-side purge_queue) — so a teardown regression surfaces here as depth>0, not a silent pass.
+# keyspace is what makes the slot-array index part of the SHA.
 #
-# v5 SINGLE DLQ (unchanged in v7): the sole surviving dead-letter queue is skp-dlq-1
-# (ConsolidatedErrorTransportFilter.Dlq1 — the consolidated transport-exhaustion forensic sink). The DLQ
-# loop below is the SINGLE-element @('skp-dlq-1').
+# (RETIRED) The skp-dlq-1 consolidated dead-letter tier was deleted as dead code (quick task 260614-9jd) —
+# post-Model-B nothing produced into it. The former skp-dlq-1 depth==0 probe is removed; the triple-SHA +
+# skp:msg:* count==0 assertions are intact.
 #
 # Steady-state processor identity (DECISION: stable Processor row, NOT a pre-flight health exception). The
 # gate REQUIRES processor-sample healthy at pre-flight. processor-sample only goes Healthy once a Processor
@@ -102,7 +100,7 @@
 #
 # Exit codes:
 #   0  — both build configs zero-warning, all three runs GREEN, all three SHA-256 invariants held,
-#        the single DLQ (skp-dlq-1) depth==0, and the skp:msg:* slot-array index count==0
+#        and the skp:msg:* slot-array index count==0
 #   1  — invariant violation OR any build/test run RED OR unparseable fact count (Smell A)
 #   2  — environment misconfigured (compose stack not healthy)
 # ---------------------------------------------------------------------------
@@ -446,35 +444,7 @@ try {
         Write-Host "rabbitmqctl list_queues SHA-256 invariant HELD: $afterRmqHash" -ForegroundColor Green
     }
 
-    # ---- Single-DLQ depth==0 assertion (additive, SEPARATE from the name-SHA per Pitfall 4) ----
-    # Net-zero closeout for the SOLE surviving dead-letter queue: skp-dlq-1 (DLQ-1,
-    # ConsolidatedErrorTransportFilter.Dlq1 — the consolidated transport-exhaustion forensic sink). This uses
-    # `list_queues name messages` to read the depth column, kept OUT of the name-SHA above (the SHA input
-    # stays `list_queues name`) so depth churn cannot break the name invariant. The net-zero drain stays in
-    # the E2E teardown — NO gate-side purge_queue — so a teardown regression surfaces here as depth>0.
-    $depthRaw = docker exec sk-rabbitmq rabbitmqctl -q list_queues name messages | Out-String
-    foreach ($q in @('skp-dlq-1')) {                          # ConsolidatedErrorTransportFilter.Dlq1 — sole surviving DLQ (Phase 53)
-        # IN-03: parse the rabbitmqctl row ONCE — split on tab/whitespace and index the message-count
-        # column (cols[1]), mirroring the proven ReadQueueDepthAsync (split on \t, take cols[1]). A
-        # no-match / parse-failure keeps the -1 sentinel so the $depth -ne 0 invariant treats it as a violation.
-        $depth = -1
-        foreach ($row in ($depthRaw -split "`n")) {
-            $cols = $row -split "\s+" | Where-Object { $_ -ne '' }
-            if ($cols.Length -ge 2 -and $cols[0] -eq $q) {
-                $parsed = 0
-                if ([int]::TryParse($cols[1], [ref]$parsed)) { $depth = $parsed }
-                break
-            }
-        }
-        if ($depth -ne 0) {
-            Write-Host "DLQ depth invariant VIOLATED: $q depth=$depth (expected 0)" -ForegroundColor Red
-            $allGood = $false
-        } else {
-            Write-Host "DLQ depth invariant HELD: $q depth=0" -ForegroundColor Green
-        }
-    }
-
-    # ---- Additive A19 active-reclaim assertion — parallel to the skp-dlq-1 depth==0 check above. ----
+    # ---- Additive A19 active-reclaim assertion. ----
     # Net-zero of the slot-array index is a PRODUCTION property (the two-key DEL in ProcessorPipeline.DeleteTerminalAsync
     # + DeleteConsumer.cs both-key), NOT a TTL settle (the 300/600s SlotArrayOptions TTL cannot be waited out).
     # A lingering index surfaces here as count>0 AND as a redis SHA mismatch — never a silent TTL pass.
@@ -496,9 +466,8 @@ try {
     Write-Host "  psql \l SHA-256:              $afterPgHash" -ForegroundColor Green
     Write-Host "  redis-cli --scan SHA-256:     $afterRedisHash" -ForegroundColor Green
     Write-Host "  rabbitmqctl list_queues SHA-256: $afterRmqHash" -ForegroundColor Green
-    Write-Host "  DLQ depth: skp-dlq-1=0" -ForegroundColor Green
     Write-Host "  skp:msg:* slot-array index count: 0" -ForegroundColor Green
-    Write-Host "Operator: append these three SHA values + the Passed count + the skp-dlq-1 depth + the skp:msg:* count to .planning/phases/62-live-proof-close-gate/62-HUMAN-UAT.md Phase 62 GREEN-run record." -ForegroundColor Cyan
+    Write-Host "Operator: append these three SHA values + the Passed count + the skp:msg:* count to .planning/phases/62-live-proof-close-gate/62-HUMAN-UAT.md Phase 62 GREEN-run record." -ForegroundColor Cyan
 
     exit 0
 } finally {
