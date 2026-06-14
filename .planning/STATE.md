@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
 current_plan: 2
-status: verifying
+status: ready_to_plan
 stopped_at: Completed 63-03-PLAN.md
 last_updated: "2026-06-14T07:23:39.526Z"
 last_activity: 2026-06-14
 progress:
   total_phases: 27
-  completed_phases: 22
+  completed_phases: 23
   total_plans: 74
   completed_plans: 74
-  percent: 100
+  percent: 85
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; 
 ## Current Position
 
 Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove perfect (zero-missing, effect-once) recovery of a fan-out orchestrated workflow (A→B→C→{D1→E1→F1, D2→E2→F2}, one shared processor-sample, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios (happy path, processor/orchestrator/keeper/redis/rabbitmq/redis+rabbitmq crash), verified SOLELY from Prometheus metrics + Elasticsearch logs (aggregate by correlationId; missing/duplicate vs total triggers), fully automated. Prerequisite code change: enable 6-field seconds-cron. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
-Phase: 63 (seconds-granularity-cron) — EXECUTING
-Current Plan: 2
+Phase: 64
+Current Plan: Not started
 Total Plans: 3
 Plan: 3 of 3 (Plan 01 complete — CronFieldForm detector hoisted into Messaging.Contracts.Projections)
-Status: Phase complete — ready for verification
+Status: Ready to plan
 Last activity: 2026-06-14
 
 > v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — ✅ CLOSED 2026-06-14 (audit-override). Phases 59–61 + 62.1 implemented & hermetically green (17 functional reqs). Phase-62 live proof + triple-SHA close gate NOT run — deferred, superseded by v8.0.0. Archives: milestones/v7.0.0-{ROADMAP,REQUIREMENTS}.md.
@@ -724,7 +724,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 210
+- Total plans completed: 213
 - Average duration: —
 - Total execution time: —
 
@@ -790,6 +790,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 60 | 4 | - | - |
 | 61 | 3 | - | - |
 | 62.1 | 2 | - | - |
+| 63 | 3 | - | - |
 
 **Recent Trend:**
 
