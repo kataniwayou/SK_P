@@ -844,7 +844,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 - [x] **Phase 63: Seconds-Granularity Cron** — Enable 6-field seconds-cron (`*/30 * * * * *`) end-to-end: `CronInterval` next-occurrence/interval math sub-minute (UTC) + the create/update validator accepts the 6-field form (5-field still accepted). ✓ completed 2026-06-14 (3 plans; CRON-01 + CRON-02; shared CronFieldForm detector consumed by both scheduler + validators).
 - [x] **Phase 64: Processor Work & Structured Logging** — `SampleConfig` carries an int + string; `ProcessAsync` random-adds to the int and emits the sum; a `Step_<label>` structured log carries correlationId + stepId so ES can aggregate a run.
 - [x] **Phase 65: Fan-Out Workflow Seeder & Clean-State Stack** — Idempotent seeder for the 9-step fan-out workflow (one shared processor, seconds-cron, `Step_*` payloads) + a minimal clean-state stack (single `processor-sample`, full infra+observability; flush/reset between runs). (completed 2026-06-14)
-- [x] **Phase 66: Prometheus + ES Analyzer & PASS/FAIL Engine** — Aggregate ES logs by correlationId into per-run traces (all 9 steps + both sinks?), detect MISSING/DUPLICATE vs total triggers, cross-check Prometheus counters, and emit a per-test report + automated PASS/FAIL verdict (Prom + ES only). (completed 2026-06-14)
+- [x] **Phase 66: Prometheus + ES Analyzer & PASS/FAIL Engine** — Aggregate ES logs by correlationId into per-run traces (all 9 steps + both sinks?), detect MISSING/DUPLICATE vs total triggers, cross-check Prometheus counters, and emit a per-test report + automated PASS/FAIL verdict (Prom + ES only).
+ (completed 2026-06-14)
 - [ ] **Phase 67: Fault-Injection Harness** — Activate via `POST /api/v1/orchestration/start`, run a 5-minute/30s-cron window, inject each scenario's mid-run fault (container kill/restart) and let the system recover — fully automated end-to-end (clean → seed → activate → inject → observe → analyze → tear down), no human step.
 - [ ] **Phase 68: Live Resilience Proof — 7 Scenarios (Capstone)** — Run all 7 proofs (happy path + processor / orchestrator / keeper / redis / rabbitmq / redis+rabbitmq crash) through the harness; each PASSES iff zero-missing + effect-once hold over its window; redelivery during the fault reported, not failed.
 
@@ -912,7 +913,11 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   1. The harness activates the workflow via `POST /api/v1/orchestration/start` and observes a 5-minute window during which the cron fires ~10 times, each with a fresh correlationId.
   2. The harness injects a scenario's fault mid-run (container kill/restart of the targeted tier) and the system continues/recovers within the same window.
   3. A single scenario runs fully automated end-to-end (clean → seed → activate → inject fault → observe → analyze → tear down) with no human verification step, producing the analyzer's report + verdict.
-**Plans**: TBD
+**Plans**: 3 plans (2 waves)
+Plans:
+- [ ] 67-01-PLAN.md — D-16 env-var seam in AnalyzerE2ETests.cs (SCENARIO_ID/WINDOW_START_UTC/WINDOW_END_UTC, const/UtcNow fallback); Phase 66 standalone stays green (FAULT-01, FAULT-03)
+- [ ] 67-02-PLAN.md — Author scripts/phase-67-harness.ps1: scenario table (TEST-01/TEST-02) + clean->seed->psql-wf-id->204-gate->observe->whole-tier-crash->health-wait->analyze->teardown, exit mirrors analyzer verdict (FAULT-01, FAULT-02, FAULT-03)
+- [ ] 67-03-PLAN.md — Two reference runs: TEST-01 baseline-first (TriggerCount~10) then TEST-02 processor crash; each fully automated, produces a correctly-named verdict report (FAULT-01, FAULT-02, FAULT-03)
 
 #### Phase 68: Live Resilience Proof — 7 Scenarios (Capstone)
 **Goal**: Run all **7** resilience proofs through the harness and produce a passing automated verdict for each. Each scenario runs its 5-minute/30s-cron window and PASSES iff **zero-missing** (every triggered correlationId reaches both sinks F1+F2) AND **effect-once** (each step's COMPLETED effect once per correlationId) hold; message-level redelivery during the fault is **reported, not failed**. This is the milestone capstone (mirroring prior milestones' final live-proof phase), proving the existing recovery machinery survives each fault class. Truth = Prometheus + Elasticsearch only.
