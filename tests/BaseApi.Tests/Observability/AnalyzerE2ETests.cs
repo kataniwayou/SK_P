@@ -67,19 +67,19 @@ public sealed class AnalyzerE2ETests
     // caller-supplied id can never traverse out of the fixed reports dir (no '/', '\', '.', etc.).
     private static readonly Regex ScenarioIdPattern = new(@"^[A-Za-z0-9_-]+$", RegexOptions.Compiled);
 
-    // D-16 env-var seam — parse a harness-supplied round-trip ("o"-format) timestamp to UTC, falling
-    // back to the caller's default (UtcNow) on null/empty/malformed input so the standalone Phase 66
-    // run (no env vars set) is byte-for-byte unchanged. AssumeUniversal|AdjustToUniversal normalizes
-    // the PowerShell-emitted ISO-8601 offset form to UTC; TryParse → false degrades to the fallback
-    // (T-67-04: a bad WINDOW_*_UTC value never crashes, it reverts to the self-window default).
-    private static DateTimeOffset ParseUtcOr(string? value, DateTimeOffset fallback) =>
+    // D-16 env-var seam — try to parse a harness-supplied round-trip ("o"-format) UTC timestamp,
+    // reporting SUCCESS/FAILURE. The fixture uses the result to decide whether the D-16 window seam is
+    // genuinely PRESENT (both WINDOW_*_UTC parsed) and so whether to time-pin the Prom counter reads
+    // (67-03 / OBS-04 denominator fix) vs. fall back to the standalone live before/after snapshots.
+    // AssumeUniversal|AdjustToUniversal normalizes the PowerShell-emitted ISO-8601 offset form to UTC;
+    // a null/empty/malformed value yields false ⇒ the standalone live-snapshot path (T-67-04: a bad
+    // WINDOW_*_UTC never crashes, it reverts to the self-window default).
+    private static bool TryParseUtc(string? value, out DateTimeOffset parsed) =>
         DateTimeOffset.TryParse(
             value,
             System.Globalization.CultureInfo.InvariantCulture,
             System.Globalization.DateTimeStyles.AssumeUniversal | System.Globalization.DateTimeStyles.AdjustToUniversal,
-            out var parsed)
-            ? parsed
-            : fallback;
+            out parsed);
 
     [Fact]
     public async Task Analyze_HappyPath_Window_Yields_Pass()
@@ -101,33 +101,55 @@ public sealed class AnalyzerE2ETests
         using var es = new ElasticsearchTestClient();
         using var prom = new PrometheusTestClient();
 
-        // ── 2. PROM BEFORE-SNAPSHOT (windowing, A3 / Pitfall 3) ──────────────────────────────────────
-        //    Task 1 confirmed counters are lifetime cumulative (FLUSHALL+heal, NO restart), so read the
-        //    live counter set NOW (window start) to enable delta = after − before.
-        var windowStartUtc = ParseUtcOr(Environment.GetEnvironmentVariable("WINDOW_START_UTC"), DateTimeOffset.UtcNow);
-        var before = await ReadCounterSetAsync(prom, ct);
+        // ── 2. WINDOW SEAM DETECTION + PROM BEFORE-SNAPSHOT (windowing, A3 / Pitfall 3) ───────────────
+        //    The D-16 window seam is PRESENT only when BOTH WINDOW_*_UTC env vars parse (harness mode).
+        //    In that mode we TIME-PIN the Prom reads (step 5) to the recorded window bounds — the fixture
+        //    runs at window CLOSE, so a live "now" before-snapshot would already include all ~10 in-window
+        //    fires, collapsing DispatchSentDelta to a ~60 s tail and under-counting the trigger denominator
+        //    (67-03 / OBS-04). Pinning gives delta = counter@windowEnd − counter@windowStart, matching the
+        //    ES [windowStart, windowEnd] cohort.
+        //
+        //    When the seam is ABSENT (standalone Phase 66 run — no env vars), windowPinned is false and the
+        //    path below is byte-for-byte the original behavior: ES window defaults to UtcNow, and the Prom
+        //    BEFORE snapshot is a live "now" read taken HERE (pre-drain), the AFTER a live read post-poll.
+        var windowPinned =
+            TryParseUtc(Environment.GetEnvironmentVariable("WINDOW_START_UTC"), out var pinnedWindowStart)
+            & TryParseUtc(Environment.GetEnvironmentVariable("WINDOW_END_UTC"), out var pinnedWindowEnd);
+
+        var windowStartUtc = windowPinned ? pinnedWindowStart : DateTimeOffset.UtcNow;
+
+        // Standalone (seam absent): read the live BEFORE counter set NOW (window start). In window-pinned
+        // mode this live read is SKIPPED — both counter sets are time-pinned reads taken in step 5.
+        var before = windowPinned ? null : await ReadCounterSetAsync(prom, ct);
 
         // ── 3. DRAIN (D-05 / Pitfall 4) + POLL-TO-STABLE ─────────────────────────────────────────────
         //    After the observation window closes (harness-controlled wall-clock; here a bounded delay),
         //    poll SearchAllHits until the hit count is unchanged across two consecutive polls so no
-        //    in-flight run is scored MISSING.
+        //    in-flight run is scored MISSING. (Kept for ES COMPLETENESS in BOTH modes — correct as-is.)
         await Task.Delay(DrainMs, ct);
 
-        // snapshotUtc is the ES range upper bound and is captured HERE — before poll-to-stable — so the
-        // ES window is bounded by a stable timestamp that does not shift during polling. The Prom AFTER
-        // read (step 5, below) is taken after poll-to-stable completes, so a run dispatched between
-        // snapshotUtc and the AFTER read would be counted in DispatchSentDelta (trigger denominator) yet
-        // excluded from the ES range → scored MISSING. In the happy-path window this tail gap is negligible
-        // (no new fires after the drain), so this is an accepted, documented limitation. (IN-04 note.)
-        var snapshotUtc = ParseUtcOr(Environment.GetEnvironmentVariable("WINDOW_END_UTC"), DateTimeOffset.UtcNow);
+        // snapshotUtc is the ES range upper bound. In window-pinned mode it is the recorded windowEnd
+        // (so the ES range exactly matches the time-pinned Prom delta cohort). In standalone mode it is
+        // captured HERE — before poll-to-stable — so the ES window is bounded by a stable timestamp that
+        // does not shift during polling. NOTE (standalone IN-04): the live Prom AFTER read (step 5) is
+        // taken after poll-to-stable completes, so a run dispatched between snapshotUtc and the AFTER read
+        // would be counted in DispatchSentDelta yet excluded from the ES range → scored MISSING. In the
+        // happy-path window this tail gap is negligible. (Window-pinned mode has no such gap — both Prom
+        // reads are pinned to the recorded bounds.)
+        var snapshotUtc = windowPinned ? pinnedWindowEnd : DateTimeOffset.UtcNow;
         var stepHits = await PollHitsToStableAsync(es, windowStartUtc, snapshotUtc, ct);
 
         // ── 4. ES READ (OBS-01) — group Step_* hits into per-run RunTraces by attributes.CorrelationId ─
         var traces = BuildRunTraces(stepHits);
 
-        // ── 5. PROM AFTER-SNAPSHOT + WINDOWED DELTAS (OBS-03) ────────────────────────────────────────
-        var after = await ReadCounterSetAsync(prom, ct);
-        var promSnapshot = BuildSnapshot(before, after);
+        // ── 5. PROM SNAPSHOTS + WINDOWED DELTAS (OBS-03) ─────────────────────────────────────────────
+        //    Window-pinned (harness): instant-query BOTH counter sets AT the recorded window bounds.
+        //    Standalone (seam absent): keep the live BEFORE (step 2) and take a live AFTER read NOW.
+        var (beforeSet, afterSet) = windowPinned
+            ? (await ReadCounterSetAsync(prom, ct, pinnedWindowStart),
+               await ReadCounterSetAsync(prom, ct, pinnedWindowEnd))
+            : (before!, await ReadCounterSetAsync(prom, ct));
+        var promSnapshot = BuildSnapshot(beforeSet, afterSet);
 
         // ── 6. TRIGGER DENOMINATOR (D-04 / item #1) ──────────────────────────────────────────────────
         //    Derive triggerCount from the orchestrator_dispatch_sent_total WINDOWED DELTA (rounded).
@@ -292,48 +314,57 @@ public sealed class AnalyzerE2ETests
     }
 
     /// <summary>
-    /// Read the live counter set once. Live counters sum across all label combinations (no ProcessorId
-    /// filter — the analyzer reconciles the whole window). DORMANT dedupe counters: query and map an
-    /// EMPTY series to <c>null</c> (absent), feeding NO reconciliation arithmetic. Non-completed
-    /// processor_result_sent outcomes (failed/cancelled/processing) are read per-outcome (expect zero).
+    /// Read the counter set once. Counters sum across all label combinations (no ProcessorId filter —
+    /// the analyzer reconciles the whole window). DORMANT dedupe counters: query and map an EMPTY series
+    /// to <c>null</c> (absent), feeding NO reconciliation arithmetic. Non-completed processor_result_sent
+    /// outcomes (failed/cancelled/processing) are read per-outcome (expect zero).
+    /// <para>
+    /// <paramref name="evalTime"/> (67-03 / OBS-04): when non-null every counter is read via an INSTANT
+    /// query pinned to that instant (delta@windowEnd − delta@windowStart aligns the trigger denominator
+    /// with the ES cohort). When <c>null</c> (standalone Phase 66) every read is the live "now" query,
+    /// byte-for-byte the original behavior.
+    /// </para>
     /// </summary>
-    private static async Task<CounterSet> ReadCounterSetAsync(PrometheusTestClient prom, CancellationToken ct)
+    private static async Task<CounterSet> ReadCounterSetAsync(
+        PrometheusTestClient prom, CancellationToken ct, DateTimeOffset? evalTime = null)
     {
         var nonCompleted = new Dictionary<string, double>(StringComparer.Ordinal);
         foreach (var outcome in new[] { "failed", "cancelled", "processing" })
         {
             nonCompleted[outcome] = await SumOrZeroAsync(
-                prom, $"processor_result_sent_total{{outcome=\"{outcome}\"}}", ct);
+                prom, $"processor_result_sent_total{{outcome=\"{outcome}\"}}", ct, evalTime);
         }
 
         return new CounterSet
         {
-            DispatchSent = await SumOrZeroAsync(prom, "orchestrator_dispatch_sent_total", ct),
-            ResultConsumed = await SumOrZeroAsync(prom, "orchestrator_result_consumed_total", ct),
-            DispatchConsumed = await SumOrZeroAsync(prom, "processor_dispatch_consumed_total", ct),
+            DispatchSent = await SumOrZeroAsync(prom, "orchestrator_dispatch_sent_total", ct, evalTime),
+            ResultConsumed = await SumOrZeroAsync(prom, "orchestrator_result_consumed_total", ct, evalTime),
+            DispatchConsumed = await SumOrZeroAsync(prom, "processor_dispatch_consumed_total", ct, evalTime),
             ResultSentCompleted = await SumOrZeroAsync(
-                prom, "processor_result_sent_total{outcome=\"completed\"}", ct),
-            KeeperReinjectDropped = await SumOrZeroAsync(prom, "keeper_reinject_dropped_total", ct),
+                prom, "processor_result_sent_total{outcome=\"completed\"}", ct, evalTime),
+            KeeperReinjectDropped = await SumOrZeroAsync(prom, "keeper_reinject_dropped_total", ct, evalTime),
             // DORMANT (no increment site) — absent series ⇒ null ⇒ reported Absent, feeds no arithmetic.
-            ResultDeduped = await SumOrNullAsync(prom, "orchestrator_result_deduped_total", ct),
-            DispatchDeduped = await SumOrNullAsync(prom, "processor_dispatch_deduped_total", ct),
+            ResultDeduped = await SumOrNullAsync(prom, "orchestrator_result_deduped_total", ct, evalTime),
+            DispatchDeduped = await SumOrNullAsync(prom, "processor_dispatch_deduped_total", ct, evalTime),
             NonCompletedOutcomes = nonCompleted,
         };
     }
 
-    /// <summary>Sum the live series value (0 for an absent/empty vector — a LIVE counter just hasn't moved).</summary>
+    /// <summary>Sum the series value (0 for an absent/empty vector — a counter just hasn't moved). When
+    /// <paramref name="evalTime"/> is non-null the value is read as of that instant (67-03 / OBS-04).</summary>
     private static async Task<double> SumOrZeroAsync(
-        PrometheusTestClient prom, string promql, CancellationToken ct)
-        => PrometheusTestClient.SumSampleValues(await prom.QueryPrometheus(promql, ct));
+        PrometheusTestClient prom, string promql, CancellationToken ct, DateTimeOffset? evalTime = null)
+        => PrometheusTestClient.SumSampleValues(await prom.QueryPrometheus(promql, ct, evalTime));
 
     /// <summary>
     /// Sum the series value, or <c>null</c> when the vector is EMPTY — for the DORMANT dedupe counters
-    /// where absence is meaningful (no series exists at all), distinct from a present-but-zero live counter.
+    /// where absence is meaningful (no series exists at all), distinct from a present-but-zero counter.
+    /// When <paramref name="evalTime"/> is non-null the value is read as of that instant (67-03 / OBS-04).
     /// </summary>
     private static async Task<double?> SumOrNullAsync(
-        PrometheusTestClient prom, string promql, CancellationToken ct)
+        PrometheusTestClient prom, string promql, CancellationToken ct, DateTimeOffset? evalTime = null)
     {
-        var samples = await prom.QueryPrometheus(promql, ct);
+        var samples = await prom.QueryPrometheus(promql, ct, evalTime);
         return samples.Count == 0 ? null : PrometheusTestClient.SumSampleValues(samples);
     }
 

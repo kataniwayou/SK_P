@@ -206,12 +206,29 @@ public sealed class PrometheusTestClient : IDisposable
     /// Single-shot Prometheus query. Returns the <c>data.result</c> array as a
     /// <see cref="List{JsonElement}"/> of cloned elements (safe to retain).
     /// Calls <see cref="Assert.Fail(string)"/> on non-success responses.
+    /// <para>
+    /// <b>Optional <paramref name="evalTime"/> (Phase 67-03 / OBS-04 denominator fix).</b> When non-null,
+    /// the query is an INSTANT query pinned to that evaluation instant via the Prometheus
+    /// <c>/api/v1/query</c> <c>time=</c> parameter (RFC-3339 form) — Prometheus returns each series'
+    /// value as of <paramref name="evalTime"/> rather than "now". This lets the harness-driven analyzer
+    /// read a cumulative counter at the EXACT window-start and window-end instants (delta = end − start),
+    /// aligning the Prom trigger denominator with the ES <c>[windowStart, windowEnd]</c> cohort instead of
+    /// the ~60 s tail between the late fixture launch and the AFTER read. When <paramref name="evalTime"/>
+    /// is <c>null</c> the behavior is byte-for-byte the live "now" query the standalone Phase 66 run uses.
+    /// </para>
     /// </summary>
-    public async Task<List<JsonElement>> QueryPrometheus(string promql, CancellationToken ct = default)
+    public async Task<List<JsonElement>> QueryPrometheus(
+        string promql, CancellationToken ct = default, DateTimeOffset? evalTime = null)
     {
         // RESEARCH Don't Hand-Roll table — EscapeDataString mandatory; PromQL contains
         // { } " = which break unencoded URL queries.
-        var url   = $"api/v1/query?query={Uri.EscapeDataString(promql)}";
+        var url = $"api/v1/query?query={Uri.EscapeDataString(promql)}";
+        if (evalTime is { } t)
+        {
+            // Pin the instant-query evaluation time. RFC-3339 ("o") is accepted by Prometheus and
+            // EscapeDataString keeps the ':' / '+' offset chars URL-safe.
+            url += $"&time={Uri.EscapeDataString(t.ToString("o"))}";
+        }
         using var resp = await _prom.GetAsync(url, ct);
         resp.EnsureSuccessStatusCode();
         var json = await resp.Content.ReadAsStringAsync(ct);
