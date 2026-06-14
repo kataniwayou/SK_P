@@ -939,7 +939,7 @@ Plans:
 | 64 | Processor Work & Structured Logging | 1/1 | Complete    | 2026-06-14 |
 | 65 | Fan-Out Workflow Seeder & Clean-State Stack | 3/3 | Complete    | 2026-06-14 |
 | 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 3/3 | Complete    | 2026-06-14 |
-| 67 | Fault-Injection Harness | 1/3 | In progress | 67-01 (seam by-construction; live verdict deferred to 67-03) |
+| 67 | Fault-Injection Harness | 2/3 | In progress | 67-02 (harness authored; live proof in 67-03) |
 | 68 | Live Resilience Proof — 7 Scenarios (Capstone) | 0/TBD | Not started | — |
 
 **Coverage:** 23/23 v8.0.0 requirements mapped (CRON-01/02 → 63 · PROC-01/02/03 → 64 · WF-01/02 + ENV-01/02 → 65 · OBS-01/02/03/04 → 66 · FAULT-01/02/03 → 67 · TEST-01..07 → 68). No orphans, no duplicates.

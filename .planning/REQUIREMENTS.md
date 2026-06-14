@@ -42,10 +42,13 @@ Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestr
 
 ### Fault-Injection Harness (FAULT)
 > **Note:** Plan 67-01 contributes the D-16 analyzer test-fixture seam (a supporting enabler) toward FAULT-01/FAULT-03, but does not deliver the live fault-injection proof. These requirements remain open until 67-02 (harness) and 67-03 (live proof) land the end-to-end live recovery proof.
-- [ ] **FAULT-01
+- [x] **FAULT-01
+
 **: The harness activates the workflow via `POST /api/v1/orchestration/start` and lets the cron drive it for a 5-minute observation window per test (~10 triggers, fresh correlationId per fire).
-- [ ] **FAULT-02**: The harness injects each scenario's fault mid-run (container kill/restart of the targeted tier) and allows the system to recover within the same window.
-- [ ] **FAULT-03
+- [x] **FAULT-02
+**: The harness injects each scenario's fault mid-run (container kill/restart of the targeted tier) and allows the system to recover within the same window.
+- [x] **FAULT-03
+
 **: Each scenario runs fully automated end-to-end (clean → seed → activate → inject fault → observe → analyze → tear down) with no human verification step.
 
 ### Prometheus + ES Analysis (OBS)

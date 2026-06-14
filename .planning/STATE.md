@@ -4,15 +4,15 @@ milestone: v8.0.0
 milestone_name: E2E Resilience Proof
 current_plan: 2
 status: executing
-stopped_at: "Plan 67-01 complete; next is 67-02 (author scripts/phase-67-harness.ps1). 67-02 MUST inherit: `-- --filter-method` (MTP), clean-orchestrator guarantee (no ghost crons), and resolve `/orchestration/start` 422."
-last_updated: "2026-06-14T19:02:27.918Z"
-last_activity: "2026-06-14 -- Plan 67-01 complete (D-16 env-var seam, commit 55b2fef). Task-2 checkpoint resolved BY CONSTRUCTION: fallback proven live (no-env → analyzer-reports/TEST-01.json via const default), but full standalone analyzer-GREEN verdict NOT achieved this session — DEFERRED to 67-03. Three environmental findings handed to 67-02/67-03: (1) MTP ignores `dotnet test --filter` → use `-- --filter-method`; (2) phase-65-reset does NOT stop ghost orchestrator crons (NULL-payload fires → zero Step_* docs → analyzer scored 66 triggered/0 complete/all-missing); (3) `POST /api/v1/orchestration/start` returned 422 for the fresh workflow (never registered)."
+stopped_at: Completed 67-02-PLAN.md
+last_updated: "2026-06-14T19:12:11.151Z"
+last_activity: 2026-06-14
 progress:
   total_phases: 27
   completed_phases: 25
   total_plans: 84
-  completed_plans: 82
-  percent: 98
+  completed_plans: 83
+  percent: 99
 ---
 
 # Project State
@@ -30,9 +30,9 @@ Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove per
 Phase: 67 (fault-injection-harness) — EXECUTING
 Current Plan: 2
 Total Plans: 3
-Plan: 2 of 3
-Status: Executing Phase 67 — 67-01 complete (seam by-construction; live verdict deferred to 67-03)
-Last activity: 2026-06-14 -- Plan 67-01 complete (D-16 env-var seam, commit 55b2fef). Task-2 checkpoint resolved BY CONSTRUCTION: fallback proven live (no-env → analyzer-reports/TEST-01.json via const default), but full standalone analyzer-GREEN verdict NOT achieved this session — DEFERRED to 67-03. Three environmental findings handed to 67-02/67-03: (1) MTP ignores `dotnet test --filter` → use `-- --filter-method`; (2) phase-65-reset does NOT stop ghost orchestrator crons (NULL-payload fires → zero Step_* docs → analyzer scored 66 triggered/0 complete/all-missing); (3) `POST /api/v1/orchestration/start` returned 422 for the fresh workflow (never registered).
+Plan: 3 of 3
+Status: Ready to execute
+Last activity: 2026-06-14
 
 > v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — ✅ CLOSED 2026-06-14 (audit-override). Phases 59–61 + 62.1 implemented & hermetically green (17 functional reqs). Phase-62 live proof + triple-SHA close gate NOT run — deferred, superseded by v8.0.0. Archives: milestones/v7.0.0-{ROADMAP,REQUIREMENTS}.md.
 
@@ -695,7 +695,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 98%
+Progress: [██████████] 99%
 
 ### Milestone Phases (v3.4.0)
 
@@ -1000,6 +1000,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 66 P01 | 25min | 3 tasks | 5 files |
 | Phase 66 P02 | 4min | 2 tasks | 3 files |
 | Phase 66 P03 | 9min | 2 tasks | 2 files |
+| Phase 67 P02 | 5min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -1448,6 +1449,7 @@ Recent decisions affecting current work:
 - 66-03: Prom windowing = before/after delta (FLUSHALL+heal, no restart confirmed in phase-65-reset.ps1 -> counters cumulative)
 - 66-03: trigger denominator from orchestrator_dispatch_sent_total windowed delta; missing-IDENTITY unrecoverable (no per-fire correlationId log, item #1)
 - 66-03: AnalyzerE2ETests write-then-assert (JSON report written before verdict assert -> exists on red); scenarioId path-traversal guarded
+- 67-02: harness adds a clean-orchestrator restart (STEP B1) + MTP --filter-method to bake in the three 67-01 live findings
 
 ### Roadmap Milestone Log
 
@@ -1551,9 +1553,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-14 — Completed 67-01-PLAN.md (D-16 analyzer env-var seam)
-Stopped at: Plan 67-01 complete; next is 67-02 (author scripts/phase-67-harness.ps1). 67-02 MUST inherit: `-- --filter-method` (MTP), clean-orchestrator guarantee (no ghost crons), and resolve `/orchestration/start` 422.
-Resume file: .planning/phases/67-fault-injection-harness/67-02-PLAN.md
+Last session: 2026-06-14T19:12:11.131Z
+Stopped at: Completed 67-02-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
