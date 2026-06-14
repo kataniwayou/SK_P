@@ -1,5 +1,28 @@
 # Steps API — Milestones
 
+## v7.0.0 Per-Replica Processor Liveness & Self-Watchdog (Closed: 2026-06-14 — audit-override)
+
+**Phases completed:** 3 phases (59–61) + 1 inserted (62.1), 12 plans · Phase 62 (live proof + close gate) authored but NOT run
+
+**Requirements:** 17/17 functional (KEY/STATE/LOOP/L1/GATE/PROBE) implemented & hermetically green; G-62-01 refresh-decouple fix hermetically green · **Close gate:** ⚠ NOT run (audit-override)
+
+### Known Gaps
+
+- **TEST-01/02/03 (Phase 62) — live close gate NOT executed.** The milestone is feature-complete and hermetically green, but the triple-SHA N=3 live-proof close gate never ran. v7.0.0 was closed by operator decision to start **v8.0.0 (E2E Resilience Proof)**, whose comprehensive live fault-injection E2E (7 scenarios over 5 min each, verified solely from Prometheus + Elasticsearch) **supersedes** Phase 62's narrower per-replica-liveness live proof.
+
+**Known deferred items at close:** 29 (carried over from prior shipped milestones v3.x — UAT/verification `human_needed` on phases 08/09/32–40, 1 stale debug session, 3 quick-task summaries; plus Phase-62 pending UAT — see STATE.md → Deferred Items)
+
+**Key accomplishments:**
+
+- **Per-instance L2 keyspace (KEY-01..04):** replaced the single last-write-wins liveness key `skp:{processorId}` with per-instance keys `skp:proc:{processorId}:{instanceId}` under a per-processor instance-index SET `skp:proc:{processorId}` (TTL = source of truth; index = lazily-`SREM`'d discovery hint); `instanceId` reuses the existing POD_NAME→HOSTNAME→MachineName→GUID identity; `inputDefinition`/`outputDefinition` dropped from L2 (liveness-only value).
+- **Two-state health + per-schema summary (STATE-01..03):** liveness value carries `status ∈ {healthy, unhealthy}` + `summary {inputSchema, outputSchema, configSchema}`; a starting/failed replica writes `unhealthy` (visible, never absent); `configSchema` reuses the v6.0.0 Gate A outcome.
+- **Dual-loop writer + in-memory L1 (LOOP-01..04, L1-01):** startup + heartbeat loops both write L2 + update an in-memory L1 record each iteration; split startup/heartbeat intervals; frozen-healthy once heartbeat starts; per-instance key TTL'd.
+- **≥1-healthy orchestration-start gate (GATE-01..03):** WebAPI gate `SMEMBERS`→`GET`-each, admits iff ≥1 replica present+healthy+fresh, else 422 + RFC 7807; lazy-`SREM`s absent members (presence no longer implies live).
+- **Self-watchdog liveness probe (PROBE-01/02):** reads in-memory L1 staleness (active-interval ×2 grace), reports `unhealthy` + the per-schema summary on a silently-crashed loop (K8s wiring deferred).
+- **G-62-01 liveness-refresh decouple (Phase 62.1):** liveness-timestamp refresh decoupled from `IsHealthy` so an alive-but-unhealthy replica stays observably Unhealthy (never absent) and is not falsely restarted by the self-watchdog.
+
+---
+
 ## v6.0.0 Config & Payload Validation Hardening (Shipped: 2026-06-13)
 
 **Phases completed:** 3 phases, 11 plans, 21 tasks

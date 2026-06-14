@@ -193,6 +193,30 @@ A breaking `BaseProcessor` author-contract change that makes runtime payload-des
 - Sessions: ~1 day, intensive (2026-06-12 17:10 → 2026-06-13 04:06); 93 files changed (+11,303 / −205).
 - Notable: a small, surgical milestone (3 phases) for a breaking contract change — most of the delta is the new `BaseProcessor<TConfig>` layer + `ConfigSchemaCoverageCheck` (441 lines) + the BadConfig subject + tests; the existing pipeline/orchestrator tiers were reused unchanged.
 
+## Milestone: v7.0.0 — Per-Replica Processor Liveness & Self-Watchdog
+
+**Closed:** 2026-06-14 (audit-override)
+**Phases:** 3 (59–61) + 1 inserted (62.1) | **Plans:** 12 | **Close gate:** NOT run
+
+### What Was Built
+Per-instance L2 liveness keyspace (`skp:proc:{processorId}:{instanceId}` + instance-index SET) replacing the single last-write-wins key; two-state health + per-schema summary written by both startup + heartbeat loops (unhealthy-is-written, frozen-healthy); in-memory L1 liveness record; WebAPI ≥1-healthy-and-fresh orchestration-start gate; self-watchdog liveness probe over L1 staleness; G-62-01 fix decoupling liveness refresh from `IsHealthy`.
+
+### What Worked
+- Dependency-driven build order (keyspace → writer → readers) kept each phase hermetically self-contained and 0-warning.
+- Phase 62.1 was correctly inserted as a decimal phase the moment the Phase-62 dry run surfaced the IsHealthy-coupling gap (G-62-01) — caught before any live close.
+
+### What Was Inefficient
+- The live close gate (Phase 62) was repeatedly deferred and never run; the milestone accumulated authored-but-unproven live artifacts. Closing required an audit-override.
+- Phase/ROADMAP drift accumulated (v5/v6 sections left uncollapsed, Phase 62.1 misfiled under v6.0.0, 66 phase dirs unarchived).
+
+### Key Lessons
+- **A narrow per-milestone live close gate is fragile when deferred.** v8.0.0 reframes the live proof as a single comprehensive resilience suite (Prometheus + ES, 7 fault scenarios) that subsumes per-milestone close gates — a better fit than repeatedly re-running a milestone-scoped triple-SHA gate.
+- **Hermetic green ≠ shipped.** 17/17 functional reqs were hermetically green, but "recovery proven live under faults" remained unproven until a dedicated live milestone.
+
+### Cost Observations
+- Model mix: orchestration/execution on Opus (profile `quality`); audit/verifiers on Sonnet.
+- Notable: feature-complete & hermetic, but closed without its live capstone — the capstone became the seed for v8.0.0.
+
 ## Cross-Milestone Trends
 
 ### Process Evolution

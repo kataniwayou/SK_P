@@ -1,35 +1,37 @@
 ---
 gsd_state_version: 1.0
-milestone: v7.0.0
-milestone_name: Per-Replica Processor Liveness & Self-Watchdog
-status: milestone_complete
-stopped_at: Completed 62.1-02-PLAN.md
-last_updated: "2026-06-13T21:21:51.370Z"
-last_activity: 2026-06-13
+milestone: v8.0.0
+milestone_name: E2E Resilience Proof
+status: defining_requirements
+stopped_at: v7.0.0 closed (audit-override); defining v8.0.0 requirements
+last_updated: "2026-06-14T00:00:00.000Z"
+last_activity: 2026-06-14
 progress:
-  total_phases: 4
-  completed_phases: 5
-  total_plans: 12
-  completed_plans: 12
-  percent: 125
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-13 — v6.0.0 shipped & archived)
+See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; v8.0.0 started)
 
-**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), and v6.0.0 (typed base-config seam + Gate A config-schema compatibility).**
-**Current focus:** Phase 62.1 — decouple-liveness-refresh-from-ishealthy
+**Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), v6.0.0 (typed base-config seam + Gate A config-schema compatibility), and v7.0.0 (per-replica processor liveness + self-watchdog — closed audit-override, live close gate deferred to v8.0.0).**
+**Current focus:** v8.0.0 — E2E Resilience Proof (defining requirements)
 
 ## Current Position
 
-Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2026-06-13. Breaking processor-liveness-contract change: per-instance L2 keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single last-write-wins `skp:{processorId}`), two-state health (`healthy`/`unhealthy`) + per-schema summary written by BOTH startup + heartbeat loops (L2 reflects a restarting replica), split startup/heartbeat intervals, in-memory L1 liveness record, WebAPI ≥1-healthy-and-fresh orchestration-start gate, liveness self-watchdog probe (L1 staleness → future K8s restart), definitions dropped from L2. Phases continue at **59**; builds on v6.0.0 Gate A (its result → `configSchema` summary field).
-Phase: 62.1
-Plan: Not started
-Status: Milestone complete
-Last activity: 2026-06-14 - Completed quick task 260614-b5c: add minimal keeper self-watchdog (timestamp-only L1 record + /health/live staleness check)
+Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove perfect (zero-missing, effect-once) recovery of a fan-out orchestrated workflow (A→B→C→{D1→E1→F1, D2→E2→F2}, one shared processor-sample, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios (happy path, processor/orchestrator/keeper/redis/rabbitmq/redis+rabbitmq crash), verified SOLELY from Prometheus metrics + Elasticsearch logs (aggregate by correlationId; missing/duplicate vs total triggers), fully automated. Prerequisite code change: enable 6-field seconds-cron. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-06-14 — v7.0.0 closed (audit-override; Phase-62 live gate deferred); v8.0.0 (E2E Resilience Proof) started
+
+> v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — ✅ CLOSED 2026-06-14 (audit-override). Phases 59–61 + 62.1 implemented & hermetically green (17 functional reqs). Phase-62 live proof + triple-SHA close gate NOT run — deferred, superseded by v8.0.0. Archives: milestones/v7.0.0-{ROADMAP,REQUIREMENTS}.md.
 
 > v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
@@ -54,6 +56,8 @@ Last activity: 2026-06-14 - Completed quick task 260614-b5c: add minimal keeper 
 > v3.7.0 (Keeper) — ✅ SHIPPED & ARCHIVED 2026-06-07 (tag `v3.7.0`). 10 phases (33-42), 32 plans, 37/37 requirements + live-proven (Phase-39 close gate 3×500 GREEN, triple-SHA net-zero). Archives: milestones/v3.7.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
 ## Deferred Items
+
+Re-affirmed at **v7.0.0 close (2026-06-14, audit-override)** — 29 open artifacts surfaced by the pre-close `audit-open`: the same carried-over v3.x items below (UAT/verification `human_needed` on phases 08/09/32–40, 1 stale debug session, 3 quick-task summaries) PLUS **Phase 62 (62-HUMAN-UAT.md pending + 62-VERIFICATION live half)** — Phase 62's live proof + triple-SHA close gate was never run; it is **deferred and superseded by v8.0.0 (E2E Resilience Proof)**, whose comprehensive live fault-injection E2E subsumes it. All acknowledged and deferred to start v8.0.0.
 
 Re-affirmed at **v6.0.0 close (2026-06-13)** — 25 open artifacts surfaced by the pre-close audit are all carried over from prior shipped milestones (v3.x); none belong to v6.0.0 (phases 56–58, all clean: UAT/verification passed). Acknowledged and deferred again.
 
