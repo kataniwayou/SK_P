@@ -71,7 +71,9 @@ public sealed record RunTrace
             Labels = labels,
             DistinctLabels = distinct,
             HasAnyDuplicateLabel = labels.Count != distinct.Count,
-            DuplicateLabels = dupes.ToList(),
+            // Sort deterministically (Ordinal) so report diffs and any future snapshot comparisons
+            // are stable across runs — HashSet enumeration order is unspecified. (IN-01 fix.)
+            DuplicateLabels = dupes.OrderBy(s => s, StringComparer.Ordinal).ToList(),
         };
     }
 }
