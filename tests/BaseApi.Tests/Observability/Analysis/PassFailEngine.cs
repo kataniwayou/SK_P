@@ -75,6 +75,13 @@ public sealed class PassFailEngine
         //    Epsilon tolerance (DeltaTolerance = 0.5) instead of exact == because the fixture derives
         //    triggerCount as (int)Math.Round(DispatchSentDelta) and the engine re-compares the un-rounded
         //    double. Any fractional residue from multi-series summation would otherwise force Unreconciled.
+        //
+        //    NOTE (IN-02): DispatchConsumedDelta and KeeperReinjectDroppedDelta are intentionally excluded
+        //    from this arithmetic — they are EVIDENCE-ONLY counters surfaced in the report for human review.
+        //    DispatchConsumed is the natural counterpart to DispatchSent but its reconciliation semantics
+        //    are deferred (open research item); including it here without a clear pass criterion would add
+        //    false-negative risk. The two dormant dedupe deltas (ResultDedupedDelta, DispatchDedupedDelta)
+        //    are also evidence-only (absent → null) and feed no arithmetic per the dormant-counter contract.
         var nonCompletedTerminal = prom.NonCompletedOutcomes.Values.Any(v => v != 0);
         var reconciled =
             Math.Abs(prom.DispatchSentDelta - triggerCount) < DeltaTolerance
