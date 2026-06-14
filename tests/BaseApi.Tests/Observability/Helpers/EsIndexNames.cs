@@ -100,6 +100,39 @@ public static class EsIndexNames
     public const string SumFieldPath = "attributes.Sum";
 
     /// <summary>
+    /// The ES field used for the analyzer's observation-window <c>range</c> filter — Phase 66 / OBS-01
+    /// (Plan 03 Task 1 Wave-0 probe, 2026-06-14). The fixture bounds its <c>Step_*</c> <c>_search</c> by
+    /// <c>{ "range": { "&lt;this&gt;": { "gte": &lt;window_start&gt;, "lte": &lt;snapshot&gt; } } }</c>.
+    ///
+    /// <para>
+    /// <b>Wave-0 probe (2026-06-14):</b> the data-stream mapping was probed against the live ES with
+    /// <code>
+    /// GET http://localhost:9200/logs-generic.otel-default/_mapping/field/@timestamp
+    /// → {".ds-logs-generic.otel-default-2026.06.10-000001":{"mappings":{"@timestamp":
+    ///      {"full_name":"@timestamp","mapping":{"@timestamp":{"type":"date","ignore_malformed":false}}}}}}
+    /// </code>
+    /// confirming <c>@timestamp</c> is present and a <c>date</c> type (the OTLP log-record observed
+    /// timestamp the collector writes). This is the empirically-verified value baked here — NOT a guess.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Sum field type (A1) note:</b> the companion probe
+    /// <c>GET .../_mapping/field/attributes.Sum</c> returned an EMPTY mapping (no <c>Step_*</c> sum docs
+    /// had been indexed in the live data stream at probe time, so the dynamic field was not yet present).
+    /// The ECS dynamic template maps numeric attributes to <c>long</c> (cf. <c>attributes.ContentLength</c>
+    /// → <c>long</c>), so <c>attributes.Sum</c> will surface numeric once Step_* docs land; the fixture
+    /// reads it DEFENSIVELY regardless (<c>TryGetInt32</c> then <c>GetString</c>+parse) since Sum is
+    /// informational, never a completeness gate.
+    /// </para>
+    ///
+    /// <para>
+    /// If a future collector/ES upgrade changes the window timestamp field (e.g. switches to
+    /// <c>observedTimestamp</c>), re-run the Wave-0 <c>_mapping/field</c> probe and update this single const.
+    /// </para>
+    /// </summary>
+    public const string WindowTimestampFieldPath = "@timestamp";  // Wave-0-verified <date> (2026-06-14)
+
+    /// <summary>
     /// The OTLP field path prefix for resource attributes (service.name, service.version)
     /// expressed as a dot-separated path. Test code reads
     /// <c>hit._source.&lt;ResourceFieldPath&gt;[.service\.name]</c> — under the live
