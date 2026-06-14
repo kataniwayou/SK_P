@@ -885,7 +885,10 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   2. Each of the 9 steps has an assignment carrying a `{ number, label:"Step_*" }` payload, and re-running the seeder produces no duplicate workflow/step/assignment rows (idempotent).
   3. The stack brings up exactly one `processor-sample` (no `processor-badconfig`) alongside the full infra + observability tiers, all healthy.
   4. The clean-state routine leaves a deterministic baseline before each run — Redis flushed, the workflow/step/assignment rows reset, and any leftover/redundant processor containers removed — so a subsequent run's metrics and logs are attributable to that run only.
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 65-01-PLAN.md — Self-verifying RealStack fan-out seeder fixture (WF-01, WF-02)
+- [ ] 65-02-PLAN.md — Clean-state reset script: FLUSHALL + heal-wait + FK-safe psql DELETE + processor-set assert (ENV-02)
+- [ ] 65-03-PLAN.md — Minimal-stack bring-up script: compose up + 10-service health wait + zero-badconfig assert (ENV-01)
 
 #### Phase 66: Prometheus + ES Analyzer & PASS/FAIL Engine
 **Goal**: An analyzer determines a run's correctness **solely** from Prometheus + Elasticsearch. It aggregates all Elasticsearch logs sharing a `correlationId` into a per-run trace and decides whether all 9 steps and **both** sinks (F1, F2) completed; against the total number of cron triggers it detects **MISSING** runs/steps (a triggered correlationId that did not complete all steps/both sinks) and **DUPLICATE** step effects (a step's COMPLETED effect recorded more than once per correlationId); it queries Prometheus counters (`orchestrator_dispatch_sent`, `orchestrator_result_consumed`, `processor_dispatch_consumed`, `processor_result_sent{outcome}`, dedupe + keeper counters) and cross-checks dispatched vs completed vs deduped against the trigger count; and it emits a complete per-test smoke report (correlationId-aggregated log trace + metric summary) and an automated **PASS/FAIL** verdict derived **only** from Prometheus + Elasticsearch.
