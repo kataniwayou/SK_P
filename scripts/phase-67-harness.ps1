@@ -333,9 +333,21 @@ try {
     $env:SCENARIO_ID      = $ScenarioId
     $env:WINDOW_START_UTC = $windowStart.ToString('o')
     $env:WINDOW_END_UTC   = $windowEnd.ToString('o')
-    dotnet test tests/BaseApi.Tests/BaseApi.Tests.csproj -c Release -- --filter-method "*Analyze_HappyPath_Window_Yields_Pass*" 2>&1 | Out-String | Write-Host
-    $analyzerExit = $LASTEXITCODE
-    Remove-Item Env:SCENARIO_ID, Env:WINDOW_START_UTC, Env:WINDOW_END_UTC -ErrorAction SilentlyContinue
+    # IN-03: clear the D-16 env seam in a `finally` so a terminating error inside the analyze block
+    # ($ErrorActionPreference='Stop') cannot leak SCENARIO_ID / WINDOW_*_UTC into the parent shell
+    # (matters when the body is dot-sourced / run interactively; harmless for the one-shot `pwsh -File`).
+    try {
+        # IN-04: this --filter-method targets the fixture named "*_Yields_Pass*" for EVERY scenario,
+        # including fault runs (e.g. TEST-02). The fixture asserts a PASS verdict; for a fault scenario a
+        # FAIL verdict is the EXPECTED outcome, so a non-zero $analyzerExit here is the legitimate verdict
+        # FAIL (exit code 1 per the D-04 table), NOT an infra error. The wiring is correct either way —
+        # the exit code mirrors the verdict. (If the fixture is ever renamed, update this pattern in the
+        # same change to keep the filter and method name consistent.)
+        dotnet test tests/BaseApi.Tests/BaseApi.Tests.csproj -c Release -- --filter-method "*Analyze_HappyPath_Window_Yields_Pass*" 2>&1 | Out-String | Write-Host
+        $analyzerExit = $LASTEXITCODE
+    } finally {
+        Remove-Item Env:SCENARIO_ID, Env:WINDOW_START_UTC, Env:WINDOW_END_UTC -ErrorAction SilentlyContinue
+    }
 
     # Locate + echo the analyzer report path (D-04 requires printing it).
     $report = Get-ChildItem -Path (Join-Path $repoRoot 'tests/BaseApi.Tests/bin') -Recurse -Filter "$ScenarioId.json" -ErrorAction SilentlyContinue |
