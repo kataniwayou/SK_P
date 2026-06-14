@@ -1,6 +1,7 @@
 using BaseApi.Core.Validation;
 using Cronos;
 using FluentValidation;
+using Messaging.Contracts.Projections;
 
 namespace BaseApi.Service.Features.Workflow;
 
@@ -43,32 +44,30 @@ public sealed class WorkflowCreateDtoValidator : AbstractValidator<WorkflowCreat
             .Must(ids => ids is null || ids.All(id => id != Guid.Empty))
             .WithMessage("AssignmentIds must not contain Guid.Empty.");
 
-        // VALID-19 — CronExpression: when present, parses as 5-field Cronos Standard.
-        // Null is valid (workflow not scheduled per ENTITY-08).
+        // VALID-19 / CRON-02 — CronExpression: when present, resolves 5- or 6-field via the
+        // shared CronFieldForm detector then one guarded parse. Null is valid (workflow not
+        // scheduled per ENTITY-08).
         RuleFor(x => x.CronExpression)
             .Must(BeValidStandardCron)
             .When(x => !string.IsNullOrWhiteSpace(x.CronExpression))
-            .WithMessage("CronExpression must be a valid 5-field cron expression (e.g., '0 0 * * *').");
+            .WithMessage("CronExpression must be a valid 5- or 6-field cron expression (e.g., '0 0 * * *' or '*/30 * * * * *').");
     }
 
     /// <summary>
-    /// FluentValidation predicate that returns true iff the expression parses as a
-    /// 5-field Cronos.CronExpression (default <c>CronFormat.Standard</c>). Catches
-    /// <see cref="CronFormatException"/> (6-field expressions reject at SC#4 →
-    /// HTTP 400 via the Phase 4 validation handler).
+    /// FluentValidation predicate. Null/blank is valid (ENTITY-08). Otherwise the shared
+    /// <see cref="CronFieldForm"/> detector rejects any non-5/6 field count up front WITHOUT
+    /// throwing (D-02, no exception-as-control-flow), then resolves the format (6 →
+    /// <c>CronFormat.IncludeSeconds</c>, 5 → <c>CronFormat.Standard</c>) for ONE guarded
+    /// <see cref="CronExpression.Parse(string, CronFormat)"/>; a genuinely-malformed 5/6-token
+    /// expression still rejects via <see cref="CronFormatException"/> (CRON-02).
     /// </summary>
     private static bool BeValidStandardCron(string? expr)
     {
-        if (string.IsNullOrWhiteSpace(expr)) return true;
-        try
-        {
-            CronExpression.Parse(expr);   // defaults to CronFormat.Standard (5 fields)
-            return true;
-        }
-        catch (CronFormatException)
-        {
-            return false;
-        }
+        if (string.IsNullOrWhiteSpace(expr)) return true;          // null/blank is valid (ENTITY-08)
+        if (!CronFieldForm.IsValidFieldCount(expr)) return false;  // reject non-5/6 up front — no exception (D-02)
+        var format = CronFieldForm.IsSecondsForm(expr) ? CronFormat.IncludeSeconds : CronFormat.Standard;
+        try { CronExpression.Parse(expr, format); return true; }
+        catch (CronFormatException) { return false; }              // genuinely-malformed 5/6-token still rejected
     }
 }
 
@@ -99,24 +98,26 @@ public sealed class WorkflowUpdateDtoValidator : AbstractValidator<WorkflowUpdat
             .Must(ids => ids is null || ids.All(id => id != Guid.Empty))
             .WithMessage("AssignmentIds must not contain Guid.Empty.");
 
-        // VALID-19 — CronExpression: when present, parses as 5-field Cronos Standard.
+        // VALID-19 / CRON-02 — CronExpression: when present, resolves 5- or 6-field via the
+        // shared CronFieldForm detector then one guarded parse.
         RuleFor(x => x.CronExpression)
             .Must(BeValidStandardCron)
             .When(x => !string.IsNullOrWhiteSpace(x.CronExpression))
-            .WithMessage("CronExpression must be a valid 5-field cron expression (e.g., '0 0 * * *').");
+            .WithMessage("CronExpression must be a valid 5- or 6-field cron expression (e.g., '0 0 * * *' or '*/30 * * * * *').");
     }
 
+    /// <summary>
+    /// Mirror of <see cref="WorkflowCreateDtoValidator.BeValidStandardCron"/> — byte-identical
+    /// behavior (Pitfall 3): null/blank valid (ENTITY-08), non-5/6 rejected up front via the
+    /// shared <see cref="CronFieldForm"/> detector (D-02), then ONE guarded parse with the
+    /// resolved <see cref="CronFormat"/> (6 → IncludeSeconds, 5 → Standard).
+    /// </summary>
     private static bool BeValidStandardCron(string? expr)
     {
-        if (string.IsNullOrWhiteSpace(expr)) return true;
-        try
-        {
-            CronExpression.Parse(expr);
-            return true;
-        }
-        catch (CronFormatException)
-        {
-            return false;
-        }
+        if (string.IsNullOrWhiteSpace(expr)) return true;          // null/blank is valid (ENTITY-08)
+        if (!CronFieldForm.IsValidFieldCount(expr)) return false;  // reject non-5/6 up front — no exception (D-02)
+        var format = CronFieldForm.IsSecondsForm(expr) ? CronFormat.IncludeSeconds : CronFormat.Standard;
+        try { CronExpression.Parse(expr, format); return true; }
+        catch (CronFormatException) { return false; }              // genuinely-malformed 5/6-token still rejected
     }
 }
