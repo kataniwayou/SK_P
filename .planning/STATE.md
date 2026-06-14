@@ -2,16 +2,17 @@
 gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
+current_plan: 2
 status: completed
-stopped_at: Phase 63 context gathered
-last_updated: "2026-06-14T06:16:14.056Z"
-last_activity: 2026-06-14 — v7.0.0 closed (audit-override; Phase-62 live gate deferred); v8.0.0 (E2E Resilience Proof) started
+stopped_at: Completed 63-01-PLAN.md
+last_updated: "2026-06-14T07:14:23.328Z"
+last_activity: 2026-06-14 — Plan 63-01 executed (CronFieldForm + detector test, 2 commits, 8/8 green)
 progress:
   total_phases: 27
   completed_phases: 21
-  total_plans: 71
-  completed_plans: 71
-  percent: 100
+  total_plans: 74
+  completed_plans: 72
+  percent: 97
 ---
 
 # Project State
@@ -21,15 +22,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; v8.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), v6.0.0 (typed base-config seam + Gate A config-schema compatibility), and v7.0.0 (per-replica processor liveness + self-watchdog — closed audit-override, live close gate deferred to v8.0.0).**
-**Current focus:** v8.0.0 — E2E Resilience Proof (roadmap complete — 6 phases 63-68; next: plan Phase 63)
+**Current focus:** Phase 63 (seconds-granularity-cron) — Plan 01 complete, Plan 02 next
 
 ## Current Position
 
 Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove perfect (zero-missing, effect-once) recovery of a fan-out orchestrated workflow (A→B→C→{D1→E1→F1, D2→E2→F2}, one shared processor-sample, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios (happy path, processor/orchestrator/keeper/redis/rabbitmq/redis+rabbitmq crash), verified SOLELY from Prometheus metrics + Elasticsearch logs (aggregate by correlationId; missing/duplicate vs total triggers), fully automated. Prerequisite code change: enable 6-field seconds-cron. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
-Phase: Not started (roadmap complete — 6 phases 63-68 mapped, 23/23 reqs covered). Next: /gsd-plan-phase 63.
-Plan: —
-Status: Roadmap complete
-Last activity: 2026-06-14 — v7.0.0 closed (audit-override; Phase-62 live gate deferred); v8.0.0 (E2E Resilience Proof) started
+Phase: 63 (seconds-granularity-cron) — EXECUTING
+Current Plan: 2
+Total Plans: 3
+Plan: 2 of 3 (Plan 01 complete — CronFieldForm detector hoisted into Messaging.Contracts.Projections)
+Status: Plan 63-01 complete; Wave 2 (Plans 02/03) ready to consume CronFieldForm
+Last activity: 2026-06-14 — Plan 63-01 executed (CronFieldForm + detector test, 2 commits, 8/8 green)
 
 > v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — ✅ CLOSED 2026-06-14 (audit-override). Phases 59–61 + 62.1 implemented & hermetically green (17 functional reqs). Phase-62 live proof + triple-SHA close gate NOT run — deferred, superseded by v8.0.0. Archives: milestones/v7.0.0-{ROADMAP,REQUIREMENTS}.md.
 
@@ -692,7 +695,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [██████████] 97%
 
 ### Milestone Phases (v3.4.0)
 
@@ -983,6 +986,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 62 P02 | 14min | 2 tasks | 2 files |
 | Phase 62.1 P01 | ~2 min | 2 tasks | 1 files |
 | Phase 62.1 P02 | ~30 min | 2 tasks | 1 files |
+| Phase 63 P01 | 29min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -1413,6 +1417,7 @@ Recent decisions affecting current work:
 - Phase 62.1-01: Gate-A-clash terminal return replaced by IntervalSeconds-cadence unhealthy-refresh loop (D-01 option b) — keeps L2 key present+Unhealthy + L1 fresh, fixing G-62-01 false 'loop stale'
 - 62.1-02 D-A: initial clash stamp records startup anchor interval=30; interval=10 is the refresh loop's signature — assert clash STATUS on the initial stamp, the full refresh signature (interval=10) on each re-SET
 - 62.1-02 D-C: filtered runs use the xUnit-v3/MTP native --filter-class flag (dotnet test --filter VSTest property is ignored under Microsoft.Testing.Platform — warning MTP0001)
+- Phase 63: CronFieldForm cron format detector hoisted into Messaging.Contracts.Projections (NOT root namespace) — Wave 2 imports Messaging.Contracts.Projections; pure string logic, zero Cronos dep, 6 tokens=>seconds / 5=>standard / other=>invalid
 
 ### Roadmap Milestone Log
 
@@ -1516,13 +1521,13 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 63 context gathered
-Resume file: --resume-file
+Last session: 2026-06-14T07:14:23.309Z
+Stopped at: Completed 63-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 62.1 (Decouple liveness refresh from IsHealthy) — 2 plans — 2026-06-13T20:49:11.663Z
+**Planned Phase:** 63 (seconds-granularity-cron) — 3 plans — 2026-06-14T06:39:18.361Z

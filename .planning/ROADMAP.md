@@ -860,7 +860,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   3. The 5-field standard cron form is still accepted (no regression — both forms validate and schedule).
   4. Solution builds 0-warning (Release + Debug); the hermetic suite is green against the seconds-cron change.
 **Plans**: 3 plans
-  - [ ] 63-01-PLAN.md — CronFieldForm shared detector + unit test (Wave 1)
+  - [x] 63-01-PLAN.md — CronFieldForm shared detector + unit test (Wave 1) ✓ completed 2026-06-14; pure token-count detector `CronFieldForm` (IsSecondsForm/IsValidFieldCount) hoisted into `Messaging.Contracts.Projections` (zero Cronos dep, contracts leaf parser-free); 8/8 detector facts green; commits 0e48293, ee2b12d
   - [ ] 63-02-PLAN.md — CronInterval rewire + */30 sub-minute fact (Wave 2)
   - [ ] 63-03-PLAN.md — Both validators rewire + message update + tests (Wave 2)
 
