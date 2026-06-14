@@ -107,4 +107,53 @@ public sealed class ElasticsearchTestClient : IDisposable
         }
         return null;
     }
+
+    /// <summary>
+    /// Phase 66 research item #3 / OBS-01 — the multi-hit aggregation primitive. Issues a SINGLE
+    /// size-bounded <c>_search</c> and returns ALL hits as a <see cref="List{JsonElement}"/>, unlike
+    /// <see cref="PollEsForLog"/> which returns only <c>hits[0]</c>. Used to read the ~90 step logs in a
+    /// 5-minute window in one request (the caller sizes the query body, e.g. <c>"size":2000</c>) and group
+    /// them in C# by <c>attributes.CorrelationId</c> + <c>attributes.StepLabel</c> into per-run traces.
+    ///
+    /// <para>
+    /// <b>Single request, no backoff loop:</b> unlike <see cref="PollEsForLog"/> this does ONE request — the
+    /// CALLER polls-to-stable (re-invokes until the hit count stops growing) rather than this method blocking.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>404 / empty tolerance:</b> a non-success response (e.g. the data stream not yet lazily created on
+    /// first write — RESEARCH Pitfall 5) returns an EMPTY list rather than throwing, so the caller's
+    /// poll-to-stable loop sees zero hits and keeps polling instead of failing RED on a transient absence.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Clone discipline:</b> each returned element is <c>Clone()</c>-detached from its parsing
+    /// <see cref="JsonDocument"/> (which disposes at end of the enumeration), so every element is safe to
+    /// retain after this method returns — the SAME discipline <see cref="PollEsForLog"/> uses for <c>hits[0]</c>.
+    /// </para>
+    /// </summary>
+    public async Task<List<JsonElement>> SearchAllHits(
+        string queryBody, string? indexPath = null, CancellationToken ct = default)
+    {
+        indexPath ??= EsIndexNames.LogsDataStream;
+        using var req = new HttpRequestMessage(HttpMethod.Post, $"{indexPath}/_search")
+        {
+            Content = new StringContent(queryBody, Encoding.UTF8, "application/json"),
+        };
+        using var resp = await _es.SendAsync(req, ct);
+        var results = new List<JsonElement>();
+        if (!resp.IsSuccessStatusCode) return results;   // 404 lazy-index tolerance (caller polls-to-stable)
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct));
+        if (doc.RootElement.TryGetProperty("hits", out var outer)
+            && outer.TryGetProperty("hits", out var hits)
+            && hits.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var h in hits.EnumerateArray())
+            {
+                using var inner = JsonDocument.Parse(h.GetRawText());
+                results.Add(inner.RootElement.Clone());   // detach — safe to retain
+            }
+        }
+        return results;
+    }
 }
