@@ -117,6 +117,10 @@ public sealed class PassFailEngine
         //   impliedRuns = round(DispatchSentDelta / 9): the run count IMPLIED by the per-step dispatch
         //   counter. A positive excess over StartedRuns beyond tolerance means Prom saw more runs
         //   dispatched than ES observed start — i.e. a fully-dead run. WARNING, not a fail.
+        // Math.Round defaults to MidpointRounding.ToEven (banker's rounding). A half-step delta is
+        // already pathological (DispatchSentDelta is an integer counter delta, so /9 lands on a half only
+        // for non-multiples), and the ±1-run CorroborationRunTolerance absorbs any single-run rounding
+        // wobble — corroboration never gates the verdict — so ToEven is intentionally accepted here (IN-01).
         var promImpliedRuns = (int)Math.Round(prom.DispatchSentDelta / LabelsPerRun);
         var corroborationDetail = new List<string>();
 

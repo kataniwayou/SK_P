@@ -161,6 +161,9 @@ public sealed class AnalyzerE2ETests
         //    round(DispatchSentDelta / 9) for the corroboration cross-check. There is NO per-fire
         //    correlationId orchestrator log (item #1), so the IDENTITY of a fully-dead run is NOT
         //    recoverable — it surfaces as a non-fatal Prom corroboration warning, never named.
+        // Math.Round defaults to MidpointRounding.ToEven; triggerCount is Prom corroboration evidence
+        // only (never the binding denominator) and the engine's ±1-run tolerance absorbs any single-unit
+        // rounding wobble, so ToEven is intentionally accepted here (IN-01).
         var triggerCount = (int)Math.Round(promSnapshot.DispatchSentDelta);
 
         // Precondition: at least one dispatch must have fired in the window. A zero DispatchSentDelta
