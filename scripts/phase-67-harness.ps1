@@ -11,7 +11,10 @@
 
     Flow (per the resolved D-01..D-16 decisions):
 
-        STEP A   phase-65-up.ps1                 bring the minimal stack up (10 svc types healthy)
+        STEP A0  docker compose build            rebuild images so the container SourceHash matches
+                                                 the host-built Processor.Sample (liveness id currency)
+        STEP A   compose up --force-recreate
+                 + phase-65-up.ps1               bring the minimal stack up (10 svc types healthy)
         STEP B   phase-65-reset.ps1              FLUSHALL + heal-wait + FK-safe graph DELETE
         STEP B1  docker compose restart orchestrator + wait healthy
                                                  GUARANTEE A CLEAN ORCHESTRATOR (no ghost crons)
@@ -97,9 +100,33 @@ try {
     Write-Phase "scenario '$ScenarioId' — $($scenario.notes) (faultType=$($scenario.faultType), N=$($scenario.injectAfterNFires), dwell=$($scenario.dwellSeconds)s)"
 
     # -----------------------------------------------------------------------
-    # STEP A — BRING-UP (FRAME 3; code 10).
+    # STEP A0 — IMAGE REBUILD (code 10) — SourceHash currency guarantee.
+    # The processor self-registers its L2 liveness under a processor id derived from its
+    # assembly-embedded SourceHash; the seeder (running on the TEST HOST) resolves the
+    # workflow's processor by reflecting the host-built Processor.Sample.dll SourceHash. If
+    # the running CONTAINER image is stale (built from older source than the working tree),
+    # the container registers under a DIFFERENT SourceHash → a DIFFERENT processor id than
+    # the one the seeded v8-fanout-proof workflow binds, and the ProcessorLivenessValidator
+    # gate correctly 422s the POST /start (0 replicas for the seeded processor id). This was
+    # observed live in plan 67-03: container hash 536d0868… (proc 2f6f59b0…) vs host build
+    # a67a3ed8… (proc 3cf7023b…). `phase-65-up.ps1` does a plain `docker compose up -d` with
+    # NO rebuild, so a stale image silently survives. Building here (and force-recreating in
+    # STEP A) guarantees the container SourceHash == the seeder's host-build SourceHash, so
+    # the seeded workflow's processor id matches a live replica. Build is no-op fast when the
+    # image is already current (BuildKit layer cache).
     # -----------------------------------------------------------------------
-    Write-Phase "STEP A: bring-up (phase-65-up.ps1)"
+    Write-Phase "STEP A0: build images (SourceHash currency — container must match host-built Processor.Sample)"
+    docker compose build 2>&1 | Out-String | Write-Host
+    if ($LASTEXITCODE -ne 0) { Write-Phase "image build failed (exit $LASTEXITCODE). Aborting." 'Red'; exit 10 }
+
+    # -----------------------------------------------------------------------
+    # STEP A — BRING-UP (FRAME 3; code 10).
+    # Force-recreate so the just-built image is the one actually running (a stale container
+    # from a prior run would otherwise keep its old SourceHash even after the image rebuild).
+    # -----------------------------------------------------------------------
+    Write-Phase "STEP A: bring-up (docker compose up -d --force-recreate, then phase-65-up.ps1 health gate)"
+    docker compose up -d --force-recreate 2>&1 | Out-String | Write-Host
+    if ($LASTEXITCODE -ne 0) { Write-Phase "force-recreate up failed (exit $LASTEXITCODE). Aborting." 'Red'; exit 10 }
     pwsh -File (Join-Path $PSScriptRoot 'phase-65-up.ps1')
     if ($LASTEXITCODE -ne 0) { Write-Phase "bring-up failed (exit $LASTEXITCODE). Aborting." 'Red'; exit 10 }
 
