@@ -58,9 +58,12 @@ public sealed class AnalyzerE2ETests
 
     // D-05 drain: bounded settle after the observation window closes so in-flight runs finish their
     // 9-step traversal before scoring (Pitfall 4 — scoring mid-traversal would mis-flag a run MISSING).
-    private const int DrainMs = 60_000;        // > worst-case 9-step traversal
-    private const int PollToStableMs = 5_000;  // re-poll interval; snapshot when the ES hit count is
-                                               //   unchanged across two consecutive polls
+    private const int DrainMs = 60_000;                // > worst-case 9-step traversal
+    private const int PollToStableBudgetMs = 60_000;   // poll-to-stable budget, separate from DrainMs
+                                                       //   (WR-03 fix — 66-REVIEW.md). Total worst-case
+                                                       //   wall-clock = DrainMs + PollToStableBudgetMs = 120 s.
+    private const int PollToStableMs = 5_000;          // re-poll interval; snapshot when the ES hit count is
+                                                       //   unchanged across two consecutive polls
 
     // The default scenario id for the phase fixture. The Phase 67/68 harness passes its own per-run id.
     private const string DefaultScenarioId = "TEST-01";
@@ -177,7 +180,7 @@ public sealed class AnalyzerE2ETests
     {
         var body = BuildStepSearchBody(windowStart, snapshot);
         var last = await es.SearchAllHits(body, ct: ct);
-        var deadline = DateTime.UtcNow.AddMilliseconds(DrainMs);
+        var deadline = DateTime.UtcNow.AddMilliseconds(PollToStableBudgetMs);
         while (DateTime.UtcNow < deadline)
         {
             ct.ThrowIfCancellationRequested();
