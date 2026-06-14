@@ -332,7 +332,13 @@ if ($bad.Count -ne 0) { Write-Host "badconfig container running — ENV-01 viola
 
 **Note:** No `[ASSUMED]`-tagged claims affect a *locked decision* — all assumptions are about timeout/robustness margins, not contract shapes. Contract shapes (DTO fields, table names, FK order, key formats) are all `[VERIFIED: codebase]`.
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+1. RESOLVED (plan 65-01 Task 2): the fixture **presumes a reset-clean DB** (the 67/68 harness contract calls reset BEFORE the seeder) and adds a clear assertion message if a count is off.
+
+2. RESOLVED (plan 65-01 Task 2): idempotency is **ONE `[Fact]` calling the seed routine twice in-process**, capturing both workflow ids and asserting `Assert.Equal` + re-verifying 1/9/9/8.
+
+---
 
 1. **Should the seeder fixture FLUSHALL/reset before seeding, or assume the reset script already ran?**
    - What we know: CONTEXT separates seeder (dotnet test) from reset (PS script); 67/68 call reset THEN seeder. The seeder's self-verify asserts counts (1/9/9/8) which presume a clean graph.
