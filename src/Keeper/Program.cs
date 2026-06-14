@@ -1,8 +1,10 @@
 using BaseConsole.Core.DependencyInjection;
+using BaseConsole.Core.Health;
 using MassTransit;
 using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using OpenTelemetry;            // ConfigureOpenTelemetryMeterProvider
 using OpenTelemetry.Metrics;    // AddMeter (KeeperMetrics export — D-07)
@@ -39,6 +41,17 @@ builder.Services.AddSingleton<Keeper.Recovery.L2ProbeRecovery>();
 builder.Services.AddSingleton<Keeper.Health.IL2HealthGate, Keeper.Health.L2HealthGate>();
 // KEEP-01/02 (D-06): the proactive BIT loop hosted service (edge-triggered global pause/resume + gate driver).
 builder.Services.AddHostedService<Keeper.Health.BitHealthLoop>();
+
+// 260614-b5c — minimal keeper self-watchdog. TimeProvider.System (idempotent, mirrors Orchestrator/Program.cs:91)
+// + the timestamp-only liveness holder (stamped each BitHealthLoop tick) + a "live"-tagged HealthCheckDescriptor
+// that EmbeddedHealthEndpointService auto-folds into /health/live (NO BaseConsole.Core change). A silently-stalled
+// BIT loop lets the timestamp go stale, flipping /health/live Unhealthy.
+builder.Services.TryAddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<Keeper.Health.IKeeperLivenessState, Keeper.Health.KeeperLivenessState>();
+builder.Services.AddSingleton(new HealthCheckDescriptor(
+    "keeper-liveness-watchdog",
+    new[] { "live" },
+    outer => new Keeper.Health.KeeperLivenessWatchdogHealthCheck(outer)));
 
 // KEEP-04 / D-04 (OQ-1): the keeper-recovery endpoint is RUNTIME-BOUND via ConnectReceiveEndpoint
 // (RecoveryEndpointBinder), NOT static AddConsumer auto-config — a statically-configured 8.5.5 endpoint

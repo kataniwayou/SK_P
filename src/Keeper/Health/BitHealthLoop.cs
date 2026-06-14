@@ -24,7 +24,9 @@ public sealed class BitHealthLoop(
     IBus bus,
     RecoveryEndpointHandle endpointHandle,
     IOptions<ProbeOptions> opts,
-    ILogger<BitHealthLoop> logger) : BackgroundService
+    ILogger<BitHealthLoop> logger,
+    TimeProvider clock,
+    IKeeperLivenessState liveness) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -40,6 +42,12 @@ public sealed class BitHealthLoop(
         while (!stoppingToken.IsCancellationRequested)
         {
             var healthy = await probe.ProbeOnceAsync(stoppingToken);   // RedisException → false INSIDE; non-Redis propagates
+
+            // Keeper self-watchdog stamp (260614-b5c): UNCONDITIONAL — every tick, OUTSIDE the edge guard,
+            // regardless of healthy/unhealthy. A hang in ProbeOnceAsync OR in the trailing Task.Delay below
+            // stops advancing this timestamp, so KeeperLivenessWatchdogHealthCheck flips /health/live stale.
+            // Only the stamp reads the clock; the trailing Task.Delay stays real-time.
+            liveness.Update(clock.GetUtcNow().UtcDateTime);
 
             if (prevHealthy != healthy)                                // EDGE: transition (or first tick) only
             {
