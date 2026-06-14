@@ -1,4 +1,6 @@
 using System.Reflection;
+using System.Text.Json;
+using BaseProcessor.Core.Configuration;
 using BaseProcessor.Core.Processing;
 using Microsoft.Extensions.Logging;
 using Processor.Sample;
@@ -7,32 +9,40 @@ using Xunit;
 namespace BaseApi.Tests.Processor;
 
 /// <summary>
-/// Hermetic unit facts for <see cref="SampleProcessor"/> (SAMPLE-01 / D-07): the one concrete
-/// In-Process transform receives a framework-deserialized typed <see cref="SampleConfig"/> — the
-/// framework owns deserialization of the per-step assignment payload — logs the config's value, and
-/// echoes it back as a single completed <see cref="ProcessItem"/>. A null config (blank/absent payload)
-/// falls back to the fixed <c>"processor-sample-ok"</c> token.
+/// Hermetic unit facts for <see cref="SampleProcessor"/> (PROC-01/02/03): the one concrete
+/// In-Process transform receives a framework-deserialized typed <see cref="SampleConfig"/>
+/// (an int + a <c>Step_*</c> label), random-adds to the integer and emits the resulting
+/// <c>sum</c> as a single completed <see cref="ProcessItem"/> whose <c>Data</c> is a
+/// {number,label} JSON string, and emits exactly ONE structured log entry tagged with the
+/// <c>StepLabel</c> + <c>Sum</c>. A null config still produces exactly one item and one log.
+/// The third fact proves PROC-01 — case-insensitive deserialization of the payload into the
+/// typed config via <see cref="ProcessorConfig.SerializerOptions"/>.
 ///
 /// <para>
 /// <see cref="SampleProcessor"/> is <c>sealed</c> and its typed <c>ProcessAsync</c> is <c>protected</c>
 /// (BaseProcessor.Core grants no <c>InternalsVisibleTo</c> to this test assembly), so the seam is
 /// invoked by reflection — passing a typed <see cref="SampleConfig"/> exactly as the framework's internal
-/// forwarder would after deserialize.
+/// forwarder would after deserialize. The 6 correlation ids are ambient (consume-filter scope); the
+/// hermetic <c>NullScope</c> swallows them, so these facts assert label+sum only (Pitfall 4).
 /// </para>
 /// </summary>
 public sealed class SampleProcessorFacts
 {
-    /// <summary>Records every formatted log message at the level it was emitted.</summary>
+    /// <summary>Records every log entry: its level, formatted message, and structured state KVPs.</summary>
     private sealed class CapturingLogger : ILogger<SampleProcessor>
     {
-        public List<(LogLevel Level, string Message)> Entries { get; } = new();
+        public List<(LogLevel Level, string Message, IReadOnlyList<KeyValuePair<string, object?>> State)> Entries { get; } = new();
 
         public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
         public bool IsEnabled(LogLevel logLevel) => true;
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
             Func<TState, Exception?, string> formatter)
-            => Entries.Add((logLevel, formatter(state, exception)));
+        {
+            var kvps = state as IReadOnlyList<KeyValuePair<string, object?>>
+                       ?? Array.Empty<KeyValuePair<string, object?>>();   // MEL FormattedLogValues implements this (A1)
+            Entries.Add((logLevel, formatter(state, exception), kvps));
+        }
 
         private sealed class NullScope : IDisposable
         {
@@ -52,50 +62,51 @@ public sealed class SampleProcessorFacts
     }
 
     [Fact]
-    public async Task ProcessAsync_Receives_Typed_Config_Logs_It_And_Echoes_It()
+    public async Task ProcessAsync_Adds_Random_To_Number_And_Logs_Step_And_Sum()
     {
         var logger = new CapturingLogger();
         var processor = new SampleProcessor(logger);
 
-        // The framework deserialized {"value":"StepA1"} into this typed config before the seam ran.
-        var result = await InvokeProcessAsync(processor, "any-input", new SampleConfig("StepA1"));
+        var result = await InvokeProcessAsync(processor, "any-input", new SampleConfig(10, "Step_A1"));
 
         var only = Assert.Single(result);
         Assert.Equal(ProcessOutcome.Completed, only.Result);
-        Assert.Equal("StepA1", only.Data);
-        Assert.NotEqual(Guid.Empty, only.ExecutionId);   // D-03: the author mints the per-item ExecutionId
+        Assert.NotEqual(Guid.Empty, only.ExecutionId);   // D-06: author-minted
 
-        var logged = Assert.Single(logger.Entries);
+        using var doc = JsonDocument.Parse(only.Data);
+        var number = doc.RootElement.GetProperty("number").GetInt32();
+        Assert.InRange(number, 10, 109);                 // D-07: [Number, Number+99], upper-exclusive Next(0,100)
+        Assert.Equal("Step_A1", doc.RootElement.GetProperty("label").GetString());  // D-10 verbatim
+
+        var logged = Assert.Single(logger.Entries);      // D-08 exactly one
         Assert.Equal(LogLevel.Information, logged.Level);
-        Assert.Contains("sample payload received", logged.Message);
-        Assert.Contains("StepA1", logged.Message);
+        Assert.Contains(logged.State, kv => kv.Key == "StepLabel" && (string?)kv.Value == "Step_A1");
+        Assert.Contains(logged.State, kv => kv.Key == "Sum" && (int)kv.Value! == number);
     }
 
     [Fact]
-    public async Task ProcessAsync_Null_Config_Falls_Back_To_Fixed_Token()
+    public async Task ProcessAsync_Null_Config_Still_Emits_One_Item_And_One_Log()
     {
         var logger = new CapturingLogger();
         var processor = new SampleProcessor(logger);
 
-        // Blank/absent payload → the framework hands the seam a null config (D-04).
         var result = await InvokeProcessAsync(processor, "any-input", (SampleConfig?)null);
 
-        var only = Assert.Single(result);
-        Assert.Equal("processor-sample-ok", only.Data);
-        Assert.Single(logger.Entries); // still logs (config null) — proves the seam always runs
+        var only = Assert.Single(result);                // D-03: seam always runs, one item
+        using var doc = JsonDocument.Parse(only.Data);
+        Assert.InRange(doc.RootElement.GetProperty("number").GetInt32(), 0, 99);   // baseNumber 0 + 0..99
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("label").ValueKind);
+        Assert.Single(logger.Entries);                   // still exactly one log (D-08)
     }
 
     [Fact]
-    public void ProcessAsync_Fail_Config_Throws_FailedException()
+    public void Deserializes_Typed_Config_From_Payload_Case_Insensitively()
     {
-        var logger = new CapturingLogger();
-        var processor = new SampleProcessor(logger);
+        var config = JsonSerializer.Deserialize<SampleConfig>(
+            "{\"number\":5,\"label\":\"Step_A1\"}", ProcessorConfig.SerializerOptions);
 
-        // D-07 worked example: a "fail" Value demonstrates the author status-exception path.
-        // The seam throws SYNCHRONOUSLY (before returning the Task), so the reflection invoke
-        // surfaces it wrapped in a TargetInvocationException — assert the inner is FailedException.
-        var outer = Assert.Throws<TargetInvocationException>(
-            () => { _ = InvokeProcessAsync(processor, "any-input", new SampleConfig("fail")); });
-        Assert.IsType<FailedException>(outer.InnerException);
+        Assert.NotNull(config);
+        Assert.Equal(5, config!.Number);                 // PROC-01: int field bound
+        Assert.Equal("Step_A1", config.Label);           // PROC-01: string field bound
     }
 }
