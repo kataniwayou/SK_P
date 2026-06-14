@@ -899,7 +899,10 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   2. Against the total trigger count, the analyzer flags MISSING runs/steps (an incomplete triggered correlationId) and DUPLICATE step effects (a step's COMPLETED effect recorded more than once per correlationId).
   3. The analyzer queries the named Prometheus counters and cross-checks dispatched vs completed vs deduped against the total trigger count, surfacing any imbalance.
   4. Each run emits a per-test smoke report (correlationId-aggregated trace + metric summary) and an automated PASS/FAIL verdict derived solely from Prometheus + Elasticsearch (no human inspection, no infra-SHA net-zero input).
-**Plans**: TBD
+**Plans**: 3 plans
+  - [ ] 66-01-PLAN.md — PassFailEngine + models + hermetic decision-branch facts (pure core, OBS-01/02/03) (Wave 1)
+  - [ ] 66-02-PLAN.md — SearchAllHits multi-hit ES extension + EsIndexNames Step consts + grouping facts (item #3, OBS-01) (Wave 1)
+  - [ ] 66-03-PLAN.md — AnalyzerE2ETests RealStack fixture: Wave-0 mapping/windowing probes + gather ES+Prom → engine → write-then-assert report (OBS-04) (Wave 2)
 
 #### Phase 67: Fault-Injection Harness
 **Goal**: A fully-automated harness drives one scenario end-to-end: it activates the workflow via `POST /api/v1/orchestration/start` and lets the cron drive it for a **5-minute** observation window (~10 triggers, fresh correlationId per fire); mid-run it injects the scenario's fault (container kill/restart of the targeted tier) and allows the system to recover within the same window; and the whole sequence — clean → seed → activate → inject fault → observe → analyze → tear down — runs with **no human verification step**, wiring together the Phase 65 seeder/clean-stack and the Phase 66 analyzer.
