@@ -846,7 +846,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 - [x] **Phase 65: Fan-Out Workflow Seeder & Clean-State Stack** — Idempotent seeder for the 9-step fan-out workflow (one shared processor, seconds-cron, `Step_*` payloads) + a minimal clean-state stack (single `processor-sample`, full infra+observability; flush/reset between runs). (completed 2026-06-14)
 - [x] **Phase 66: Prometheus + ES Analyzer & PASS/FAIL Engine** — Aggregate ES logs by correlationId into per-run traces (all 9 steps + both sinks?), detect MISSING/DUPLICATE vs total triggers, cross-check Prometheus counters, and emit a per-test report + automated PASS/FAIL verdict (Prom + ES only).
  (completed 2026-06-14)
-- [ ] **Phase 67: Fault-Injection Harness** — Activate via `POST /api/v1/orchestration/start`, run a 5-minute/30s-cron window, inject each scenario's mid-run fault (container kill/restart) and let the system recover — fully automated end-to-end (clean → seed → activate → inject → observe → analyze → tear down), no human step.
+- [x] **Phase 67: Fault-Injection Harness** — Activate via `POST /api/v1/orchestration/start`, run a 5-minute/30s-cron window, inject each scenario's mid-run fault (container kill/restart) and let the system recover — fully automated end-to-end (clean → seed → activate → inject → observe → analyze → tear down), no human step.
+ (completed 2026-06-14 — harness proven live on TEST-01 baseline + TEST-02 processor-crash recovery, both Pass 10/10; FAULT-01/02/03 met)
 - [ ] **Phase 68: Live Resilience Proof — 7 Scenarios (Capstone)** — Run all 7 proofs (happy path + processor / orchestrator / keeper / redis / rabbitmq / redis+rabbitmq crash) through the harness; each PASSES iff zero-missing + effect-once hold over its window; redelivery during the fault reported, not failed.
 
 ### Phase Details
@@ -916,8 +917,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 **Plans**: 3 plans (2 waves)
 Plans:
 - [x] 67-01-PLAN.md — D-16 env-var seam in AnalyzerE2ETests.cs (SCENARIO_ID/WINDOW_START_UTC/WINDOW_END_UTC, const/UtcNow fallback); Phase 66 standalone stays green (FAULT-01, FAULT-03) (completed 2026-06-14 — seam in place + Release 0/0 -warnaserror; commit 55b2fef. Task-2 checkpoint resolved BY CONSTRUCTION: fallback proven live (no-env run wrote analyzer-reports/TEST-01.json via const default), but the full standalone analyzer-GREEN verdict was NOT achieved this session — DEFERRED to 67-03 under a controlled window. Three environmental findings handed to 67-02/67-03: MTP ignores `dotnet test --filter` → use `-- --filter-method`; phase-65-reset does not stop ghost orchestrator crons (NULL-payload fires, zero Step_* docs); `POST /orchestration/start` returned 422 for the fresh workflow)
-- [ ] 67-02-PLAN.md — Author scripts/phase-67-harness.ps1: scenario table (TEST-01/TEST-02) + clean->seed->psql-wf-id->204-gate->observe->whole-tier-crash->health-wait->analyze->teardown, exit mirrors analyzer verdict (FAULT-01, FAULT-02, FAULT-03)
-- [ ] 67-03-PLAN.md — Two reference runs: TEST-01 baseline-first (TriggerCount~10) then TEST-02 processor crash; each fully automated, produces a correctly-named verdict report (FAULT-01, FAULT-02, FAULT-03)
+- [x] 67-02-PLAN.md — Author scripts/phase-67-harness.ps1: scenario table (TEST-01/TEST-02) + clean->seed->psql-wf-id->204-gate->observe->whole-tier-crash->health-wait->analyze->teardown, exit mirrors analyzer verdict (FAULT-01, FAULT-02, FAULT-03) (completed 2026-06-14 — 330-line harness, +STEP B1 clean-orchestrator restart + MTP --filter-method; commits 6ca3f0d, 79a7137, 78fc508)
+- [x] 67-03-PLAN.md — Two reference runs: TEST-01 baseline-first (TriggerCount~10) then TEST-02 processor crash; each fully automated, produces a correctly-named verdict report (FAULT-01, FAULT-02, FAULT-03) (completed 2026-06-14 — both runs Pass 10/10 (zero-missing, effect-once); TEST-02 whole-tier crash + in-window recovery proven; OBS-04 verdict re-founded on ES-binding arbiter (Prom→corroboration) absorbing the mid-window counter reset — corrects a Phase-66 per-run-denominator defect, spec-owner-approved; deviations d2445fb, a9e42e0, 574739a)
 
 #### Phase 68: Live Resilience Proof — 7 Scenarios (Capstone)
 **Goal**: Run all **7** resilience proofs through the harness and produce a passing automated verdict for each. Each scenario runs its 5-minute/30s-cron window and PASSES iff **zero-missing** (every triggered correlationId reaches both sinks F1+F2) AND **effect-once** (each step's COMPLETED effect once per correlationId) hold; message-level redelivery during the fault is **reported, not failed**. This is the milestone capstone (mirroring prior milestones' final live-proof phase), proving the existing recovery machinery survives each fault class. Truth = Prometheus + Elasticsearch only.
@@ -939,7 +940,7 @@ Plans:
 | 64 | Processor Work & Structured Logging | 1/1 | Complete    | 2026-06-14 |
 | 65 | Fan-Out Workflow Seeder & Clean-State Stack | 3/3 | Complete    | 2026-06-14 |
 | 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 3/3 | Complete    | 2026-06-14 |
-| 67 | Fault-Injection Harness | 2/3 | In progress | 67-02 (harness authored; live proof in 67-03) |
+| 67 | Fault-Injection Harness | 3/3 | Complete    | 2026-06-14 |
 | 68 | Live Resilience Proof — 7 Scenarios (Capstone) | 0/TBD | Not started | — |
 
 **Coverage:** 23/23 v8.0.0 requirements mapped (CRON-01/02 → 63 · PROC-01/02/03 → 64 · WF-01/02 + ENV-01/02 → 65 · OBS-01/02/03/04 → 66 · FAULT-01/02/03 → 67 · TEST-01..07 → 68). No orphans, no duplicates.

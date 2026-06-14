@@ -41,7 +41,7 @@ Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestr
 **: The harness starts each test from clean state — Redis flushed, Postgres workflow/step/assignment rows reset, and leftover/redundant processor containers removed — so each test's metrics and logs are attributable to that run only.
 
 ### Fault-Injection Harness (FAULT)
-> **Note:** Plan 67-01 contributes the D-16 analyzer test-fixture seam (a supporting enabler) toward FAULT-01/FAULT-03, but does not deliver the live fault-injection proof. These requirements remain open until 67-02 (harness) and 67-03 (live proof) land the end-to-end live recovery proof.
+> **Note:** COMPLETE (2026-06-14). 67-01 landed the D-16 analyzer test-fixture seam, 67-02 authored `scripts/phase-67-harness.ps1`, and 67-03 proved the harness live end-to-end on both reference runs — TEST-01 (no-fault baseline) and TEST-02 (whole-tier processor crash + in-window recovery) — each scoring Pass (10/10 started runs complete, zero missing, zero duplicates) fully automated. FAULT-01/02/03 are genuinely met by this live proof, finalizing the re-opening from 67-01's `2b5cec9`.
 - [x] **FAULT-01
 
 **: The harness activates the workflow via `POST /api/v1/orchestration/start` and lets the cron drive it for a 5-minute observation window per test (~10 triggers, fresh correlationId per fire).
@@ -95,7 +95,7 @@ REQ-IDs are filled into phases by the roadmapper (Step 10). Every requirement ma
 | WF-01, WF-02 | Phase 65 | Pending |
 | ENV-01, ENV-02 | Phase 65 | Pending |
 | OBS-01, OBS-02, OBS-03, OBS-04 | Phase 66 | Pending |
-| FAULT-01, FAULT-02, FAULT-03 | Phase 67 | Pending |
+| FAULT-01, FAULT-02, FAULT-03 | Phase 67 | complete |
 | TEST-01, TEST-02, TEST-03, TEST-04, TEST-05, TEST-06, TEST-07 | Phase 68 | Pending |
 
 **Coverage:** 23 requirements across 7 categories (CRON, PROC, WF, ENV, FAULT, OBS, TEST). Filled into phases by the roadmapper.
