@@ -861,7 +861,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   4. Solution builds 0-warning (Release + Debug); the hermetic suite is green against the seconds-cron change.
 **Plans**: 3 plans
   - [x] 63-01-PLAN.md — CronFieldForm shared detector + unit test (Wave 1) ✓ completed 2026-06-14; pure token-count detector `CronFieldForm` (IsSecondsForm/IsValidFieldCount) hoisted into `Messaging.Contracts.Projections` (zero Cronos dep, contracts leaf parser-free); 8/8 detector facts green; commits 0e48293, ee2b12d
-  - [ ] 63-02-PLAN.md — CronInterval rewire + */30 sub-minute fact (Wave 2)
+  - [x] 63-02-PLAN.md — CronInterval rewire + */30 sub-minute fact (Wave 2) ✓ completed 2026-06-14; both NextOccurrence + IntervalSeconds resolve CronFormat via the shared `CronFieldForm` detector (IncludeSeconds 6-field / Standard 5-field), lifting the 1-minute floor; `IntervalSeconds("*/30 * * * * *") == 30` + 6-field NextOccurrence strictly-future/Kind=Utc proven, 5-field facts retained (5/5 CronInterval green); D-08 firewall + UTC contract intact, 0-warning build; CRON-01 satisfied scheduler-side; commits e6c9d42, 35e3ccc
   - [ ] 63-03-PLAN.md — Both validators rewire + message update + tests (Wave 2)
 
 #### Phase 64: Processor Work & Structured Logging
