@@ -12,6 +12,7 @@
 - ✅ **v5.0.0 Recovery Re-architecture — messageId slot-array + 3-state keeper** — Phases 50-55 (shipped 2026-06-12) — supersedes v4.0.0 Model-B recovery; source of truth [`docs/design/2026-06-08-processor-keeper-recovery-redesign.md`](../docs/design/2026-06-08-processor-keeper-recovery-redesign.md) A18 + A19
 - ✅ **v6.0.0 Config & Payload Validation Hardening** — Phases 56-58 (shipped 2026-06-13) — typed base-config seam on `BaseProcessor` + startup config-schema compatibility **Gate A** (withholds processor *Healthy* on config-type↔config-schema mismatch); complements the shipped WebAPI **Gate B** (`PayloadConfigSchemaValidator`); 10/10 CFG requirements, Phase-58 live close gate N=3 GREEN; see [milestones/v6.0.0-ROADMAP.md](milestones/v6.0.0-ROADMAP.md)
 - ✅ **v7.0.0 Per-Replica Processor Liveness & Self-Watchdog** — Phases 59-62 + 62.1 (closed 2026-06-14, audit-override) — per-instance L2 liveness keys `skp:proc:{processorId}:{instanceId}` + instance-index SET (replacing single `skp:{processorId}`), two-state `status`+per-schema `summary` written by both startup+heartbeat loops, in-memory L1 record, WebAPI ≥1-healthy orchestration-start gate, self-watchdog probe; 17 KEY/STATE/LOOP/L1/GATE/PROBE reqs implemented & hermetically green; **Phase-62 live close gate NOT run (deferred — superseded by v8.0.0)**; see [milestones/v7.0.0-ROADMAP.md](milestones/v7.0.0-ROADMAP.md)
+- 🚧 **v8.0.0 E2E Resilience Proof** — Phases 63-68 (started 2026-06-14) — whole-system live recovery proof of the fan-out workflow `A→B→C→{D1→E1→F1, D2→E2→F2}` (9 steps, one shared `processor-sample`, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios; **zero-missing + effect-once** verified **solely from Prometheus + Elasticsearch** (NOT the prior triple-SHA infra net-zero close gate); supersedes v7.0.0's deferred Phase-62 live proof; 23 CRON/PROC/WF/ENV/OBS/FAULT/TEST reqs
 
 ## ✅ v7.0.0 Per-Replica Processor Liveness & Self-Watchdog (CLOSED 2026-06-14 — audit-override; full record [milestones/v7.0.0-ROADMAP.md](milestones/v7.0.0-ROADMAP.md))
 
@@ -811,3 +812,119 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 47. DLQ Consolidation + At-Least-Once Semantics | 3/3 | Complete | 47-01 ✓ (RESIL-02, RESIL-03 structural guards); 47-02 ✓ (R3 no-collapse facts + R2 Phase-47 re-tag); 47-03 ✓ (47-DLQ-AUDIT.md ledger + design-doc A16 amendment) |
 | 48. v3.x Teardown | 3/3 | Complete | 2026-06-09 |
 | 49. Live Proof & Close Gate | 6/6 | In Progress (live gate operator-gated) | — |
+
+
+
+## 🚧 v8.0.0 E2E Resilience Proof (In Progress — started 2026-06-14)
+
+> **Active milestone.** Whole-system **live recovery proof under faults**. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
+
+**Milestone Goal:** Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestrated workflow under 7 sustained 5-minute fault scenarios, verified **solely** from Prometheus metrics and Elasticsearch logs, fully automated — no human verification.
+
+**Workflow under test:** a single seeded definition `A → B → C → { D1 → E1 → F1, D2 → E2 → F2 }` (9 steps, entry A, fan-out at C, two sinks F1/F2), all steps backed by **one** shared `processor-sample`, cron `*/30 * * * * *`, each step's assignment payload `{ number:int, label:"Step_*" }`. Step identity comes from the payload label (`Step_*`), **not** the processor.
+
+**Pass bar (per scenario):** every triggered correlationId reaches **both** sinks F1+F2 (**zero-missing**) AND each step's COMPLETED effect lands **exactly once** per correlationId (**effect-once**); message-level redelivery during a crash is **reported, not failed** (matches the documented exactly-once-effect guarantee).
+
+**Source of truth:** **Prometheus + Elasticsearch ONLY.** The prior triple-SHA infra net-zero close gate (`psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues` BEFORE==AFTER) is **explicitly out of scope** for v8.0.0 and is **not** a pass criterion.
+
+**Scope discipline (locked):** This milestone **PROVES the existing recovery machinery** (keeper, exactly-once-effect, slot-array, per-replica liveness) — it adds **no new recovery logic**. The **only product code changes** are: (a) enable 6-field seconds-cron (`CronInterval` + the 5-field validator), and (b) the processor int+string payload + random-add + `Step_*` structured logging. Everything else is **test harness + seeder + analyzer**. All 9 steps share one `processor-sample`; `processor-badconfig` is dropped from this stack.
+
+**Build order (locked, dependency-driven):**
+1. **63** seconds-cron enablement [CRON] — product change, independent.
+2. **64** processor int+string payload + `Step_*` logging [PROC] — product change, independent (could run parallel to 63).
+3. **65** 9-step fan-out workflow seeder + minimal clean-state stack [WF, ENV] — depends on **63 + 64**.
+4. **66** Prometheus + ES analyzer / per-test report + PASS/FAIL engine [OBS] — depends on **64** (the processor logging shape it parses).
+5. **67** 7-scenario fault-injection harness [FAULT] — depends on **65 + 66**.
+6. **68** Live Resilience Proof — 7 scenarios capstone [TEST] — depends on **67** (runs the 7 proofs through the harness; mirrors prior milestones' final live-proof phase).
+
+**Source of truth (planning):** This milestone's planning conversation (2026-06-14), scope confirmed point-by-point. Requirements: [REQUIREMENTS.md](REQUIREMENTS.md) (23 reqs across CRON/PROC/WF/ENV/OBS/FAULT/TEST).
+
+### Phases
+
+- [ ] **Phase 63: Seconds-Granularity Cron** — Enable 6-field seconds-cron (`*/30 * * * * *`) end-to-end: `CronInterval` next-occurrence/interval math sub-minute (UTC) + the create/update validator accepts the 6-field form (5-field still accepted).
+- [ ] **Phase 64: Processor Work & Structured Logging** — `SampleConfig` carries an int + string; `ProcessAsync` random-adds to the int and emits the sum; a `Step_<label>` structured log carries correlationId + stepId so ES can aggregate a run.
+- [ ] **Phase 65: Fan-Out Workflow Seeder & Clean-State Stack** — Idempotent seeder for the 9-step fan-out workflow (one shared processor, seconds-cron, `Step_*` payloads) + a minimal clean-state stack (single `processor-sample`, full infra+observability; flush/reset between runs).
+- [ ] **Phase 66: Prometheus + ES Analyzer & PASS/FAIL Engine** — Aggregate ES logs by correlationId into per-run traces (all 9 steps + both sinks?), detect MISSING/DUPLICATE vs total triggers, cross-check Prometheus counters, and emit a per-test report + automated PASS/FAIL verdict (Prom + ES only).
+- [ ] **Phase 67: Fault-Injection Harness** — Activate via `POST /api/v1/orchestration/start`, run a 5-minute/30s-cron window, inject each scenario's mid-run fault (container kill/restart) and let the system recover — fully automated end-to-end (clean → seed → activate → inject → observe → analyze → tear down), no human step.
+- [ ] **Phase 68: Live Resilience Proof — 7 Scenarios (Capstone)** — Run all 7 proofs (happy path + processor / orchestrator / keeper / redis / rabbitmq / redis+rabbitmq crash) through the harness; each PASSES iff zero-missing + effect-once hold over its window; redelivery during the fault reported, not failed.
+
+### Phase Details
+
+#### Phase 63: Seconds-Granularity Cron
+**Goal**: The orchestrator can fire a workflow on a 6-field seconds-granularity cron expression (`*/30 * * * * *` → every 30 seconds). `CronInterval`'s next-occurrence + interval math computes sub-minute intervals correctly in UTC, and the workflow create/update cron validator accepts the 6-field seconds form (previously rejected as non-5-field-standard) while still accepting the 5-field form. This is a product code change (lifting today's `CronFormat.Standard` 1-minute floor) and a prerequisite for the 30s-cadence fan-out workflow the rest of the milestone observes.
+**Depends on**: — (first phase of v8.0.0; independent product change — can run parallel to Phase 64)
+**Requirements**: CRON-01, CRON-02
+**Success Criteria** (what must be TRUE):
+  1. A workflow scheduled with `*/30 * * * * *` fires every 30 seconds — `CronInterval` next-occurrence/interval math yields the correct sub-minute fire times in UTC (proven by a unit/hermetic fact and observable as ~10 triggers over a 5-minute window).
+  2. The create/update cron validator accepts the 6-field seconds form (a previously-rejected `*/30 * * * * *` now passes validation).
+  3. The 5-field standard cron form is still accepted (no regression — both forms validate and schedule).
+  4. Solution builds 0-warning (Release + Debug); the hermetic suite is green against the seconds-cron change.
+**Plans**: TBD
+
+#### Phase 64: Processor Work & Structured Logging
+**Goal**: The shared `processor-sample` does observable, correlatable work. Its config (`SampleConfig`) carries an **integer** and a **string** (the framework deserializes the assignment payload into the typed config exposing both fields); `ProcessAsync` generates a random number, adds it to the payload integer, and produces the sum as the step's completed result; and it emits a **structured log entry** tagged with the payload string `Step_<label>` and the computed sum, carrying `correlationId` + `stepId` (plus `workflowId`/`processorId`) so Elasticsearch can aggregate a whole run by correlationId and identify each step. This is the second product code change and the data shape the analyzer (Phase 66) parses.
+**Depends on**: — (independent product change — can run parallel to Phase 63; builds on the v6.0.0 typed base-config seam)
+**Requirements**: PROC-01, PROC-02, PROC-03
+**Success Criteria** (what must be TRUE):
+  1. A step's assignment payload carries an integer and a string, and the framework deserializes it into the typed config (`SampleConfig`) exposing both fields (proven by a deserialization fact).
+  2. `ProcessAsync` generates a random number, adds it to the payload integer, and the sum is the step's completed result (the result is non-deterministic across fires by the random addend, deterministic in structure).
+  3. `ProcessAsync` emits exactly one structured log entry per execution tagged `Step_<label>` with the computed sum and carrying `correlationId` + `stepId` (+ `workflowId`/`processorId`), so an Elasticsearch query by `correlationId` returns one identifiable entry per step.
+  4. Solution builds 0-warning (Release + Debug); the hermetic suite is green against the reshaped processor work + logging.
+**Plans**: TBD
+
+#### Phase 65: Fan-Out Workflow Seeder & Clean-State Stack
+**Goal**: An idempotent seeder creates the fan-out workflow `A→B→C→{D1→E1→F1, D2→E2→F2}` (9 steps, entry A, fan-out at C, sinks F1+F2) with every step referencing **one** shared `processor-sample`, the `*/30 * * * * *` cron, and a `{ number, label:"Step_*" }` assignment payload per step — re-runnable without duplicating workflow/step/assignment rows — and the proof runs on a **minimal clean-state stack**: a single `processor-sample` (the redundant `processor-badconfig` excluded) alongside the full infra + observability tiers (postgres, redis, rabbitmq, otel-collector, elasticsearch, prometheus, orchestrator, keeper, baseapi-service), with each test started from clean state (Redis flushed, Postgres workflow/step/assignment rows reset, leftover/redundant processor containers removed) so a run's metrics and logs are attributable to that run only.
+**Depends on**: Phase 63 (the seconds-cron must be schedulable + validator-accepted before the seeder can attach `*/30 * * * * *`) and Phase 64 (each step's assignment carries the int+string `Step_*` payload the processor consumes)
+**Requirements**: WF-01, WF-02, ENV-01, ENV-02
+**Success Criteria** (what must be TRUE):
+  1. Running the seeder creates the 9-step fan-out workflow (entry A, fan-out at C, sinks F1+F2) with every step referencing the one shared `processor-sample` and the `*/30 * * * * *` cron.
+  2. Each of the 9 steps has an assignment carrying a `{ number, label:"Step_*" }` payload, and re-running the seeder produces no duplicate workflow/step/assignment rows (idempotent).
+  3. The stack brings up exactly one `processor-sample` (no `processor-badconfig`) alongside the full infra + observability tiers, all healthy.
+  4. The clean-state routine leaves a deterministic baseline before each run — Redis flushed, the workflow/step/assignment rows reset, and any leftover/redundant processor containers removed — so a subsequent run's metrics and logs are attributable to that run only.
+**Plans**: TBD
+
+#### Phase 66: Prometheus + ES Analyzer & PASS/FAIL Engine
+**Goal**: An analyzer determines a run's correctness **solely** from Prometheus + Elasticsearch. It aggregates all Elasticsearch logs sharing a `correlationId` into a per-run trace and decides whether all 9 steps and **both** sinks (F1, F2) completed; against the total number of cron triggers it detects **MISSING** runs/steps (a triggered correlationId that did not complete all steps/both sinks) and **DUPLICATE** step effects (a step's COMPLETED effect recorded more than once per correlationId); it queries Prometheus counters (`orchestrator_dispatch_sent`, `orchestrator_result_consumed`, `processor_dispatch_consumed`, `processor_result_sent{outcome}`, dedupe + keeper counters) and cross-checks dispatched vs completed vs deduped against the trigger count; and it emits a complete per-test smoke report (correlationId-aggregated log trace + metric summary) and an automated **PASS/FAIL** verdict derived **only** from Prometheus + Elasticsearch.
+**Depends on**: Phase 64 (the analyzer parses the `Step_<label>` + correlationId/stepId log shape and the processor/orchestrator counters those executions emit)
+**Requirements**: OBS-01, OBS-02, OBS-03, OBS-04
+**Success Criteria** (what must be TRUE):
+  1. Given a `correlationId`, the analyzer aggregates its Elasticsearch logs into one per-run trace and reports whether all 9 steps and both sinks (F1, F2) completed.
+  2. Against the total trigger count, the analyzer flags MISSING runs/steps (an incomplete triggered correlationId) and DUPLICATE step effects (a step's COMPLETED effect recorded more than once per correlationId).
+  3. The analyzer queries the named Prometheus counters and cross-checks dispatched vs completed vs deduped against the total trigger count, surfacing any imbalance.
+  4. Each run emits a per-test smoke report (correlationId-aggregated trace + metric summary) and an automated PASS/FAIL verdict derived solely from Prometheus + Elasticsearch (no human inspection, no infra-SHA net-zero input).
+**Plans**: TBD
+
+#### Phase 67: Fault-Injection Harness
+**Goal**: A fully-automated harness drives one scenario end-to-end: it activates the workflow via `POST /api/v1/orchestration/start` and lets the cron drive it for a **5-minute** observation window (~10 triggers, fresh correlationId per fire); mid-run it injects the scenario's fault (container kill/restart of the targeted tier) and allows the system to recover within the same window; and the whole sequence — clean → seed → activate → inject fault → observe → analyze → tear down — runs with **no human verification step**, wiring together the Phase 65 seeder/clean-stack and the Phase 66 analyzer.
+**Depends on**: Phase 65 (clean-state stack + seeder) and Phase 66 (analyzer + PASS/FAIL engine the harness invokes to score each run)
+**Requirements**: FAULT-01, FAULT-02, FAULT-03
+**Success Criteria** (what must be TRUE):
+  1. The harness activates the workflow via `POST /api/v1/orchestration/start` and observes a 5-minute window during which the cron fires ~10 times, each with a fresh correlationId.
+  2. The harness injects a scenario's fault mid-run (container kill/restart of the targeted tier) and the system continues/recovers within the same window.
+  3. A single scenario runs fully automated end-to-end (clean → seed → activate → inject fault → observe → analyze → tear down) with no human verification step, producing the analyzer's report + verdict.
+**Plans**: TBD
+
+#### Phase 68: Live Resilience Proof — 7 Scenarios (Capstone)
+**Goal**: Run all **7** resilience proofs through the harness and produce a passing automated verdict for each. Each scenario runs its 5-minute/30s-cron window and PASSES iff **zero-missing** (every triggered correlationId reaches both sinks F1+F2) AND **effect-once** (each step's COMPLETED effect once per correlationId) hold; message-level redelivery during the fault is **reported, not failed**. This is the milestone capstone (mirroring prior milestones' final live-proof phase), proving the existing recovery machinery survives each fault class. Truth = Prometheus + Elasticsearch only.
+**Depends on**: Phase 67 (the harness that runs each scenario and the analyzer that scores it)
+**Requirements**: TEST-01, TEST-02, TEST-03, TEST-04, TEST-05, TEST-06, TEST-07
+**Success Criteria** (what must be TRUE):
+  1. **TEST-01 Happy path** — no fault injected: zero-missing + effect-once both hold (baseline PASS).
+  2. **TEST-02/03/04 single-service crashes** — processor (02), orchestrator (03), and keeper (04) each crash mid-run and recovery is proven (zero-missing + effect-once hold; redelivery reported, not failed).
+  3. **TEST-05/06 infra crashes** — Redis (05) and RabbitMQ (06) each crash mid-run and recovery is proven (zero-missing + effect-once hold).
+  4. **TEST-07 combined infra crash** — Redis + RabbitMQ crash together mid-run and recovery is proven (zero-missing + effect-once hold).
+  5. All 7 scenarios produce an automated PASS verdict derived solely from Prometheus + Elasticsearch — no human verification, no triple-SHA infra net-zero gate.
+**Plans**: TBD
+
+### Progress (v8.0.0)
+
+| Phase | Name | Plans | Status | Completed |
+| ----- | ---- | ----- | ------ | --------- |
+| 63 | Seconds-Granularity Cron | 0/TBD | Not started | — |
+| 64 | Processor Work & Structured Logging | 0/TBD | Not started | — |
+| 65 | Fan-Out Workflow Seeder & Clean-State Stack | 0/TBD | Not started | — |
+| 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 0/TBD | Not started | — |
+| 67 | Fault-Injection Harness | 0/TBD | Not started | — |
+| 68 | Live Resilience Proof — 7 Scenarios (Capstone) | 0/TBD | Not started | — |
+
+**Coverage:** 23/23 v8.0.0 requirements mapped (CRON-01/02 → 63 · PROC-01/02/03 → 64 · WF-01/02 + ENV-01/02 → 65 · OBS-01/02/03/04 → 66 · FAULT-01/02/03 → 67 · TEST-01..07 → 68). No orphans, no duplicates.

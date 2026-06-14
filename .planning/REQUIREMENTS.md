@@ -71,12 +71,12 @@ REQ-IDs are filled into phases by the roadmapper (Step 10). Every requirement ma
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CRON-01, CRON-02 | TBD | Pending |
-| PROC-01, PROC-02, PROC-03 | TBD | Pending |
-| WF-01, WF-02 | TBD | Pending |
-| ENV-01, ENV-02 | TBD | Pending |
-| FAULT-01, FAULT-02, FAULT-03 | TBD | Pending |
-| OBS-01, OBS-02, OBS-03, OBS-04 | TBD | Pending |
-| TEST-01..07 | TBD | Pending |
+| CRON-01, CRON-02 | Phase 63 | Pending |
+| PROC-01, PROC-02, PROC-03 | Phase 64 | Pending |
+| WF-01, WF-02 | Phase 65 | Pending |
+| ENV-01, ENV-02 | Phase 65 | Pending |
+| OBS-01, OBS-02, OBS-03, OBS-04 | Phase 66 | Pending |
+| FAULT-01, FAULT-02, FAULT-03 | Phase 67 | Pending |
+| TEST-01, TEST-02, TEST-03, TEST-04, TEST-05, TEST-06, TEST-07 | Phase 68 | Pending |
 
 **Coverage:** 23 requirements across 7 categories (CRON, PROC, WF, ENV, FAULT, OBS, TEST). Filled into phases by the roadmapper.
