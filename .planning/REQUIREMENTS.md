@@ -35,7 +35,8 @@ Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestr
 **: Each of the 9 steps has an assignment carrying the `{ number, label:"Step_*" }` payload; the seeder is idempotent (re-runnable without duplicating workflow/step/assignment rows).
 
 ### Clean-State Test Stack (ENV)
-- [ ] **ENV-01**: The proof runs a minimal stack with a single `processor-sample` — the redundant `processor-badconfig` is excluded — alongside the full infra + observability tiers (postgres, redis, rabbitmq, otel-collector, elasticsearch, prometheus, orchestrator, keeper, baseapi-service).
+- [x] **ENV-01
+**: The proof runs a minimal stack with a single `processor-sample` — the redundant `processor-badconfig` is excluded — alongside the full infra + observability tiers (postgres, redis, rabbitmq, otel-collector, elasticsearch, prometheus, orchestrator, keeper, baseapi-service).
 - [ ] **ENV-02**: The harness starts each test from clean state — Redis flushed, Postgres workflow/step/assignment rows reset, and leftover/redundant processor containers removed — so each test's metrics and logs are attributable to that run only.
 
 ### Fault-Injection Harness (FAULT)
