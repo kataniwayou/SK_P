@@ -46,9 +46,12 @@ Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestr
 - [ ] **FAULT-03**: Each scenario runs fully automated end-to-end (clean → seed → activate → inject fault → observe → analyze → tear down) with no human verification step.
 
 ### Prometheus + ES Analysis (OBS)
-- [ ] **OBS-01**: The analyzer aggregates all Elasticsearch logs sharing a correlationId into a per-run trace and determines, per run, whether all 9 steps and both sinks (F1, F2) completed.
-- [ ] **OBS-02**: The analyzer detects, against the total number of cron triggers, MISSING runs/steps (a triggered correlationId that did not complete all steps/both sinks) and DUPLICATE step effects (a step's COMPLETED effect recorded more than once per correlationId).
-- [ ] **OBS-03**: The analyzer queries Prometheus counters (`orchestrator_dispatch_sent`, `orchestrator_result_consumed`, `processor_dispatch_consumed`, `processor_result_sent{outcome}`, dedupe + keeper counters) and cross-checks dispatched vs completed vs deduped against the total trigger count.
+- [x] **OBS-01
+**: The analyzer aggregates all Elasticsearch logs sharing a correlationId into a per-run trace and determines, per run, whether all 9 steps and both sinks (F1, F2) completed.
+- [x] **OBS-02
+**: The analyzer detects, against the total number of cron triggers, MISSING runs/steps (a triggered correlationId that did not complete all steps/both sinks) and DUPLICATE step effects (a step's COMPLETED effect recorded more than once per correlationId).
+- [x] **OBS-03
+**: The analyzer queries Prometheus counters (`orchestrator_dispatch_sent`, `orchestrator_result_consumed`, `processor_dispatch_consumed`, `processor_result_sent{outcome}`, dedupe + keeper counters) and cross-checks dispatched vs completed vs deduped against the total trigger count.
 - [ ] **OBS-04**: Each test emits a complete per-test smoke report (correlationId-aggregated log trace + metric summary) and an automated PASS/FAIL verdict derived **solely** from Prometheus + Elasticsearch.
 
 ### Resilience Proof — 7 Scenarios (TEST)

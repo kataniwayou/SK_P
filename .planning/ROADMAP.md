@@ -900,7 +900,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   3. The analyzer queries the named Prometheus counters and cross-checks dispatched vs completed vs deduped against the total trigger count, surfacing any imbalance.
   4. Each run emits a per-test smoke report (correlationId-aggregated trace + metric summary) and an automated PASS/FAIL verdict derived solely from Prometheus + Elasticsearch (no human inspection, no infra-SHA net-zero input).
 **Plans**: 3 plans
-  - [ ] 66-01-PLAN.md — PassFailEngine + models + hermetic decision-branch facts (pure core, OBS-01/02/03) (Wave 1)
+  - [x] 66-01-PLAN.md — PassFailEngine + models + hermetic decision-branch facts (pure core, OBS-01/02/03) (Wave 1) ✓ completed 2026-06-14; OBS-01/02/03; 6/6 PassFailEngineFacts green (441ms); commits cd5424c, 178eea6, e7fe63d
   - [ ] 66-02-PLAN.md — SearchAllHits multi-hit ES extension + EsIndexNames Step consts + grouping facts (item #3, OBS-01) (Wave 1)
   - [ ] 66-03-PLAN.md — AnalyzerE2ETests RealStack fixture: Wave-0 mapping/windowing probes + gather ES+Prom → engine → write-then-assert report (OBS-04) (Wave 2)
 
@@ -933,7 +933,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 63 | Seconds-Granularity Cron | 3/3 | Complete    | 2026-06-14 |
 | 64 | Processor Work & Structured Logging | 1/1 | Complete    | 2026-06-14 |
 | 65 | Fan-Out Workflow Seeder & Clean-State Stack | 3/3 | Complete    | 2026-06-14 |
-| 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 0/TBD | Not started | — |
+| 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 1/3 | In progress | OBS-01/02/03 (Plan 01) |
 | 67 | Fault-Injection Harness | 0/TBD | Not started | — |
 | 68 | Live Resilience Proof — 7 Scenarios (Capstone) | 0/TBD | Not started | — |
 
