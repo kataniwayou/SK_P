@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using System.Reflection;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using BaseApi.Service.Features.Assignment;
 using BaseApi.Service.Features.Step;
 using BaseApi.Service.Features.Workflow;
@@ -72,6 +73,160 @@ public sealed class FanOutSeederE2ETests
         ["Step_E2"] = 8,
         ["Step_F2"] = 9,
     };
+
+    // The exact 8-edge node-pair set the reverse-topo build produces (WF-01).
+    private static readonly HashSet<string> ExpectedEdges = new(StringComparer.Ordinal)
+    {
+        "Step_A->Step_B",
+        "Step_B->Step_C",
+        "Step_C->Step_D1",
+        "Step_C->Step_D2",
+        "Step_D1->Step_E1",
+        "Step_D2->Step_E2",
+        "Step_E1->Step_F1",
+        "Step_E2->Step_F2",
+    };
+
+    // The 9-label node set every assignment payload must collectively cover (WF-02).
+    private static readonly HashSet<string> AllNodeLabels = new(NodeNumbers.Keys, StringComparer.Ordinal);
+
+    // Per-node payload label shape (WF-02): "Step_" + the verbatim node token, no extra prefix.
+    private static readonly Regex LabelRegex =
+        new("^Step_(A|B|C|D1|E1|F1|D2|E2|F2)$", RegexOptions.Compiled);
+
+    /// <summary>
+    /// WF-01 + WF-02 acceptance in ONE runnable RealStack fact (the artifact Phases 67/68 invoke). Seeds
+    /// the fan-out graph TWICE against a reset-clean live DB, asserts the workflow id is stable across the
+    /// two calls (idempotent — D-04), then self-verifies all SPEC acceptance counts, the exact 8-edge set,
+    /// F1/F2 zero-outgoing, and the 9 distinct <c>{int number, Step_* label}</c> payloads via direct Npgsql
+    /// reads (REST read DTOs do not surface junction rows).
+    /// </summary>
+    [Fact]
+    public async Task FanOutSeeder_SeedsAndSelfVerifies()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        await using var factory = new SampleRoundTripE2ETests.RealStackWebAppFactory();
+        await factory.InitializeAsync();
+        using var client = factory.CreateClient();
+
+        // Run-twice idempotency in ONE fact (RESEARCH Open-Q2): the 2nd call must GET-match the sentinel
+        // name and return the SAME workflow id without creating duplicates (counts stay 1/9/9/8).
+        var wfId1 = await SeedFanOutAsync(client, ct);
+        var wfId2 = await SeedFanOutAsync(client, ct);
+        Assert.Equal(wfId1, wfId2);
+
+        await using var conn = new NpgsqlConnection(HostPostgres);
+        await conn.OpenAsync(ct);
+
+        // ---- SPEC acceptance counts (presume a reset-clean DB; the 67/68 harness resets BEFORE the seeder) ----
+        Assert.Equal(1, await ScalarCountAsync(
+            conn, "SELECT count(*) FROM workflows WHERE cron_expression = '*/30 * * * * *'", ct,
+            "workflows-with-6-field-cron != 1 — DB not reset-clean before seeder, or cron not 6-field."));
+        Assert.Equal(9, await ScalarCountAsync(
+            conn, "SELECT count(*) FROM steps", ct, "steps != 9 — DB not reset-clean before seeder."));
+        Assert.Equal(1, await ScalarCountAsync(
+            conn, "SELECT count(DISTINCT processor_id) FROM steps", ct,
+            "distinct processor_id != 1 — all 9 steps must bind the single shared processor-sample."));
+        Assert.Equal(8, await ScalarCountAsync(
+            conn, "SELECT count(*) FROM step_next_steps", ct, "step_next_steps edges != 8."));
+        Assert.Equal(1, await ScalarCountAsync(
+            conn, "SELECT count(*) FROM workflow_entry_steps", ct, "workflow_entry_steps != 1 (entry = A only)."));
+        Assert.Equal(9, await ScalarCountAsync(
+            conn, "SELECT count(*) FROM assignments", ct, "assignments != 9 — DB not reset-clean before seeder."));
+        Assert.Equal(9, await ScalarCountAsync(
+            conn, "SELECT count(*) FROM workflow_assignments", ct,
+            "workflow_assignments != 9 — two-sided binding broken (Pitfall 2)."));
+
+        // ---- Map each step_id -> node label via its assignment payload (join steps->assignments) ----
+        var stepToLabel = new Dictionary<Guid, string>();
+        await using (var cmd = new NpgsqlCommand(
+            "SELECT a.step_id, a.payload FROM assignments a", conn))
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                var stepId = reader.GetGuid(0);
+                var payload = reader.GetString(1);
+                using var doc = JsonDocument.Parse(payload);
+                var label = doc.RootElement.GetProperty("label").GetString()!;
+                stepToLabel[stepId] = label;
+            }
+        }
+
+        // ---- Edge-set verification: read the 8 (step_id, next_step_id) rows, map both to nodes ----
+        var edges = new List<(Guid From, Guid To)>();
+        await using (var cmd = new NpgsqlCommand("SELECT step_id, next_step_id FROM step_next_steps", conn))
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                edges.Add((reader.GetGuid(0), reader.GetGuid(1)));
+            }
+        }
+
+        Assert.Equal(8, edges.Count);
+        var edgeNodePairs = edges
+            .Select(e => $"{stepToLabel[e.From]}->{stepToLabel[e.To]}")
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Equal(ExpectedEdges, edgeNodePairs);
+
+        // ---- Sink zero-outgoing: F1 and F2 each have 0 outgoing edges ----
+        foreach (var sinkLabel in new[] { "Step_F1", "Step_F2" })
+        {
+            var sinkStepId = stepToLabel.First(kv => kv.Value == sinkLabel).Key;
+            await using var cmd = new NpgsqlCommand(
+                "SELECT count(*) FROM step_next_steps WHERE step_id = @sink", conn);
+            cmd.Parameters.AddWithValue("sink", sinkStepId);
+            var outgoing = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct));
+            Assert.True(outgoing == 0, $"{sinkLabel} must have 0 outgoing edges but had {outgoing}.");
+        }
+
+        // ---- Payload shape: each of the 9 assignments has an int `number` + a Step_* `label`; 9 distinct,
+        //      covering the full node set, with the fixed number<->label mapping (D-08) ----
+        var seenLabels = new HashSet<string>(StringComparer.Ordinal);
+        await using (var cmd = new NpgsqlCommand("SELECT payload FROM assignments", conn))
+        await using (var reader = await cmd.ExecuteReaderAsync(ct))
+        {
+            while (await reader.ReadAsync(ct))
+            {
+                var payload = reader.GetString(0);
+                using var doc = JsonDocument.Parse(payload);
+                var root = doc.RootElement;
+
+                var hasInt = root.TryGetProperty("number", out var numberEl)
+                    && numberEl.ValueKind == JsonValueKind.Number
+                    && numberEl.TryGetInt32(out _);
+                Assert.True(hasInt, $"assignment payload missing an integer `number`: {payload}");
+                var number = numberEl.GetInt32();
+
+                Assert.True(
+                    root.TryGetProperty("label", out var labelEl) && labelEl.ValueKind == JsonValueKind.String,
+                    $"assignment payload missing a string `label`: {payload}");
+                var label = labelEl.GetString()!;
+
+                Assert.Matches(LabelRegex, label);
+                Assert.Equal(NodeNumbers[label], number); // fixed mapping A=1..F2=9 (D-08)
+                Assert.True(seenLabels.Add(label), $"duplicate label {label} — labels must be distinct.");
+            }
+        }
+
+        Assert.Equal(9, seenLabels.Count);
+        Assert.Equal(AllNodeLabels, seenLabels); // full node-set coverage
+    }
+
+    /// <summary>
+    /// Run a single <c>SELECT count(*)</c> and return it as an int, with a clear assertion message if the
+    /// command fails to produce a scalar (mirrors <c>StepsIntegrationTests.cs:71-79</c>).
+    /// </summary>
+    private static async Task<int> ScalarCountAsync(
+        NpgsqlConnection conn, string sql, CancellationToken ct, string failMessage)
+    {
+        await using var cmd = new NpgsqlCommand(sql, conn);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        Assert.True(result is not null and not DBNull, failMessage);
+        return Convert.ToInt32(result);
+    }
 
     /// <summary>
     /// POST one step-bound assignment carrying a <c>{ number, label }</c> JSON payload string (jsonb
