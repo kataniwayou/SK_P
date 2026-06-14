@@ -75,11 +75,11 @@ public sealed class ElasticsearchTestClientFacts
 
     private static string CorrelationId(JsonElement hit) =>
         hit.GetProperty("_source").GetProperty("attributes")
-           .GetProperty(EsIndexNames.CorrelationIdFieldPath.Split('.')[1]).GetString()!;
+           .GetProperty(EsIndexNames.CorrelationIdFieldPath.Split('.')[^1]).GetString()!;
 
     private static string StepLabel(JsonElement hit) =>
         hit.GetProperty("_source").GetProperty("attributes")
-           .GetProperty(EsIndexNames.StepLabelFieldPath.Split('.')[1]).GetString()!;
+           .GetProperty(EsIndexNames.StepLabelFieldPath.Split('.')[^1]).GetString()!;
 
     /// <summary>
     /// Reads <c>attributes.Sum</c> defensively per 66-RESEARCH A1 (TryGetInt32, then GetString+parse) —
@@ -88,7 +88,7 @@ public sealed class ElasticsearchTestClientFacts
     private static int Sum(JsonElement hit)
     {
         var sumEl = hit.GetProperty("_source").GetProperty("attributes")
-                       .GetProperty(EsIndexNames.SumFieldPath.Split('.')[1]);
+                       .GetProperty(EsIndexNames.SumFieldPath.Split('.')[^1]);
         if (sumEl.ValueKind == JsonValueKind.Number && sumEl.TryGetInt32(out var n)) return n;
         return int.Parse(sumEl.GetString()!);
     }
