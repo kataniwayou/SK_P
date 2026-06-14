@@ -106,6 +106,12 @@ public sealed class AnalyzerE2ETests
         //    in-flight run is scored MISSING.
         await Task.Delay(DrainMs, ct);
 
+        // snapshotUtc is the ES range upper bound and is captured HERE — before poll-to-stable — so the
+        // ES window is bounded by a stable timestamp that does not shift during polling. The Prom AFTER
+        // read (step 5, below) is taken after poll-to-stable completes, so a run dispatched between
+        // snapshotUtc and the AFTER read would be counted in DispatchSentDelta (trigger denominator) yet
+        // excluded from the ES range → scored MISSING. In the happy-path window this tail gap is negligible
+        // (no new fires after the drain), so this is an accepted, documented limitation. (IN-04 note.)
         var snapshotUtc = DateTimeOffset.UtcNow;
         var stepHits = await PollHitsToStableAsync(es, windowStartUtc, snapshotUtc, ct);
 
