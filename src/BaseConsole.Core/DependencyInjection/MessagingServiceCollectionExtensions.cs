@@ -46,12 +46,6 @@ public static class MessagingServiceCollectionExtensions
         {
             configureConsumers(x);   // concrete seam — EMPTY this phase (Phase 19 adds consumers)
 
-            // A18 / Phase-53 D-03: the global per-endpoint error-transport move (GenerateFaultFilter +
-            // ConsolidatedErrorTransportFilter → skp-dlq-1) is REMOVED. Post-Model-B the only producer into
-            // skp-dlq-1 is the keeper recovery endpoint (Dlq1 mode), which applies the filter pair keeper-local
-            // in RecoveryEndpointBinder. The skp-dlq-1 topology declaration below is KEPT (Pitfall 5) — the
-            // exchange/queue must still exist for the keeper to send to it.
-
             x.UsingRabbitMq((ctx, c) =>
             {
                 c.Host(rabbitHost, h => { h.Username(rabbitUser); h.Password(rabbitPass); });
@@ -59,43 +53,6 @@ public static class MessagingServiceCollectionExtensions
                 c.UseConsumeFilter(typeof(InboundExecutionScopeConsumeFilter<>), ctx);  // LOG-02 (INNER) execution-id scope (D-02)
                 c.UseSendFilter(typeof(OutboundCorrelationSendFilter<>), ctx);        // CORR-02
                 c.UsePublishFilter(typeof(OutboundCorrelationPublishFilter<>), ctx);  // CORR-02
-
-                // DLQ-1 (D-05/07 + GAP-49-3/D-09): declare the ONE consolidated dead-letter queue as a PASSIVE
-                // parking queue — declared exactly ONCE, with a 7-day message TTL (604800000 ms — RabbitMQ
-                // ms-as-int semantics, RESEARCH A4) — and bound to its fanout exchange skp-dlq-1, WITHOUT a
-                // consuming receive endpoint. It is an operator/forensic sink, present in BOTH close-gate
-                // snapshots so it does not drift the net-zero triple-SHA (Pitfall 1).
-                //
-                // WHY a topology BindQueue and NOT a ReceiveEndpoint (GAP-49-3 fix): a ReceiveEndpoint is a
-                // CONSUMING endpoint — MassTransit binds a competing consumer to the queue and immediately
-                // dequeues every arriving message. The ConsolidatedErrorTransportFilter forwards a
-                // ConsolidatedFault to exchange:skp-dlq-1, but NO consumer is registered for it, so MassTransit
-                // routed the unhandled message to skp-dlq-1_skipped (live depth 3) instead of letting it PARK
-                // in skp-dlq-1 (depth 0). Declaring the queue + its fanout exchange binding through the publish
-                // topology (the documented way to "create alternate/dead-letter exchanges and queues") leaves
-                // skp-dlq-1 with NO consumer, so a message sent to exchange:skp-dlq-1 PARKS observably in the
-                // ttl'd queue (SC2 STATE 2: skp-dlq-1 depth dlqBefore -> dlqBefore+1, NOT _skipped).
-                //
-                // DeployPublishTopology = true deploys this binding at bus START (not lazily on first publish):
-                // the ConsolidatedFault is SENT (not published) by the filter, so without eager deploy the
-                // exchange:skp-dlq-1 fanout would have no bound queue and the forwarded fault would be dropped.
-                // The TTL arg applies only at queue-create time; if a skp-dlq-1 ever exists on the broker with
-                // DIFFERENT args (e.g. from the old ReceiveEndpoint), an operator deletes it ONCE so this
-                // passive declaration recreates it cleanly (Pitfall 2 — operator action, NOT code). The filter
-                // still sends to exchange:skp-dlq-1 (its Dlq1Uri) and is unchanged — it never re-declares the
-                // queue with default args, so the GAP-49-1 RabbitMQ 406 'inequivalent arg x-message-ttl'
-                // poison-loop fix is preserved.
-                c.DeployPublishTopology = true;
-                c.Publish<ConsolidatedFault>(p =>
-                {
-                    // Exclude the type-named ConsolidatedFault exchange (nothing publishes this type — the
-                    // filter SENDS it to exchange:skp-dlq-1); this hook exists only to register the
-                    // skp-dlq-1 exchange->queue binding below.
-                    p.BindQueue(ConsolidatedErrorTransportFilter.Dlq1, ConsolidatedErrorTransportFilter.Dlq1, q =>
-                    {
-                        q.SetQueueArgument("x-message-ttl", (int)TimeSpan.FromDays(7).TotalMilliseconds);
-                    });
-                });
 
                 configureBus?.Invoke(ctx, c);   // OPTIONAL bus-factory seam (Phase 24 D-06) — scheduler/redelivery
                                                 // wiring (e.g. c.UseDelayedMessageScheduler()) goes here, BEFORE
