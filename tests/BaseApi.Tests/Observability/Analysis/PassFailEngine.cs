@@ -32,6 +32,15 @@ public sealed class PassFailEngine
     private static readonly HashSet<string> AllLabels = new(StringComparer.Ordinal)
     { "Step_A", "Step_B", "Step_C", "Step_D1", "Step_E1", "Step_F1", "Step_D2", "Step_E2", "Step_F2" };
 
+    /// <summary>
+    /// Tolerance for floating-point delta comparisons. The fixture derives triggerCount as
+    /// (int)Math.Round(promSnapshot.DispatchSentDelta), then the engine compares the un-rounded
+    /// double against that int. Using 0.5 tolerance instead of exact == prevents a fractional
+    /// residue (multi-series summation, float accumulation) from forcing a spurious Unreconciled
+    /// outcome. (WR-01 fix — 66-REVIEW.md.)
+    /// </summary>
+    private const double DeltaTolerance = 0.5;
+
     /// <summary>Both sinks Step_F1 + Step_F2 required for COMPLETE → 9 COMPLETED effects per run.</summary>
     public const int LabelsPerRun = 9;
 
@@ -63,11 +72,14 @@ public sealed class PassFailEngine
         var dupFail = duplicates.Count > 0;
 
         // 4. RECONCILE (OBS-03, D-08): LIVE counter set only; dormant dedupe deltas feed no arithmetic.
+        //    Epsilon tolerance (DeltaTolerance = 0.5) instead of exact == because the fixture derives
+        //    triggerCount as (int)Math.Round(DispatchSentDelta) and the engine re-compares the un-rounded
+        //    double. Any fractional residue from multi-series summation would otherwise force Unreconciled.
         var nonCompletedTerminal = prom.NonCompletedOutcomes.Values.Any(v => v != 0);
         var reconciled =
-            prom.DispatchSentDelta == triggerCount
+            Math.Abs(prom.DispatchSentDelta - triggerCount) < DeltaTolerance
             && prom.ResultSentCompletedDelta >= complete.Count * LabelsPerRun
-            && UnaccountedDelta(prom) == 0
+            && Math.Abs(UnaccountedDelta(prom)) < DeltaTolerance
             && !nonCompletedTerminal;
         var recon = reconciled ? ReconciliationOutcome.Reconciled : ReconciliationOutcome.Unreconciled;
 
