@@ -17,7 +17,8 @@ Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestr
 ### Seconds-Granularity Cron (CRON)
 - [x] **CRON-01
 **: The orchestrator fires a workflow on a 6-field seconds-granularity cron expression (`*/30 * * * * *` → every 30 seconds); `CronInterval` next-occurrence + interval math computes sub-minute intervals correctly (UTC).
-- [ ] **CRON-02**: The workflow create/update cron validator accepts the 6-field seconds form (previously rejected as non-5-field-standard), with the 5-field form still accepted.
+- [x] **CRON-02
+**: The workflow create/update cron validator accepts the 6-field seconds form (previously rejected as non-5-field-standard), with the 5-field form still accepted.
 
 ### Processor Work & Structured Logging (PROC)
 - [ ] **PROC-01**: A processor step's payload carries an integer and a string; the framework deserializes the assignment payload into the typed config exposing both fields.
