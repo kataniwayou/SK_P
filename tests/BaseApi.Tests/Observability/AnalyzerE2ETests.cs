@@ -160,8 +160,17 @@ public sealed class AnalyzerE2ETests
 
     /// <summary>
     /// Poll <see cref="ElasticsearchTestClient.SearchAllHits"/> over the window until the returned hit
-    /// count is unchanged across two consecutive polls (D-05 poll-to-stable). This prevents scoring an
-    /// in-flight run as MISSING. Bounded by <see cref="DrainMs"/> total wall-clock.
+    /// count is unchanged across two consecutive polls AND the count is non-zero (D-05 poll-to-stable).
+    /// This prevents scoring an in-flight run as MISSING.
+    /// <para>
+    /// Stability requires a non-zero count: a transient empty result (ES 404 lazy-index, backend blip)
+    /// returning <c>0 == 0</c> across two polls would be incorrectly accepted as stable, producing
+    /// <c>Missing = triggerCount - 0 > 0</c> → Fail on a backend hiccup rather than a real defect.
+    /// If the window genuinely contains zero runs (e.g. no dispatches fired), the loop exhausts its
+    /// budget and returns the empty list — the precondition assert (WR-04) then surfaces the root cause.
+    /// </para>
+    /// <para>Bounded by <see cref="PollToStableBudgetMs"/> total wall-clock (separate from
+    /// <see cref="DrainMs"/> — see WR-03).</para>
     /// </summary>
     private static async Task<List<JsonElement>> PollHitsToStableAsync(
         ElasticsearchTestClient es, DateTimeOffset windowStart, DateTimeOffset snapshot, CancellationToken ct)
@@ -174,9 +183,13 @@ public sealed class AnalyzerE2ETests
             ct.ThrowIfCancellationRequested();
             await Task.Delay(PollToStableMs, ct);
             var current = await es.SearchAllHits(body, ct: ct);
-            if (current.Count == last.Count)
+            if (current.Count == last.Count && current.Count > 0)
             {
-                return current; // stable across two polls — safe to score
+                // stable across two polls AND we actually have hits — safe to score.
+                // Requiring Count > 0 prevents a transient empty ES result (404 lazy-index,
+                // backend blip) from being accepted as "stable" and producing a spurious
+                // triggerCount-missing FAIL. (WR-02 fix — 66-REVIEW.md.)
+                return current;
             }
             last = current;
         }
