@@ -901,8 +901,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
   4. Each run emits a per-test smoke report (correlationId-aggregated trace + metric summary) and an automated PASS/FAIL verdict derived solely from Prometheus + Elasticsearch (no human inspection, no infra-SHA net-zero input).
 **Plans**: 3 plans
   - [x] 66-01-PLAN.md — PassFailEngine + models + hermetic decision-branch facts (pure core, OBS-01/02/03) (Wave 1) ✓ completed 2026-06-14; OBS-01/02/03; 6/6 PassFailEngineFacts green (441ms); commits cd5424c, 178eea6, e7fe63d
-  - [ ] 66-02-PLAN.md — SearchAllHits multi-hit ES extension + EsIndexNames Step consts + grouping facts (item #3, OBS-01) (Wave 1)
-  - [ ] 66-03-PLAN.md — AnalyzerE2ETests RealStack fixture: Wave-0 mapping/windowing probes + gather ES+Prom → engine → write-then-assert report (OBS-04) (Wave 2)
+  - [x] 66-02-PLAN.md — SearchAllHits multi-hit ES extension + EsIndexNames Step consts + grouping facts (item #3, OBS-01) (Wave 1) ✓ completed 2026-06-14; OBS-01; 4/4 ElasticsearchTestClientFacts green; commits 5047f3c, 3c39f25
+  - [x] 66-03-PLAN.md — AnalyzerE2ETests RealStack fixture: Wave-0 mapping/windowing probes + gather ES+Prom → engine → write-then-assert report (OBS-04) (Wave 2) ✓ completed 2026-06-14; OBS-01/02/03/04; build succeeded 0 warnings; @timestamp Wave-0-probed type:date, phase-65-reset confirmed FLUSHALL+heal (no restart → windowed delta); commits 0514d91, e6ea260
 
 #### Phase 67: Fault-Injection Harness
 **Goal**: A fully-automated harness drives one scenario end-to-end: it activates the workflow via `POST /api/v1/orchestration/start` and lets the cron drive it for a **5-minute** observation window (~10 triggers, fresh correlationId per fire); mid-run it injects the scenario's fault (container kill/restart of the targeted tier) and allows the system to recover within the same window; and the whole sequence — clean → seed → activate → inject fault → observe → analyze → tear down — runs with **no human verification step**, wiring together the Phase 65 seeder/clean-stack and the Phase 66 analyzer.
@@ -933,7 +933,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 | 63 | Seconds-Granularity Cron | 3/3 | Complete    | 2026-06-14 |
 | 64 | Processor Work & Structured Logging | 1/1 | Complete    | 2026-06-14 |
 | 65 | Fan-Out Workflow Seeder & Clean-State Stack | 3/3 | Complete    | 2026-06-14 |
-| 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 2/3 | In progress | OBS-01/02/03 (Plans 01-02) |
+| 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 3/3 | Complete    | 2026-06-14 |
 | 67 | Fault-Injection Harness | 0/TBD | Not started | — |
 | 68 | Live Resilience Proof — 7 Scenarios (Capstone) | 0/TBD | Not started | — |
 

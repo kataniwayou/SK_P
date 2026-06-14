@@ -52,7 +52,8 @@ Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestr
 **: The analyzer detects, against the total number of cron triggers, MISSING runs/steps (a triggered correlationId that did not complete all steps/both sinks) and DUPLICATE step effects (a step's COMPLETED effect recorded more than once per correlationId).
 - [x] **OBS-03
 **: The analyzer queries Prometheus counters (`orchestrator_dispatch_sent`, `orchestrator_result_consumed`, `processor_dispatch_consumed`, `processor_result_sent{outcome}`, dedupe + keeper counters) and cross-checks dispatched vs completed vs deduped against the total trigger count.
-- [ ] **OBS-04**: Each test emits a complete per-test smoke report (correlationId-aggregated log trace + metric summary) and an automated PASS/FAIL verdict derived **solely** from Prometheus + Elasticsearch.
+- [x] **OBS-04
+**: Each test emits a complete per-test smoke report (correlationId-aggregated log trace + metric summary) and an automated PASS/FAIL verdict derived **solely** from Prometheus + Elasticsearch.
 
 ### Resilience Proof — 7 Scenarios (TEST)
 > Each scenario PASSES iff, over its 5-minute/30s-cron window, **zero-missing** (every triggered correlationId reaches both sinks F1+F2) AND **effect-once** (each step's COMPLETED effect once per correlationId) hold; message-level redelivery during the fault is reported, not failed.
