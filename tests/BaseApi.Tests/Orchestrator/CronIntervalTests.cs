@@ -40,6 +40,29 @@ public sealed class CronIntervalTests
     }
 
     [Fact]
+    public void IntervalSeconds_SixField_30s_Yields30()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(PinnedUtc));
+
+        var interval = CronInterval.IntervalSeconds("*/30 * * * * *", time.GetUtcNow().UtcDateTime);
+
+        Assert.Equal(30, interval); // every-30-seconds -> 30s between the next two fires (CRON-01 sub-minute)
+    }
+
+    [Fact]
+    public void NextOccurrence_SixField_IsStrictlyFuture_AndUtc()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(PinnedUtc));
+        var nowUtc = time.GetUtcNow().UtcDateTime;
+
+        var next = CronInterval.NextOccurrence("*/30 * * * * *", nowUtc);
+
+        Assert.NotNull(next);
+        Assert.Equal(DateTimeKind.Utc, next!.Value.Kind);
+        Assert.True(next.Value > nowUtc, "next occurrence must be strictly in the future");
+    }
+
+    [Fact]
     public void NoFutureOccurrence_ReturnsNullAndZeroInterval()
     {
         // A one-shot cron whose only matching instant is strictly in the past relative to a far-future
