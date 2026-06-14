@@ -55,7 +55,8 @@
     `-- --filter-method "*Analyze_HappyPath_Window_Yields_Pass*"` (analyzer).
 
 .NOTES
-    Dev/ops-only tooling. No product source touched. NEVER `docker compose down -v` (keeps data).
+    Dev/ops-only tooling. No product source touched. Teardown keeps volumes + images (never the
+    volume-dropping flag) so the proof data survives between runs.
     Fully automated — no interactive prompt anywhere (FAULT-03 / V11).
 #>
 
@@ -186,11 +187,143 @@ try {
     }
     Write-Phase "  activation accepted (204)." 'Gray'
 
-    # =======================================================================
-    # TASK 2: STEP F (observe-loop fire-counter + crash sequencer + recovery
-    # health-wait + window hold), STEP H (drain + analyze = verdict), STEP Z
-    # (teardown + final `exit $analyzerExit`) are filled in by Task 2 below.
-    # =======================================================================
+    # -----------------------------------------------------------------------
+    # STEP F.1 — RECORD WINDOW START + read the baseline Prometheus fire counter (D-13/D-07).
+    # Fire signal = orchestrator_dispatch_sent_total summed across label series — the SAME
+    # counter the analyzer's trigger denominator uses (AnalyzerE2ETests.cs:119-123). The
+    # harness does NO Prom correctness logic beyond this fire count (Pitfall 5): it does NOT
+    # inspect Prom deltas and does NOT abort on a counter discontinuity from the restart;
+    # scoring is the analyzer's job (ES-primary).
+    # -----------------------------------------------------------------------
+    $windowStart = [DateTimeOffset]::UtcNow
+    Write-Phase "STEP F: window open at $($windowStart.ToString('o'))"
+
+    function Get-FireCount {
+        $r = Invoke-RestMethod -Uri 'http://localhost:9090/api/v1/query?query=orchestrator_dispatch_sent_total' -TimeoutSec 10
+        if (-not $r.data.result) { return 0 }
+        return [int][double]($r.data.result | ForEach-Object { [double]$_.value[1] } | Measure-Object -Sum).Sum
+    }
+    $fireBaseline = Get-FireCount
+    Write-Phase "  baseline fire count = $fireBaseline" 'Gray'
+
+    # 5-minute observation window (300s). Poll cadence ~5s.
+    $windowSeconds = 300
+    $windowDeadline = (Get-Date).AddSeconds($windowSeconds)
+
+    # -----------------------------------------------------------------------
+    # STEP F.2 — OBSERVE LOOP until N observed fires (D-07; N from $scenario.injectAfterNFires),
+    # bounded by the window deadline. For TEST-01 (N=0, faultType='none') the inject is skipped
+    # entirely — fall straight through to the window hold. For a crash run, poll until
+    # current - baseline >= N (proves the cron is ACTUALLY firing — V6). If the window elapses
+    # without reaching N, abort loud (exit 60).
+    # -----------------------------------------------------------------------
+    if ($scenario.faultType -eq 'stop-start') {
+        Write-Phase "STEP F.2: observe-loop — waiting for N=$($scenario.injectAfterNFires) fires before inject"
+        $reachedN = $false
+        while ((Get-Date) -lt $windowDeadline) {
+            $observed = (Get-FireCount) - $fireBaseline
+            if ($observed -ge $scenario.injectAfterNFires) { $reachedN = $true; break }
+            Start-Sleep -Seconds 5
+        }
+        if (-not $reachedN) {
+            Write-Phase "baseline never reached N=$($scenario.injectAfterNFires) fires before window close. Aborting." 'Red'; exit 60
+        }
+        Write-Phase "  reached N=$($scenario.injectAfterNFires) observed fires — injecting fault." 'Gray'
+
+        # -------------------------------------------------------------------
+        # STEP F.3 — CRASH SEQUENCER (FRAME 8 / D-05/06/08; code 60). Whole-tier stop via the
+        # compose SERVICE name (Pitfall 2 — never a generated/literal container name), dwell
+        # from the table (45s ≥ one 30s cron interval so ≥1 full fire happens while the tier is
+        # dead), then start. NOT `docker kill` (restart:unless-stopped would auto-resurrect).
+        # -------------------------------------------------------------------
+        foreach ($svc in $scenario.targetContainers) {
+            Write-Phase "STEP F.3: crashing whole tier '$svc' (docker compose stop)"
+            docker compose stop $svc | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Phase "docker compose stop $svc failed." 'Red'; exit 60 }
+        }
+        Write-Phase "  dwell $($scenario.dwellSeconds)s (tier down)..."
+        Start-Sleep -Seconds $scenario.dwellSeconds
+        foreach ($svc in $scenario.targetContainers) {
+            Write-Phase "STEP F.3: restarting tier '$svc' (docker compose start)"
+            docker compose start $svc | Out-Null
+            if ($LASTEXITCODE -ne 0) { Write-Phase "docker compose start $svc failed." 'Red'; exit 60 }
+        }
+
+        # -------------------------------------------------------------------
+        # STEP F.4 — POST-START HEALTH-WAIT (FRAME 9 / Pitfall 3; code 60). For each crashed
+        # service, require ALL instances Health=healthy before proceeding — so the NEXT run's
+        # phase-65-reset (Plan 03 between-runs) does not abort on 0 replicas. NDJSON-per-replica
+        # parse copied verbatim from phase-65-up.ps1:37-73 (processor-sample always has a
+        # healthcheck — the otel no-healthcheck branch is N/A here). Bounded 90s deadline.
+        # -------------------------------------------------------------------
+        foreach ($svc in $scenario.targetContainers) {
+            Write-Phase "STEP F.4: waiting for crashed tier '$svc' to return healthy (bounded 90s)"
+            $svcDeadline = (Get-Date).AddSeconds(90)
+            $svcHealthy = $false
+            do {
+                $instances = @(docker compose ps $svc --format json 2>$null |
+                    Where-Object { $_ -match '\S' } |
+                    ForEach-Object { $_ | ConvertFrom-Json })
+                if ($instances.Count -gt 0) {
+                    $unhealthy = @($instances | Where-Object { $_.Health -ne 'healthy' })
+                    if ($unhealthy.Count -eq 0) { $svcHealthy = $true }
+                }
+                if (-not $svcHealthy) {
+                    if ((Get-Date) -ge $svcDeadline) {
+                        Write-Phase "crashed tier '$svc' did not return healthy before deadline. Aborting." 'Red'; exit 60
+                    }
+                    Start-Sleep -Seconds 2
+                }
+            } while (-not $svcHealthy)
+            Write-Phase "  tier '$svc' healthy again ($($instances.Count) instance(s))." 'Gray'
+        }
+    }
+    else {
+        Write-Phase "STEP F.2: no-fault baseline — no injection (faultType='$($scenario.faultType)')"
+    }
+
+    # -----------------------------------------------------------------------
+    # STEP F.5 — HOLD OUT THE REST OF THE 5-MIN WINDOW, then record windowEnd. For TEST-01 this
+    # is the whole post-activation wait; for TEST-02 it is the remainder after recovery.
+    # -----------------------------------------------------------------------
+    while (([DateTimeOffset]::UtcNow - $windowStart).TotalSeconds -lt $windowSeconds) {
+        Start-Sleep -Seconds 5
+    }
+    $windowEnd = [DateTimeOffset]::UtcNow
+    Write-Phase "STEP F: window closed at $($windowEnd.ToString('o')) ($([int](($windowEnd - $windowStart).TotalSeconds))s)"
+
+    # -----------------------------------------------------------------------
+    # STEP H — DRAIN + ANALYZE (FRAME 4 / D-04 / D-16; VERDICT — do NOT remap to an infra code).
+    # Set the D-16 env seam (SCENARIO_ID / WINDOW_START_UTC / WINDOW_END_UTC) from the recorded
+    # window + scenario id, then invoke the analyzer via the MTP-native filter. The fixture's
+    # internal DrainMs (60s) + poll-to-stable (60s) provide the settle, so no extra harness sleep
+    # is needed beyond the window close. The analyzer's exit IS the harness verdict.
+    # -----------------------------------------------------------------------
+    Write-Phase "STEP H: analyze (dotnet test ~Analyzer) for scenario $ScenarioId"
+    $env:SCENARIO_ID      = $ScenarioId
+    $env:WINDOW_START_UTC = $windowStart.ToString('o')
+    $env:WINDOW_END_UTC   = $windowEnd.ToString('o')
+    dotnet test tests/BaseApi.Tests/BaseApi.Tests.csproj -c Release -- --filter-method "*Analyze_HappyPath_Window_Yields_Pass*" 2>&1 | Out-String | Write-Host
+    $analyzerExit = $LASTEXITCODE
+    Remove-Item Env:SCENARIO_ID, Env:WINDOW_START_UTC, Env:WINDOW_END_UTC -ErrorAction SilentlyContinue
+
+    # Locate + echo the analyzer report path (D-04 requires printing it).
+    $report = Get-ChildItem -Path (Join-Path $repoRoot 'tests/BaseApi.Tests/bin') -Recurse -Filter "$ScenarioId.json" -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match 'analyzer-reports' } | Select-Object -First 1
+    if ($report) { Write-Phase "analyzer report: $($report.FullName)" 'Green' }
+    else { Write-Phase "WARNING: analyzer-reports/$ScenarioId.json not found" 'Yellow' }
+    Write-Phase "analyzer verdict exit = $analyzerExit (0=PASS, non-0=FAIL)" $(if ($analyzerExit -eq 0) { 'Green' } else { 'Yellow' })
+
+    # -----------------------------------------------------------------------
+    # STEP Z — TEARDOWN (FRAME 11 / D-15; code 70 NON-FATAL). `docker compose down` keeps volumes
+    # + images (NEVER `-v`). A down failure logs loud but the harness STILL surfaces the analyzer
+    # verdict — the FINAL exit mirrors the analyzer (D-04), never the teardown result.
+    # -----------------------------------------------------------------------
+    Write-Phase "STEP Z: teardown (docker compose down — keep volumes + images)"
+    docker compose down | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Phase "teardown failed (would be exit 70) — surfacing analyzer verdict regardless." 'Yellow' }
+
+    exit $analyzerExit
 
 } finally {
     Pop-Location
