@@ -376,16 +376,18 @@ public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Except
 | A1 | `MEL` `FormattedLogValues` (the `state` passed to `ILogger.Log` for a templated message) implements `IReadOnlyList<KeyValuePair<string,object?>>`, so the test can capture `{StepLabel}`/`{Sum}` values. | Code Examples / Pitfall 4 | If the cast fails the test falls back to asserting the formatted string only (still proves single-log + label/sum presence). LOW risk — this is documented MEL behavior. [ASSUMED, well-established] |
 | A2 | Lowercase anonymous-member names (`number`,`label`) suffice to get `{"number":…,"label":…}` output keys without setting a `PropertyNamingPolicy`. | Pattern 1 | If the planner wants guaranteed camelCase regardless of member casing, they may set a naming policy — but `SerializerOptions` deliberately does NOT, and D-05 mandates using it as-is. Output keys match the lowercase members. [VERIFIED via ProcessorConfig.cs:18-22 + STJ default behavior] |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should null-config return `{number: rand, label: null}` or `{number: 0, label: null}`?**
    - What we know: D-03 leaves the default to the planner; "seam always runs, one item + one log."
    - What's unclear: Whether `number` on null-config should still get the random addend (rand) or be a clean `0`.
    - Recommendation: `number = 0 + Random.Shared.Next(0,100)` (i.e. treat `Number` as 0 and still add) keeps ProcessAsync uniform (one code path) and warning-clean; the proof never hits this. Either is acceptable per D-03.
+   - **RESOLVED (planner, 64-01 `<constraints>`):** uniform single path `(config?.Number ?? 0) + Random.Shared.Next(0,100)`, label null — `number` still gets the random addend on null config.
 
 2. **Does the PROC-01 deserialization fact replace the deleted `fail` fact, or is it added?**
    - What we know: SC#1 wants "a deserialization fact"; the `fail` fact is deleted (D-02).
    - Recommendation: Replace the deleted slot with a deserialization fact — keeps the file at 3 facts, directly proves PROC-01.
+   - **RESOLVED (planner, 64-01 `<constraints>`):** the PROC-01 deserialization fact REPLACES the deleted `fail` fact — file stays at exactly 3 facts.
 
 ## Environment Availability
 
