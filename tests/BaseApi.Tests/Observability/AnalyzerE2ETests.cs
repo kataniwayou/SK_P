@@ -123,6 +123,13 @@ public sealed class AnalyzerE2ETests
         //    recoverable from telemetry — a documented, accepted limitation (the engine reports the count).
         var triggerCount = (int)Math.Round(promSnapshot.DispatchSentDelta);
 
+        // Precondition: at least one dispatch must have fired in the window. A zero triggerCount means
+        // the engine's reconciliation passes vacuously (0-missing, 0*9=0 completed required, etc.) even
+        // though the fan-out workflow precondition is broken. Fail LOUD here instead. (WR-04 fix.)
+        Assert.True(triggerCount > 0,
+            $"No dispatches observed in the window (DispatchSentDelta={promSnapshot.DispatchSentDelta}); " +
+            "the fan-out workflow precondition is not satisfied.");
+
         // ── 7. RUN THE ENGINE (pure — no IO) ─────────────────────────────────────────────────────────
         var report = new PassFailEngine().Analyze(traces, promSnapshot, triggerCount, scenarioId);
 
