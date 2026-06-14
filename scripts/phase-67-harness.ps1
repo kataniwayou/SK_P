@@ -228,7 +228,10 @@ try {
     function Get-FireCount {
         $r = Invoke-RestMethod -Uri 'http://localhost:9090/api/v1/query?query=orchestrator_dispatch_sent_total' -TimeoutSec 10
         if (-not $r.data.result) { return 0 }
-        return [int][double]($r.data.result | ForEach-Object { [double]$_.value[1] } | Measure-Object -Sum).Sum
+        # [long] (not [int]) — orchestrator_dispatch_sent_total summed across all label series on a
+        # long-lived stack could exceed Int32.MaxValue and overflow to a negative baseline, breaking the
+        # `observed -ge N` loop. A 64-bit cast is safe for a monotonic counter (IN-02).
+        return [long][double]($r.data.result | ForEach-Object { [double]$_.value[1] } | Measure-Object -Sum).Sum
     }
     $fireBaseline = Get-FireCount
     Write-Phase "  baseline fire count = $fireBaseline" 'Gray'
