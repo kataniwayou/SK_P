@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
 current_plan: 3
-status: executing
+status: ready_to_plan
 stopped_at: Completed 67-03-PLAN.md
 last_updated: "2026-06-14T20:15:00.000Z"
 last_activity: 2026-06-14
 progress:
   total_phases: 27
-  completed_phases: 25
+  completed_phases: 26
   total_plans: 84
   completed_plans: 84
-  percent: 100
+  percent: 96
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; 
 ## Current Position
 
 Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove perfect (zero-missing, effect-once) recovery of a fan-out orchestrated workflow (A→B→C→{D1→E1→F1, D2→E2→F2}, one shared processor-sample, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios (happy path, processor/orchestrator/keeper/redis/rabbitmq/redis+rabbitmq crash), verified SOLELY from Prometheus metrics + Elasticsearch logs (aggregate by correlationId; missing/duplicate vs total triggers), fully automated. Prerequisite code change: enable 6-field seconds-cron. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
-Phase: 67 (fault-injection-harness) — ✅ COMPLETE (3/3 plans)
-Current Plan: 3
+Phase: 68
+Current Plan: Not started
 Total Plans: 3
 Plan: 3 of 3 — COMPLETE
-Status: Phase 67 complete — harness proven live on TEST-01 (baseline) + TEST-02 (processor-crash recovery), both Pass; FAULT-01/02/03 genuinely met. Next: Phase 68 (TEST-03..07).
+Status: Ready to plan
 Last activity: 2026-06-14
 
 > Phase 67 plan 03 (live proof) — ✅ COMPLETE 2026-06-14. Harness proven end-to-end on both reference runs: TEST-01 (no-fault baseline) Pass 10/10, TEST-02 (whole-tier processor crash + in-window recovery) Pass 10/10 (zero-missing, effect-once). Substantive find: OBS-04 verdict logic re-founded on an ES-binding arbiter (Prom demoted to non-fatal corroboration) — corrects a Phase-66 defect (per-step dispatch_sent used as a per-run denominator) surfaced under the first real fan-out load; the mid-window Prom counter-reset signature (TEST-02 63-vs-81 deltas) is now correctly absorbed. Spec-owner-approved verdict-semantics change. Deviations (atomic): `d2445fb` stale-image rebuild/force-recreate, `a9e42e0` time-pin Prom reads to window, `574739a` ES-binding arbiter. FAULT-01/02/03 → complete (finalizes 67-01's `2b5cec9` re-open). Summary: `.planning/phases/67-fault-injection-harness/67-03-SUMMARY.md`.
@@ -726,7 +726,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 220
+- Total plans completed: 223
 - Average duration: —
 - Total execution time: —
 
@@ -796,6 +796,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 64 | 1 | - | - |
 | 65 | 3 | - | - |
 | 66 | 3 | - | - |
+| 67 | 3 | - | - |
 
 **Recent Trend:**
 
