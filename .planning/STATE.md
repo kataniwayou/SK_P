@@ -29,7 +29,7 @@ Milestone: v7.0.0 (Per-Replica Processor Liveness & Self-Watchdog) — STARTED 2
 Phase: 62.1
 Plan: Not started
 Status: Milestone complete
-Last activity: 2026-06-14 - Completed quick task 260614-9jd: remove dead skp-dlq-1 dead-letter tier (filter + topology + tests + phase-62 close gate)
+Last activity: 2026-06-14 - Completed quick task 260614-b5c: add minimal keeper self-watchdog (timestamp-only L1 record + /health/live staleness check)
 
 > v6.0.0 (Config & Payload Validation Hardening) — ✅ SHIPPED & ARCHIVED 2026-06-13. 3 phases (56-58), 11 plans, 10/10 CFG requirements satisfied, audit passed, Phase-58 live close gate N=3 GREEN + triple-SHA net-zero. Tagged `v6.0.0`. Archives: milestones/v6.0.0-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md.
 
@@ -39,6 +39,7 @@ Last activity: 2026-06-14 - Completed quick task 260614-9jd: remove dead skp-dlq
 |---|-------------|------|--------|--------|-----------|
 | 260614-2hf | Keeper-recovery endpoint symmetric: remove bus retry policy + skp-dlq-1 dead-letter routing (Guard-exhaust → throw → nack-requeue, like the processor/orchestrator exec-path endpoints) | 2026-06-14 | ef33d5a |  | [260614-2hf-keeper-recovery-endpoint-symmetric-remov](./quick/260614-2hf-keeper-recovery-endpoint-symmetric-remov/) |
 | 260614-9jd | Remove dead skp-dlq-1 dead-letter tier: delete ConsolidatedErrorTransportFilter + ConsolidatedFault + BaseConsole.Core topology; slim phase-62 close gate; delete/reduce DLQ tests (orphaned by 260614-2hf) | 2026-06-14 | e2c6db7 | Verified | [260614-9jd-remove-dead-skp-dlq-1-dead-letter-tier-c](./quick/260614-9jd-remove-dead-skp-dlq-1-dead-letter-tier-c/) |
+| 260614-b5c | Add minimal keeper self-watchdog: timestamp-only L1 record stamped every BitHealthLoop tick + staleness health check folded into /health/live (detects a silently-stalled BIT loop); no ProcessorLivenessEntry reuse, no Data payload, no BaseConsole.Core change | 2026-06-14 | d755df4 | Verified | [260614-b5c-add-minimal-keeper-self-watchdog-timesta](./quick/260614-b5c-add-minimal-keeper-self-watchdog-timesta/) |
 
 ### Roadmap Evolution
 
