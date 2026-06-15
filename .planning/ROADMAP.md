@@ -672,7 +672,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 **Goal:** Align the processor Post-Process and cleanup paths to the canonical recovery spec (`docs/design/processor-keeper-recovery-spec.md` §4.3, §6, §10): (1) collapse the three separate index-slot / index-TTL / data writes (`ProcessorPipeline.cs:270-291`) into ONE atomic index+data write so an exhausted write escalates as a single `INJECT` instead of dropping the item — closing the **INFRA-01** drop path; (2) gate the forward cleanup tail (`DeleteTerminalAsync`) on "no item escalated to the keeper" to remove the processor/keeper race on the index key; (3) reconcile the In-Process per-item contract with the spec where it diverges. Done when the build plus existing pipeline/keeper tests stay green and new tests prove no-drop on atomic-write exhaustion (single `INJECT` instead) and skipped cleanup when any item escalated.
 **Requirements**: TBD
 **Depends on:** Phase 68
-**Plans:** 2 plans (2 waves)
+**Plans:** 2/2 plans complete
 
 Plans:
 - [x] 69-01-PLAN.md -- Wave 1: atomic Lua index+data forward write + single-INJECT no-drop (close INFRA-01) + fact migration

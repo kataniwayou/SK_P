@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
 current_plan: 1
-status: verifying
+status: milestone_complete
 stopped_at: Completed 69-02-PLAN.md (phase 69 final plan)
 last_updated: "2026-06-15T22:02:25.654Z"
 last_activity: 2026-06-15
 progress:
   total_phases: 28
-  completed_phases: 28
+  completed_phases: 29
   total_plans: 88
   completed_plans: 88
-  percent: 100
+  percent: 104
 ---
 
 # Project State
@@ -27,11 +27,11 @@ See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; 
 ## Current Position
 
 Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove perfect (zero-missing, effect-once) recovery of a fan-out orchestrated workflow (A→B→C→{D1→E1→F1, D2→E2→F2}, one shared processor-sample, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios (happy path, processor/orchestrator/keeper/redis/rabbitmq/redis+rabbitmq crash), verified SOLELY from Prometheus metrics + Elasticsearch logs (aggregate by correlationId; missing/duplicate vs total triggers), fully automated. Prerequisite code change: enable 6-field seconds-cron. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
-Phase: 69 (align-processor-pipeline-to-canonical-recovery-spec-atomic-i) — EXECUTING
-Current Plan: 1
+Phase: 69
+Current Plan: Not started
 Total Plans: 2
 Plan: 2 of 2
-Status: Phase complete — ready for verification
+Status: Milestone complete
 Last activity: 2026-06-15
 
 > Phase 68 (capstone live proof) — ✅ COMPLETE 2026-06-15. The live 7-scenario fault sweep ran end-to-end (`scripts/phase-68-sweep.ps1`, ~1h, windows ~04:30→05:25 UTC): **6/7 PASS** (TEST-01..05 + TEST-07, each zero-missing + effect-once); wrapper exit 1. The lone **TEST-06 (rabbitmq) VERDICT_FAIL** (MISSING:2, 7/9 complete; effect-once held) was traced — `KeeperReinjectDroppedDelta:2 == Missing:2` → the by-design `ReinjectConsumer.cs:37` silent-DROP (`STRLEN L2[entryId]==0`): the 5s `Processor__ExecutionDataTtl` (compose:285) self-expired across the 45s outage so keeper REINJECT correctly dropped already-gone keys. Corroborated by TEST-07 (strictly-harder redis+rabbitmq superset) PASS 8/8 — a deterministic rabbitmq-recovery defect would have failed TEST-07 too. **Spec-owner disposition: ACCEPT AS TEST-ENV TTL ARTIFACT** (accept-with-rationale; NO code/TTL/dwell/retry change, D-01b/D-04 honoured). Recovery machinery **PROVEN across all 7 fault classes**; TEST-06's miss documented as a known test-env TTL artifact. TEST-01..07 all complete (TEST-06 proven-with-documented-artifact). Roll-up `analyzer-reports/phase-68-summary.json` (`098f36a`). Summary: `.planning/phases/68-live-resilience-proof-7-scenarios-capstone/68-02-SUMMARY.md`.
@@ -730,7 +730,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 225
+- Total plans completed: 227
 - Average duration: —
 - Total execution time: —
 
@@ -802,6 +802,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 66 | 3 | - | - |
 | 67 | 3 | - | - |
 | 68 | 2 | - | - |
+| 69 | 2 | - | - |
 
 **Recent Trend:**
 
