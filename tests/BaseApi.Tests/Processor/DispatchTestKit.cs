@@ -164,10 +164,12 @@ internal static class DispatchTestKit
     }
 
     /// <summary>
-    /// FWD-01 forward-happy mux: existence-check FALSE → forward branch; slot HSET, KeyExpire, data SET and
-    /// the source delete all succeed. The whole forward happy path runs to the source-delete tail. The mock
-    /// <c>db</c> is returned so a fact can assert the <c>HashSetAsync</c>-before-<c>StringSetAsync</c> ordering
-    /// and the tail <c>KeyDeleteAsync</c>.
+    /// FWD-01 forward-happy mux: existence-check FALSE → forward branch; the atomic forward-Post write
+    /// (<c>ScriptEvaluateAsync</c> — index HSET + whole-hash PEXPIRE + data SET-with-PX in ONE server-side op)
+    /// and the source delete all succeed. The whole forward happy path runs to the source-delete tail. The
+    /// mock <c>db</c> is returned so a fact can inspect the single <c>ScriptEvaluateAsync</c> call's KEYS/ARGV
+    /// and the tail <c>KeyDeleteAsync</c>. (The legacy HashSet/KeyExpire/StringSet stubs are retained — they are
+    /// harmless, never called now that the forward write is one script.)
     /// </summary>
     public static IConnectionMultiplexer ForwardOkL2(
         IReadOnlyDictionary<string, string> values, out IDatabase db)
@@ -176,6 +178,10 @@ internal static class DispatchTestKit
         db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
             .Returns(ci => values.TryGetValue(((RedisKey)ci[0]).ToString(), out var v) ? (RedisValue)v : RedisValue.Null);
         db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(false);   // FWD-01: NOT exist L2[messageId]
+        // The atomic forward-Post write is one Lua ScriptEvaluateAsync → stub it to a success result.
+        db.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .Returns(RedisResult.Create(1));   // atomic forward write succeeds
+        // Legacy sub-op stubs retained (harmless — never called now the forward write is one script).
         db.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
         db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<CommandFlags>()).Returns(true);
         db.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
@@ -188,61 +194,28 @@ internal static class DispatchTestKit
     }
 
     /// <summary>
-    /// INFRA-01 slot-write-fault mux: existence FALSE (forward); the allocation-index <c>HashSetAsync</c>
-    /// THROWS → the retry loop exhausts → <c>infra_messageId</c> → the item is DROPPED (no data write, no
-    /// send). The data <c>StringSetAsync</c> is stubbed OK but must never be reached for the dropped item.
+    /// NODROP-01 / INFRA-01 atomic-write-fault mux (merges the two former forward slot- and data-write fault
+    /// muxes into one): existence FALSE (forward); the SINGLE atomic forward-Post write
+    /// (<c>ScriptEvaluateAsync</c>) THROWS → the retry loop exhausts → the single atomic-write exhaust routes to
+    /// ONE keeper <c>INJECT</c> (data in-hand) — NO drop path remains (spec §10). The default binding is stubbed
+    /// to a success result first, then a <c>When/Do</c> throw is layered on top (so an unstubbed Task false-green
+    /// is impossible). KeyDelete OK so the tail still runs.
     /// </summary>
-    public static IConnectionMultiplexer ForwardSlotFaultL2(
+    public static IConnectionMultiplexer AtomicWriteFaultL2(
         IReadOnlyDictionary<string, string> values, out IDatabase db)
     {
         db = Substitute.For<IDatabase>();
         db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
             .Returns(ci => values.TryGetValue(((RedisKey)ci[0]).ToString(), out var v) ? (RedisValue)v : RedisValue.Null);
         db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(false);
-        var boom = new RedisConnectionException(ConnectionFailureType.UnableToConnect, "stub: Redis slot HSET unreachable");
-        db.When(x => x.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()))
+        var boom = new RedisConnectionException(ConnectionFailureType.UnableToConnect, "stub: Lua atomic write unreachable");
+        // Default-stub the binding first, then layer the throw (mirrors the multi-overload guard style).
+        db.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .Returns(RedisResult.Create(1));
+        db.When(x => x.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>()))
             .Do(_ => throw boom);
-        db.When(x => x.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>()))
-            .Do(_ => throw boom);
-        db.StringSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
-        db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
-        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: array DEL
-        var mux = Substitute.For<IConnectionMultiplexer>();
-        mux.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(db);
-        return mux;
-    }
-
-    /// <summary>
-    /// INFRA-02 data-write-fault mux: existence FALSE (forward); the allocation HSET + KeyExpire SUCCEED, but
-    /// the data <c>StringSetAsync</c> THROWS → exhausts → <c>infra_entryId</c> → keeper <c>INJECT</c> (data
-    /// in-hand). KeyDelete OK so the tail still runs.
-    /// </summary>
-    public static IConnectionMultiplexer ForwardDataFaultL2(
-        IReadOnlyDictionary<string, string> values, out IDatabase db)
-    {
-        db = Substitute.For<IDatabase>();
-        db.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
-            .Returns(ci => values.TryGetValue(((RedisKey)ci[0]).ToString(), out var v) ? (RedisValue)v : RedisValue.Null);
-        db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(false);
-        db.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
-        db.KeyExpireAsync(Arg.Any<RedisKey>(), Arg.Any<TimeSpan?>(), Arg.Any<CommandFlags>()).Returns(true);
-        var boom = new RedisConnectionException(ConnectionFailureType.UnableToConnect, "stub: Redis data write unreachable");
-        db.When(x => x.StringSetAsync(
-                Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(),
-                Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>()))
-            .Do(_ => throw boom);
-#pragma warning disable CS0618 // the When-overloads are obsolete but still bindable — cover them too
-        db.When(x => x.StringSetAsync(
-                Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(),
-                Arg.Any<When>(), Arg.Any<CommandFlags>()))
-            .Do(_ => throw boom);
-        db.When(x => x.StringSetAsync(
-                Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(), Arg.Any<When>()))
-            .Do(_ => throw boom);
-#pragma warning restore CS0618
-        db.When(x => x.StringSetAsync(
-                Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<Expiration>(),
-                Arg.Any<ValueCondition>(), Arg.Any<CommandFlags>()))
+        // Guard the trailing-arg overload (no explicit CommandFlags) the compiler may also bind.
+        db.When(x => x.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>()))
             .Do(_ => throw boom);
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
         db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: array DEL count removed
