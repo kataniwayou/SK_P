@@ -1,18 +1,18 @@
 ---
 gsd_state_version: 1.0
-milestone: v8.0.0
-milestone_name: E2E Resilience Proof
+milestone: v9.0.0
+milestone_name: "Canonical Recovery: Orchestrator Alignment"
 current_plan: 1
-status: milestone_complete
-stopped_at: Completed 69-02-PLAN.md (phase 69 final plan)
-last_updated: "2026-06-15T22:02:25.654Z"
-last_activity: 2026-06-15
+status: defining_requirements
+stopped_at: Started milestone v9.0.0 — defining requirements (phases continue at 70)
+last_updated: "2026-06-16T00:00:00.000Z"
+last_activity: 2026-06-16
 progress:
-  total_phases: 28
-  completed_phases: 29
-  total_plans: 88
-  completed_plans: 88
-  percent: 104
+  total_phases: 2
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -22,17 +22,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; v8.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), v6.0.0 (typed base-config seam + Gate A config-schema compatibility), and v7.0.0 (per-replica processor liveness + self-watchdog — closed audit-override, live close gate deferred to v8.0.0).**
-**Current focus:** Phase 69 — align-processor-pipeline-to-canonical-recovery-spec-atomic-i
+**Current focus:** Milestone v9.0.0 — defining requirements (Canonical Recovery: Orchestrator Alignment; phases 70–71)
 
 ## Current Position
 
-Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove perfect (zero-missing, effect-once) recovery of a fan-out orchestrated workflow (A→B→C→{D1→E1→F1, D2→E2→F2}, one shared processor-sample, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios (happy path, processor/orchestrator/keeper/redis/rabbitmq/redis+rabbitmq crash), verified SOLELY from Prometheus metrics + Elasticsearch logs (aggregate by correlationId; missing/duplicate vs total triggers), fully automated. Prerequisite code change: enable 6-field seconds-cron. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
-Phase: 69
-Current Plan: Not started
-Total Plans: 2
-Plan: 2 of 2
-Status: Milestone complete
-Last activity: 2026-06-15
+Milestone: v9.0.0 (Canonical Recovery: Orchestrator Alignment) — STARTED 2026-06-16. Goal: extend the Phase-69 canonical recovery-spec alignment to the orchestrator's result-consume path (give it the same `messageId`-indexed forward/recovery/keeper pipeline the processor has — reverses Phase 24.1's L1-only `TypedResultConsumer`), plus a small processor INJECT cleanup making the keeper delete-invariant uniform (DELETE the only deleting keeper state). Canonical pattern = `ProcessorPipeline.cs` + `processor-keeper-recovery-spec.md` §3–§8. Two phases: 70 (processor INJECT cleanup, small) → 71 (orchestrator recovery pipeline, large). Phases continue at **70**.
+Phase: Not started (defining requirements)
+Current Plan: —
+Status: Defining requirements
+Last activity: 2026-06-16 — Milestone v9.0.0 started
+
+> v8.0.0 (E2E Resilience Proof) — feature-complete 2026-06-15 (phases 63–69); not yet formally archived (`/gsd-complete-milestone` deferred). Prior-milestone position history retained below.
 
 > Phase 68 (capstone live proof) — ✅ COMPLETE 2026-06-15. The live 7-scenario fault sweep ran end-to-end (`scripts/phase-68-sweep.ps1`, ~1h, windows ~04:30→05:25 UTC): **6/7 PASS** (TEST-01..05 + TEST-07, each zero-missing + effect-once); wrapper exit 1. The lone **TEST-06 (rabbitmq) VERDICT_FAIL** (MISSING:2, 7/9 complete; effect-once held) was traced — `KeeperReinjectDroppedDelta:2 == Missing:2` → the by-design `ReinjectConsumer.cs:37` silent-DROP (`STRLEN L2[entryId]==0`): the 5s `Processor__ExecutionDataTtl` (compose:285) self-expired across the 45s outage so keeper REINJECT correctly dropped already-gone keys. Corroborated by TEST-07 (strictly-harder redis+rabbitmq superset) PASS 8/8 — a deterministic rabbitmq-recovery defect would have failed TEST-07 too. **Spec-owner disposition: ACCEPT AS TEST-ENV TTL ARTIFACT** (accept-with-rationale; NO code/TTL/dwell/retry change, D-01b/D-04 honoured). Recovery machinery **PROVEN across all 7 fault classes**; TEST-06's miss documented as a known test-env TTL artifact. TEST-01..07 all complete (TEST-06 proven-with-documented-artifact). Roll-up `analyzer-reports/phase-68-summary.json` (`098f36a`). Summary: `.planning/phases/68-live-resilience-proof-7-scenarios-capstone/68-02-SUMMARY.md`.
 
