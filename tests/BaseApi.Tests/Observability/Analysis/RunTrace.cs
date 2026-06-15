@@ -1,11 +1,12 @@
 namespace BaseApi.Tests.Observability.Analysis;
 
 /// <summary>
-/// Per-correlationId aggregate built from the per-step COMPLETED-effect ES logs
-/// (SampleProcessor.cs:39 — <c>"step completed {StepLabel} sum {Sum}"</c> → ES
-/// <c>attributes.StepLabel</c> + <c>attributes.CorrelationId</c>). One <see cref="RunTrace"/>
-/// represents one triggered run (one <c>correlationId</c>) and the set of <c>StepLabel</c>s
-/// that emitted a COMPLETED log for that run.
+/// Per-execution-instance aggregate built from the per-step COMPLETED-effect ES logs
+/// (SampleProcessor — <c>"step completed {StepLabel} sum {Sum}"</c> → ES
+/// <c>attributes.StepLabel</c> + <c>attributes.CorrelationId</c> + <c>attributes.ExecutionId</c>). One
+/// <see cref="RunTrace"/> represents one execution instance (one <c>(correlationId, executionId)</c> pair —
+/// each spawned execution is its own run) and the set of <c>StepLabel</c>s that emitted a COMPLETED log
+/// for that instance.
 ///
 /// <para>
 /// This is a PURE model — no ES/Prom/host dependency. Both the live RealStack fixture (Plan 03,
@@ -27,6 +28,9 @@ public sealed record RunTrace
     /// <summary>The per-fire correlationId this trace aggregates.</summary>
     public required string CorrelationId { get; init; }
 
+    /// <summary>The per-instance executionId this trace aggregates (each spawned execution is its own run).</summary>
+    public required string ExecutionId { get; init; }
+
     /// <summary>
     /// Every StepLabel that emitted a COMPLETED log for this correlationId, duplicates RETAINED
     /// (a double-effect Step_C appears twice). The raw evidence the distinct/duplicate facts derive.
@@ -47,11 +51,12 @@ public sealed record RunTrace
     public required IReadOnlyList<string> DuplicateLabels { get; init; }
 
     /// <summary>
-    /// Build a <see cref="RunTrace"/> from a correlationId + its raw (duplicate-retaining) label list.
-    /// Computes the distinct set + duplicate flags so both the live fixture and the hermetic facts
-    /// construct traces identically.
+    /// Build a <see cref="RunTrace"/> from a (correlationId, executionId) instance + its raw
+    /// (duplicate-retaining) label list. Computes the distinct set + duplicate flags so both the live
+    /// fixture and the hermetic facts construct traces identically. A duplicate is now WITHIN one instance
+    /// — a label appearing &gt;1× for the same (correlationId, executionId).
     /// </summary>
-    public static RunTrace FromLabels(string correlationId, IReadOnlyList<string> labels)
+    public static RunTrace FromLabels(string correlationId, string executionId, IReadOnlyList<string> labels)
     {
         var distinct = new HashSet<string>(labels, StringComparer.Ordinal);
 
@@ -68,6 +73,7 @@ public sealed record RunTrace
         return new RunTrace
         {
             CorrelationId = correlationId,
+            ExecutionId = executionId,
             Labels = labels,
             DistinctLabels = distinct,
             HasAnyDuplicateLabel = labels.Count != distinct.Count,

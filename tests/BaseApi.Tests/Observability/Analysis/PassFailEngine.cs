@@ -21,8 +21,9 @@ namespace BaseApi.Tests.Observability.Analysis;
 /// <para>
 /// <b>Decision logic (ES-binding):</b>
 /// <list type="number">
-/// <item>STARTED (denominator): distinct correlationIds with ≥1 Step_* log — i.e. <c>runs.Count</c>
-///   (the fixture builds one <see cref="RunTrace"/> per correlationId that emitted any Step_* hit).</item>
+/// <item>STARTED (denominator): distinct (correlationId, executionId) instances with ≥1 Step_* log —
+///   i.e. <c>runs.Count</c> (the fixture builds one <see cref="RunTrace"/> per (correlationId, executionId)
+///   pair that emitted any Step_* hit; each spawned execution is its own run).</item>
 /// <item>COMPLETE (OBS-01): a started run whose distinct StepLabel set equals the full 9-label set
 ///   (necessarily both sinks Step_F1 + Step_F2).</item>
 /// <item>MISSING (OBS-02): <c>StartedRuns − CompleteRuns</c> — started-but-incomplete (1–8 labels);
@@ -77,12 +78,21 @@ public sealed class PassFailEngine
     /// NOT the binding denominator. The orchestrator dispatches per step, so this is ~9× the run count.
     /// </param>
     /// <param name="scenarioId">The scenario id for the report + path.</param>
+    /// <param name="spawnExtra">
+    /// SPAWN-AWARE OBS-03 corroboration (non-binding): the number of EXTRA results the entry fan-out emits
+    /// beyond the dispatch count. The entry step now spawns 2 results from 1 dispatch, so
+    /// <c>ResultConsumedDelta ≈ DispatchSentDelta + spawnExtra</c> where <c>spawnExtra</c> = the number of
+    /// entry dispatches = cron fires = distinct correlationIds. Derived from data by the caller (the fixture
+    /// passes <c>traces.Select(t =&gt; t.CorrelationId).Distinct().Count()</c>) — NEVER hard-coded. Default 0
+    /// keeps every pre-spawn caller's behaviour identical.
+    /// </param>
     public AnalyzerReport Analyze(IReadOnlyList<RunTrace> runs, PromCounterSnapshot prom,
-                                  int triggerCount, string scenarioId)
+                                  int triggerCount, string scenarioId, int spawnExtra = 0)
     {
         // ── ES-BINDING ARBITER (67-03) ────────────────────────────────────────────────────────────
 
-        // STARTED (denominator): distinct correlationIds with ≥1 Step_* log = one RunTrace each.
+        // STARTED (denominator): distinct (correlationId, executionId) instances with ≥1 Step_* log = one
+        // RunTrace each (each spawned execution is its own run).
         var startedRuns = runs.Count;
 
         // COMPLETE (OBS-01): distinct StepLabel set equals the full 9-label set (both sinks).
@@ -153,6 +163,26 @@ public sealed class PassFailEngine
                 "NON-FATAL (Prom is corroborating only, 67-03).");
         }
 
+        // SPAWN-AWARE OBS-03 (NON-BINDING): the entry step now emits 2 results from 1 dispatch, so the
+        // result counter runs AHEAD of the dispatch counter by exactly one extra result per entry dispatch.
+        // Reconcile ResultConsumedDelta against DispatchSentDelta + spawnExtra (spawnExtra = entry-dispatch
+        // count = distinct correlationIds, derived from data by the caller — never hard-coded). The excess is
+        // measured in RESULT units; allow the same ±1-run boundary slack (CorroborationRunTolerance × 9
+        // result-emitting steps) so a window-edge run does not raise a spurious warning. A mismatch beyond
+        // that slack is a WARNING only — it never flips a green ES verdict.
+        var expectedResultConsumed = prom.DispatchSentDelta + spawnExtra;
+        var spawnReconExcess = prom.ResultConsumedDelta - expectedResultConsumed;
+        var spawnReconSlack = CorroborationRunTolerance * LabelsPerRun;
+        if (Math.Abs(spawnReconExcess) > spawnReconSlack)
+        {
+            corroborationDetail.Add(
+                $"Prom corroboration WARNING (spawn-aware OBS-03): ResultConsumedDelta={prom.ResultConsumedDelta} " +
+                $"vs expected DispatchSentDelta({prom.DispatchSentDelta}) + spawnExtra({spawnExtra}) = {expectedResultConsumed} " +
+                $"(off by {spawnReconExcess}, beyond ±{spawnReconSlack} result-step slack). The entry fan-out emits one " +
+                "extra result per entry dispatch; an unexpected gap means a result/dispatch imbalance. " +
+                "NON-FATAL (Prom is corroborating only, 67-03).");
+        }
+
         var recon = corroborationDetail.Count == 0
             ? ReconciliationOutcome.Reconciled
             : ReconciliationOutcome.Unreconciled;
@@ -173,6 +203,8 @@ public sealed class PassFailEngine
             MissingDetail = missingDetail,
             Duplicates = duplicates,
             PromImpliedRuns = promImpliedRuns,
+            SpawnExtra = spawnExtra,
+            ExpectedResultConsumed = expectedResultConsumed,
             Reconciliation = recon,
             CorroborationDetail = corroborationDetail,
             Prom = prom,

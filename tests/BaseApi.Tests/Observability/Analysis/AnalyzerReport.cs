@@ -70,9 +70,9 @@ public sealed record AnalyzerReport
     public required Verdict Verdict { get; init; }
 
     /// <summary>
-    /// ES-BINDING DENOMINATOR (67-03): the number of distinct correlationIds carrying ≥1 Step_* log
-    /// — runs that STARTED. Completeness/missing accounting is founded on this, NOT on the Prom
-    /// dispatch count. The verdict driver.
+    /// ES-BINDING DENOMINATOR (67-03): the number of distinct (correlationId, executionId) instances
+    /// carrying ≥1 Step_* log — runs that STARTED (each spawned execution is its own run). Completeness/
+    /// missing accounting is founded on this, NOT on the Prom dispatch count. The verdict driver.
     /// </summary>
     public required int StartedRuns { get; init; }
 
@@ -111,6 +111,20 @@ public sealed record AnalyzerReport
     /// corroboration warning. Informational — never gates the verdict.
     /// </summary>
     public required int PromImpliedRuns { get; init; }
+
+    /// <summary>
+    /// CORROBORATION ONLY (spawn-aware OBS-03): the number of EXTRA results the entry fan-out emits beyond
+    /// the dispatch count = entry-dispatch count = distinct correlationIds (derived from data, never
+    /// hard-coded). The expected result count is <see cref="Prom"/>.DispatchSentDelta + this. Informational.
+    /// </summary>
+    public required int SpawnExtra { get; init; }
+
+    /// <summary>
+    /// CORROBORATION ONLY (spawn-aware OBS-03): the reconciled expectation for the result counter —
+    /// <c>DispatchSentDelta + <see cref="SpawnExtra"/></c>. ResultConsumedDelta is reconciled against THIS
+    /// (within ±1-run result slack); a mismatch beyond slack is a non-fatal warning. Informational.
+    /// </summary>
+    public required double ExpectedResultConsumed { get; init; }
 
     /// <summary>
     /// The Prometheus CORROBORATION outcome (OBS-03; 67-03 non-binding). Reconciled = within ±1-run

@@ -184,7 +184,12 @@ public sealed class AnalyzerE2ETests
             "the fan-out workflow precondition is not satisfied.");
 
         // ── 7. RUN THE ENGINE (pure — no IO) ─────────────────────────────────────────────────────────
-        var report = new PassFailEngine().Analyze(traces, promSnapshot, triggerCount, scenarioId);
+        //    SPAWN-AWARE OBS-03: the entry step emits 2 results from 1 dispatch, so ResultConsumed runs
+        //    ahead of DispatchSent by one extra result per entry dispatch. spawnExtra = the number of entry
+        //    dispatches = cron fires = distinct correlationIds — DERIVED from the traces (the per-instance
+        //    RunTraces collapse back to their correlationId), NEVER hard-coded 2.
+        var spawnExtra = traces.Select(t => t.CorrelationId).Distinct(StringComparer.Ordinal).Count();
+        var report = new PassFailEngine().Analyze(traces, promSnapshot, triggerCount, scenarioId, spawnExtra);
 
         // ── 8. WRITE-THEN-ASSERT (D-02 / OBS-04 / T-66-11) ───────────────────────────────────────────
         //    Serialize + write the JSON report FIRST so the artifact exists even on a red run, and the
@@ -212,6 +217,7 @@ public sealed class AnalyzerE2ETests
           "bool": {
             "filter": [
               { "exists": { "field": "{{EsIndexNames.StepLabelFieldPath}}" } },
+              { "exists": { "field": "{{EsIndexNames.ExecutionIdFieldPath}}" } },
               { "range": { "{{EsIndexNames.WindowTimestampFieldPath}}": {
                   "gte": "{{windowStart:o}}", "lte": "{{snapshot:o}}" } } }
             ]
@@ -260,14 +266,16 @@ public sealed class AnalyzerE2ETests
     }
 
     /// <summary>
-    /// Group raw ES hits by <c>_source.attributes.CorrelationId</c> into per-run
-    /// <see cref="RunTrace"/>s, collecting the <c>attributes.StepLabel</c> list (duplicates RETAINED so
-    /// the engine's fail-closed duplicate signal fires). Hits missing either attribute are skipped
+    /// Group raw ES hits by the <c>(_source.attributes.CorrelationId, _source.attributes.ExecutionId)</c>
+    /// composite into per-INSTANCE <see cref="RunTrace"/>s (each spawned execution is its own run),
+    /// collecting the <c>attributes.StepLabel</c> list (duplicates RETAINED so the engine's fail-closed
+    /// duplicate signal fires WITHIN an instance). Hits missing any of the three attributes are skipped
     /// defensively (T-66-09 — odd-shaped JSON is dropped, never thrown).
     /// </summary>
     private static List<RunTrace> BuildRunTraces(List<JsonElement> hits)
     {
-        var byCorrelation = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        // Keyed by the (correlationId, executionId) value-tuple — one RunTrace per execution instance.
+        var byInstance = new Dictionary<(string Corr, string Exec), List<string>>();
         foreach (var hit in hits)
         {
             if (!hit.TryGetProperty("_source", out var source)) continue;
@@ -275,25 +283,29 @@ public sealed class AnalyzerE2ETests
 
             if (!attrs.TryGetProperty("CorrelationId", out var corrEl)
                 || corrEl.ValueKind != JsonValueKind.String) continue;
+            if (!attrs.TryGetProperty("ExecutionId", out var execEl)
+                || execEl.ValueKind != JsonValueKind.String) continue;
             if (!attrs.TryGetProperty("StepLabel", out var labelEl)
                 || labelEl.ValueKind != JsonValueKind.String) continue;
 
             var correlationId = corrEl.GetString()!;
+            var executionId = execEl.GetString()!;
             var label = labelEl.GetString()!;
 
             // Read Sum defensively (A1) — informational only, never a completeness gate; not thrown on.
             _ = TryReadSum(attrs, out _);
 
-            if (!byCorrelation.TryGetValue(correlationId, out var labels))
+            var key = (correlationId, executionId);
+            if (!byInstance.TryGetValue(key, out var labels))
             {
                 labels = new List<string>();
-                byCorrelation[correlationId] = labels;
+                byInstance[key] = labels;
             }
             labels.Add(label);
         }
 
-        return byCorrelation
-            .Select(kv => RunTrace.FromLabels(kv.Key, kv.Value))
+        return byInstance
+            .Select(kv => RunTrace.FromLabels(kv.Key.Corr, kv.Key.Exec, kv.Value))
             .ToList();
     }
 

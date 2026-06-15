@@ -20,7 +20,15 @@ namespace BaseApi.Tests.Observability.Analysis;
 /// <item><c>PromWindowEdge_OneRunMismatch_WithinTolerance_StaysClean</c> — 67-03: ±1-run boundary tolerance, no warning, Pass.</item>
 /// <item><c>RetiredConflation_ResultSentShort_DoesNotFailVerdict</c> — 67-03: ResultSentCompleted short no longer fails (retired #2).</item>
 /// <item><c>DormantDedupeCounters_Absent_DoNotBlockPass</c> — dormant (null) dedupe deltas do not gate PASS.</item>
+/// <item><c>SpawnAware_ResultExceedsDispatchByExactlySpawnExtra_StaysClean</c> — spawn-aware OBS-03: the entry fan-out's extra result reconciles CLEAN.</item>
+/// <item><c>SpawnAware_ResultMismatch_RaisesNonFatalWarning</c> — spawn-aware OBS-03: a wrong result/dispatch gap is a non-fatal WARNING.</item>
 /// </list>
+/// </para>
+///
+/// <para>
+/// Each spawned execution is its own run, so traces are keyed per (correlationId, executionId);
+/// <see cref="RunTrace.FromLabels"/> takes a distinct executionId per instance. A duplicate label WITHIN
+/// one (correlationId, executionId) still drives the fail-closed duplicate branch.
 /// </para>
 /// </summary>
 public sealed class PassFailEngineFacts
@@ -55,9 +63,9 @@ public sealed class PassFailEngineFacts
         // 3 STARTED runs (distinct correlationIds), all 9-label complete → ES-binding Pass.
         var runs = new[]
         {
-            RunTrace.FromLabels("corr-1", AllNineLabels),
-            RunTrace.FromLabels("corr-2", AllNineLabels),
-            RunTrace.FromLabels("corr-3", AllNineLabels),
+            RunTrace.FromLabels("corr-1", "exec-1", AllNineLabels),
+            RunTrace.FromLabels("corr-2", "exec-2", AllNineLabels),
+            RunTrace.FromLabels("corr-3", "exec-3", AllNineLabels),
         };
         var snap = CorroboratingSnapshot(startedRuns: 3);
 
@@ -75,7 +83,7 @@ public sealed class PassFailEngineFacts
     {
         // The run STARTED (it logged Step_A…) but is missing the Step_F2 sink → 8 labels → incomplete.
         var eightLabels = AllNineLabels.Where(l => l != "Step_F2").ToArray();
-        var run = RunTrace.FromLabels("corr-1", eightLabels);
+        var run = RunTrace.FromLabels("corr-1", "exec-1", eightLabels);
         var snap = CorroboratingSnapshot(startedRuns: 1);
 
         var report = new PassFailEngine().Analyze(new[] { run }, snap, TriggerCountOf(snap), "unit-test");
@@ -92,7 +100,8 @@ public sealed class PassFailEngineFacts
     {
         // All 9 distinct labels PRESENT, but Step_C appears twice → HasAnyDuplicateLabel true.
         var labelsWithDuplicate = AllNineLabels.Concat(new[] { "Step_C" }).ToArray();
-        var run = RunTrace.FromLabels("corr-1", labelsWithDuplicate);
+        // Duplicate WITHIN one (correlationId, executionId) instance → fail-closed.
+        var run = RunTrace.FromLabels("corr-1", "exec-1", labelsWithDuplicate);
         var snap = CorroboratingSnapshot(startedRuns: 1);
 
         var report = new PassFailEngine().Analyze(new[] { run }, snap, TriggerCountOf(snap), "unit-test");
@@ -108,10 +117,11 @@ public sealed class PassFailEngineFacts
         // 2 fully-dead runs (dispatched, Step_A never logged). Under the OLD binding model this was a
         // hard Fail; under 67-03 it is a NON-FATAL corroboration warning — the ES-binding verdict (every
         // started run complete, no duplicate) still PASSES.
-        var run = RunTrace.FromLabels("corr-1", AllNineLabels);
+        var run = RunTrace.FromLabels("corr-1", "exec-1", AllNineLabels);
         var snap = CorroboratingSnapshot(startedRuns: 1) with
         {
             DispatchSentDelta = 3 * PassFailEngine.LabelsPerRun, // implies 3 runs vs ES 1
+            ResultConsumedDelta = 3 * PassFailEngine.LabelsPerRun, // keep spawn-aware recon clean (excess isolates the dead-run branch)
         };
 
         var report = new PassFailEngine().Analyze(new[] { run }, snap, TriggerCountOf(snap), "unit-test");
@@ -133,11 +143,12 @@ public sealed class PassFailEngineFacts
         // flagged; an out-of-tolerance NEGATIVE excess (started > implied) is intentionally not a warning
         // (see the asymmetry note in PassFailEngine.cs). Within ±1, both directions stay clean regardless.
         var runs = Enumerable.Range(1, 10)
-            .Select(i => RunTrace.FromLabels($"corr-{i}", AllNineLabels))
+            .Select(i => RunTrace.FromLabels($"corr-{i}", $"exec-{i}", AllNineLabels))
             .ToArray();
         var snap = CorroboratingSnapshot(startedRuns: 10) with
         {
             DispatchSentDelta = 11 * PassFailEngine.LabelsPerRun, // implies 11 vs ES 10 → excess 1 == tolerance
+            ResultConsumedDelta = 11 * PassFailEngine.LabelsPerRun, // keep spawn-aware recon clean (excess isolates the window-edge branch)
         };
 
         var report = new PassFailEngine().Analyze(runs, snap, TriggerCountOf(snap), "unit-test");
@@ -155,7 +166,7 @@ public sealed class PassFailEngineFacts
         // Retired conflation #2: under the OLD model ResultSentCompletedDelta < complete × 9 forced an
         // Unreconciled FAIL. Under 67-03 that arithmetic is gone from the binding gate — a complete
         // ES-binding cohort PASSES regardless of the ResultSentCompleted counter value.
-        var run = RunTrace.FromLabels("corr-1", AllNineLabels);
+        var run = RunTrace.FromLabels("corr-1", "exec-1", AllNineLabels);
         var snap = CorroboratingSnapshot(startedRuns: 1) with
         {
             ResultSentCompletedDelta = 8, // short of 9 — would have failed the OLD binding gate
@@ -170,7 +181,7 @@ public sealed class PassFailEngineFacts
     [Fact]
     public void DormantDedupeCounters_Absent_DoNotBlockPass()
     {
-        var run = RunTrace.FromLabels("corr-1", AllNineLabels);
+        var run = RunTrace.FromLabels("corr-1", "exec-1", AllNineLabels);
         var snap = CorroboratingSnapshot(startedRuns: 1) with
         {
             ResultDedupedDelta = null,   // absent / dormant
@@ -181,5 +192,66 @@ public sealed class PassFailEngineFacts
 
         // Dormant counters feed no arithmetic and do not gate PASS.
         Assert.Equal(Verdict.Pass, report.Verdict);
+    }
+
+    [Fact]
+    public void SpawnAware_ResultExceedsDispatchByExactlySpawnExtra_StaysClean()
+    {
+        // Two cron fires (2 distinct correlationIds), each spawning 2 execution instances → 4 runs. The entry
+        // step emits 2 results from 1 dispatch, so ResultConsumedDelta runs ahead of DispatchSentDelta by
+        // exactly spawnExtra = the number of entry dispatches = distinct correlationIds = 2. Spawn-aware OBS-03
+        // reconciles CLEAN (no warning); the ES-binding verdict (every run complete, no duplicate) PASSES.
+        var runs = new[]
+        {
+            RunTrace.FromLabels("corr-1", "exec-1a", AllNineLabels),
+            RunTrace.FromLabels("corr-1", "exec-1b", AllNineLabels),
+            RunTrace.FromLabels("corr-2", "exec-2a", AllNineLabels),
+            RunTrace.FromLabels("corr-2", "exec-2b", AllNineLabels),
+        };
+        var spawnExtra = runs.Select(r => r.CorrelationId).Distinct().Count();   // derived from data = 2
+        var dispatch = 4 * PassFailEngine.LabelsPerRun;                          // 4 instances' worth of step dispatches
+        var snap = CorroboratingSnapshot(startedRuns: 4) with
+        {
+            DispatchSentDelta = dispatch,
+            ResultConsumedDelta = dispatch + spawnExtra,                         // entry fan-out's extra results
+        };
+
+        var report = new PassFailEngine().Analyze(runs, snap, TriggerCountOf(snap), "unit-test", spawnExtra);
+
+        Assert.Equal(4, report.StartedRuns);
+        Assert.Equal(2, report.SpawnExtra);
+        Assert.Equal(dispatch + spawnExtra, report.ExpectedResultConsumed);
+        Assert.Equal(ReconciliationOutcome.Reconciled, report.Reconciliation);   // spawn-aware recon clean
+        Assert.Empty(report.CorroborationDetail);
+        Assert.Equal(Verdict.Pass, report.Verdict);
+    }
+
+    [Fact]
+    public void SpawnAware_ResultMismatch_RaisesNonFatalWarning()
+    {
+        // Same 4-instance cohort, but the result counter is OFF by far more than the spawnExtra + slack (a
+        // result/dispatch imbalance). Spawn-aware OBS-03 raises a NON-FATAL warning; the ES-binding verdict
+        // (every run complete, no duplicate) still PASSES — Prom is corroborating only.
+        var runs = new[]
+        {
+            RunTrace.FromLabels("corr-1", "exec-1a", AllNineLabels),
+            RunTrace.FromLabels("corr-1", "exec-1b", AllNineLabels),
+            RunTrace.FromLabels("corr-2", "exec-2a", AllNineLabels),
+            RunTrace.FromLabels("corr-2", "exec-2b", AllNineLabels),
+        };
+        var spawnExtra = runs.Select(r => r.CorrelationId).Distinct().Count();   // 2
+        var dispatch = 4 * PassFailEngine.LabelsPerRun;
+        var snap = CorroboratingSnapshot(startedRuns: 4) with
+        {
+            DispatchSentDelta = dispatch,
+            // Expected = dispatch + 2; supply dispatch + 2 + (3 runs' worth) far beyond the ±1-run slack.
+            ResultConsumedDelta = dispatch + spawnExtra + (3 * PassFailEngine.LabelsPerRun),
+        };
+
+        var report = new PassFailEngine().Analyze(runs, snap, TriggerCountOf(snap), "unit-test", spawnExtra);
+
+        Assert.Equal(ReconciliationOutcome.Unreconciled, report.Reconciliation); // spawn-aware warning raised
+        Assert.NotEmpty(report.CorroborationDetail);
+        Assert.Equal(Verdict.Pass, report.Verdict);                              // NON-FATAL — ES-binding still passes
     }
 }

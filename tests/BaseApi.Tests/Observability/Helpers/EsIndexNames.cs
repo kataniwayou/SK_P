@@ -87,6 +87,26 @@ public static class EsIndexNames
     public const string StepLabelFieldPath = "attributes.StepLabel";
 
     /// <summary>
+    /// The OTLP field path for the per-execution-instance id attribute, expressed as a dot-separated path
+    /// suitable for ES <c>term</c>/<c>exists</c> queries. The <c>ExecutionId</c> surfaces here via the
+    /// SampleProcessor's nested <see cref="Messaging.Contracts.ExecutionLogScope.ExecutionId"/> BeginScope —
+    /// the same MEL→OTLP scope bridge that carries <see cref="StepLabelFieldPath"/>/<see cref="CorrelationIdFieldPath"/>,
+    /// so the <c>BeginScope</c> key name is preserved verbatim inside the OTLP-normalized <c>attributes</c> map.
+    /// Grouping multi-hit <c>_search</c> results by <see cref="CorrelationIdFieldPath"/> + this path
+    /// reconstructs per-(correlationId, executionId) instance traces (each spawned execution is its own run).
+    ///
+    /// <para>
+    /// <b>DIRECT path — NO <c>.keyword</c> sub-field.</b> Same rationale pinned on
+    /// <see cref="CorrelationIdFieldPath"/>/<see cref="StepLabelFieldPath"/>: the OTel-managed
+    /// <c>logs-generic.otel-default</c> data stream's x-pack ECS index template maps every string attribute
+    /// DIRECTLY to <c>keyword</c> (no <c>fields.keyword</c> sub-field), so <c>attributes.ExecutionId.keyword</c>
+    /// returns ZERO hits. Always query <c>attributes.ExecutionId</c> directly. If a future Wave-0 probe shows
+    /// a different live field, this is a single-const edit.
+    /// </para>
+    /// </summary>
+    public const string ExecutionIdFieldPath = "attributes.ExecutionId";
+
+    /// <summary>
     /// The OTLP field path for the per-step computed <c>Sum</c> attribute, expressed as a dot-separated path.
     /// Phase 66 / OBS-01 — read alongside <see cref="StepLabelFieldPath"/> when reconstructing per-run traces.
     ///
