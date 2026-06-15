@@ -43,7 +43,8 @@ namespace BaseProcessor.Core.Processing;
 /// random[ExecutionDataTtl, 2×ExecutionDataTtl]), the data key <c>L2[entryId]=data</c>, and the data TTL
 /// (== ExecutionDataTtl) in ONE server-side op — a concurrent reader/Recovery never observes a partial
 /// index-without-data (or data-without-index) state (spec §4.3 step 3). An atomic-write exhaustion (index- OR
-/// data-failure) routes to ONE <c>KeeperInject</c> carrying the EntryId/Data/DeleteEntryId id-set (no silent
+/// data-failure that retry could not clear, OR a deterministic server-side script error — bad ARGV, Lua
+/// runtime error, value-too-large — that re-throws every attempt) routes to ONE <c>KeeperInject</c> carrying the EntryId/Data/DeleteEntryId id-set (no silent
 /// DROP path remains — spec §10 bullet 1); else <c>StepCompleted</c> to the orchestrator. The slot ordinal
 /// increments ONLY for completed items (business-failed items consume no slot). TTLs are computed in C# and
 /// passed as ARGV (no RNG inside Lua) so the Phase-68 TEST-06 index/data desync guard holds.
@@ -308,8 +309,14 @@ public sealed class ProcessorPipeline(
                     limit, ct);
                 if (!write.Succeeded)
                 {
-                    // NODROP-01: atomic-write exhausted (index- OR data-failure) → ONE INJECT (data in-hand).
-                    // NO DROP path remains (spec §10 bullet 1). The slot was claimed → consume it.
+                    // NODROP-01: atomic-write exhausted → ONE INJECT (data in-hand). The exhaust covers BOTH a
+                    // transient infra fault (index- OR data-failure that retry could not clear) AND a deterministic
+                    // server-side script error (bad ARGV / Lua runtime error / value-too-large), which re-throws on
+                    // every attempt and burns the budget. INJECT is the right safe terminal either way (no silent
+                    // DROP — spec §10 bullet 1), but log the captured error so a deterministic defect is diagnosable
+                    // rather than silent. The slot was claimed → consume it.
+                    logger.LogWarning(write.Error,
+                        "Atomic forward write exhausted; escalating to keeper INJECT (entryId={EntryId})", entryId);
                     await SendKeeper(BuildInject(d, item, entryId), limit, ct);
                     escalated = true;        // GATE-01: an item escalated this pass
                     slot++;
