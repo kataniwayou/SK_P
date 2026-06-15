@@ -39,8 +39,9 @@ namespace BaseProcessor.Core.Processing;
 /// <para>
 /// <b>Forward — Post</b> (SLOT-01/02, INFRA-01/02, allocation-before-data): per completed item, in order:
 /// (1) mint <c>entryId</c>; (2) write the allocation index <c>L2[messageId][slot]=entryId</c> FIRST then a
-/// whole-HASH random TTL (D-06) — an allocation exhaustion is <c>infra_messageId</c> → DROP (no data write,
-/// no send, no slot consumed); (3) write the data key <c>L2[entryId]=data</c> SECOND — a data exhaustion is
+/// whole-HASH EXPIRE applying the SAME bounded <c>executionDataTtl</c> the data key uses (no RNG — the index
+/// and the data it points at expire together) — an allocation exhaustion is <c>infra_messageId</c> → DROP (no
+/// data write, no send, no slot consumed); (3) write the data key <c>L2[entryId]=data</c> SECOND — a data exhaustion is
 /// <c>infra_entryId</c> → <c>KeeperInject</c> carrying the EntryId/Data/DeleteEntryId id-set (the slot WAS
 /// allocated → consumed); else <c>StepCompleted</c> to the orchestrator. The slot ordinal increments ONLY
 /// for completed items (business-failed + dropped items consume no slot). Allocation-before-data is
@@ -66,7 +67,6 @@ public sealed class ProcessorPipeline(
     ISendEndpointProvider sendProvider,
     IOptions<RetryOptions> retryOptions,
     IOptions<ProcessorLivenessOptions> livenessOptions,
-    IOptions<SlotArrayOptions> slotOptions,
     ProcessorMetrics metrics,
     ILogger<ProcessorPipeline> logger)
 {
@@ -75,12 +75,6 @@ public sealed class ProcessorPipeline(
     /// write byte-identical to the test assertions in <c>PipelineRecoveryFacts</c> (which hardcode
     /// <c>(RedisValue)Guid.Empty.ToString()</c>).</summary>
     private static readonly RedisValue RetiredSlot = Guid.Empty.ToString();
-
-    /// <summary>D-06: a random whole-HASH TTL in [min,max]s applied to <c>L2[messageId]</c> on each slot
-    /// write so the allocation index self-expires with jitter (no synchronized expiry herd). <c>+1</c> makes
-    /// the configured max inclusive. <c>Random.Shared</c> is the framework-shared thread-safe RNG.</summary>
-    private TimeSpan SlotTtl() => TimeSpan.FromSeconds(
-        Random.Shared.Next(slotOptions.Value.SlotArrayTtlMinSeconds, slotOptions.Value.SlotArrayTtlMaxSeconds + 1));
 
     public async Task RunAsync(EntryStepDispatch d, Guid messageId, CancellationToken ct)
     {
@@ -100,7 +94,7 @@ public sealed class ProcessorPipeline(
         }
 
         if (exists.Value)
-            await RunRecoveryAsync(d, messageId, db, limit, ct);                       // RECOVERY pass (implemented this phase)
+            await RunRecoveryAsync(d, messageId, db, limit, executionDataTtl, ct);     // RECOVERY pass (implemented this phase)
         else
             await RunForwardAsync(d, messageId, db, limit, executionDataTtl, ct);
     }
@@ -119,7 +113,7 @@ public sealed class ProcessorPipeline(
     /// </para>
     /// </summary>
     private async Task RunRecoveryAsync(
-        EntryStepDispatch d, Guid messageId, IDatabase db, int limit, CancellationToken ct)
+        EntryStepDispatch d, Guid messageId, IDatabase db, int limit, TimeSpan executionDataTtl, CancellationToken ct)
     {
         // RECOV-01: HGETALL the slot array. Exhaust → REINJECT; END (no source delete — the input is intact).
         var read = await RetryLoop.ExecuteAsync(
@@ -162,12 +156,13 @@ public sealed class ProcessorPipeline(
             if (retire.Succeeded)
             {
                 await RetryLoop.ExecuteAsync(
-                    () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), SlotTtl()), limit, ct);   // D-06 refresh
+                    () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), executionDataTtl), limit, ct);   // unified-TTL refresh
             }
             // Retire exhaust → "do nothing" (A18 line 192): the slot stays; a future replay re-sends (dup-tolerant, A16).
-            // IN-01: the D-06 whole-HASH TTL refresh runs ONLY inside the retire-succeeded branch above; on a retire
-            // exhaust the existing HASH TTL is deliberately left intact (no path leaves a freshly-written HASH without
-            // an EXPIRE — the HASH already carried a TTL from its forward-Post alloc write).
+            // IN-01: the whole-HASH EXPIRE refresh (same bounded executionDataTtl as the data key — index and data
+            // expire together, no RNG) runs ONLY inside the retire-succeeded branch above; on a retire exhaust the
+            // existing HASH TTL is deliberately left intact (no path leaves a freshly-written HASH without an EXPIRE
+            // — the HASH already carried a TTL from its forward-Post alloc write).
         }
 
         // RECOV-03 tail — REINJECT ⊻ source-delete mutual exclusion.
@@ -262,8 +257,8 @@ public sealed class ProcessorPipeline(
                     () => db.HashSetAsync(L2ProjectionKeys.MessageIndex(messageId), slot, entryId.ToString("D")), limit, ct);
                 if (alloc.Succeeded)
                 {
-                    await RetryLoop.ExecuteAsync(                   // D-06: whole-HASH random TTL (separate call)
-                        () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), SlotTtl()), limit, ct);
+                    await RetryLoop.ExecuteAsync(                   // whole-HASH EXPIRE: SAME executionDataTtl as the data key (no RNG — expire together)
+                        () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), executionDataTtl), limit, ct);
                 }
                 else
                 {
@@ -302,7 +297,7 @@ public sealed class ProcessorPipeline(
 
     /// <summary>A19/GC-01..03: the unified terminal tail. Atomically deletes BOTH the source data key and the
     /// origin allocation index in ONE multi-key DEL; on exhaustion best-effort PERSISTs the index (cancels its
-    /// random TTL) then escalates to a KeeperDelete carrying the messageId — regardless of the persist outcome
+    /// executionDataTtl EXPIRE) then escalates to a KeeperDelete carrying the messageId — regardless of the persist outcome
     /// (D-03). NO source-step early-return: ExecutionData(Guid.Empty) is a harmless absent operand (D-06).</summary>
     private async Task DeleteTerminalAsync(
         EntryStepDispatch d, Guid messageId, IDatabase db, int limit, CancellationToken ct)
@@ -315,7 +310,7 @@ public sealed class ProcessorPipeline(
             }), limit, ct);
         if (del.Succeeded) return;
 
-        // D-03: best-effort persist (cancel the random TTL) THEN escalate REGARDLESS of persist outcome.
+        // D-03: best-effort persist (cancel the executionDataTtl EXPIRE) THEN escalate REGARDLESS of persist outcome.
         await RetryLoop.ExecuteAsync(() => db.KeyPersistAsync(L2ProjectionKeys.MessageIndex(messageId)), limit, ct);
         await SendKeeper(BuildDelete(d, messageId), limit, ct);
     }
