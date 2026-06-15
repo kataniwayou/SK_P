@@ -50,7 +50,10 @@ namespace BaseProcessor.Core.Processing;
 /// </para>
 /// <para>
 /// <b>Forward — source-delete tail</b> (FWD-03): an explicit inline tail (NOT a try/cleanup block — the
-/// WR-01 race is RETIRED in Phase 51) reached ONLY on the no-REINJECT happy path; it deletes the inbound
+/// WR-01 race is RETIRED in Phase 51) reached ONLY on the no-REINJECT happy path. GATED (GATE-01) on no
+/// forward-Post INJECT this pass (spec 4.3 final paragraph): any item escalated => tail SKIPPED, leaving the
+/// index + input keys for the keeper + a later Recovery pass / index-TTL (removes the processor/keeper index race).
+/// On the no-escalation path it deletes the inbound
 /// <c>L2[entryId]</c> with bounded retry; exhaust → <c>KeeperDelete</c>. Skipped on a Guid.Empty source step.
 /// </para>
 /// <para>
@@ -275,6 +278,7 @@ public sealed class ProcessorPipeline(
 
         // ---- POST (forward, per item, in order) ----
         var slot = 0;                                               // completed-item ordinal ONLY (D-04 slot counter)
+        var escalated = false;   // GATE-01: set true on a forward-Post INJECT; skips the cleanup tail (spec §4.3 final ¶)
         foreach (var item in items)
         {
             var outcome = item.Result;
@@ -303,6 +307,7 @@ public sealed class ProcessorPipeline(
                     // NODROP-01: atomic-write exhausted (index- OR data-failure) → ONE INJECT (data in-hand).
                     // NO DROP path remains (spec §10 bullet 1). The slot was claimed → consume it.
                     await SendKeeper(BuildInject(d, item, entryId), limit, ct);
+                    escalated = true;        // GATE-01: an item escalated this pass
                     slot++;
                     continue;
                 }
@@ -323,7 +328,12 @@ public sealed class ProcessorPipeline(
             }
         }
 
-        await DeleteTerminalAsync(d, messageId, db, limit, ct);    // A19/FWD-03 happy-path unified tail (two-key DEL)
+        // GATE-01 (spec §4.3 final ¶): run the cleanup tail ONLY if no item escalated. If any item escalated,
+        // leave L2[messageId] + L2[inputEntryId] intact for the keeper to complete the escalated item and for a
+        // later Recovery pass (redelivery) / index-TTL to reclaim — eliminating the processor/keeper race on the
+        // index key. No KeyPersist on the skip path: the index keeps the TTL its atomic write set.
+        if (!escalated)
+            await DeleteTerminalAsync(d, messageId, db, limit, ct);    // A19/FWD-03 happy-path unified tail (two-key DEL)
     }
 
     /// <summary>A19/GC-01..03: the unified terminal tail. Atomically deletes BOTH the source data key and the
