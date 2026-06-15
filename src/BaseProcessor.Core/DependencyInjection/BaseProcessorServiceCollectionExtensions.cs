@@ -101,19 +101,6 @@ public static class BaseProcessorServiceCollectionExtensions
         // 3. Liveness/heartbeat knobs (CONFIG-01) — six independent seconds-ints from the "Processor" section.
         services.Configure<ProcessorLivenessOptions>(cfg.GetSection("Processor"));
 
-        // Phase 51 (D-04): the slot-array random-TTL knobs, SAME "Processor" section as the liveness knobs.
-        // WR-01: validate the [min,max] range ONCE at startup (ValidateOnStart) so a bad operator config
-        // (Min <= 0, or Min > Max) fails fast and loudly at host build rather than throwing
-        // ArgumentOutOfRangeException mid-pipeline inside SlotTtl()'s Random.Next(min, max+1) — which would
-        // crash the FIRST slot write with partial-write side effects (the allocation index already written
-        // for prior items). A startup guard turns a latent runtime crash into a clean composition-root failure.
-        services.AddOptions<SlotArrayOptions>()
-            .Bind(cfg.GetSection("Processor"))
-            .Validate(o => o.SlotArrayTtlMinSeconds > 0
-                        && o.SlotArrayTtlMaxSeconds >= o.SlotArrayTtlMinSeconds,
-                "SlotArrayTtlMin must be > 0 and <= SlotArrayTtlMax.")
-            .ValidateOnStart();
-
         // 3b. D-10: the retry budget, bound per process from the "Retry" section (single source of truth
         //     for the retry Limit consumed by ProcessorStartupOrchestrator's dispatch-endpoint bind, so
         //     Phase 32's final-attempt check cannot desync from UseMessageRetry). Absent section →
