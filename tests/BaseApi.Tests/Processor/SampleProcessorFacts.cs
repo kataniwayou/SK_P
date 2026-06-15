@@ -62,41 +62,51 @@ public sealed class SampleProcessorFacts
     }
 
     [Fact]
-    public async Task ProcessAsync_Adds_Random_To_Number_And_Logs_Step_And_Sum()
+    public async Task ProcessAsync_Spawns_Two_Executions_Each_Adds_Random_And_Logs_Step_And_Sum()
     {
         var logger = new CapturingLogger();
         var processor = new SampleProcessor(logger);
 
         var result = await InvokeProcessAsync(processor, "any-input", new SampleConfig(10, "Step_A1"));
 
-        var only = Assert.Single(result);
-        Assert.Equal(ProcessOutcome.Completed, only.Result);
-        Assert.NotEqual(Guid.Empty, only.ExecutionId);   // D-06: author-minted
+        // Multiple-execution stress test: ONE dispatch → TWO completed executions, each its own ExecutionId + log.
+        Assert.Equal(2, result.Count);
+        Assert.NotEqual(result[0].ExecutionId, result[1].ExecutionId);   // distinct per execution
+        Assert.Equal(2, logger.Entries.Count);                           // one log per execution
 
-        using var doc = JsonDocument.Parse(only.Data);
-        var number = doc.RootElement.GetProperty("number").GetInt32();
-        Assert.InRange(number, 10, 109);                 // D-07: [Number, Number+99], upper-exclusive Next(0,100)
-        Assert.Equal("Step_A1", doc.RootElement.GetProperty("label").GetString());  // D-10 verbatim
+        for (var i = 0; i < 2; i++)
+        {
+            Assert.Equal(ProcessOutcome.Completed, result[i].Result);
+            Assert.NotEqual(Guid.Empty, result[i].ExecutionId);          // D-06: author-minted
 
-        var logged = Assert.Single(logger.Entries);      // D-08 exactly one
-        Assert.Equal(LogLevel.Information, logged.Level);
-        Assert.Contains(logged.State, kv => kv.Key == "StepLabel" && (string?)kv.Value == "Step_A1");
-        Assert.Contains(logged.State, kv => kv.Key == "Sum" && (int)kv.Value! == number);
+            using var doc = JsonDocument.Parse(result[i].Data);
+            var number = doc.RootElement.GetProperty("number").GetInt32();
+            Assert.InRange(number, 10, 109);                             // D-07: [Number, Number+99], upper-exclusive Next(0,100)
+            Assert.Equal("Step_A1", doc.RootElement.GetProperty("label").GetString());  // D-10 verbatim
+
+            var logged = logger.Entries[i];                              // log[i] pairs with execution[i] (logged before add)
+            Assert.Equal(LogLevel.Information, logged.Level);
+            Assert.Contains(logged.State, kv => kv.Key == "StepLabel" && (string?)kv.Value == "Step_A1");
+            Assert.Contains(logged.State, kv => kv.Key == "Sum" && (int)kv.Value! == number);
+        }
     }
 
     [Fact]
-    public async Task ProcessAsync_Null_Config_Still_Emits_One_Item_And_One_Log()
+    public async Task ProcessAsync_Null_Config_Still_Emits_Two_Items_And_Two_Logs()
     {
         var logger = new CapturingLogger();
         var processor = new SampleProcessor(logger);
 
         var result = await InvokeProcessAsync(processor, "any-input", (SampleConfig?)null);
 
-        var only = Assert.Single(result);                // D-03: seam always runs, one item
-        using var doc = JsonDocument.Parse(only.Data);
-        Assert.InRange(doc.RootElement.GetProperty("number").GetInt32(), 0, 99);   // baseNumber 0 + 0..99
-        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("label").ValueKind);
-        Assert.Single(logger.Entries);                   // still exactly one log (D-08)
+        Assert.Equal(2, result.Count);                   // D-03: seam always runs; two executions
+        Assert.Equal(2, logger.Entries.Count);           // two logs (D-08, one per execution)
+        for (var i = 0; i < 2; i++)
+        {
+            using var doc = JsonDocument.Parse(result[i].Data);
+            Assert.InRange(doc.RootElement.GetProperty("number").GetInt32(), 0, 99);   // baseNumber 0 + 0..99
+            Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("label").ValueKind);
+        }
     }
 
     [Fact]
