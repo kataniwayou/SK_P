@@ -40,11 +40,11 @@ created: 2026-06-16
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 69-01-* | 01 | 1 | Spec §4.3 atomic write | T-69-01 | Index+data write is all-or-nothing; partial state never observed | unit | `dotnet test --no-build -- --filter-method "*PipelineForward*"` | ❌ W0 (assertions inverted to script ARGV shape) | ⬜ pending |
-| 69-01-* | 01 | 1 | Spec §10 INFRA-01 no-drop | T-69-01 | Atomic-write exhaustion → single INJECT, never a silent drop | unit | `dotnet test --no-build -- --filter-method "*PipelineForward*"` | ❌ W0 (new fact) | ⬜ pending |
-| 69-02-* | 02 | 2 | Spec §4.3 gated cleanup | T-69-02 | Cleanup tail skipped when any item escalated → no processor/keeper index race | unit | `dotnet test --no-build -- --filter-method "*PipelineForward*"` | ❌ W0 (new fact) | ⬜ pending |
+| 69-01 | 01 | 1 | Spec §4.3 atomic write | T-69-01 | Index+data write is all-or-nothing; partial state never observed | unit | `dotnet test -c Release -- --filter-method "*Completed_AllocationBeforeData*" "*IndexTtl_IsRandom*"` | ✅ `PipelineForwardFacts.Completed_AllocationBeforeData` + `IndexTtl_IsRandom_BetweenDataTtl_And_` | ✅ green |
+| 69-01 | 01 | 1 | Spec §10 INFRA-01 no-drop | T-69-03 | Atomic-write exhaustion → single INJECT, never a silent drop | unit | `dotnet test -c Release -- --filter-method "*AtomicWriteFault_Inject*"` | ✅ `PipelineForwardFacts.AtomicWriteFault_Inject` (+ `PipelinePostFacts.WriteFault_Inject`) | ✅ green |
+| 69-02 | 02 | 2 | Spec §4.3 gated cleanup | T-69-02 | Cleanup tail skipped when any item escalated → no processor/keeper index race | unit | `dotnet test -c Release -- --filter-method "*EscalatedItem_SkipsCleanup*" "*HappyTail_DeletesSource*"` | ✅ `PipelineForwardFacts.EscalatedItem_SkipsCleanup` (+ `HappyTail_DeletesSource` contrast) | ✅ green |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky. Exact Task IDs are assigned by the planner; rows above map the validation dimensions to the two new test facts plus the migration of the three existing facts (`SlotWriteFault_Drop`, `Completed_AllocationBeforeData`, `IndexTtl_IsRandom_*`) to the single `ScriptEvaluateAsync` shape.*
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky. Post-execution audit (2026-06-16): the planned migration landed — `SlotWriteFault_Drop` was inverted into `AtomicWriteFault_Inject` (drop→single-INJECT), and `Completed_AllocationBeforeData` / `IndexTtl_IsRandom_*` were retargeted to the single `ScriptEvaluateAsync` ARGV shape. All three validation dimensions are COVERED by present, green facts (5/5 dimension facts pass; 21/21 across the touched Forward/Post/Recovery/Inject suites).*
 
 ---
 
@@ -69,13 +69,25 @@ created: 2026-06-16
 
 ---
 
+## Validation Audit 2026-06-16
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+State A post-execution audit: cross-referenced all 3 validation dimensions against the implemented test facts in `tests/BaseApi.Tests/Processor/PipelineForwardFacts.cs` (+ `PipelinePostFacts.cs`). Every dimension is COVERED by a present, green fact — no MISSING/PARTIAL gaps, so no test generation was required. nyquist_compliant remains `true`. The one Manual-Only item (live-outage no-drop proof) stays delegated to the Phase 67/68 live-proof harness by design.
+
+---
+
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < quick-run seconds
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < quick-run seconds
+- [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** approved 2026-06-16
