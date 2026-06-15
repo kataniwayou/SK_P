@@ -156,12 +156,14 @@ public sealed class ComposeYamlFacts
     }
 
     [Fact]
-    public void ComposeYaml_ProcessorSample_Sets_Short_ExecutionDataTtl()
+    public void ComposeYaml_ProcessorSample_Sets_ExecutionDataTtl_To_ProductionDefault()
     {
         var content = ComposeYamlContent();
-        // Pitfall 4 — short TTL so the round-trip's skp:data:* keys self-expire before the
-        // close-gate AFTER snapshot.
-        Assert.Matches(new Regex(@"(?ms)processor-sample:[\s\S]*?Processor__ExecutionDataTtl:\s*""5"""), content);
+        // ExecutionDataTtl matches the appsettings production default (300s) so the L2[entryId] data key
+        // and the L2[messageId] index (now the SAME const, quick task 260615-dbf) survive a fault dwell.
+        // The former "5" was a v6.0.0 close-gate net-zero hack, obsolete once v8.0.0 retired that gate —
+        // it caused the Phase 68 TEST-06 desync artifact (data expired at 5s vs the 45s outage).
+        Assert.Matches(new Regex(@"(?ms)processor-sample:[\s\S]*?Processor__ExecutionDataTtl:\s*""300"""), content);
     }
 
     // ---- Phase 34 (KEEP-03) — keeper service block guards (block-scoped) ----
