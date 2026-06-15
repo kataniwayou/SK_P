@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v9.0.0
 milestone_name: "Canonical Recovery: Orchestrator Alignment"
 current_plan: 1
-status: defining_requirements
-stopped_at: Started milestone v9.0.0 — defining requirements (phases continue at 70)
+status: roadmap_complete
+stopped_at: Roadmap created for v9.0.0 — 2 phases (70-71), 10/10 requirements mapped; ready for /gsd-plan-phase 70
 last_updated: "2026-06-16T00:00:00.000Z"
 last_activity: 2026-06-16
 progress:
@@ -22,15 +22,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; v8.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), v6.0.0 (typed base-config seam + Gate A config-schema compatibility), and v7.0.0 (per-replica processor liveness + self-watchdog — closed audit-override, live close gate deferred to v8.0.0).**
-**Current focus:** Milestone v9.0.0 — defining requirements (Canonical Recovery: Orchestrator Alignment; phases 70–71)
+**Current focus:** Milestone v9.0.0 — roadmap complete (Canonical Recovery: Orchestrator Alignment; phases 70–71); next 
 
 ## Current Position
 
 Milestone: v9.0.0 (Canonical Recovery: Orchestrator Alignment) — STARTED 2026-06-16. Goal: extend the Phase-69 canonical recovery-spec alignment to the orchestrator's result-consume path (give it the same `messageId`-indexed forward/recovery/keeper pipeline the processor has — reverses Phase 24.1's L1-only `TypedResultConsumer`), plus a small processor INJECT cleanup making the keeper delete-invariant uniform (DELETE the only deleting keeper state). Canonical pattern = `ProcessorPipeline.cs` + `processor-keeper-recovery-spec.md` §3–§8. Two phases: 70 (processor INJECT cleanup, small) → 71 (orchestrator recovery pipeline, large). Phases continue at **70**.
-Phase: Not started (defining requirements)
+Phase: 70 (Processor INJECT Cleanup) — not started
 Current Plan: —
-Status: Defining requirements
-Last activity: 2026-06-16 — Milestone v9.0.0 started
+Status: Roadmap complete (2 phases mapped; awaiting /gsd-plan-phase 70)
+Last activity: 2026-06-16 — v9.0.0 roadmap created (phases 70-71, 10/10 reqs mapped)
 
 > v8.0.0 (E2E Resilience Proof) — feature-complete 2026-06-15 (phases 63–69); not yet formally archived (`/gsd-complete-milestone` deferred). Prior-milestone position history retained below.
 
@@ -53,6 +53,8 @@ Last activity: 2026-06-16 — Milestone v9.0.0 started
 | 260615-kgz | Per-(correlationId,executionId) multi-execution scoring: orchestrator propagates ExecutionId unchanged (was NewId.NextGuid regen); processor seam gains executionId → SampleProcessor seeds 2 at entry / accumulates 1 downstream, each log carries StepLabel+ExecutionId; analyzer keys traces by (correlationId,executionId) + spawn-aware OBS-03 | 2026-06-15 | 1a5009b |  | [260615-kgz-per-correlationid-executionid-multi-exec](./quick/260615-kgz-per-correlationid-executionid-multi-exec/) |
 
 ### Roadmap Evolution
+
+- 2026-06-16 — **v9.0.0 roadmap created** — 2 phases (70-71), standard granularity, 10/10 requirements mapped (no orphans, no duplicates). Dependency-driven order (user-decomposed, locked — do NOT re-split): **70** Processor INJECT Cleanup (KINJ-01/02/03 — make the keeper INJECT path non-destructive: remove the source-delete from `InjectConsumer`, drop the vestigial `KeeperInject.DeleteEntryId` + `BuildInject`/golden-test updates, enforce DELETE as the only key-deleting keeper state via a negative-guard fact — the SMALL phase that establishes the non-destructive-INJECT pattern Phase 71 mirrors) → **71** Orchestrator Recovery Pipeline (ORCV-01..07 — give the orchestrator result-consume path the same `messageId`-indexed forward/recovery/keeper pipeline the processor has: `exist L2[messageId]` gate → FORWARD atomic index-slot HSET + whole-hash PEXPIRE + copy `L2[origin]→L2[new]` / RECOVERY 3-way per-slot re-emit / keeper escalation, full-dispatch-tuple slots, origin-split keeper contracts `Processor*`/`Orchestrator*` + shared `KeeperDelete` on the existing `keeper-recovery` endpoint; **reverses Phase 24.1's L1-only `TypedResultConsumer`**, re-introducing L2 to the result path). Canonical pattern = `ProcessorPipeline.cs` + `docs/design/processor-keeper-recovery-spec.md` §§3–8. Phase 71 depends on Phase 70. Next: `/gsd-plan-phase 70`.
 
 - 2026-06-13 — **Phase 62.1 inserted** after Phase 62 (URGENT, decimal): `decouple-liveness-refresh-from-ishealthy`. Fixes the Phase-60 liveness-refresh gap **G-62-01** surfaced by the Phase-62 live close run — liveness-timestamp refresh is `IsHealthy`-gated, so an alive-but-unhealthy (Gate-A-clash) replica stops being refreshed → its L2 gate key expires (absent, not observably Unhealthy) and its L1 watchdog timestamp goes stale (false "liveness loop stale" → needless K8s restart). Make refresh **identity-gated** (write current Healthy/Unhealthy status every interval), then re-run the Phase-62 close gate + the four lifecycle proofs to seal v7.0.0. TEST-01/02/03 stay unticked until then. Root cause + fix: `.planning/phases/62-live-proof-close-gate/62-GAP-liveness-refresh-coupling.md`.
 - 2026-06-13 — **v7.0.0 roadmap created** — 4 phases (59-62), standard granularity, 17/17 functional requirements mapped (no orphans, no duplicates). Dependency-driven order (locked design): **59** Per-Instance L2 Keyspace & Two-State Liveness Value (KEY-01/02/03/04 per-instance key + instance-index SET + podId resolution + definitions-dropped, STATE-01/02 two-state status + per-schema summary — the prerequisite keyspace/value reshape) → **60** Dual-Loop Writer + In-Memory L1 Liveness Record (STATE-03 unhealthy-is-written, LOOP-01/02/03/04 startup+heartbeat write to L2+L1 each iteration / SADD instanceId / split startup+heartbeat intervals / per-key TTL=source-of-truth / frozen-healthy, L1-01 in-memory record) → **61** ≥1-Healthy Orchestration-Start Gate + Self-Watchdog Probe (GATE-01/02/03 SMEMBERS→GET-each→≥1 healthy-and-fresh→422 + lazy-SREM, PROBE-01/02 L1-staleness watchdog + summary in body) → **62** Live Proof & Close Gate (capstone: RealStack E2E of the reshaped per-replica liveness + triple-SHA psql/redis/rabbitmq net-zero N=3 GREEN; a 3-req TEST-01/02/03 live-proof set introduced for its criteria). Builds on v6.0.0 Gate A (its outcome → the `configSchema` summary field). Next: `/gsd-plan-phase 59`.

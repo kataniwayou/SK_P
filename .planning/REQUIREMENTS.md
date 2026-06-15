@@ -46,7 +46,15 @@ REQ-IDs are filled into phases by the roadmapper (Step 10). Every requirement ma
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| KINJ-01, KINJ-02, KINJ-03 | Phase 70 | Pending |
-| ORCV-01 … ORCV-07 | Phase 71 | Pending |
+| KINJ-01 | Phase 70 | Pending |
+| KINJ-02 | Phase 70 | Pending |
+| KINJ-03 | Phase 70 | Pending |
+| ORCV-01 | Phase 71 | Pending |
+| ORCV-02 | Phase 71 | Pending |
+| ORCV-03 | Phase 71 | Pending |
+| ORCV-04 | Phase 71 | Pending |
+| ORCV-05 | Phase 71 | Pending |
+| ORCV-06 | Phase 71 | Pending |
+| ORCV-07 | Phase 71 | Pending |
 
 **Coverage:** 10 requirements across 2 categories (KINJ, ORCV). Filled into phases by the roadmapper.
