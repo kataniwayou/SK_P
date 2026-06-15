@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
-current_plan: Not started
-status: planning
-stopped_at: Phase 68 context gathered
-last_updated: "2026-06-15T04:04:41.667Z"
-last_activity: 2026-06-14
+current_plan: 1
+status: executing
+stopped_at: Completed 68-01-PLAN.md
+last_updated: "2026-06-15T04:28:13.379Z"
+last_activity: 2026-06-15
 progress:
   total_phases: 27
   completed_phases: 26
   total_plans: 86
-  completed_plans: 84
-  percent: 98
+  completed_plans: 85
+  percent: 99
 ---
 
 # Project State
@@ -22,17 +22,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; v8.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), v6.0.0 (typed base-config seam + Gate A config-schema compatibility), and v7.0.0 (per-replica processor liveness + self-watchdog — closed audit-override, live close gate deferred to v8.0.0).**
-**Current focus:** Phase 67 — fault-injection-harness
+**Current focus:** Phase 68 — live-resilience-proof-7-scenarios-capstone
 
 ## Current Position
 
 Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove perfect (zero-missing, effect-once) recovery of a fan-out orchestrated workflow (A→B→C→{D1→E1→F1, D2→E2→F2}, one shared processor-sample, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios (happy path, processor/orchestrator/keeper/redis/rabbitmq/redis+rabbitmq crash), verified SOLELY from Prometheus metrics + Elasticsearch logs (aggregate by correlationId; missing/duplicate vs total triggers), fully automated. Prerequisite code change: enable 6-field seconds-cron. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
-Phase: 68
-Current Plan: Not started
+Phase: 68 (live-resilience-proof-7-scenarios-capstone) — EXECUTING
+Current Plan: 1
 Total Plans: 3
-Plan: 3 of 3 — COMPLETE
-Status: Ready to plan
-Last activity: 2026-06-14
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-06-15
 
 > Phase 67 plan 03 (live proof) — ✅ COMPLETE 2026-06-14. Harness proven end-to-end on both reference runs: TEST-01 (no-fault baseline) Pass 10/10, TEST-02 (whole-tier processor crash + in-window recovery) Pass 10/10 (zero-missing, effect-once). Substantive find: OBS-04 verdict logic re-founded on an ES-binding arbiter (Prom demoted to non-fatal corroboration) — corrects a Phase-66 defect (per-step dispatch_sent used as a per-run denominator) surfaced under the first real fan-out load; the mid-window Prom counter-reset signature (TEST-02 63-vs-81 deltas) is now correctly absorbed. Spec-owner-approved verdict-semantics change. Deviations (atomic): `d2445fb` stale-image rebuild/force-recreate, `a9e42e0` time-pin Prom reads to window, `574739a` ES-binding arbiter. FAULT-01/02/03 → complete (finalizes 67-01's `2b5cec9` re-open). Summary: `.planning/phases/67-fault-injection-harness/67-03-SUMMARY.md`.
 
@@ -1004,6 +1004,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 66 P02 | 4min | 2 tasks | 3 files |
 | Phase 66 P03 | 9min | 2 tasks | 2 files |
 | Phase 67 P02 | 5min | 2 tasks | 1 files |
+| Phase 68 P01 | 3min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1453,6 +1454,7 @@ Recent decisions affecting current work:
 - 66-03: trigger denominator from orchestrator_dispatch_sent_total windowed delta; missing-IDENTITY unrecoverable (no per-fire correlationId log, item #1)
 - 66-03: AnalyzerE2ETests write-then-assert (JSON report written before verdict assert -> exists on red); scenarioId path-traversal guarded
 - 67-02: harness adds a clean-orchestrator restart (STEP B1) + MTP --filter-method to bake in the three 67-01 live findings
+- Phase 68-01: 5 harness scenario rows TEST-03..07 (uniform D-01 recipe: stop-start/N=4/45s), phase-68-sweep.ps1 one-shot driver (run-all, exit 0 iff 7/7 PASS), fixture renamed Analyze_Window_Yields_Pass synced to both --filter-method literals
 
 ### Roadmap Milestone Log
 
@@ -1556,9 +1558,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 68 context gathered
-Resume file: --resume-file
+Last session: 2026-06-15T04:28:13.360Z
+Stopped at: Completed 68-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.

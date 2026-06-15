@@ -63,13 +63,20 @@ Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestr
 
 ### Resilience Proof — 7 Scenarios (TEST)
 > Each scenario PASSES iff, over its 5-minute/30s-cron window, **zero-missing** (every triggered correlationId reaches both sinks F1+F2) AND **effect-once** (each step's COMPLETED effect once per correlationId) hold; message-level redelivery during the fault is reported, not failed.
-- [ ] **TEST-01**: Happy path — no fault injected; baseline zero-missing + effect-once.
-- [ ] **TEST-02**: Processor crash during orchestration — recovery proven.
-- [ ] **TEST-03**: Orchestrator crash during orchestration — recovery proven.
-- [ ] **TEST-04**: Keeper crash during orchestration — recovery proven.
-- [ ] **TEST-05**: Redis crash during orchestration — recovery proven.
-- [ ] **TEST-06**: RabbitMQ crash during orchestration — recovery proven.
-- [ ] **TEST-07**: Redis + RabbitMQ crash during orchestration — recovery proven.
+- [x] **TEST-01
+**: Happy path — no fault injected; baseline zero-missing + effect-once.
+- [x] **TEST-02
+**: Processor crash during orchestration — recovery proven.
+- [x] **TEST-03
+**: Orchestrator crash during orchestration — recovery proven.
+- [x] **TEST-04
+**: Keeper crash during orchestration — recovery proven.
+- [x] **TEST-05
+**: Redis crash during orchestration — recovery proven.
+- [x] **TEST-06
+**: RabbitMQ crash during orchestration — recovery proven.
+- [x] **TEST-07
+**: Redis + RabbitMQ crash during orchestration — recovery proven.
 
 ## Future Requirements (deferred)
 

@@ -931,7 +931,7 @@ Plans:
   4. **TEST-07 combined infra crash** — Redis + RabbitMQ crash together mid-run and recovery is proven (zero-missing + effect-once hold).
   5. All 7 scenarios produce an automated PASS verdict derived solely from Prometheus + Elasticsearch — no human verification, no triple-SHA infra net-zero gate.
 **Plans**: 2 plans
-  - [ ] 68-01-PLAN.md — Author the 5 scenario rows (TEST-03..07) + the phase-68-sweep.ps1 wrapper + cosmetic fixture-rename/literal-sync (Wave 1, static-verified)
+  - [x] 68-01-PLAN.md — Author the 5 scenario rows (TEST-03..07) + the phase-68-sweep.ps1 wrapper + cosmetic fixture-rename/literal-sync (Wave 1, static-verified) (completed 2026-06-15 — harness $Scenarios now 7 rows; scripts/phase-68-sweep.ps1 run-all+collect exit-0-iff-7/7; fixture renamed Analyze_Window_Yields_Pass + both --filter-method literals synced; test project 0-warning; 3f359f2, f39530d, 7556ee4)
   - [ ] 68-02-PLAN.md — Run the 7-scenario live sweep; prove 7/7 PASS roll-up; investigate-first on any verdict FAIL (Wave 2, live-empirical, checkpoint)
 
 ### Progress (v8.0.0)
