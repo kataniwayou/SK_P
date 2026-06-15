@@ -59,35 +59,4 @@ public sealed class ProcessorOptionsBindingFacts
         Assert.Equal(30, opts.BackoffCapSeconds);
         Assert.Equal(300, opts.ExecutionDataTtlSeconds);
     }
-
-    [Fact]
-    public void SlotArray_Binds_Min_Max_From_Processor_Section()
-    {
-        var cfg = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Processor:SlotArrayTtlMin"] = "300",
-                ["Processor:SlotArrayTtlMax"] = "600",
-            })
-            .Build();
-
-        var opts = cfg.GetSection("Processor").Get<SlotArrayOptions>();
-
-        Assert.NotNull(opts);
-        Assert.Equal(300, opts!.SlotArrayTtlMinSeconds);
-        Assert.Equal(600, opts.SlotArrayTtlMaxSeconds);
-    }
-
-    [Fact]
-    public void SlotArray_Empty_Config_Yields_Baked_Defaults()
-    {
-        var cfg = new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>())
-            .Build();
-
-        var opts = cfg.GetSection("Processor").Get<SlotArrayOptions>() ?? new SlotArrayOptions();
-
-        Assert.Equal(300, opts.SlotArrayTtlMinSeconds);
-        Assert.Equal(600, opts.SlotArrayTtlMaxSeconds);
-    }
 }

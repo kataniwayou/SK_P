@@ -29,7 +29,7 @@ public sealed class EntryStepDispatchConsumerFacts
         var send = new DispatchTestKit.CapturingSendProvider();
         var pipeline = new ProcessorPipeline(
             redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
-            DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
         var consumer = new EntryStepDispatchConsumer(pipeline, context, DispatchTestKit.Metrics());
 

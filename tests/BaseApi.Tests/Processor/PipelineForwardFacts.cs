@@ -33,7 +33,7 @@ public sealed class PipelineForwardFacts
         IConnectionMultiplexer redis, IProcessorContext context, BaseProcessorBase processor,
         DispatchTestKit.CapturingSendProvider send) =>
         new(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
-            DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
     [Fact]
     public async Task ExistCheckFault_Reinject_NoSourceDelete()   // FWD-01
@@ -90,12 +90,13 @@ public sealed class PipelineForwardFacts
         Assert.True(setIdx >= 0, "data-key StringSetAsync(ExecutionData) was never written");
         Assert.True(hashIdx < setIdx, "SLOT-01/02: the allocation index must be written BEFORE the data key");
 
-        // D-06: the whole-HASH random TTL (KeyExpireAsync on L2[messageId]) follows the slot HashSet — proven
-        // overload-agnostically by name index ordering (the 2-arg call binds to the ExpireWhen overload).
+        // The whole-HASH EXPIRE (KeyExpireAsync on L2[messageId], the unified executionDataTtl) follows the
+        // slot HashSet — proven overload-agnostically by name index ordering (the 2-arg call binds to the
+        // ExpireWhen overload).
         var expireIdx = calls.FindIndex(c =>
             c.GetMethodInfo().Name == nameof(IDatabase.KeyExpireAsync)
             && ((RedisKey)c.GetArguments()[0]!).ToString() == L2ProjectionKeys.MessageIndex(messageId));
-        Assert.True(expireIdx > hashIdx, "D-06: the whole-HASH random TTL must follow the slot allocation write");
+        Assert.True(expireIdx > hashIdx, "the whole-HASH unified TTL EXPIRE must follow the slot allocation write");
 
         // Received.InOrder over the two MessageIndex HASH ops (allocation HSET → whole-HASH expire) — both on
         // the known key. (StringSetAsync is asserted via the index ordering above because its 3-arg expiry
@@ -107,6 +108,58 @@ public sealed class PipelineForwardFacts
 
         Assert.Single(send.Sent.OfType<StepCompleted>());                              // completed → orchestrator
         Assert.Empty(send.SentKeeper);                                                 // no keeper send on happy path
+    }
+
+    [Fact]
+    public async Task IndexTtl_EqualsDataTtl_EqualsConfiguredExecutionDataTtl_NoRng()   // Phase-68 TEST-06 desync guard
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var redis = DispatchTestKit.ForwardOkL2(
+            new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out var db);
+        var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
+        var send = new DispatchTestKit.CapturingSendProvider();
+
+        // Build() configures Options(300) → the unified TTL the pipeline applies is exactly 300s.
+        await Build(redis, Ctx(), processor, send).RunAsync(
+            DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
+
+        var expected = TimeSpan.FromSeconds(300);
+        var calls = db.ReceivedCalls().ToList();
+
+        // Reads the TTL off a recorded call overload-agnostically: a TimeSpan? expiry parameter, OR an
+        // Expiration parameter (compared via the implicit TimeSpan→Expiration conversion). Mirrors
+        // PipelinePostFacts.PostCompleted_WritesWithTtl. Returns true iff the call's TTL == 'want'.
+        static bool TtlEquals(NSubstitute.Core.ICall call, TimeSpan want)
+        {
+            var parameters = call.GetMethodInfo().GetParameters();
+            var args = call.GetArguments();
+            var tsIdx = Array.FindIndex(parameters, p => p.ParameterType == typeof(TimeSpan?));
+            if (tsIdx >= 0)
+                return (TimeSpan?)args[tsIdx] == want;
+            var expIdx = Array.FindIndex(parameters, p => p.ParameterType.Name == "Expiration");
+            if (expIdx >= 0)
+                return Equals((Expiration)args[expIdx]!, (Expiration)want);
+            return false;
+        }
+
+        // (1) The index EXPIRE: KeyExpireAsync on L2[messageId] — applies the unified executionDataTtl (300s).
+        var expireCall = calls.Single(c =>
+            c.GetMethodInfo().Name == nameof(IDatabase.KeyExpireAsync)
+            && ((RedisKey)c.GetArguments()[0]!).ToString() == L2ProjectionKeys.MessageIndex(messageId));
+
+        // (2) The data SET: StringSetAsync on L2[entryId] (data: prefix) — applies the SAME executionDataTtl.
+        var setCall = calls.Single(c =>
+            c.GetMethodInfo().Name == nameof(IDatabase.StringSetAsync)
+            && ((RedisKey)c.GetArguments()[0]!).ToString().StartsWith($"{L2ProjectionKeys.Prefix}data:", StringComparison.Ordinal));
+
+        // Index TTL == data TTL == the configured ExecutionDataTtl (300s) — a single DETERMINISTIC value, NOT a
+        // [300,600] range. SlotTtl()/Random.Shared is gone; the exact-constant assertion is the hermetic proxy
+        // for "no RNG in the write path". Index TTL >= data TTL holds by equality (effect-once ordering intact).
+        // This is the regression guard for the Phase-68 TEST-06 index/data TTL desync.
+        Assert.True(TtlEquals(expireCall, expected), "index EXPIRE TTL must equal the configured 300s executionDataTtl");
+        Assert.True(TtlEquals(setCall, expected), "data SET TTL must equal the configured 300s executionDataTtl");
     }
 
     [Fact]

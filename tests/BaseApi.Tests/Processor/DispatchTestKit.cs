@@ -526,16 +526,6 @@ internal static class DispatchTestKit
             ExecutionDataTtlSeconds = executionDataTtlSeconds,
         });
 
-    /// <summary>SLOT-01/D-04: the slot-array random-TTL knobs (mirrors <see cref="Options(int)"/>). The
-    /// forward pass applies a random TTL in [min,max]s to the whole <c>L2[messageId]</c> HASH on each slot
-    /// write (D-06).</summary>
-    public static IOptions<SlotArrayOptions> SlotOptions(int min = 300, int max = 600) =>
-        Microsoft.Extensions.Options.Options.Create(new SlotArrayOptions
-        {
-            SlotArrayTtlMinSeconds = min,
-            SlotArrayTtlMaxSeconds = max,
-        });
-
     /// <summary>The retry budget the pipeline consumes (Limit immediate attempts per L2 op + per send).</summary>
     public static IOptions<RetryOptions> Retry(int limit = 3) =>
         Microsoft.Extensions.Options.Options.Create(new RetryOptions { Limit = limit });

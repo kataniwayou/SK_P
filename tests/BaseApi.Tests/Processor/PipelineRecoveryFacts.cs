@@ -31,13 +31,13 @@ public sealed class PipelineRecoveryFacts
         IConnectionMultiplexer redis, IProcessorContext context, BaseProcessorBase processor,
         DispatchTestKit.CapturingSendProvider send) =>
         new(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
-            DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
     private static ProcessorPipeline Build(
         IConnectionMultiplexer redis, IProcessorContext context, BaseProcessorBase processor,
         ISendEndpointProvider send) =>
         new(redis, context, processor, send, DispatchTestKit.Retry(3), DispatchTestKit.Options(300),
-            DispatchTestKit.SlotOptions(), DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
+            DispatchTestKit.Metrics(), NullLogger<ProcessorPipeline>.Instance);
 
     // The In stage is never reached on the recovery branch (the dispatcher routes to RunRecoveryAsync before
     // the processor seam), so an empty-item processor double is fine for every recovery fact.
