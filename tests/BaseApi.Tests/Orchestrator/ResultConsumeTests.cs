@@ -22,7 +22,7 @@ namespace BaseApi.Tests.Orchestrator;
 ///   <item>a <see cref="StepCompleted"/> whose completed step has a <c>PreviousCompleted</c>-gated next
 ///   step produces exactly ONE captured <see cref="EntryStepDispatch"/> on
 ///   <c>queue:{nextStep.ProcessorId}</c> with CorrelationId/EntryId/WorkflowId == the result's and
-///   StepId/ProcessorId/Payload == the next-step L1 projection's (executionId regenerated);</item>
+///   StepId/ProcessorId/Payload == the next-step L1 projection's (executionId propagated unchanged);</item>
 ///   <item>that single dispatch is consumed exactly once (competing-consumer, not broadcast).</item>
 /// </list>
 /// <para>
@@ -137,7 +137,7 @@ public sealed class ResultConsumeTests
             var msg = Assert.Single(dispatched);                 // one result item x one matched next step
             Assert.Equal(workflowId, msg.WorkflowId);            // copied from the result
             Assert.Equal(correlationId, msg.CorrelationId);
-            Assert.NotEqual(Guid.Empty, msg.ExecutionId);        // regenerated lineage (NewId.NextGuid)
+            Assert.Equal(executionId, msg.ExecutionId);          // propagated UNCHANGED (not regenerated)
             Assert.Equal(resultEntryId, msg.EntryId);            // the result's Guid EntryId flows straight through
             Assert.Equal(nextStepId, msg.StepId);                // taken from the next-step L1 projection
             Assert.Equal(nextProcessorId, msg.ProcessorId);

@@ -16,7 +16,7 @@ namespace BaseApi.Tests.Orchestrator;
 ///   <item>an unknown <c>(workflowId, stepId)</c> result acks (no throw, no dispatch);</item>
 ///   <item>a completed step with no matching next step acks (no throw, no dispatch);</item>
 ///   <item>a Completed result with a matching next step dispatches ONE straight-through continuation
-///   carrying the result's Guid EntryId + a regenerated executionId;</item>
+///   carrying the result's Guid EntryId + the inbound executionId (propagated unchanged);</item>
 ///   <item>an injected infra fault on the broker <c>Send</c> propagates (does not ack-swallow).</item>
 /// </list>
 /// <para>
@@ -150,10 +150,12 @@ public sealed class ResultAckTests
         SeedWorkflow(store, workflowId, steps);
 
         var resultEntryId = Guid.NewGuid();   // the StepCompleted's Guid data key (D-06a)
+        var resultExecutionId = Guid.NewGuid();   // the inbound instance lineage — must propagate unchanged
         var consumer = Build(store, dispatcher);
         var result = new StepCompleted(workflowId, completedStepId, Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
+            ExecutionId = resultExecutionId,
             EntryId = resultEntryId,
         };
 
@@ -166,7 +168,7 @@ public sealed class ResultAckTests
         Assert.Equal(nextStepId, dispatched.StepId);
         Assert.Equal(nextProcessorId, dispatched.ProcessorId);
         Assert.Equal(resultEntryId, dispatched.EntryId);
-        Assert.NotEqual(Guid.Empty, dispatched.ExecutionId); // regenerated lineage
+        Assert.Equal(resultExecutionId, dispatched.ExecutionId); // propagated UNCHANGED (inbound lineage)
     }
 
     // ----- injected infra fault on Send propagates (does not ack-swallow) ------------------------

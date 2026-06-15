@@ -77,12 +77,14 @@ public abstract class TypedResultConsumer<TMessage>(
         // ---- Per-item advance by Outcome (D-03/D-06e/A4/D-07) ----
         // One typed result = one item. SelectNext matches successors against the per-type Outcome knob (no
         // status if/switch). For each matched successor, dispatch one continuation carrying this result's
-        // Guid EntryId + a freshly regenerated executionId (lineage). No dedup, no manifest, no Redis. An
+        // Guid EntryId + the inbound result's ExecutionId UNCHANGED — only stepId + ProcessorId change per
+        // successor; WorkflowId/CorrelationId/ExecutionId/EntryId all flow through, preserving the
+        // per-instance lineage from ENTRY through every continuation. No dedup, no manifest, no Redis. An
         // infra Send fault propagates.
         foreach (var (stepId, step) in advancement.SelectNext(Outcome, completed, wf.Steps))
             await dispatcher.DispatchAsync(
                 m.WorkflowId, stepId, step.ProcessorId, step.Payload,
-                m.CorrelationId, NewId.NextGuid(), m.EntryId, context.CancellationToken);
+                m.CorrelationId, m.ExecutionId, m.EntryId, context.CancellationToken);
         // returns normally -> ACK. An infra fault from Send propagates -> Immediate(3) -> _error.
     }
 }
