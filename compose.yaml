@@ -258,8 +258,10 @@ services:
   #   (1) depends_on adds `baseapi-service: service_healthy` — the processor resolves its identity
   #       over the bus FROM the WebApi responder (ProcessorStartupOrchestrator queries
   #       GetProcessorBySourceHash); the orchestrator block does NOT depend on baseapi.
-  #   (2) Processor__ExecutionDataTtl: "5" — short TTL (Pitfall 4) so the round-trip's `skp:data:*`
-  #       keys self-expire before the close-gate AFTER snapshot (overrides appsettings 300s).
+  #   (2) Processor__ExecutionDataTtl: "300" — matches the appsettings production default. The former
+  #       "5" was a v6.0.0 close-gate hack (short TTL so `skp:data:*` keys self-expired before the
+  #       triple-SHA net-zero AFTER snapshot); v8.0.0 retired that net-zero gate, and the Phase 68 45s
+  #       fault dwells need execution-data to survive the outage, so the override is restored to 300s.
   # Compose-DNS host `rabbitmq`/`redis`/`otel-collector` (NOT the host-side ports). guest/guest
   # dev creds come from compose env, never the image (T-28-06).
   processor-sample:
@@ -282,7 +284,7 @@ services:
       RabbitMq__Password: guest
       ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=5000"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
-      Processor__ExecutionDataTtl: "5"
+      Processor__ExecutionDataTtl: "300"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8082/health/ready"]
       interval: 10s
@@ -316,7 +318,7 @@ services:
       RabbitMq__Password: guest
       ConnectionStrings__Redis: "redis:6379,abortConnect=false,connectTimeout=5000"
       OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4317"
-      Processor__ExecutionDataTtl: "5"
+      Processor__ExecutionDataTtl: "300"
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8082/health/ready"]
       interval: 10s

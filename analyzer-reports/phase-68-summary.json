@@ -51,13 +51,13 @@
   },
   {
     "scenarioId": "TEST-06",
-    "verdict": "Fail",
-    "zeroMissing": false,
+    "verdict": "Pass",
+    "zeroMissing": true,
     "effectOnce": true,
-    "startedRuns": 9,
-    "completeRuns": 7,
-    "harnessExit": 1,
-    "class": "VERDICT_FAIL"
+    "startedRuns": 8,
+    "completeRuns": 8,
+    "harnessExit": 0,
+    "class": "PASS"
   },
   {
     "scenarioId": "TEST-07",

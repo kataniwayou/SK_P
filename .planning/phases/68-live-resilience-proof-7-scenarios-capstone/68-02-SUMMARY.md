@@ -13,9 +13,9 @@ requires:
   - phase: 66-prometheus-es-analyzer-pass-fail-engine
     provides: "AnalyzerE2ETests fixture scoring zero-missing + effect-once from Prometheus + Elasticsearch"
 provides:
-  - "analyzer-reports/phase-68-summary.json — the 7-row capstone roll-up from the live sweep (6/7 PASS)"
-  - "Live empirical proof that the recovery machinery survives every fault class except the TEST-06 test-env TTL artifact"
-  - "TEST-06 finding: a 45s rabbitmq outage exceeds the 5s execution-data retention envelope → keeper REINJECT correctly drops already-expired keys (accept-as-artifact disposition recorded)"
+  - "analyzer-reports/phase-68-summary.json — the 7-row capstone roll-up; 7/7 PASS after the TEST-06 TTL fix (original live sweep was 6/7, committed 098f36a)"
+  - "Live empirical proof that the recovery machinery survives every fault class (all 7) with zero-missing + effect-once"
+  - "TEST-06 finding + fix: a 45s rabbitmq outage exceeded the leftover 5s execution-data TTL → keeper REINJECT correctly dropped self-expired keys; resolved by restoring Processor__ExecutionDataTtl 5→300 in compose, re-proven clean PASS (KeeperReinjectDroppedDelta 2→0)"
 affects: [v8.0.0 milestone close]
 
 # Tech tracking
@@ -30,9 +30,9 @@ key-files:
   modified:
     - analyzer-reports/phase-68-summary.json
 
-key-decisions:
-  - "TEST-06 VERDICT_FAIL accepted as a TEST-ENV TTL ARTIFACT (accept-with-rationale) — NO code/TTL/dwell/retry change, per D-01b/D-04"
-  - "Capstone declared PROVEN for the recovery machinery across all 7 fault classes; TEST-06's miss documented as a known test-environment TTL artifact, not a product defect"
+  - "TEST-06 VERDICT_FAIL first investigated per D-01b (MISSING:2 == KeeperReinjectDroppedDelta:2 → ReinjectConsumer.cs:37 silent-DROP; 5s TTL vs 45s outage), originally adjudicated accept-as-artifact"
+  - "Spec owner then chose disposition (a′): FIX via TTL restore — Processor__ExecutionDataTtl 5→300 in compose.yaml (the v6.0.0 close-gate value was obsolete after v8.0.0 retired the net-zero gate); TEST-06 re-proven clean PASS (8/8, Missing:0, KeeperReinjectDroppedDelta:0)"
+  - "Capstone PROVEN for the recovery machinery across all 7 fault classes — 7/7 PASS after the TTL fix; the fix is config-only (no recovery-logic change)"
 
 patterns-established:
   - "A verdict FAIL is investigated as a real finding (MISSING vs DUPLICATE + corroboration metric) before any disposition; re-run permitted ONLY on a distinct INFRA-ABORT exit"
@@ -46,7 +46,9 @@ completed: 2026-06-15
 
 # Phase 68 Plan 02: Live 7-Scenario Resilience Sweep (Capstone Proof) Summary
 
-**The live 7-scenario fault sweep ran end-to-end against the full docker stack — 6/7 scenarios PASS (zero-missing + effect-once); the lone TEST-06 (rabbitmq) VERDICT_FAIL was traced to the 5s execution-data TTL self-expiring across the 45s outage and accepted by the spec owner as a known test-env TTL artifact, leaving the recovery machinery proven across every fault class.**
+**The live 7-scenario fault sweep ran end-to-end against the full docker stack — initially 6/7 PASS, with TEST-06 (rabbitmq) traced to the 5s execution-data TTL self-expiring across the 45s outage. The spec owner subsequently directed the fix (raise `Processor__ExecutionDataTtl` 5→300 in compose) and TEST-06 was re-proven a clean PASS (8/8 started/complete, Missing:0, `KeeperReinjectDroppedDelta:0`) — the capstone now stands at 7/7 with no recovery-logic change.**
+
+> **RESOLUTION (post-checkpoint, 2026-06-15):** TEST-06 was originally adjudicated accept-as-artifact (no change). The spec owner then chose disposition (a′): **fix via TTL restore.** `Processor__ExecutionDataTtl` was raised from the leftover v6.0.0 close-gate value `"5"` to the production default `"300"` on both processor services in `compose.yaml` (the v8.0.0 milestone retired the triple-SHA net-zero gate that required the short TTL). TEST-06 was re-run via `pwsh -File scripts/phase-67-harness.ps1 -ScenarioId TEST-06` and returned a clean **PASS**: 8/8 started runs complete, `Missing:0`, `Duplicates:[]`, **`KeeperReinjectDroppedDelta:0`** (was 2), Reconciliation Reconciled. This confirms the original root cause was purely the TTL artifact — no recovery-logic defect existed. The roll-up below and `analyzer-reports/phase-68-summary.json` reflect the post-fix **7/7**. The original 6/7 sweep is preserved in git history (`098f36a`) and in the investigation narrative below.**
 
 ## Performance
 
@@ -72,10 +74,12 @@ Source: `analyzer-reports/phase-68-summary.json` (committed in `098f36a`).
 | TEST-03 orchestrator  | Pass    | true        | true       | 9/9              | 0           | PASS         |
 | TEST-04 keeper (whole-tier) | Pass | true     | true       | 10/10            | 0           | PASS         |
 | TEST-05 redis         | Pass    | true        | true       | 8/8              | 0           | PASS         |
-| TEST-06 rabbitmq      | **Fail**| **false**   | true       | **7/9**          | **1**       | **VERDICT_FAIL** |
+| TEST-06 rabbitmq      | Pass¹   | true        | true       | 8/8              | 0           | PASS         |
 | TEST-07 redis+rabbitmq| Pass    | true        | true       | 8/8              | 0           | PASS         |
 
-**Wrapper final exit: 1** (6/7 PASS). No re-runs occurred.
+¹ TEST-06 was **Fail (7/9, VERDICT_FAIL)** in the original sweep (wrapper exit 1, 6/7); it now reads **PASS (8/8)** after the post-checkpoint TTL fix (see Resolution above). Original roll-up committed in `098f36a`.
+
+**Capstone result: 7/7 PASS** (original sweep 6/7; TEST-06 fixed via TTL restore + re-proven). No INFRA-ABORT re-runs occurred during the sweep; the TEST-06 re-run was a deliberate spec-owner-directed config fix, not a blind retry of a verdict FAIL.
 
 - **INFRA-ABORT re-runs:** None. No scenario classified INFRA_ABORT (exit 10–70); no scenario was re-run.
 - **Verdict FAILs:** 1 (TEST-06, exit 1) — investigated as a real finding per D-01b, NOT retried.
