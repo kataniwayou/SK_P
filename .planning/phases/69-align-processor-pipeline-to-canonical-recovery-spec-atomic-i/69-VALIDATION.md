@@ -1,9 +1,9 @@
 ---
 phase: 69
 slug: align-processor-pipeline-to-canonical-recovery-spec-atomic-i
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: approved
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-06-16
 ---
 
@@ -19,8 +19,8 @@ created: 2026-06-16
 |----------|-------|
 | **Framework** | xUnit.v3 / Microsoft.Testing.Platform (MTP) |
 | **Config file** | none — existing `BaseApi.Tests` project |
-| **Quick run command** | `dotnet test --no-build -- --filter-method "*PipelineForward*"` |
-| **Full suite command** | `dotnet test` |
+| **Quick run command** | `dotnet test tests/BaseApi.Tests/BaseApi.Tests.csproj -c Release -- --filter-method "*PipelineForward*"` |
+| **Full suite command** | `dotnet test tests/BaseApi.Tests/BaseApi.Tests.csproj -c Release` |
 | **Estimated runtime** | ~quick: seconds · full: minutes |
 
 > NOTE (project memory): `dotnet test --filter` is silently ignored under xUnit.v3/MTP — it runs the whole suite. Targeted runs MUST use `-- --filter-method`. The planner must encode this in acceptance criteria.
@@ -50,10 +50,10 @@ created: 2026-06-16
 
 ## Wave 0 Requirements
 
-- [ ] Migrate existing facts `SlotWriteFault_Drop`, `Completed_AllocationBeforeData`, `IndexTtl_IsRandom_*` to assert the single atomic `ScriptEvaluateAsync` ARGV shape (they currently encode the 3-separate-ops shape and will go red on the change).
-- [ ] New fact: atomic-write exhaustion (index OR data) → exactly one `BuildInject`/`SendKeeper`, no drop.
-- [ ] New fact: any item escalated → forward `DeleteTerminalAsync` cleanup tail is NOT called.
-- [ ] Reuse existing `DispatchTestKit.cs` NSubstitute `IDatabase` fault-injection harness — no new framework install.
+- [x] Migrate existing facts `SlotWriteFault_Drop`, `Completed_AllocationBeforeData`, `IndexTtl_IsRandom_*` to assert the single atomic `ScriptEvaluateAsync` ARGV shape (covered by Plan 01 Task 1 + Task 3).
+- [x] New fact: atomic-write exhaustion (index OR data) → exactly one `BuildInject`/`SendKeeper`, no drop (covered by Plan 01 Task 3 `AtomicWriteFault_Inject`).
+- [x] New fact: any item escalated → forward `DeleteTerminalAsync` cleanup tail is NOT called (covered by Plan 02 Task 2 `EscalatedItem_SkipsCleanup`).
+- [x] Reuse existing `DispatchTestKit.cs` NSubstitute `IDatabase` fault-injection harness — no new framework install (confirmed by PATTERNS.md analog map).
 
 *Existing infrastructure (`BaseApi.Tests`, `DispatchTestKit.cs`, `FakeRedis.cs`) covers all phase requirements — no install needed.*
 
@@ -78,4 +78,4 @@ created: 2026-06-16
 - [ ] Feedback latency < quick-run seconds
 - [ ] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-06-16
