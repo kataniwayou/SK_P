@@ -675,8 +675,8 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
 **Plans:** 2 plans (2 waves)
 
 Plans:
-- [ ] 69-01-PLAN.md -- Wave 1: atomic Lua index+data forward write + single-INJECT no-drop (close INFRA-01) + fact migration
-- [ ] 69-02-PLAN.md -- Wave 2: gate the forward cleanup tail on no-escalation + EscalatedItem_SkipsCleanup fact
+- [x] 69-01-PLAN.md -- Wave 1: atomic Lua index+data forward write + single-INJECT no-drop (close INFRA-01) + fact migration
+- [x] 69-02-PLAN.md -- Wave 2: gate the forward cleanup tail on no-escalation + EscalatedItem_SkipsCleanup fact
 
 ---
 *v3.2.0 shipped 2026-05-28 (11 phases). v3.3.0 shipped 2026-05-29 (5 phases, Orchestration L3→L1→L2 build pipeline). v3.4.0 shipped 2026-06-01 (9 phases 17-24+24.1, BaseConsole + Orchestrator Messaging). v3.5.0 shipped 2026-06-02 (6 phases 25-30, Processor Console — `BaseProcessor.Core` + `Processor.Sample`, assembly-embedded SourceHash, WebApi bus responders, L2 liveness self-registration, live execution round-trip + runtime/business metrics) — note: formal archival (ROADMAP/MILESTONES/tag) deferred. v3.6.0 shipped 2026-06-05 (4 phases 31-32.1, Idempotent Execution — exactly-once-effect round-trip via deterministic `H` + effect-first `flag[H]` dedup at both hops; cancelled circuit-breaker built then reverted to plain dead-lettering). Next milestone planning begins with `/gsd-new-milestone`.*
