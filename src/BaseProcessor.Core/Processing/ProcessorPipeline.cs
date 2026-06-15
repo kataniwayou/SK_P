@@ -76,6 +76,20 @@ public sealed class ProcessorPipeline(
     /// <c>(RedisValue)Guid.Empty.ToString()</c>).</summary>
     private static readonly RedisValue RetiredSlot = Guid.Empty.ToString();
 
+    /// <summary>D-05/D-06: the L2[messageId] index HASH whole-HASH TTL = <c>Random[ExecutionDataTtl, 2×ExecutionDataTtl]</c>
+    /// — derived from the SAME <see cref="ProcessorLivenessOptions.ExecutionDataTtlSeconds"/> as the data key (single
+    /// source of truth, so the index TTL can never DESYNC from the data TTL — the Phase-68 TEST-06 root cause), with a
+    /// floor == the data TTL and a 2× ceiling so the index STRICTLY OUTLIVES the data it points at. That headroom is
+    /// functional: while the index is alive a redelivery takes the RECOVERY path (re-send from the slot array, no input
+    /// needed); once the index is gone it falls to the FORWARD path (needs the input → reinject-drop → MISSING). The
+    /// jitter also avoids a synchronized expiry herd. <c>+1</c> makes the 2× ceiling inclusive; <c>Random.Shared</c> is
+    /// the framework-shared thread-safe RNG.</summary>
+    private TimeSpan SlotTtl()
+    {
+        var ttl = livenessOptions.Value.ExecutionDataTtlSeconds;
+        return TimeSpan.FromSeconds(Random.Shared.Next(ttl, 2 * ttl + 1));
+    }
+
     public async Task RunAsync(EntryStepDispatch d, Guid messageId, CancellationToken ct)
     {
         var db = redis.GetDatabase();
@@ -94,7 +108,7 @@ public sealed class ProcessorPipeline(
         }
 
         if (exists.Value)
-            await RunRecoveryAsync(d, messageId, db, limit, executionDataTtl, ct);     // RECOVERY pass (implemented this phase)
+            await RunRecoveryAsync(d, messageId, db, limit, ct);                        // RECOVERY pass (implemented this phase)
         else
             await RunForwardAsync(d, messageId, db, limit, executionDataTtl, ct);
     }
@@ -113,7 +127,7 @@ public sealed class ProcessorPipeline(
     /// </para>
     /// </summary>
     private async Task RunRecoveryAsync(
-        EntryStepDispatch d, Guid messageId, IDatabase db, int limit, TimeSpan executionDataTtl, CancellationToken ct)
+        EntryStepDispatch d, Guid messageId, IDatabase db, int limit, CancellationToken ct)
     {
         // RECOV-01: HGETALL the slot array. Exhaust → REINJECT; END (no source delete — the input is intact).
         var read = await RetryLoop.ExecuteAsync(
@@ -156,13 +170,13 @@ public sealed class ProcessorPipeline(
             if (retire.Succeeded)
             {
                 await RetryLoop.ExecuteAsync(
-                    () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), executionDataTtl), limit, ct);   // unified-TTL refresh
+                    () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), SlotTtl()), limit, ct);   // D-06 random[ttl,2×ttl] refresh
             }
             // Retire exhaust → "do nothing" (A18 line 192): the slot stays; a future replay re-sends (dup-tolerant, A16).
-            // IN-01: the whole-HASH EXPIRE refresh (same bounded executionDataTtl as the data key — index and data
-            // expire together, no RNG) runs ONLY inside the retire-succeeded branch above; on a retire exhaust the
-            // existing HASH TTL is deliberately left intact (no path leaves a freshly-written HASH without an EXPIRE
-            // — the HASH already carried a TTL from its forward-Post alloc write).
+            // IN-01: the whole-HASH EXPIRE refresh (SlotTtl() = random[ExecutionDataTtl, 2×ExecutionDataTtl] — the index
+            // outlives the data it points at, with jitter) runs ONLY inside the retire-succeeded branch above; on a
+            // retire exhaust the existing HASH TTL is deliberately left intact (no path leaves a freshly-written HASH
+            // without an EXPIRE — the HASH already carried a TTL from its forward-Post alloc write).
         }
 
         // RECOV-03 tail — REINJECT ⊻ source-delete mutual exclusion.
@@ -257,8 +271,8 @@ public sealed class ProcessorPipeline(
                     () => db.HashSetAsync(L2ProjectionKeys.MessageIndex(messageId), slot, entryId.ToString("D")), limit, ct);
                 if (alloc.Succeeded)
                 {
-                    await RetryLoop.ExecuteAsync(                   // whole-HASH EXPIRE: SAME executionDataTtl as the data key (no RNG — expire together)
-                        () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), executionDataTtl), limit, ct);
+                    await RetryLoop.ExecuteAsync(                   // whole-HASH EXPIRE: SlotTtl() = random[ExecutionDataTtl, 2×] — index outlives data
+                        () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), SlotTtl()), limit, ct);
                 }
                 else
                 {

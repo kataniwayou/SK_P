@@ -111,7 +111,7 @@ public sealed class PipelineForwardFacts
     }
 
     [Fact]
-    public async Task IndexTtl_EqualsDataTtl_EqualsConfiguredExecutionDataTtl_NoRng()   // Phase-68 TEST-06 desync guard
+    public async Task IndexTtl_IsRandom_BetweenDataTtl_And_2x_AndOutlivesData()   // Phase-68 TEST-06 desync guard
     {
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
@@ -121,45 +121,55 @@ public sealed class PipelineForwardFacts
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
         var send = new DispatchTestKit.CapturingSendProvider();
 
-        // Build() configures Options(300) → the unified TTL the pipeline applies is exactly 300s.
+        // Build() configures Options(300) → data TTL = 300s, index TTL = random[300,600]s (SlotTtl()).
         await Build(redis, Ctx(), processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
-        var expected = TimeSpan.FromSeconds(300);
+        var dataTtl = TimeSpan.FromSeconds(300);
         var calls = db.ReceivedCalls().ToList();
 
-        // Reads the TTL off a recorded call overload-agnostically: a TimeSpan? expiry parameter, OR an
-        // Expiration parameter (compared via the implicit TimeSpan→Expiration conversion). Mirrors
-        // PipelinePostFacts.PostCompleted_WritesWithTtl. Returns true iff the call's TTL == 'want'.
+        // KeyExpireAsync binds the TimeSpan? overload → TtlOf reads it directly (for the index RANGE check).
+        // StringSetAsync binds the Expiration overload → TtlEquals compares via the implicit TimeSpan→Expiration
+        // conversion (for the data EQUALITY check). Mirrors PipelinePostFacts.PostCompleted_WritesWithTtl.
+        static TimeSpan? TtlOf(NSubstitute.Core.ICall call)
+        {
+            var p = call.GetMethodInfo().GetParameters();
+            var a = call.GetArguments();
+            var i = Array.FindIndex(p, x => x.ParameterType == typeof(TimeSpan?));
+            return i >= 0 ? (TimeSpan?)a[i] : null;
+        }
         static bool TtlEquals(NSubstitute.Core.ICall call, TimeSpan want)
         {
-            var parameters = call.GetMethodInfo().GetParameters();
-            var args = call.GetArguments();
-            var tsIdx = Array.FindIndex(parameters, p => p.ParameterType == typeof(TimeSpan?));
-            if (tsIdx >= 0)
-                return (TimeSpan?)args[tsIdx] == want;
-            var expIdx = Array.FindIndex(parameters, p => p.ParameterType.Name == "Expiration");
-            if (expIdx >= 0)
-                return Equals((Expiration)args[expIdx]!, (Expiration)want);
+            var p = call.GetMethodInfo().GetParameters();
+            var a = call.GetArguments();
+            var i = Array.FindIndex(p, x => x.ParameterType == typeof(TimeSpan?));
+            if (i >= 0) return (TimeSpan?)a[i] == want;
+            var e = Array.FindIndex(p, x => x.ParameterType.Name == "Expiration");
+            if (e >= 0) return Equals((Expiration)a[e]!, (Expiration)want);
             return false;
         }
 
-        // (1) The index EXPIRE: KeyExpireAsync on L2[messageId] — applies the unified executionDataTtl (300s).
+        // (1) The index EXPIRE: KeyExpireAsync on L2[messageId] — applies SlotTtl() = random[ExecutionDataTtl, 2×].
         var expireCall = calls.Single(c =>
             c.GetMethodInfo().Name == nameof(IDatabase.KeyExpireAsync)
             && ((RedisKey)c.GetArguments()[0]!).ToString() == L2ProjectionKeys.MessageIndex(messageId));
 
-        // (2) The data SET: StringSetAsync on L2[entryId] (data: prefix) — applies the SAME executionDataTtl.
+        // (2) The data SET: StringSetAsync on L2[entryId] (data: prefix) — applies the bounded ExecutionDataTtl.
         var setCall = calls.Single(c =>
             c.GetMethodInfo().Name == nameof(IDatabase.StringSetAsync)
             && ((RedisKey)c.GetArguments()[0]!).ToString().StartsWith($"{L2ProjectionKeys.Prefix}data:", StringComparison.Ordinal));
 
-        // Index TTL == data TTL == the configured ExecutionDataTtl (300s) — a single DETERMINISTIC value, NOT a
-        // [300,600] range. SlotTtl()/Random.Shared is gone; the exact-constant assertion is the hermetic proxy
-        // for "no RNG in the write path". Index TTL >= data TTL holds by equality (effect-once ordering intact).
-        // This is the regression guard for the Phase-68 TEST-06 index/data TTL desync.
-        Assert.True(TtlEquals(expireCall, expected), "index EXPIRE TTL must equal the configured 300s executionDataTtl");
-        Assert.True(TtlEquals(setCall, expected), "data SET TTL must equal the configured 300s executionDataTtl");
+        var indexTtl = TtlOf(expireCall);
+        Assert.NotNull(indexTtl);   // KeyExpireAsync binds the TimeSpan? overload
+
+        // Data key TTL == the configured ExecutionDataTtl (300s).
+        Assert.True(TtlEquals(setCall, dataTtl), "data SET TTL must equal the configured ExecutionDataTtl (300s)");
+        // Index TTL ∈ [ExecutionDataTtl, 2×ExecutionDataTtl] = [300,600]s — DERIVED from the same ExecutionDataTtl
+        // (no separate knob → cannot desync; the Phase-68 TEST-06 root cause), with a floor == data TTL and a 2×
+        // ceiling so the index STRICTLY OUTLIVES the data it points at (recovery headroom). Regression guard for the
+        // Phase-68 TEST-06 index/data TTL relationship.
+        Assert.InRange(indexTtl!.Value, dataTtl, TimeSpan.FromSeconds(600));
+        Assert.True(indexTtl!.Value >= dataTtl, "index TTL must be >= data TTL (effect-once ordering + recovery headroom)");
     }
 
     [Fact]
