@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
-current_plan: 2
-status: milestone_complete
-stopped_at: Completed 68-02-PLAN.md
-last_updated: "2026-06-15T05:30:00.000Z"
+current_plan: 1
+status: executing
+stopped_at: Completed 69-01-PLAN.md
+last_updated: "2026-06-15T21:48:59.173Z"
 last_activity: 2026-06-15
 progress:
-  total_phases: 27
-  completed_phases: 28
-  total_plans: 86
-  completed_plans: 86
-  percent: 104
+  total_phases: 28
+  completed_phases: 27
+  total_plans: 88
+  completed_plans: 87
+  percent: 99
 ---
 
 # Project State
@@ -22,17 +22,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; v8.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), v6.0.0 (typed base-config seam + Gate A config-schema compatibility), and v7.0.0 (per-replica processor liveness + self-watchdog — closed audit-override, live close gate deferred to v8.0.0).**
-**Current focus:** Phase 68 — live-resilience-proof-7-scenarios-capstone
+**Current focus:** Phase 69 — align-processor-pipeline-to-canonical-recovery-spec-atomic-i
 
 ## Current Position
 
 Milestone: v8.0.0 (E2E Resilience Proof) — STARTED 2026-06-14. Goal: prove perfect (zero-missing, effect-once) recovery of a fan-out orchestrated workflow (A→B→C→{D1→E1→F1, D2→E2→F2}, one shared processor-sample, cron `*/30 * * * * *`) under 7 sustained 5-minute fault scenarios (happy path, processor/orchestrator/keeper/redis/rabbitmq/redis+rabbitmq crash), verified SOLELY from Prometheus metrics + Elasticsearch logs (aggregate by correlationId; missing/duplicate vs total triggers), fully automated. Prerequisite code change: enable 6-field seconds-cron. Supersedes v7.0.0's deferred Phase-62 live proof. Phases continue at **63**.
-Phase: 68
-Current Plan: Not started
+Phase: 69 (align-processor-pipeline-to-canonical-recovery-spec-atomic-i) — EXECUTING
+Current Plan: 1
 Total Plans: 2
 Plan: 2 of 2
-Status: Milestone complete
-Last activity: 2026-06-15 - Completed quick task 260615-kgz: per-(correlationId,executionId) multi-execution scoring
+Status: Ready to execute
+Last activity: 2026-06-15
 
 > Phase 68 (capstone live proof) — ✅ COMPLETE 2026-06-15. The live 7-scenario fault sweep ran end-to-end (`scripts/phase-68-sweep.ps1`, ~1h, windows ~04:30→05:25 UTC): **6/7 PASS** (TEST-01..05 + TEST-07, each zero-missing + effect-once); wrapper exit 1. The lone **TEST-06 (rabbitmq) VERDICT_FAIL** (MISSING:2, 7/9 complete; effect-once held) was traced — `KeeperReinjectDroppedDelta:2 == Missing:2` → the by-design `ReinjectConsumer.cs:37` silent-DROP (`STRLEN L2[entryId]==0`): the 5s `Processor__ExecutionDataTtl` (compose:285) self-expired across the 45s outage so keeper REINJECT correctly dropped already-gone keys. Corroborated by TEST-07 (strictly-harder redis+rabbitmq superset) PASS 8/8 — a deterministic rabbitmq-recovery defect would have failed TEST-07 too. **Spec-owner disposition: ACCEPT AS TEST-ENV TTL ARTIFACT** (accept-with-rationale; NO code/TTL/dwell/retry change, D-01b/D-04 honoured). Recovery machinery **PROVEN across all 7 fault classes**; TEST-06's miss documented as a known test-env TTL artifact. TEST-01..07 all complete (TEST-06 proven-with-documented-artifact). Roll-up `analyzer-reports/phase-68-summary.json` (`098f36a`). Summary: `.planning/phases/68-live-resilience-proof-7-scenarios-capstone/68-02-SUMMARY.md`.
 
@@ -1010,6 +1010,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 66 P03 | 9min | 2 tasks | 2 files |
 | Phase 67 P02 | 5min | 2 tasks | 1 files |
 | Phase 68 P01 | 3min | 3 tasks | 3 files |
+| Phase 69 P01 | 25min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -1460,6 +1461,8 @@ Recent decisions affecting current work:
 - 66-03: AnalyzerE2ETests write-then-assert (JSON report written before verdict assert -> exists on red); scenarioId path-traversal guarded
 - 67-02: harness adds a clean-orchestrator restart (STEP B1) + MTP --filter-method to bake in the three 67-01 live findings
 - Phase 68-01: 5 harness scenario rows TEST-03..07 (uniform D-01 recipe: stop-start/N=4/45s), phase-68-sweep.ps1 one-shot driver (run-all, exit 0 iff 7/7 PASS), fixture renamed Analyze_Window_Yields_Pass synced to both --filter-method literals
+- Phase 69-01: forward-Post L2 write collapsed to ONE atomic Lua ScriptEvaluateAsync (index HSET + whole-hash PEXPIRE + data SET-PX); index/data TTLs computed in C#, passed as ARGV ms (no Lua RNG — Phase-68 TEST-06 desync guard preserved)
+- Phase 69-01: the INFRA-01 silent forward DROP is eliminated — the single atomic-write exhaust routes to ONE SendKeeper(BuildInject) (NODROP-01 / spec section 10)
 
 ### Roadmap Milestone Log
 
@@ -1536,6 +1539,7 @@ Forward-looking notes:
 - Phase 29 added (v3.5.0 follow-up): Structured execution-scope logging — ambient structured-attribute logs (CorrelationId, WorkflowId, StepId, ProcessorId, ExecutionId, EntryId) via MEL log scopes + OTel IncludeScopes → Elasticsearch; new bus-wide `InboundExecutionScopeConsumeFilter` (execution id-set for `IExecutionCorrelated`, both consoles) alongside the unchanged `CorrelationId` filter, shared `ExecutionLogScope` keys (skip `Guid.Empty`), per-result inner scope for minted ExecutionId/output EntryId, process-wide ProcessorId enricher from `IProcessorContext`, explicit scope in the Quartz `WorkflowFireJob`. Requirements LOG-01..06 TBD at spec.
 - Phase 38 added (v3.7.0 follow-up): Uniform `service_name` + instance labels across all metrics — `service_name={name}_{version}` + `service_instance_id` on every metric series (runtime/HTTP/business); processor name+version sourced from the DB (extend `ProcessorIdentityFound`, remove redundant processor appsettings, `processor-pending` placeholder); logs `service.name` unchanged; Prometheus query consumers updated. SPEC locked 2026-06-05 (MLBL-01..05, ambiguity 0.11, 38-SPEC.md). No human verification required.
 - Phases 38↔39 renumbered (v3.7.0, 2026-06-05): the metrics-label phase was moved BEFORE the close gate so the gate seals the final metric-label contract. Metrics-labels is now **Phase 38**; "Keeper Observability + Real-Stack E2E + Close Gate" is now **Phase 39**. (Historical "Phase-38 close gate" references in the frozen 34-/35-0X-SUMMARY records predate the swap and refer to what is now Phase 39.)
+- Phase 69 added: Align processor pipeline to canonical recovery spec — atomic index+data write collapsing the `INFRA-01` index-write drop + the data-write-fail escalation into a single `INJECT`; gated forward cleanup (skip the atomic two-key delete when any item escalated to the keeper); In-Process contract. Spec of record: `docs/design/processor-keeper-recovery-spec.md`.
 
 ### Pending Todos
 
@@ -1563,8 +1567,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-15T04:28:13.360Z
-Stopped at: Completed 68-01-PLAN.md
+Last session: 2026-06-15T21:48:50.290Z
+Stopped at: Completed 69-01-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
@@ -1572,4 +1576,4 @@ Resume file: None
 
 **Previous Phase:** 11 (migrate-prometheus-and-elastic-containers-from-compose-stack) — 10/10 plans — verified 2026-05-28 (3 consecutive GREEN dotnet test runs at 142/142 facts each; byte-identical psql `\l` SHA-256 `0d98b0de…0aac127`; OBSERV-12 superseded; INFRA-06 amendment locked in)
 
-**Planned Phase:** 68 (Live Resilience Proof — 7 Scenarios (Capstone)) — 2 plans — 2026-06-15T04:04:41.648Z
+**Planned Phase:** 69 (Align processor pipeline to canonical recovery spec: atomic index+data write with single INJECT (close INFRA-01 drop) and gated forward cleanup) — 2 plans — 2026-06-15T21:36:42.182Z
