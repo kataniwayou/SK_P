@@ -87,6 +87,11 @@ try {
     $Scenarios = [ordered]@{
         'TEST-01' = @{ targetContainers = @();                   faultType = 'none';       injectAfterNFires = 0; dwellSeconds = 0;  notes = 'no-fault baseline' }
         'TEST-02' = @{ targetContainers = @('processor-sample'); faultType = 'stop-start'; injectAfterNFires = 4; dwellSeconds = 45; notes = 'processor whole-tier crash' }
+        'TEST-03' = @{ targetContainers = @('orchestrator');        faultType = 'stop-start'; injectAfterNFires = 4; dwellSeconds = 45; notes = 'orchestrator crash — RAMJobStore re-hydration from L2 parent index' }
+        'TEST-04' = @{ targetContainers = @('keeper');              faultType = 'stop-start'; injectAfterNFires = 4; dwellSeconds = 45; notes = 'keeper whole-tier crash (BOTH replicas — total liveness blackout)' }
+        'TEST-05' = @{ targetContainers = @('redis');               faultType = 'stop-start'; injectAfterNFires = 4; dwellSeconds = 45; notes = 'redis crash — L2 slot-array + liveness + BIT probe' }
+        'TEST-06' = @{ targetContainers = @('rabbitmq');            faultType = 'stop-start'; injectAfterNFires = 4; dwellSeconds = 45; notes = 'rabbitmq crash — nack-requeue redelivery on reconnect' }
+        'TEST-07' = @{ targetContainers = @('redis','rabbitmq');    faultType = 'stop-start'; injectAfterNFires = 4; dwellSeconds = 45; notes = 'redis + rabbitmq combined crash' }
     }
 
     # Validate the requested id against the table BEFORE any docker/psql op (T-67-02).
