@@ -68,33 +68,13 @@ public sealed class PipelinePostFacts
         Assert.Empty(send.SentKeeper);
         Assert.Single(send.Sent.OfType<StepCompleted>());
 
-        // The Post write applies the bounded ExecutionDataTtl (CONFIG-02/D-17) so a terminal step's output
-        // key self-expires (the close-gate redis net-zero invariant depends on this). Build() configures
-        // Options(300), so every StringSetAsync call must carry a 300s expiry. Inspect the received calls
-        // overload-agnostically (the expiry binds to either a TimeSpan? or an Expiration parameter).
-        var expectedTtl = TimeSpan.FromSeconds(300);
-        var setCalls = db.ReceivedCalls()
-            .Where(c => c.GetMethodInfo().Name == nameof(IDatabase.StringSetAsync))
-            .ToList();
-        Assert.NotEmpty(setCalls);
-        Assert.All(setCalls, c =>
-        {
-            var parameters = c.GetMethodInfo().GetParameters();
-            var args = c.GetArguments();
-
-            // TTL applied means: the TTL-bearing argument (a TimeSpan? expiry OR an Expiration) equals 300s.
-            var tsIdx = Array.FindIndex(parameters, p => p.ParameterType == typeof(TimeSpan?));
-            if (tsIdx >= 0)
-                Assert.Equal(expectedTtl, (TimeSpan?)args[tsIdx]);   // TimeSpan? expiry = configured TTL
-
-            var expIdx = Array.FindIndex(parameters, p => p.ParameterType.Name == "Expiration");
-            if (expIdx >= 0)
-                // The Expiration overload carries the same relative TTL (implicit TimeSpan→Expiration).
-                Assert.Equal((Expiration)expectedTtl, (Expiration)args[expIdx]!);
-
-            Assert.True(tsIdx >= 0 || expIdx >= 0,
-                "StringSetAsync overload exposes no recognizable expiry parameter to assert the TTL on");
-        });
+        // Phase-69 (ATOMIC-01): the Post write is now ONE atomic ScriptEvaluateAsync; the bounded
+        // ExecutionDataTtl (CONFIG-02/D-17) rides as the data-TTL ARGV (ARGV[5] / 0-based [4] = ms) so a
+        // terminal step's output key self-expires (the close-gate redis net-zero invariant depends on this).
+        // Build() configures Options(300) → data TTL must be 300_000ms.
+        var argv = (RedisValue[])db.ReceivedCalls()
+            .Single(c => c.GetMethodInfo().Name == nameof(IDatabase.ScriptEvaluateAsync)).GetArguments()[2]!;
+        Assert.Equal(300_000L, (long)argv[4]);   // ARGV[5] data TTL ms == configured ExecutionDataTtl (300s)
     }
 
     [Fact]
@@ -103,7 +83,9 @@ public sealed class PipelinePostFacts
         var ct = TestContext.Current.CancellationToken;
         var entryId = Guid.NewGuid();
         var messageId = Guid.NewGuid();
-        var redis = DispatchTestKit.PresentReadWriteFaultL2(
+        // Phase-69 (NODROP-01): the forward-Post write is one atomic ScriptEvaluateAsync — an atomic-write
+        // exhaust is the sole keeper send (KeeperInject, the infra route), with NO StepCompleted for the item.
+        var redis = DispatchTestKit.AtomicWriteFaultL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
         var send = new DispatchTestKit.CapturingSendProvider();
@@ -111,9 +93,7 @@ public sealed class PipelinePostFacts
         await Build(redis, Ctx(), processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
-        // Phase-50 (D-01): UPDATE/CLEANUP retired — a write-exhaust on a completed item is the sole keeper
-        // send (KeeperInject, the infra route), with NO StepCompleted for that item.
-        Assert.Single(send.SentKeeper.OfType<KeeperInject>());               // write-exhaust → KeeperInject
+        Assert.Single(send.SentKeeper.OfType<KeeperInject>());               // atomic-write exhaust → KeeperInject
         Assert.Single(send.SentKeeper);                                       // KeeperInject is the only keeper send
         Assert.Empty(send.Sent.OfType<StepCompleted>());                     // NO StepCompleted for that item
     }
