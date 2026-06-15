@@ -108,7 +108,11 @@ public sealed class ProcessorPipeline(
     /// the framework-shared thread-safe RNG.</summary>
     private TimeSpan SlotTtl()
     {
-        var ttl = livenessOptions.Value.ExecutionDataTtlSeconds;
+        // WR-69-01: floor at 1s. A non-positive ExecutionDataTtlSeconds would marshal to PEXPIRE/SET PX 0,
+        // a Redis server error that exhausts the atomic write and launders a CONFIG fault as an infra exhaust
+        // (every completed item escalates to the keeper indefinitely). The data TTL is floored identically in
+        // RunAsync so both TTL sources stay the single ExecutionDataTtlSeconds (TEST-06 anti-desync guard).
+        var ttl = Math.Max(1, livenessOptions.Value.ExecutionDataTtlSeconds);
         return TimeSpan.FromSeconds(Random.Shared.Next(ttl, 2 * ttl + 1));
     }
 
@@ -118,7 +122,7 @@ public sealed class ProcessorPipeline(
         var limit = retryOptions.Value.Limit;
         // CONFIG-02 / D-17: bound execution-data TTL applied on every output write so a TERMINAL step's
         // output key and any key minted by a repeated cron fire are bounded rather than leaking forever.
-        var executionDataTtl = TimeSpan.FromSeconds(livenessOptions.Value.ExecutionDataTtlSeconds);
+        var executionDataTtl = TimeSpan.FromSeconds(Math.Max(1, livenessOptions.Value.ExecutionDataTtlSeconds)); // WR-69-01: floor at 1s (avoid SET PX 0 server error)
 
         // D-07/FWD-01: branch on exist L2[messageId]. Exhaust → REINJECT; END (no source delete, input intact).
         var exists = await RetryLoop.ExecuteAsync(
