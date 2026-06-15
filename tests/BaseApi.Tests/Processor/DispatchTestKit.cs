@@ -39,31 +39,35 @@ internal static class DispatchTestKit
     /// </summary>
     public sealed class FakeProcessor : BaseProcessor<DummyConfig>
     {
-        private readonly Func<string, DummyConfig?, CancellationToken, Task<List<ProcessItem>>> _impl;
+        private readonly Func<string, DummyConfig?, Guid, CancellationToken, Task<List<ProcessItem>>> _impl;
 
         public FakeProcessor(List<ProcessItem> items)
-            => _impl = (validatedData, config, _) =>
+            => _impl = (validatedData, config, executionId, _) =>
             {
                 Invoked = true;
                 LastInputData = validatedData;
+                LastExecutionId = executionId;
                 return Task.FromResult(items);
             };
 
         public FakeProcessor(Exception toThrow)
-            => _impl = (validatedData, config, _) =>
+            => _impl = (validatedData, config, executionId, _) =>
             {
                 Invoked = true;
                 LastInputData = validatedData;
+                LastExecutionId = executionId;
                 throw toThrow;
             };
 
         /// <summary>True once the transform was actually invoked (proves the Pre guards short-circuited or not).</summary>
         public bool Invoked { get; private set; }
         public string? LastInputData { get; private set; }
+        /// <summary>The inbound per-instance executionId the seam threaded in (Guid.Empty == entry/seed).</summary>
+        public Guid LastExecutionId { get; private set; }
 
         protected override Task<List<ProcessItem>> ProcessAsync(
-            string validatedData, DummyConfig? config, CancellationToken ct)
-            => _impl(validatedData, config, ct);
+            string validatedData, DummyConfig? config, Guid executionId, CancellationToken ct)
+            => _impl(validatedData, config, executionId, ct);
     }
 
     /// <summary>Returns N completed <see cref="ProcessItem"/>s carrying the given output strings, each with

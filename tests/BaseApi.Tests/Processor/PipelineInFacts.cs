@@ -39,7 +39,7 @@ public sealed class PipelineInFacts
     private sealed class RealDeserProcessor : BaseProcessor<DeserConfig>
     {
         protected override Task<List<ProcessItem>> ProcessAsync(
-            string validatedData, DeserConfig? config, CancellationToken ct)
+            string validatedData, DeserConfig? config, Guid executionId, CancellationToken ct)
             => Task.FromResult(new List<ProcessItem>());   // never reached on a malformed payload
     }
 

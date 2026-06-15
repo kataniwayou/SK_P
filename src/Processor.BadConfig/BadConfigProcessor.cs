@@ -19,7 +19,7 @@ public sealed class BadConfigProcessor(ILogger<BadConfigProcessor> logger) : Bas
 {
     /// <inheritdoc/>
     protected override Task<List<ProcessItem>> ProcessAsync(
-        string validatedData, BadConfig? config, CancellationToken ct)
+        string validatedData, BadConfig? config, Guid executionId, CancellationToken ct)
     {
         // Dead path — Gate A withholds the queue bind so this is never invoked. Trivial completed item.
         logger.LogWarning("badconfig transform invoked (unexpected — Gate A should have withheld health)");

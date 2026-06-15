@@ -17,7 +17,10 @@ public abstract class BaseProcessor
     /// SAME assembly and references the non-generic <see cref="BaseProcessor"/>; this <c>internal abstract</c>
     /// seam is the method it calls. <see cref="BaseProcessor{TConfig}"/> supplies the body (deserialize
     /// the <paramref name="payload"/> into the typed config, then dispatch to the author transform).
+    /// <paramref name="executionId"/> carries the inbound dispatch's per-instance id: <c>Guid.Empty</c>
+    /// marks an ENTRY/seed dispatch (the author may mint fresh ids per spawned execution), a non-empty
+    /// value marks a DOWNSTREAM continuation whose lineage the author reuses unchanged.
     /// </summary>
     internal abstract Task<List<ProcessItem>> ExecuteAsync(
-        string validatedData, string payload, CancellationToken ct);
+        string validatedData, string payload, Guid executionId, CancellationToken ct);
 }

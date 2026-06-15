@@ -232,7 +232,7 @@ public sealed class ProcessorPipeline(
 
         // ---- IN ----
         List<ProcessItem> items;
-        try { items = await processor.ExecuteAsync(validatedData, d.Payload, ct); }
+        try { items = await processor.ExecuteAsync(validatedData, d.Payload, d.ExecutionId, ct); }
         catch (ProcessStatusException e)
         {
             IStepResult result = e switch

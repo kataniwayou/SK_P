@@ -28,11 +28,12 @@ public sealed class BaseProcessorSeamFacts
         public static readonly ProcessItem Result = new(ProcessOutcome.Completed, "output", Guid.NewGuid());
 
         protected override Task<List<ProcessItem>> ProcessAsync(
-            string validatedData, TestConfig? config, CancellationToken ct)
+            string validatedData, TestConfig? config, Guid executionId, CancellationToken ct)
             => Task.FromResult(new List<ProcessItem> { Result });
 
-        public Task<List<ProcessItem>> InvokeAsync(string validatedData, TestConfig? config, CancellationToken ct)
-            => ProcessAsync(validatedData, config, ct);
+        public Task<List<ProcessItem>> InvokeAsync(
+            string validatedData, TestConfig? config, Guid executionId, CancellationToken ct)
+            => ProcessAsync(validatedData, config, executionId, ct);
     }
 
     [Fact]
@@ -50,7 +51,7 @@ public sealed class BaseProcessorSeamFacts
         Assert.IsType<TestProcessor>(resolvedAsBase);
 
         var concrete = provider.GetRequiredService<TestProcessor>();
-        var results = await concrete.InvokeAsync("input", new TestConfig("config"), ct);
+        var results = await concrete.InvokeAsync("input", new TestConfig("config"), Guid.NewGuid(), ct);
 
         var single = Assert.Single(results);
         Assert.Same(TestProcessor.Result, single);
