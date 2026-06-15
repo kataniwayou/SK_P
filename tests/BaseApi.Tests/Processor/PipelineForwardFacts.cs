@@ -152,6 +152,26 @@ public sealed class PipelineForwardFacts
     }
 
     [Fact]
+    public async Task EscalatedItem_SkipsCleanup()   // GATE-01 (spec §4.3 final ¶)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var entryId = Guid.NewGuid();
+        var messageId = Guid.NewGuid();
+        var redis = DispatchTestKit.AtomicWriteFaultL2(
+            new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out var db);
+        var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));   // one completed item → its write faults
+        var send = new DispatchTestKit.CapturingSendProvider();
+        var d = DispatchTestKit.Dispatch(entryId, Guid.NewGuid());   // non-Guid.Empty source
+
+        await Build(redis, Ctx(), processor, send).RunAsync(d, messageId, ct);
+
+        Assert.Single(send.SentKeeper.OfType<KeeperInject>());                  // the item escalated
+        // GATE-01: an item escalated → the forward cleanup tail (atomic two-key DEL) MUST NOT run.
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
+        Assert.Empty(send.SentKeeper.OfType<KeeperDelete>());                   // no tail → no DELETE escalation either
+    }
+
+    [Fact]
     public async Task MixedItems_EachOnRightChannel()   // FWD-02
     {
         var ct = TestContext.Current.CancellationToken;
