@@ -848,7 +848,7 @@ Phases execute in numeric order: 25 → 26 → 27 → 28 → 29 → 30 → 31 �
  (completed 2026-06-14)
 - [x] **Phase 67: Fault-Injection Harness** — Activate via `POST /api/v1/orchestration/start`, run a 5-minute/30s-cron window, inject each scenario's mid-run fault (container kill/restart) and let the system recover — fully automated end-to-end (clean → seed → activate → inject → observe → analyze → tear down), no human step.
  (completed 2026-06-14 — harness proven live on TEST-01 baseline + TEST-02 processor-crash recovery, both Pass 10/10; FAULT-01/02/03 met)
-- [ ] **Phase 68: Live Resilience Proof — 7 Scenarios (Capstone)** — Run all 7 proofs (happy path + processor / orchestrator / keeper / redis / rabbitmq / redis+rabbitmq crash) through the harness; each PASSES iff zero-missing + effect-once hold over its window; redelivery during the fault reported, not failed.
+- [x] **Phase 68: Live Resilience Proof — 7 Scenarios (Capstone)** — Run all 7 proofs (happy path + processor / orchestrator / keeper / redis / rabbitmq / redis+rabbitmq crash) through the harness; each PASSES iff zero-missing + effect-once hold over its window; redelivery during the fault reported, not failed. (completed 2026-06-15)
 
 ### Phase Details
 
