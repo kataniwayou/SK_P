@@ -930,7 +930,9 @@ Plans:
   3. **TEST-05/06 infra crashes** — Redis (05) and RabbitMQ (06) each crash mid-run and recovery is proven (zero-missing + effect-once hold).
   4. **TEST-07 combined infra crash** — Redis + RabbitMQ crash together mid-run and recovery is proven (zero-missing + effect-once hold).
   5. All 7 scenarios produce an automated PASS verdict derived solely from Prometheus + Elasticsearch — no human verification, no triple-SHA infra net-zero gate.
-**Plans**: TBD
+**Plans**: 2 plans
+  - [ ] 68-01-PLAN.md — Author the 5 scenario rows (TEST-03..07) + the phase-68-sweep.ps1 wrapper + cosmetic fixture-rename/literal-sync (Wave 1, static-verified)
+  - [ ] 68-02-PLAN.md — Run the 7-scenario live sweep; prove 7/7 PASS roll-up; investigate-first on any verdict FAIL (Wave 2, live-empirical, checkpoint)
 
 ### Progress (v8.0.0)
 
@@ -941,6 +943,6 @@ Plans:
 | 65 | Fan-Out Workflow Seeder & Clean-State Stack | 3/3 | Complete    | 2026-06-14 |
 | 66 | Prometheus + ES Analyzer & PASS/FAIL Engine | 3/3 | Complete    | 2026-06-14 |
 | 67 | Fault-Injection Harness | 3/3 | Complete    | 2026-06-14 |
-| 68 | Live Resilience Proof — 7 Scenarios (Capstone) | 0/TBD | Not started | — |
+| 68 | Live Resilience Proof — 7 Scenarios (Capstone) | 0/2 | Not started | — |
 
 **Coverage:** 23/23 v8.0.0 requirements mapped (CRON-01/02 → 63 · PROC-01/02/03 → 64 · WF-01/02 + ENV-01/02 → 65 · OBS-01/02/03/04 → 66 · FAULT-01/02/03 → 67 · TEST-01..07 → 68). No orphans, no duplicates.
