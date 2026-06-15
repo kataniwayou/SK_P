@@ -32,7 +32,7 @@ Current Plan: Not started
 Total Plans: 2
 Plan: 2 of 2
 Status: Milestone complete
-Last activity: 2026-06-15
+Last activity: 2026-06-15 - Completed quick task 260615-dbf: unify L2 slot-array index TTL to ExecutionDataTtl const
 
 > Phase 68 (capstone live proof) — ✅ COMPLETE 2026-06-15. The live 7-scenario fault sweep ran end-to-end (`scripts/phase-68-sweep.ps1`, ~1h, windows ~04:30→05:25 UTC): **6/7 PASS** (TEST-01..05 + TEST-07, each zero-missing + effect-once); wrapper exit 1. The lone **TEST-06 (rabbitmq) VERDICT_FAIL** (MISSING:2, 7/9 complete; effect-once held) was traced — `KeeperReinjectDroppedDelta:2 == Missing:2` → the by-design `ReinjectConsumer.cs:37` silent-DROP (`STRLEN L2[entryId]==0`): the 5s `Processor__ExecutionDataTtl` (compose:285) self-expired across the 45s outage so keeper REINJECT correctly dropped already-gone keys. Corroborated by TEST-07 (strictly-harder redis+rabbitmq superset) PASS 8/8 — a deterministic rabbitmq-recovery defect would have failed TEST-07 too. **Spec-owner disposition: ACCEPT AS TEST-ENV TTL ARTIFACT** (accept-with-rationale; NO code/TTL/dwell/retry change, D-01b/D-04 honoured). Recovery machinery **PROVEN across all 7 fault classes**; TEST-06's miss documented as a known test-env TTL artifact. TEST-01..07 all complete (TEST-06 proven-with-documented-artifact). Roll-up `analyzer-reports/phase-68-summary.json` (`098f36a`). Summary: `.planning/phases/68-live-resilience-proof-7-scenarios-capstone/68-02-SUMMARY.md`.
 
@@ -49,6 +49,7 @@ Last activity: 2026-06-15
 | 260614-2hf | Keeper-recovery endpoint symmetric: remove bus retry policy + skp-dlq-1 dead-letter routing (Guard-exhaust → throw → nack-requeue, like the processor/orchestrator exec-path endpoints) | 2026-06-14 | ef33d5a |  | [260614-2hf-keeper-recovery-endpoint-symmetric-remov](./quick/260614-2hf-keeper-recovery-endpoint-symmetric-remov/) |
 | 260614-9jd | Remove dead skp-dlq-1 dead-letter tier: delete ConsolidatedErrorTransportFilter + ConsolidatedFault + BaseConsole.Core topology; slim phase-62 close gate; delete/reduce DLQ tests (orphaned by 260614-2hf) | 2026-06-14 | e2c6db7 | Verified | [260614-9jd-remove-dead-skp-dlq-1-dead-letter-tier-c](./quick/260614-9jd-remove-dead-skp-dlq-1-dead-letter-tier-c/) |
 | 260614-b5c | Add minimal keeper self-watchdog: timestamp-only L1 record stamped every BitHealthLoop tick + staleness health check folded into /health/live (detects a silently-stalled BIT loop); no ProcessorLivenessEntry reuse, no Data payload, no BaseConsole.Core change | 2026-06-14 | d755df4 | Verified | [260614-b5c-add-minimal-keeper-self-watchdog-timesta](./quick/260614-b5c-add-minimal-keeper-self-watchdog-timesta/) |
+| 260615-dbf | Unify L2[messageId] slot-array index TTL to the ExecutionDataTtl const, drop slot-array jitter (delete SlotArrayOptions + SlotTtl RNG; both index EXPIRE calls + the data SET now share one const); closes the Phase 68 TEST-06 desync root cause | 2026-06-15 | 981ddd6 |  | [260615-dbf-unify-l2-slot-array-index-ttl-to-executi](./quick/260615-dbf-unify-l2-slot-array-index-ttl-to-executi/) |
 
 ### Roadmap Evolution
 
