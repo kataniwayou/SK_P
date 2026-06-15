@@ -1,108 +1,52 @@
-# Steps API — v8.0.0 Requirements
+# Steps API — v9.0.0 Requirements
 
-> **Milestone:** v8.0.0 — E2E Resilience Proof
-> **Source of truth:** This milestone's planning conversation (2026-06-14), scope confirmed point-by-point.
-> **Posture:** Whole-system **live recovery proof under faults**. Supersedes v7.0.0's deferred Phase-62 live proof. Sources of truth are **Prometheus + Elasticsearch ONLY** (distinct from the prior triple-SHA infra net-zero close gates). Phases continue at **63**.
+> **Milestone:** v9.0.0 — Canonical Recovery: Orchestrator Alignment
+> **Source of truth:** This session's design conversation (2026-06-16), confirmed point-by-point.
+> **Posture:** Extend the Phase-69 processor recovery-spec alignment to the orchestrator's result-consume path, and finish a small processor INJECT cleanup that makes the keeper delete-invariant uniform across both consoles. Canonical pattern: `src/BaseProcessor.Core/Processing/ProcessorPipeline.cs` + `docs/design/processor-keeper-recovery-spec.md` §3–§8. Phases continue at **70**.
 
 ## Goal
 
-Prove perfect (**zero-missing**, **effect-once**) recovery of a fan-out orchestrated workflow under 7 sustained 5-minute fault scenarios, verified solely from Prometheus metrics and Elasticsearch logs, fully automated — no human verification.
+Give the orchestrator's result-consume path the same `messageId`-indexed forward/recovery/keeper pipeline the processor has, so an orchestrator crash/redelivery re-emits stable entryIds idempotently (at-least-once delivery + stable re-emission; **NOT** message-level dedup), and make the keeper delete-invariant uniform: keys are deleted ONLY in the cleanup tail, completed out-of-band by the DELETE keeper state on exhaust — INJECT and REINJECT never delete.
 
-**Workflow under test:** a single seeded definition `A → B → C → { D1 → E1 → F1, D2 → E2 → F2 }` (9 steps, entry A, fan-out at C, two sinks F1/F2), all steps backed by **one** shared `processor-sample`, cron `*/30 * * * * *`, each step's assignment payload `{ number:int, label:"Step_*" }`.
-
-**Pass bar:** every triggered correlationId reaches both sinks (zero-missing) AND each step's COMPLETED effect lands exactly once per correlationId (effect-once); message-level redelivery during a crash is **reported, not failed** (matches the documented exactly-once-effect guarantee).
+**Idempotency model:** the inbound result's broker `messageId` is the idempotency/branch key (`L2[messageId]` index, slot array). A redelivery re-enters RECOVERY and re-sends the **persisted** entryIds (stable, retired slots skipped); the atomic two-key delete closes the index-gone/input-alive reprocess window. This mirrors the processor exactly and reverses Phase 24.1's L1-only `TypedResultConsumer` (re-introduces L2 to the result path).
 
 ## Requirements
 
-### Seconds-Granularity Cron (CRON)
-- [x] **CRON-01
-**: The orchestrator fires a workflow on a 6-field seconds-granularity cron expression (`*/30 * * * * *` → every 30 seconds); `CronInterval` next-occurrence + interval math computes sub-minute intervals correctly (UTC).
-- [x] **CRON-02
-**: The workflow create/update cron validator accepts the 6-field seconds form (previously rejected as non-5-field-standard), with the 5-field form still accepted.
+### Processor INJECT Cleanup (KINJ) — Phase 70
 
-### Processor Work & Structured Logging (PROC)
-- [x] **PROC-01
-**: A processor step's payload carries an integer and a string; the framework deserializes the assignment payload into the typed config exposing both fields.
-- [x] **PROC-02
-**: `ProcessAsync` generates a random number, adds it to the payload integer, and produces the sum as the step's completed result.
-- [x] **PROC-03
-**: `ProcessAsync` emits a structured log entry tagged with the payload string `Step_<label>` and the computed sum, carrying `correlationId` + `stepId` (+ `workflowId`/`processorId`) so Elasticsearch can aggregate a run by correlationId and identify each step.
+- [ ] **KINJ-01**: The keeper INJECT path is non-destructive — it writes the data key and sends the result, and deletes NO key (the `delete L2[DeleteEntryId]` step is removed from `InjectConsumer`).
+- [ ] **KINJ-02**: The vestigial `KeeperInject.DeleteEntryId` field is removed from the contract; `ProcessorPipeline.BuildInject` no longer supplies it; `InjectConsumerFacts` and the Phase-50 golden tests are updated to the new shape; the solution builds 0-warning.
+- [ ] **KINJ-03**: DELETE is the ONLY keeper state that deletes keys — REINJECT and INJECT are non-destructive — enforced by a negative-guard fact (no `KeyDelete*` in the INJECT/REINJECT consumers).
 
-### Fan-Out Workflow Seeder (WF)
-- [x] **WF-01
-**: A seeder creates the fan-out workflow `A→B→C→{D1→E1→F1, D2→E2→F2}` (9 steps, entry A, fan-out at C, sinks F1+F2) with every step referencing one shared processor and the `*/30 * * * * *` cron.
-- [x] **WF-02
-**: Each of the 9 steps has an assignment carrying the `{ number, label:"Step_*" }` payload; the seeder is idempotent (re-runnable without duplicating workflow/step/assignment rows).
+### Orchestrator Recovery Pipeline (ORCV) — Phase 71
 
-### Clean-State Test Stack (ENV)
-- [x] **ENV-01
-**: The proof runs a minimal stack with a single `processor-sample` — the redundant `processor-badconfig` is excluded — alongside the full infra + observability tiers (postgres, redis, rabbitmq, otel-collector, elasticsearch, prometheus, orchestrator, keeper, baseapi-service).
-- [x] **ENV-02
-**: The harness starts each test from clean state — Redis flushed, Postgres workflow/step/assignment rows reset, and leftover/redundant processor containers removed — so each test's metrics and logs are attributable to that run only.
-
-### Fault-Injection Harness (FAULT)
-> **Note:** COMPLETE (2026-06-14). 67-01 landed the D-16 analyzer test-fixture seam, 67-02 authored `scripts/phase-67-harness.ps1`, and 67-03 proved the harness live end-to-end on both reference runs — TEST-01 (no-fault baseline) and TEST-02 (whole-tier processor crash + in-window recovery) — each scoring Pass (10/10 started runs complete, zero missing, zero duplicates) fully automated. FAULT-01/02/03 are genuinely met by this live proof, finalizing the re-opening from 67-01's `2b5cec9`.
-- [x] **FAULT-01
-
-**: The harness activates the workflow via `POST /api/v1/orchestration/start` and lets the cron drive it for a 5-minute observation window per test (~10 triggers, fresh correlationId per fire).
-- [x] **FAULT-02
-**: The harness injects each scenario's fault mid-run (container kill/restart of the targeted tier) and allows the system to recover within the same window.
-- [x] **FAULT-03
-
-**: Each scenario runs fully automated end-to-end (clean → seed → activate → inject fault → observe → analyze → tear down) with no human verification step.
-
-### Prometheus + ES Analysis (OBS)
-- [x] **OBS-01
-**: The analyzer aggregates all Elasticsearch logs sharing a correlationId into a per-run trace and determines, per run, whether all 9 steps and both sinks (F1, F2) completed.
-- [x] **OBS-02
-**: The analyzer detects, against the total number of cron triggers, MISSING runs/steps (a triggered correlationId that did not complete all steps/both sinks) and DUPLICATE step effects (a step's COMPLETED effect recorded more than once per correlationId).
-- [x] **OBS-03
-**: The analyzer queries Prometheus counters (`orchestrator_dispatch_sent`, `orchestrator_result_consumed`, `processor_dispatch_consumed`, `processor_result_sent{outcome}`, dedupe + keeper counters) and cross-checks dispatched vs completed vs deduped against the total trigger count.
-- [x] **OBS-04
-**: Each test emits a complete per-test smoke report (correlationId-aggregated log trace + metric summary) and an automated PASS/FAIL verdict derived **solely** from Prometheus + Elasticsearch.
-
-### Resilience Proof — 7 Scenarios (TEST)
-> Each scenario PASSES iff, over its 5-minute/30s-cron window, **zero-missing** (every triggered correlationId reaches both sinks F1+F2) AND **effect-once** (each step's COMPLETED effect once per correlationId) hold; message-level redelivery during the fault is reported, not failed.
-- [x] **TEST-01
-**: Happy path — no fault injected; baseline zero-missing + effect-once.
-- [x] **TEST-02
-**: Processor crash during orchestration — recovery proven.
-- [x] **TEST-03
-**: Orchestrator crash during orchestration — recovery proven.
-- [x] **TEST-04
-**: Keeper crash during orchestration — recovery proven.
-- [x] **TEST-05
-**: Redis crash during orchestration — recovery proven.
-- [x] **TEST-06
-**: RabbitMQ crash during orchestration — recovery proven.
-- [x] **TEST-07
-**: Redis + RabbitMQ crash during orchestration — recovery proven.
+- [ ] **ORCV-01**: The orchestrator result-consume path gates on `exist L2[messageId]` (messageId = the inbound result's broker message id): absent → FORWARD, present → RECOVERY. A gate L2-op exhaustion routes to REINJECT and ends the round trip (no cleanup).
+- [ ] **ORCV-02**: FORWARD, per next step, performs ONE atomic op (index-slot `HSET` + whole-hash `PEXPIRE` + copy `L2[origin entryId] → L2[new entryId]` with the data TTL). An atomic-write exhaustion routes to a single `OrchestratorInject` (no silent drop).
+- [ ] **ORCV-03**: Each index slot value carries the full dispatch tuple `(nextStepId, nextProcessorId, payload, newEntryId)` so RECOVERY can reconstruct the heterogeneous per-slot dispatch (orchestrator slots are not homogeneous like the processor's).
+- [ ] **ORCV-04**: FORWARD sends `EntryStepDispatch` to `queue:{nextProcessorId}` then retires the slot to `guid.empty`; the cleanup tail (atomic two-key `DEL` of `L2[messageId]` + `L2[origin entryId]`) runs ONLY if no item escalated to the keeper this pass; a delete exhaustion routes to DELETE.
+- [ ] **ORCV-05**: RECOVERY re-emits idempotently — per slot a 3-way classification (data exists → re-send; clean not-exist → drop, no retire; L2 fault → leave slot intact); the tail REINJECTs if any slot faulted, else runs the atomic two-key delete. A redelivery re-sends the stable persisted entryIds and skips retired slots.
+- [ ] **ORCV-06**: Keeper contracts are split by origin (route-by-type, no discriminator switch): `KeeperInject`/`KeeperReinject` are renamed `ProcessorInject`/`ProcessorReinject`, and `OrchestratorInject`/`OrchestratorReinject` are added; `KeeperDelete` stays shared. The two new consumers bind on the same `keeper-recovery` endpoint (same partitioner, health gate, and exhaustion posture, no new queue). `OrchestratorReinject` rebuilds the result (carrying the outcome to pick the `IStepResult` subtype) and re-injects to `queue:orchestrator-result`; `OrchestratorInject` completes the index+data copy and sends `EntryStepDispatch` downstream.
+- [ ] **ORCV-07**: The delete invariant holds orchestrator-side — keys are deleted ONLY in the cleanup tail (a forward exit where no item escalated, or the end of a recovery pass), completed out-of-band by DELETE on exhaust; `OrchestratorInject` and `OrchestratorReinject` never delete a key.
 
 ## Future Requirements (deferred)
 
-- **K8s liveness-probe restart wiring** (carried from v7.0.0) — pointing the actual Kubernetes liveness probe at the watchdog with a restart policy.
-- **Continuous/long-soak resilience runs** — beyond the 5-minute per-scenario window (e.g. multi-hour soak, randomized fault timing).
-- **Grafana dashboards / alerting** over the resilience metrics (analysis is script-driven this milestone).
+- **Live close-gate proof of orchestrator recovery** — a real-stack fault-injection run proving zero-missing + effect-once when the orchestrator crashes mid-fan-out (folds into the v8.0.0 7-scenario harness; this milestone proves it at the hermetic/unit level).
+- **Orchestrator slot-array metrics** — a keeper-style counter for orchestrator INJECT/REINJECT/DROP, mirroring the `processor_*` meters.
 
 ## Out of Scope
 
-- **Triple-SHA infra net-zero close gate** — this milestone's truth is Prometheus + ES, not `psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues` SHA invariants (the prior close-gate protocol). Net-zero is not a v8.0.0 pass criterion.
-- **Multi-replica orchestrator/keeper scaling** — orchestrator stays single-replica; faults are injected against the existing topology.
-- **Distinct processors per step** — all 9 steps share one `processor-sample` (step identity comes from the payload label, not the processor).
-- **New recovery mechanisms** — v8.0.0 PROVES the existing recovery machinery (keeper, idempotency/effect-once, slot-array, per-replica liveness); it does not add new recovery logic. Any product change is limited to seconds-cron + the processor payload/logging.
+- **Message-level dedup revival** — the system stays at-least-once + stable entryId re-emission; the retired v3.6.0 `H`/`flag[H]` effect-first CAS dedup is NOT reintroduced.
+- **Multi-replica orchestrator** — the orchestrator stays single-replica; this milestone does not add competing-consumer orchestrators.
+- **Changing the keeper health-gate / partitioner / exhaustion posture** — reused verbatim; the new consumers bind on the existing endpoint with the existing posture.
+- **New keeper queue/endpoint** — orchestrator recovery rides the existing `keeper-recovery` endpoint, not a separate queue.
 
 ## Traceability
 
-REQ-IDs are filled into phases by the roadmapper (Step 10). Every requirement maps to exactly one phase; the roadmapper validates 100% coverage. Phases continue at **63**.
+REQ-IDs are filled into phases by the roadmapper (Step 10). Every requirement maps to exactly one phase; the roadmapper validates 100% coverage. Phases continue at **70**.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CRON-01, CRON-02 | Phase 63 | Pending |
-| PROC-01, PROC-02, PROC-03 | Phase 64 | Pending |
-| WF-01, WF-02 | Phase 65 | Pending |
-| ENV-01, ENV-02 | Phase 65 | Pending |
-| OBS-01, OBS-02, OBS-03, OBS-04 | Phase 66 | Pending |
-| FAULT-01, FAULT-02, FAULT-03 | Phase 67 | complete |
-| TEST-01, TEST-02, TEST-03, TEST-04, TEST-05, TEST-06, TEST-07 | Phase 68 | Pending |
+| KINJ-01, KINJ-02, KINJ-03 | Phase 70 | Pending |
+| ORCV-01 … ORCV-07 | Phase 71 | Pending |
 
-**Coverage:** 23 requirements across 7 categories (CRON, PROC, WF, ENV, FAULT, OBS, TEST). Filled into phases by the roadmapper.
+**Coverage:** 10 requirements across 2 categories (KINJ, ORCV). Filled into phases by the roadmapper.
