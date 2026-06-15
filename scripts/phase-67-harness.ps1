@@ -55,7 +55,7 @@
     Microsoft.Testing.Platform, which SILENTLY IGNORES `dotnet test --filter` (VSTest syntax) and
     runs the entire 638-test suite. This harness MUST use the MTP-native filter passed AFTER `--`:
     `-- --filter-method "*FanOutSeeder_SeedsAndSelfVerifies*"` (seed) and
-    `-- --filter-method "*Analyze_HappyPath_Window_Yields_Pass*"` (analyzer).
+    `-- --filter-method "*Analyze_Window_Yields_Pass*"` (analyzer).
 
 .NOTES
     Dev/ops-only tooling. No product source touched. Teardown keeps volumes + images (never the
@@ -342,13 +342,15 @@ try {
     # ($ErrorActionPreference='Stop') cannot leak SCENARIO_ID / WINDOW_*_UTC into the parent shell
     # (matters when the body is dot-sourced / run interactively; harmless for the one-shot `pwsh -File`).
     try {
-        # IN-04: this --filter-method targets the fixture named "*_Yields_Pass*" for EVERY scenario,
-        # including fault runs (e.g. TEST-02). The fixture asserts a PASS verdict; for a fault scenario a
-        # FAIL verdict is the EXPECTED outcome, so a non-zero $analyzerExit here is the legitimate verdict
-        # FAIL (exit code 1 per the D-04 table), NOT an infra error. The wiring is correct either way —
-        # the exit code mirrors the verdict. (If the fixture is ever renamed, update this pattern in the
-        # same change to keep the filter and method name consistent.)
-        dotnet test tests/BaseApi.Tests/BaseApi.Tests.csproj -c Release -- --filter-method "*Analyze_HappyPath_Window_Yields_Pass*" 2>&1 | Out-String | Write-Host
+        # IN-04: this --filter-method targets the fixture named "*Analyze_Window_Yields_Pass*" for EVERY
+        # scenario, including fault runs (TEST-02..07). The capstone (Phase 68) requires a RECOVERED fault
+        # run to assert PASS: zero-missing + effect-once hold once the crashed tier rejoins, so exit 0 is
+        # what every scenario must produce. A non-zero $analyzerExit is the legitimate verdict FAIL
+        # (exit code 1 per the D-04 table) — a REAL finding to investigate (D-01b: a stateful tier whose
+        # recovery exceeds the window), NOT an infra error and NOT a normal result. The exit code
+        # mirrors the verdict either way. The fixture method and this --filter-method literal MUST stay in
+        # sync (renamed together — an out-of-sync literal silently runs the whole 638-test suite).
+        dotnet test tests/BaseApi.Tests/BaseApi.Tests.csproj -c Release -- --filter-method "*Analyze_Window_Yields_Pass*" 2>&1 | Out-String | Write-Host
         $analyzerExit = $LASTEXITCODE
     } finally {
         Remove-Item Env:SCENARIO_ID, Env:WINDOW_START_UTC, Env:WINDOW_END_UTC -ErrorAction SilentlyContinue

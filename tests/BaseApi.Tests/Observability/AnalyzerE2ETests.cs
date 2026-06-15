@@ -19,8 +19,8 @@ namespace BaseApi.Tests.Observability;
 /// via <c>dotnet test --filter "Category=RealStack&amp;FullyQualifiedName~Analyzer"</c>, reading the
 /// process EXIT CODE (a FAIL verdict ⇒ failed assert ⇒ non-zero exit) PLUS the
 /// <c>analyzer-reports/{scenarioId}.json</c> artifact. The harness parameterizes the scenario id +
-/// window timing; for THIS phase the single fact proves the analyzer pipeline produces a green verdict
-/// against a clean live window (TEST-01-shaped happy path).
+/// window timing; the single fact proves the analyzer pipeline produces a green verdict against a
+/// recovered live window (a happy-path baseline OR a post-fault recovery — zero-missing + effect-once).
 /// </para>
 /// <para>
 /// <b>RealStack, NOT hermetic.</b> Tagged <c>Category=RealStack</c> so the hermetic filter
@@ -82,7 +82,7 @@ public sealed class AnalyzerE2ETests
             out parsed);
 
     [Fact]
-    public async Task Analyze_HappyPath_Window_Yields_Pass()
+    public async Task Analyze_Window_Yields_Pass()
     {
         var ct = TestContext.Current.CancellationToken;
         var scenarioId = Environment.GetEnvironmentVariable("SCENARIO_ID") ?? DefaultScenarioId;
