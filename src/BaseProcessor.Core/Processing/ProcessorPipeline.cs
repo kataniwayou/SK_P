@@ -37,15 +37,16 @@ namespace BaseProcessor.Core.Processing;
 /// an unexpected exception ⇒ <c>StepFailed</c>.
 /// </para>
 /// <para>
-/// <b>Forward — Post</b> (SLOT-01/02, INFRA-01/02, allocation-before-data): per completed item, in order:
-/// (1) mint <c>entryId</c>; (2) write the allocation index <c>L2[messageId][slot]=entryId</c> FIRST then a
-/// whole-HASH EXPIRE applying the SAME bounded <c>executionDataTtl</c> the data key uses (no RNG — the index
-/// and the data it points at expire together) — an allocation exhaustion is <c>infra_messageId</c> → DROP (no
-/// data write, no send, no slot consumed); (3) write the data key <c>L2[entryId]=data</c> SECOND — a data exhaustion is
-/// <c>infra_entryId</c> → <c>KeeperInject</c> carrying the EntryId/Data/DeleteEntryId id-set (the slot WAS
-/// allocated → consumed); else <c>StepCompleted</c> to the orchestrator. The slot ordinal increments ONLY
-/// for completed items (business-failed + dropped items consume no slot). Allocation-before-data is
-/// deliberate (T-51-05): a crash between the two writes leaves a skippable dangling pointer, never a leak.
+/// <b>Forward — Post</b> (ATOMIC-01, NODROP-01): per completed item, in order: (1) mint <c>entryId</c>;
+/// (2) issue ONE atomic Lua <see cref="AtomicForwardWrite"/> (<c>ScriptEvaluateAsync</c>) that writes the
+/// index slot <c>L2[messageId][slot]=entryId</c>, the whole-HASH index TTL (<see cref="SlotTtl"/> =
+/// random[ExecutionDataTtl, 2×ExecutionDataTtl]), the data key <c>L2[entryId]=data</c>, and the data TTL
+/// (== ExecutionDataTtl) in ONE server-side op — a concurrent reader/Recovery never observes a partial
+/// index-without-data (or data-without-index) state (spec §4.3 step 3). An atomic-write exhaustion (index- OR
+/// data-failure) routes to ONE <c>KeeperInject</c> carrying the EntryId/Data/DeleteEntryId id-set (no silent
+/// DROP path remains — spec §10 bullet 1); else <c>StepCompleted</c> to the orchestrator. The slot ordinal
+/// increments ONLY for completed items (business-failed items consume no slot). TTLs are computed in C# and
+/// passed as ARGV (no RNG inside Lua) so the Phase-68 TEST-06 index/data desync guard holds.
 /// </para>
 /// <para>
 /// <b>Forward — source-delete tail</b> (FWD-03): an explicit inline tail (NOT a try/cleanup block — the
@@ -75,6 +76,24 @@ public sealed class ProcessorPipeline(
     /// write byte-identical to the test assertions in <c>PipelineRecoveryFacts</c> (which hardcode
     /// <c>(RedisValue)Guid.Empty.ToString()</c>).</summary>
     private static readonly RedisValue RetiredSlot = Guid.Empty.ToString();
+
+    /// <summary>Spec §4.3 step 3 (ATOMIC-01): the atomic forward-Post write — index slot HSET + whole-HASH
+    /// PEXPIRE + data SET-with-PX, in ONE server-side op. A compile-time <c>const</c> with parameterized
+    /// KEYS/ARGV (no user data concatenated into the script text → injection-safe, T-69-04). A concurrent
+    /// reader/Recovery never observes a partial index-without-data (or data-without-index) state.
+    /// <para>
+    /// KEYS[1] = L2[messageId] (the index HASH); KEYS[2] = L2[entryId] (the data key).
+    /// ARGV[1] = slot ordinal; ARGV[2] = entryId(string); ARGV[3] = data;
+    /// ARGV[4] = index TTL ms (<see cref="SlotTtl"/>, random[ExecutionDataTtl, 2×ExecutionDataTtl]);
+    /// ARGV[5] = data TTL ms (== ExecutionDataTtl). The PEXPIRE is a WHOLE-HASH expire (NOT a per-field HEXPIRE
+    /// — Redis 7.4 is not required), byte-for-byte matching the former <c>KeyExpireAsync(MessageIndex, SlotTtl())</c>.
+    /// TTLs are computed in C# and passed as ARGV (no RNG inside Lua) so the Phase-68 TEST-06 desync guard holds.
+    /// </para></summary>
+    private const string AtomicForwardWrite = @"
+        redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+        redis.call('PEXPIRE', KEYS[1], ARGV[4])
+        redis.call('SET', KEYS[2], ARGV[3], 'PX', ARGV[5])
+        return 1";
 
     /// <summary>D-05/D-06: the L2[messageId] index HASH whole-HASH TTL = <c>Random[ExecutionDataTtl, 2×ExecutionDataTtl]</c>
     /// — derived from the SAME <see cref="ProcessorLivenessOptions.ExecutionDataTtlSeconds"/> as the data key (single
@@ -265,26 +284,24 @@ public sealed class ProcessorPipeline(
 
             if (outcome == ProcessOutcome.Completed)
             {
-                var entryId = NewId.NextGuid();                     // (1) allocate
+                var entryId = NewId.NextGuid();                     // (1) allocate (unchanged)
 
-                var alloc = await RetryLoop.ExecuteAsync(           // (2) ALLOCATION INDEX FIRST (SLOT-01)
-                    () => db.HashSetAsync(L2ProjectionKeys.MessageIndex(messageId), slot, entryId.ToString("D")), limit, ct);
-                if (alloc.Succeeded)
-                {
-                    await RetryLoop.ExecuteAsync(                   // whole-HASH EXPIRE: SlotTtl() = random[ExecutionDataTtl, 2×] — index outlives data
-                        () => db.KeyExpireAsync(L2ProjectionKeys.MessageIndex(messageId), SlotTtl()), limit, ct);
-                }
-                else
-                {
-                    // INFRA-01: allocation exhausted → infra_messageId → DROP (no data write, no send, no slot).
-                    continue;
-                }
-
-                var write = await RetryLoop.ExecuteAsync(          // (3) DATA SECOND (SLOT-02)
-                    () => db.StringSetAsync(L2ProjectionKeys.ExecutionData(entryId), item.Data, executionDataTtl), limit, ct);
+                var write = await RetryLoop.ExecuteAsync(           // (2) ONE atomic index+data write (ATOMIC-01)
+                    () => db.ScriptEvaluateAsync(AtomicForwardWrite,
+                        new RedisKey[] { L2ProjectionKeys.MessageIndex(messageId), L2ProjectionKeys.ExecutionData(entryId) },
+                        new RedisValue[]
+                        {
+                            slot,                                   // ARGV[1] slot ordinal (local counter, not atomic state)
+                            entryId.ToString("D"),                  // ARGV[2]
+                            item.Data,                              // ARGV[3]
+                            (long)SlotTtl().TotalMilliseconds,      // ARGV[4] index TTL — computed in C#, random[ttl,2×ttl]
+                            (long)executionDataTtl.TotalMilliseconds, // ARGV[5] data TTL — == ExecutionDataTtl
+                        }),
+                    limit, ct);
                 if (!write.Succeeded)
                 {
-                    // INFRA-02: data-write exhausted → keeper INJECT (data in-hand); the slot WAS allocated → consume it.
+                    // NODROP-01: atomic-write exhausted (index- OR data-failure) → ONE INJECT (data in-hand).
+                    // NO DROP path remains (spec §10 bullet 1). The slot was claimed → consume it.
                     await SendKeeper(BuildInject(d, item, entryId), limit, ct);
                     slot++;
                     continue;
