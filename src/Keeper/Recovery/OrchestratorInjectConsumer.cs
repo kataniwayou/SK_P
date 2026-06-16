@@ -19,18 +19,27 @@ namespace Keeper.Recovery;
 /// <see cref="RecoveryConsumerBase{TMessage}.Guard"/>; gating happens at the endpoint (D-04).</summary>
 public sealed class OrchestratorInjectConsumer(
     IConnectionMultiplexer redis, ISendEndpointProvider sendProvider,
-    IOptions<RetryOptions> retryOptions)
+    IOptions<RetryOptions> retryOptions, IOptions<RecoveryOptions> recoveryOptions)
     : RecoveryConsumerBase<OrchestratorInject>(redis, sendProvider, retryOptions)
 {
+    // WR-02 (Phase 71): the data TTL for the copied key, computed in C# (NOT in Lua — the D-03 anti-desync
+    // invariant) and floored at 1s (a non-positive value would marshal to PX 0, a Redis server error). Sourced
+    // from the SAME bounded "Recovery" ExecutionDataTtlSeconds knob the orchestrator FORWARD path uses, so the
+    // INJECT-escalation copy gets the same lifetime as the normal SET ... PX ExecutionDataTtl path.
+    private readonly TimeSpan _executionDataTtl =
+        TimeSpan.FromSeconds(Math.Max(1, recoveryOptions.Value.ExecutionDataTtlSeconds));
+
     protected override async Task HandleAsync(OrchestratorInject m, CancellationToken ct)
     {
         // 1) complete the index+data COPY (origin -> newEntryId) the FORWARD pass couldn't finish: read the
         // origin data key, then SET the new key with that value — both through Guard so a transient Redis
         // failure routes to the exhaustion policy. Absent origin (HasValue==false) is a no-write no-op:
         // INJECT never deletes, so nothing is removed; the dispatch below still proceeds (forward-only).
+        // WR-02: the SET carries the bounded ExecutionDataTtl (mirroring the FORWARD Lua's 'PX' ARGV[4]) so a
+        // lost/redelivery-stranded INJECT can never leave the copied key immortal (no immortal-key leak).
         var v = await Guard(() => Db.StringGetAsync(L2ProjectionKeys.ExecutionData(m.OriginEntryId)), ct);
         if (v.HasValue)
-            await Guard(() => Db.StringSetAsync(L2ProjectionKeys.ExecutionData(m.EntryId), v), ct);
+            await Guard(() => Db.StringSetAsync(L2ProjectionKeys.ExecutionData(m.EntryId), v, _executionDataTtl), ct);
 
         // 2) send the reconstructed EntryStepDispatch -> queue:{NextProcessorId:D} (the downstream target).
         var dispatch = new EntryStepDispatch(m.WorkflowId, m.NextStepId, m.NextProcessorId, m.Payload)

@@ -39,7 +39,7 @@ public sealed class OrchestratorInjectConsumerFacts
         var send = new RecoveryTestKit.CapturingSendProvider();
 
         var consumer = new OrchestratorInjectConsumer(
-            RecoveryTestKit.Mux(db), send, RecoveryTestKit.Retry());
+            RecoveryTestKit.Mux(db), send, RecoveryTestKit.Retry(), RecoveryTestKit.Recovery());
 
         var ctx = Substitute.For<ConsumeContext<OrchestratorInject>>();
         ctx.Message.Returns(m);

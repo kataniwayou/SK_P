@@ -35,6 +35,11 @@ internal static class RecoveryTestKit
     public static IOptions<RetryOptions> Retry(int limit = 3) =>
         Options.Create(new RetryOptions { Limit = limit });
 
+    /// <summary>WR-02 (Phase 71): the Keeper RecoveryOptions helper carrying the ExecutionDataTtlSeconds knob
+    /// the OrchestratorInjectConsumer reads to TTL the copied data key (mirrors the orchestrator pipeline kit).</summary>
+    public static IOptions<RecoveryOptions> Recovery(int executionDataTtlSeconds = 300) =>
+        Options.Create(new RecoveryOptions { ExecutionDataTtlSeconds = executionDataTtlSeconds });
+
     /// <summary>A real <see cref="KeeperMetrics"/> built from a real <see cref="IMeterFactory"/> (mirrors
     /// the ProcessorMetricsFacts construction idiom) so consumer facts can pass a live counter and observe
     /// it via a <see cref="System.Diagnostics.Metrics.MeterListener"/>.</summary>
