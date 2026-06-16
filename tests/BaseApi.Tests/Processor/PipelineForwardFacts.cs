@@ -16,7 +16,7 @@ namespace BaseApi.Tests.Processor;
 /// <list type="bullet">
 ///   <item><description>FWD-01: existence-check exhaust → <see cref="KeeperReinject"/> AND the source is NEVER deleted (input intact).</description></item>
 ///   <item><description>ATOMIC-01: a completed item issues ONE atomic <c>ScriptEvaluateAsync</c> whose body HSETs the index slot BEFORE SET-ing the data key; the index/data TTLs ride as script ARGV (Phase-68 TEST-06 desync guard).</description></item>
-///   <item><description>NODROP-01 (Phase 69): an atomic-write exhaust → ONE <see cref="KeeperInject"/> carrying Data/DeleteEntryId/EntryId — no silent DROP path remains (spec §10 bullet 1).</description></item>
+///   <item><description>NODROP-01 (Phase 69): an atomic-write exhaust → ONE <see cref="KeeperInject"/> carrying Data/EntryId — no silent DROP path remains (spec §10 bullet 1).</description></item>
 ///   <item><description>FWD-02: mixed completed + business-failed items each land on the right channel.</description></item>
 ///   <item><description>FWD-03: the happy-path tail deletes the source <c>L2[entryId]</c>; a tail exhaust → <see cref="KeeperDelete"/>.</description></item>
 /// </list>
@@ -146,7 +146,6 @@ public sealed class PipelineForwardFacts
         // (was a silent DROP). NO drop path remains; the dropped item never completes.
         var inj = Assert.Single(send.SentKeeper.OfType<KeeperInject>());
         Assert.NotEqual("", inj.Data);                                                 // raw-JSON output in-hand
-        Assert.Equal(d.EntryId, inj.DeleteEntryId);                                    // source entryId to delete
         Assert.NotEqual(Guid.Empty, inj.EntryId);                                      // the allocation minted
         Assert.Empty(send.Sent.OfType<StepCompleted>());                              // dropped item never completes
     }

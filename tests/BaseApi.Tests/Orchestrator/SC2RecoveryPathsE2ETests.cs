@@ -37,10 +37,9 @@ namespace BaseApi.Tests.Orchestrator;
 ///   Phase 52 (D-06) makes this a BY-DESIGN silent drop (no throw, no send, no dead-letter; increments
 ///   <c>keeper_reinject_dropped</c>). Asserted on the origin queue staying EMPTY (nothing re-injected) and
 ///   the DLQ depth NOT incrementing — A18 "accepted silent losses".</item>
-///   <item><b>INJECT</b> (<c>InjectConsumer</c>) — Phase 52 (KEEP-02) implements the A18 forward-only body:
-///   write <c>L2[m.EntryId]=m.Data</c>, send a reconstructed <see cref="StepCompleted"/> to
-///   <c>queue:orchestrator-result</c>, delete <c>m.DeleteEntryId</c>. Asserted on the data key being
-///   written and the source key being deleted.</item>
+///   <item><b>INJECT</b> (<c>InjectConsumer</c>) — Phase 70 (KINJ-01) is non-destructive: write
+///   <c>L2[m.EntryId]=m.Data</c> + send a reconstructed <see cref="StepCompleted"/> to
+///   <c>queue:orchestrator-result</c>, and delete NOTHING. Asserted on the data key being written.</item>
 ///   <item><b>DELETE</b> (<c>DeleteConsumer</c>, A19 both-key) — <see cref="KeeperDelete"/> now carries a
 ///   <see cref="KeeperDelete.MessageId"/> (KeeperDelete.cs:13); the consumer deletes BOTH
 ///   <c>skp:data:{entryId}</c> AND the <c>skp:msg:{messageId}</c> allocation index in ONE atomic multi-key
@@ -175,8 +174,8 @@ public sealed class SC2RecoveryPathsE2ETests
         }
 
         // =========================================================================================
-        // STATE 3 — INJECT (Phase 52, KEEP-02) — A18 forward-only: write L2[m.EntryId]=m.Data, send a
-        // reconstructed StepCompleted to queue:orchestrator-result, delete L2[m.DeleteEntryId].
+        // STATE 3 — INJECT (Phase 70, KINJ-01) — non-destructive: write L2[m.EntryId]=m.Data, send a
+        // reconstructed StepCompleted to queue:orchestrator-result, and delete NOTHING.
         // =========================================================================================
         {
             var wfId = Guid.NewGuid();
@@ -185,15 +184,10 @@ public sealed class SC2RecoveryPathsE2ETests
             var corr = Guid.NewGuid();
             var execId = Guid.NewGuid();
             var entryId = Guid.NewGuid();
-            var deleteEntryId = Guid.NewGuid();
 
-            // PRE-SEED the source key so its post-INJECT deletion is observable; register both keys for
-            // net-zero teardown (the entryId write survives, the deleteEntryId source is removed by INJECT).
+            // Register the written data key for net-zero teardown (INJECT writes it; nothing is deleted).
             var entryKey = L2ProjectionKeys.ExecutionData(entryId);
-            var deleteKey = L2ProjectionKeys.ExecutionData(deleteEntryId);
-            await db.StringSetAsync(deleteKey, "source-to-delete");
             factory.L2KeysToCleanup.Add(entryKey);
-            factory.L2KeysToCleanup.Add(deleteKey);
 
             await endpoint.Send(new KeeperInject(wfId, stepId, procId)
             {
@@ -201,17 +195,13 @@ public sealed class SC2RecoveryPathsE2ETests
                 ExecutionId = execId,
                 EntryId = entryId,
                 Data = "inject-payload",
-                DeleteEntryId = deleteEntryId,
             }, ct);
 
-            // EFFECT: the data key is written with m.Data, and the source key is deleted (the StepCompleted
-            // send to queue:orchestrator-result is exercised end-to-end by SC1's round-trip).
+            // EFFECT: the data key is written with m.Data, and nothing is deleted (the StepCompleted send to
+            // queue:orchestrator-result is exercised end-to-end by SC1's round-trip).
             var written = await PollForKeyValueAsync(db, entryKey, "inject-payload", ct);
             Assert.True(written,
                 $"INJECT: expected {entryKey} to be written with the injected Data, but it was not.");
-            var sourceDeleted = await PollForKeyAbsentAsync(db, deleteKey, ct);
-            Assert.True(sourceDeleted,
-                $"INJECT: expected the source key {deleteKey} to be deleted after the send, but it remains.");
         }
 
         // =========================================================================================
