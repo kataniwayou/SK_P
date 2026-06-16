@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
 current_plan: 1
-status: verifying
+status: ready_to_plan
 stopped_at: Completed 70-02-PLAN.md
 last_updated: "2026-06-16T06:06:10.761Z"
 last_activity: 2026-06-16
 progress:
   total_phases: 30
-  completed_phases: 29
+  completed_phases: 30
   total_plans: 90
   completed_plans: 90
   percent: 100
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; 
 ## Current Position
 
 Milestone: v9.0.0 (Canonical Recovery: Orchestrator Alignment) — STARTED 2026-06-16. Goal: extend the Phase-69 canonical recovery-spec alignment to the orchestrator's result-consume path (give it the same `messageId`-indexed forward/recovery/keeper pipeline the processor has — reverses Phase 24.1's L1-only `TypedResultConsumer`), plus a small processor INJECT cleanup making the keeper delete-invariant uniform (DELETE the only deleting keeper state). Canonical pattern = `ProcessorPipeline.cs` + `processor-keeper-recovery-spec.md` §3–§8. Two phases: 70 (processor INJECT cleanup, small) → 71 (orchestrator recovery pipeline, large). Phases continue at **70**.
-Phase: 70 (Processor INJECT Cleanup) — EXECUTING
+Phase: 71
 Plan: 2 of 2
-Current Plan: 1
-Status: Phase complete — ready for verification
+Current Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-16
 
 > v8.0.0 (E2E Resilience Proof) — feature-complete 2026-06-15 (phases 63–69); not yet formally archived (`/gsd-complete-milestone` deferred). Prior-milestone position history retained below.
@@ -733,7 +733,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 227
+- Total plans completed: 229
 - Average duration: —
 - Total execution time: —
 
@@ -806,6 +806,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 67 | 3 | - | - |
 | 68 | 2 | - | - |
 | 69 | 2 | - | - |
+| 70 | 2 | - | - |
 
 **Recent Trend:**
 
