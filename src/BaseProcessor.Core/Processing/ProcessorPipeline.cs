@@ -44,7 +44,7 @@ namespace BaseProcessor.Core.Processing;
 /// (== ExecutionDataTtl) in ONE server-side op — a concurrent reader/Recovery never observes a partial
 /// index-without-data (or data-without-index) state (spec §4.3 step 3). An atomic-write exhaustion (index- OR
 /// data-failure that retry could not clear, OR a deterministic server-side script error — bad ARGV, Lua
-/// runtime error, value-too-large — that re-throws every attempt) routes to ONE <c>KeeperInject</c> carrying the EntryId/Data/DeleteEntryId id-set (no silent
+/// runtime error, value-too-large — that re-throws every attempt) routes to ONE <c>KeeperInject</c> carrying the EntryId/Data id-set (no silent
 /// DROP path remains — spec §10 bullet 1); else <c>StepCompleted</c> to the orchestrator. The slot ordinal
 /// increments ONLY for completed items (business-failed items consume no slot). TTLs are computed in C# and
 /// passed as ARGV (no RNG inside Lua) so the Phase-68 TEST-06 index/data desync guard holds.
@@ -425,8 +425,8 @@ public sealed class ProcessorPipeline(
     private static KeeperDelete    BuildDelete(EntryStepDispatch d, Guid messageId) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = d.ExecutionId, EntryId = d.EntryId, MessageId = messageId };   // A1: inbound exec; A19: index id
 
-    // INFRA-02 / Pitfall 1: BuildInject populates the FULL Phase-50 id-set (EntryId = the allocation just
-    // written, Data = the raw-JSON output in-hand, DeleteEntryId = the source entryId).
+    // INFRA-02 / Pitfall 1: BuildInject populates EntryId = the allocation just written,
+    // Data = the raw-JSON output in-hand.
     private static KeeperInject    BuildInject(EntryStepDispatch d, ProcessItem item, Guid entryId) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId)
         {
@@ -434,6 +434,5 @@ public sealed class ProcessorPipeline(
             ExecutionId   = item.ExecutionId,   // D-02/D-03: author-minted item exec
             EntryId       = entryId,            // the allocation written above
             Data          = item.Data,         // raw-JSON output, in-hand on the envelope
-            DeleteEntryId = d.EntryId,         // source entryId (A18 literal deleteEntryId)
         };
 }
