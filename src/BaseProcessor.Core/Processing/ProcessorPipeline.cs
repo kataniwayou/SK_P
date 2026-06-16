@@ -20,14 +20,14 @@ namespace BaseProcessor.Core.Processing;
 /// MassTransit harness (a plain object the facts construct directly).
 /// <para>
 /// <b>Dispatcher</b> (D-07/FWD-01): the entry point branches on <c>exist L2[messageId]</c> via a bounded
-/// retry. An existence-check exhaustion routes to <c>KeeperReinject</c> and ENDS the round trip WITHOUT
+/// retry. An existence-check exhaustion routes to <c>ProcessorReinject</c> and ENDS the round trip WITHOUT
 /// deleting the source (the input is left intact for the keeper). On a present marker the RECOVERY pass runs
 /// (implemented this phase — <see cref="RunRecoveryAsync"/>); otherwise the FORWARD pass runs.
 /// </para>
 /// <para>
 /// <b>Forward — Pre</b> (PIPE-02/03): a <c>SourceStep.IsSource</c> Guid.Empty dispatch skips the L2 read with
 /// empty validatedData; otherwise a bounded-retry read (absent/empty unified with a Redis fault via
-/// <see cref="KeyAbsentException"/>) that exhausts routes to <c>KeeperReinject</c> and returns WITHOUT the
+/// <see cref="KeyAbsentException"/>) that exhausts routes to <c>ProcessorReinject</c> and returns WITHOUT the
 /// source-delete tail (input intact, T-51-04/FWD-01); a read that succeeds proceeds, and an input-schema
 /// failure is a business <c>StepFailed</c> (the source-delete tail STILL runs).
 /// </para>
@@ -44,7 +44,7 @@ namespace BaseProcessor.Core.Processing;
 /// (== ExecutionDataTtl) in ONE server-side op — a concurrent reader/Recovery never observes a partial
 /// index-without-data (or data-without-index) state (spec §4.3 step 3). An atomic-write exhaustion (index- OR
 /// data-failure that retry could not clear, OR a deterministic server-side script error — bad ARGV, Lua
-/// runtime error, value-too-large — that re-throws every attempt) routes to ONE <c>KeeperInject</c> carrying the EntryId/Data id-set (no silent
+/// runtime error, value-too-large — that re-throws every attempt) routes to ONE <c>ProcessorInject</c> carrying the EntryId/Data id-set (no silent
 /// DROP path remains — spec §10 bullet 1); else <c>StepCompleted</c> to the orchestrator. The slot ordinal
 /// increments ONLY for completed items (business-failed items consume no slot). TTLs are computed in C# and
 /// passed as ARGV (no RNG inside Lua) so the Phase-68 TEST-06 index/data desync guard holds.
@@ -244,7 +244,7 @@ public sealed class ProcessorPipeline(
 
             if (!read.Succeeded)                      // infra(READ): Redis fault OR absent/empty, exhausted
             {
-                await SendKeeper(BuildReinject(d), limit, ct);   // KeeperReinject; END — no source delete (input intact)
+                await SendKeeper(BuildReinject(d), limit, ct);   // ProcessorReinject; END — no source delete (input intact)
                 return;                                          // FWD-01: REINJECT path returns WITHOUT the tail
             }
             validatedData = read.Value!;
@@ -419,7 +419,7 @@ public sealed class ProcessorPipeline(
     private static StepProcessing  BuildProcessing(EntryStepDispatch d) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = NewId.NextGuid() };
 
-    private static KeeperReinject  BuildReinject(EntryStepDispatch d) =>
+    private static ProcessorReinject  BuildReinject(EntryStepDispatch d) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId) { CorrelationId = d.CorrelationId, ExecutionId = d.ExecutionId, EntryId = d.EntryId, Payload = d.Payload };   // A1: inbound exec; D-01: carry Payload
 
     private static KeeperDelete    BuildDelete(EntryStepDispatch d, Guid messageId) =>
@@ -427,7 +427,7 @@ public sealed class ProcessorPipeline(
 
     // INFRA-02 / Pitfall 1: BuildInject populates EntryId = the allocation just written,
     // Data = the raw-JSON output in-hand.
-    private static KeeperInject    BuildInject(EntryStepDispatch d, ProcessItem item, Guid entryId) =>
+    private static ProcessorInject    BuildInject(EntryStepDispatch d, ProcessItem item, Guid entryId) =>
         new(d.WorkflowId, d.StepId, d.ProcessorId)
         {
             CorrelationId = d.CorrelationId,

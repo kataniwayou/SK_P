@@ -5,7 +5,7 @@ namespace Messaging.Contracts;
 /// INJECT id-set: <see cref="EntryId"/> (allocation to write) + <see cref="Data"/> (raw-JSON output,
 /// in-hand on the envelope). INJECT is non-destructive (no source delete — KINJ-01).
 /// StepId rides as a record property but is NOT on the IKeeperRecoverable partition marker (D-12).</summary>
-public sealed record KeeperInject(Guid WorkflowId, Guid StepId, Guid ProcessorId) : IKeeperRecoverable
+public sealed record ProcessorInject(Guid WorkflowId, Guid StepId, Guid ProcessorId) : IKeeperRecoverable
 {
     public Guid CorrelationId { get; init; }
     public Guid ExecutionId   { get; init; }

@@ -11,7 +11,7 @@ namespace Keeper.Recovery;
 
 /// <summary>KEEP-01: the Keeper REINJECT state — reads L2[entryId] to confirm the recovered input data is
 /// still present, then re-injects a reconstructed <see cref="EntryStepDispatch"/> (carrying the D-01
-/// <see cref="KeeperReinject.Payload"/> step config) to <c>queue:{ProcessorId:D}</c> — the same target a
+/// <see cref="ProcessorReinject.Payload"/> step config) to <c>queue:{ProcessorId:D}</c> — the same target a
 /// direct dispatch uses. Phase 52 (D-06/D-07): an absent/empty L2[entryId] (STRLEN==0, NO Redis exception)
 /// is now a BY-DESIGN silent drop — ack with no throw and no send, incrementing
 /// <see cref="KeeperMetrics.ReinjectDropped"/> + a structured warning (A18 "accepted silent losses": the
@@ -19,13 +19,13 @@ namespace Keeper.Recovery;
 /// the read is still infra → <see cref="RecoveryConsumerBase{TMessage}.Guard"/> → exhaustion policy (D-01),
 /// NOT swallowed as a drop. IN-04: STRLEN (not StringGet) returns 0 for BOTH a missing key AND an empty
 /// value without pulling the blob.</summary>
-public sealed class ReinjectConsumer(
+public sealed class ProcessorReinjectConsumer(
     IConnectionMultiplexer redis, ISendEndpointProvider sendProvider,
     IOptions<RetryOptions> retryOptions,
-    KeeperMetrics metrics, ILogger<ReinjectConsumer> logger)
-    : RecoveryConsumerBase<KeeperReinject>(redis, sendProvider, retryOptions)
+    KeeperMetrics metrics, ILogger<ProcessorReinjectConsumer> logger)
+    : RecoveryConsumerBase<ProcessorReinject>(redis, sendProvider, retryOptions)
 {
-    protected override async Task HandleAsync(KeeperReinject m, CancellationToken ct)
+    protected override async Task HandleAsync(ProcessorReinject m, CancellationToken ct)
     {
         // Guard the READ so a Redis EXCEPTION still routes to the exhaustion policy; absent/empty
         // (STRLEN==0, no exception) is the by-design drop. IN-04: STRLEN, not StringGet — 0 covers

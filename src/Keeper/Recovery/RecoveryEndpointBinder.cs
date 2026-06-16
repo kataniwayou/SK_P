@@ -57,12 +57,12 @@ public sealed class RecoveryEndpointBinder(
             // No bus-level message-retry, no error-transport config — symmetric with the processor dispatch /
             // orchestrator result endpoints. The in-code Guard RetryLoop is the only retry; a Guard-exhaust
             // throw falls through to broker nack-requeue (no in-process retry, no dead-letter, no skp-dlq-1).
-            cfg.UsePartitioner<KeeperReinject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
-            cfg.UsePartitioner<KeeperInject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
+            cfg.UsePartitioner<ProcessorReinject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
+            cfg.UsePartitioner<ProcessorInject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
             cfg.UsePartitioner<KeeperDelete>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
 
-            cfg.ConfigureConsumer<ReinjectConsumer>(ctx);
-            cfg.ConfigureConsumer<InjectConsumer>(ctx);
+            cfg.ConfigureConsumer<ProcessorReinjectConsumer>(ctx);
+            cfg.ConfigureConsumer<ProcessorInjectConsumer>(ctx);
             cfg.ConfigureConsumer<DeleteConsumer>(ctx);
         });
 

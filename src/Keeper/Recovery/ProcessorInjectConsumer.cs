@@ -13,12 +13,12 @@ namespace Keeper.Recovery;
 /// <c>queue:orchestrator-result</c> (A15). INJECT deletes NO key — DELETE is the only keeper state that
 /// deletes (spec §8). Every op goes through the RetryLoop <see cref="RecoveryConsumerBase{TMessage}.Guard"/>;
 /// gating happens at the endpoint (D-04).</summary>
-public sealed class InjectConsumer(
+public sealed class ProcessorInjectConsumer(
     IConnectionMultiplexer redis, ISendEndpointProvider sendProvider,
     IOptions<RetryOptions> retryOptions)
-    : RecoveryConsumerBase<KeeperInject>(redis, sendProvider, retryOptions)
+    : RecoveryConsumerBase<ProcessorInject>(redis, sendProvider, retryOptions)
 {
-    protected override async Task HandleAsync(KeeperInject m, CancellationToken ct)
+    protected override async Task HandleAsync(ProcessorInject m, CancellationToken ct)
     {
         // 1) write L2[entryId] = data (data in-hand on the envelope — forward-only, NO presence read)
         await Guard(() => Db.StringSetAsync(L2ProjectionKeys.ExecutionData(m.EntryId), m.Data), ct);
