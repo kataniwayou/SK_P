@@ -42,7 +42,7 @@
   3. `InjectConsumerFacts` and the Phase-50 `KeeperContractTests`/golden tests are updated to the reduced id-set and stay green; the solution builds 0-warning (Release + Debug). (KINJ-02)
   4. A negative-guard fact proves **DELETE is the only keeper state that deletes keys** — the INJECT and REINJECT consumers contain no `KeyDelete*` call (REINJECT was already non-destructive; INJECT becomes so), making the delete invariant enforceable, not just documented. (KINJ-03)
 **Plans**: 2 plans
-  - [ ] 70-01-PLAN.md — Source change: remove InjectConsumer source-delete (D-01), drop KeeperInject.DeleteEntryId (D-02), stop BuildInject supplying it (D-03)
+  - [x] 70-01-PLAN.md — Source change: remove InjectConsumer source-delete (D-01), drop KeeperInject.DeleteEntryId (D-02), stop BuildInject supplying it (D-03) ✅ 2026-06-16 (3b69a2e, 559b90e, 5de7b1a)
   - [ ] 70-02-PLAN.md — Test reshape: new KeeperDeleteInvariantFacts (D-04/D-05), reflection guard + InjectConsumerFacts/PipelineForward/SC2 E2E updates (D-06..D-09), 0-warning dual-config build gate (D-10)
 
 #### Phase 71: Orchestrator Recovery Pipeline

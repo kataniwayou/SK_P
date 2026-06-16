@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
-current_plan: —
-status: completed
-stopped_at: Phase 70 context gathered
-last_updated: "2026-06-16T05:21:49.870Z"
-last_activity: 2026-06-16 — v9.0.0 roadmap created (phases 70-71, 10/10 reqs mapped)
+current_plan: 1
+status: executing
+stopped_at: Completed 70-01-PLAN.md
+last_updated: "2026-06-16T05:34:55.165Z"
+last_activity: 2026-06-16
 progress:
   total_phases: 30
   completed_phases: 28
   total_plans: 90
-  completed_plans: 88
-  percent: 98
+  completed_plans: 89
+  percent: 99
 ---
 
 # Project State
@@ -22,15 +22,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; v8.0.0 started)
 
 **Core value:** A solid, observable, validated CRUD foundation that future workflow-platform features build on without rework. **Validated at v3.2.0 ship; extended at v3.3.0 (L3→L1→L2 build pipeline), v3.4.0 (BaseConsole + two-process orchestrator messaging), v3.5.0 (Processor Console + execution round-trip), v3.6.0 (exactly-once-effect idempotency), v3.7.0 (Keeper L2-outage dead-letter recovery + workflow pause/resume), v5.0.0 (slot-array + 3-state keeper recovery re-architecture), v6.0.0 (typed base-config seam + Gate A config-schema compatibility), and v7.0.0 (per-replica processor liveness + self-watchdog — closed audit-override, live close gate deferred to v8.0.0).**
-**Current focus:** Milestone v9.0.0 — roadmap complete (Canonical Recovery: Orchestrator Alignment; phases 70–71); next 
+**Current focus:** Phase 70 — Processor INJECT Cleanup
 
 ## Current Position
 
 Milestone: v9.0.0 (Canonical Recovery: Orchestrator Alignment) — STARTED 2026-06-16. Goal: extend the Phase-69 canonical recovery-spec alignment to the orchestrator's result-consume path (give it the same `messageId`-indexed forward/recovery/keeper pipeline the processor has — reverses Phase 24.1's L1-only `TypedResultConsumer`), plus a small processor INJECT cleanup making the keeper delete-invariant uniform (DELETE the only deleting keeper state). Canonical pattern = `ProcessorPipeline.cs` + `processor-keeper-recovery-spec.md` §3–§8. Two phases: 70 (processor INJECT cleanup, small) → 71 (orchestrator recovery pipeline, large). Phases continue at **70**.
-Phase: 70 (Processor INJECT Cleanup) — not started
-Current Plan: —
-Status: Roadmap complete (2 phases mapped; awaiting /gsd-plan-phase 70)
-Last activity: 2026-06-16 — v9.0.0 roadmap created (phases 70-71, 10/10 reqs mapped)
+Phase: 70 (Processor INJECT Cleanup) — EXECUTING
+Plan: 2 of 2
+Current Plan: 1
+Status: Ready to execute
+Last activity: 2026-06-16
 
 > v8.0.0 (E2E Resilience Proof) — feature-complete 2026-06-15 (phases 63–69); not yet formally archived (`/gsd-complete-milestone` deferred). Prior-milestone position history retained below.
 
@@ -703,7 +704,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 100%
+Progress: [██████████] 99%
 
 ### Milestone Phases (v3.4.0)
 
@@ -1015,6 +1016,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 68 P01 | 3min | 3 tasks | 3 files |
 | Phase 69 P01 | 25min | 3 tasks | 4 files |
 | Phase 69 P02 | 10min | 2 tasks | 2 files |
+| Phase 70 P01 | 4min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -1468,6 +1470,7 @@ Recent decisions affecting current work:
 - Phase 69-01: forward-Post L2 write collapsed to ONE atomic Lua ScriptEvaluateAsync (index HSET + whole-hash PEXPIRE + data SET-PX); index/data TTLs computed in C#, passed as ARGV ms (no Lua RNG — Phase-68 TEST-06 desync guard preserved)
 - Phase 69-01: the INFRA-01 silent forward DROP is eliminated — the single atomic-write exhaust routes to ONE SendKeeper(BuildInject) (NODROP-01 / spec section 10)
 - Phase 69-02: forward cleanup tail gated on a local bool escalated set ONLY at the forward-Post INJECT site — skipped cleanup leaves index + input keys for the keeper/Recovery/index-TTL, removing the processor/keeper index-key race (GATE-01, spec §4.3 final ¶)
+- Phase 70-01: keeper INJECT made non-destructive — removed InjectConsumer op-3 source-delete (KeyDeleteAsync), dropped KeeperInject.DeleteEntryId, and stopped BuildInject supplying it; src/ free of DeleteEntryId. DELETE is now the only deleting keeper state (spec §8). No wire migration (default-STJ tolerant). §8 INJECT index-slot write deferred.
 
 ### Roadmap Milestone Log
 
@@ -1572,9 +1575,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: --stopped-at
-Stopped at: Phase 70 context gathered
-Resume file: --resume-file
+Last session: 2026-06-16T05:34:55.147Z
+Stopped at: Completed 70-01-PLAN.md
+Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
 **Phase 29 (Structured Execution-Scope Logging):** 5/5 plans complete — close gate GATE_EXIT=0 (405 Passed ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held; live scopeProof passes on a `processor-sample` Completed log); LOG-01..06 all complete. Awaiting orchestrator phase verification + `phase.complete`. Milestone v3.5.0 = 17/17 plans across phases 25-29.
