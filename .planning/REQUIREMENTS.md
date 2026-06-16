@@ -18,7 +18,8 @@ Give the orchestrator's result-consume path the same `messageId`-indexed forward
 **: The keeper INJECT path is non-destructive — it writes the data key and sends the result, and deletes NO key (the `delete L2[DeleteEntryId]` step is removed from `InjectConsumer`).
 - [x] **KINJ-02
 **: The vestigial `KeeperInject.DeleteEntryId` field is removed from the contract; `ProcessorPipeline.BuildInject` no longer supplies it; `InjectConsumerFacts` and the Phase-50 golden tests are updated to the new shape; the solution builds 0-warning.
-- [ ] **KINJ-03**: DELETE is the ONLY keeper state that deletes keys — REINJECT and INJECT are non-destructive — enforced by a negative-guard fact (no `KeyDelete*` in the INJECT/REINJECT consumers).
+- [x] **KINJ-03
+**: DELETE is the ONLY keeper state that deletes keys — REINJECT and INJECT are non-destructive — enforced by a negative-guard fact (no `KeyDelete*` in the INJECT/REINJECT consumers).
 
 ### Orchestrator Recovery Pipeline (ORCV) — Phase 71
 

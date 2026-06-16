@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
 current_plan: 1
-status: executing
-stopped_at: Completed 70-01-PLAN.md
-last_updated: "2026-06-16T05:34:55.165Z"
+status: verifying
+stopped_at: Completed 70-02-PLAN.md
+last_updated: "2026-06-16T06:06:10.761Z"
 last_activity: 2026-06-16
 progress:
   total_phases: 30
-  completed_phases: 28
+  completed_phases: 29
   total_plans: 90
-  completed_plans: 89
-  percent: 99
+  completed_plans: 90
+  percent: 100
 ---
 
 # Project State
@@ -30,7 +30,7 @@ Milestone: v9.0.0 (Canonical Recovery: Orchestrator Alignment) — STARTED 2026-
 Phase: 70 (Processor INJECT Cleanup) — EXECUTING
 Plan: 2 of 2
 Current Plan: 1
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-16
 
 > v8.0.0 (E2E Resilience Proof) — feature-complete 2026-06-15 (phases 63–69); not yet formally archived (`/gsd-complete-milestone` deferred). Prior-milestone position history retained below.
@@ -704,7 +704,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 99%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -1017,6 +1017,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 69 P01 | 25min | 3 tasks | 4 files |
 | Phase 69 P02 | 10min | 2 tasks | 2 files |
 | Phase 70 P01 | 4min | 3 tasks | 3 files |
+| Phase 70 P02 | 26min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -1471,6 +1472,7 @@ Recent decisions affecting current work:
 - Phase 69-01: the INFRA-01 silent forward DROP is eliminated — the single atomic-write exhaust routes to ONE SendKeeper(BuildInject) (NODROP-01 / spec section 10)
 - Phase 69-02: forward cleanup tail gated on a local bool escalated set ONLY at the forward-Post INJECT site — skipped cleanup leaves index + input keys for the keeper/Recovery/index-TTL, removing the processor/keeper index-key race (GATE-01, spec §4.3 final ¶)
 - Phase 70-01: keeper INJECT made non-destructive — removed InjectConsumer op-3 source-delete (KeyDeleteAsync), dropped KeeperInject.DeleteEntryId, and stopped BuildInject supplying it; src/ free of DeleteEntryId. DELETE is now the only deleting keeper state (spec §8). No wire migration (default-STJ tolerant). §8 INJECT index-slot write deferred.
+- Phase 70 / KINJ-03: KeeperDeleteInvariantFacts locks DELETE as the only deleting keeper state behaviorally (DidNotReceive on both KeyDeleteAsync overloads for Inject+Reinject, positive side-effect co-asserted); KeeperContractTests Assert.Null(GetProperty(DeleteEntryId)) makes re-adding the field a build break (KINJ-02)
 
 ### Roadmap Milestone Log
 
@@ -1575,8 +1577,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-16T05:34:55.147Z
-Stopped at: Completed 70-01-PLAN.md
+Last session: 2026-06-16T06:06:10.738Z
+Stopped at: Completed 70-02-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
