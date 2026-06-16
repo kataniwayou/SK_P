@@ -1,10 +1,16 @@
 using System.Text.Json;
 using MassTransit;
 using Messaging.Contracts;
+using Messaging.Contracts.Configuration;
 using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
+using Orchestrator.Configuration;
+using Orchestrator.Dispatch;
 using Orchestrator.Observability;
+using Orchestrator.Recovery;
 using StackExchange.Redis;
 using System.Diagnostics.Metrics;
 
@@ -110,13 +116,41 @@ internal static class OrchestratorTestStubs
         return new OrchestratorMetrics(meterFactory);
     }
 
-    /// <summary>A ConsumeContext substitute carrying <paramref name="message"/> and a cancellation token.</summary>
-    public static ConsumeContext<T> Context<T>(T message, CancellationToken ct)
+    /// <summary>A ConsumeContext substitute carrying <paramref name="message"/> and a cancellation token. A
+    /// fresh non-null <c>MessageId</c> is stamped (Phase 71: the result pipeline's gate key) — pass an explicit
+    /// <paramref name="messageId"/> to control it (e.g. to drive the gate via a redis fixture).</summary>
+    public static ConsumeContext<T> Context<T>(T message, CancellationToken ct, Guid? messageId = null)
         where T : class
     {
         var context = Substitute.For<ConsumeContext<T>>();
         context.Message.Returns(message);
         context.CancellationToken.Returns(ct);
+        context.MessageId.Returns(messageId ?? Guid.NewGuid());
         return context;
+    }
+
+    /// <summary>Phase 71: an <see cref="OrchestratorResultPipeline"/> over the given redis + send provider
+    /// (default 3-retry / 300s data TTL). Used by the result-consume facts that now route dispatch through the
+    /// L2-gated pipeline rather than a direct <c>IStepDispatcher</c>.</summary>
+    public static OrchestratorResultPipeline Pipeline(IConnectionMultiplexer redis, ISendEndpointProvider send) =>
+        new(redis, send, new StepAdvancement(),
+            Options.Create(new RetryOptions { Limit = 3 }),
+            Options.Create(new OrchestratorRecoveryOptions { ExecutionDataTtlSeconds = 300 }),
+            Metrics(), NullLogger<OrchestratorResultPipeline>.Instance);
+
+    /// <summary>Phase 71: a forward-OK redis mux — <c>KeyExistsAsync(MessageIndex)</c> FALSE → FORWARD branch;
+    /// the single atomic <c>ScriptEvaluateAsync</c> + retire HSET + cleanup DEL succeed. The FORWARD pass then
+    /// dispatches the downstream <see cref="EntryStepDispatch"/> via the send provider.</summary>
+    public static IConnectionMultiplexer ForwardOkL2(out IDatabase db)
+    {
+        db = Substitute.For<IDatabase>();
+        db.KeyExistsAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(false);
+        db.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]>(), Arg.Any<RedisValue[]>(), Arg.Any<CommandFlags>())
+            .Returns(RedisResult.Create(1));
+        db.HashSetAsync(Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<RedisValue>(), Arg.Any<When>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);
+        db.KeyPersistAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
+        return WrapMux(db);
     }
 }

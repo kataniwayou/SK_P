@@ -4,27 +4,26 @@ using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Orchestrator.Consumers;
-using Orchestrator.Dispatch;
 using Orchestrator.L1;
+using StackExchange.Redis;
 using Xunit;
 
 namespace BaseApi.Tests.Orchestrator;
 
 /// <summary>
-/// ORCH-RESULT-ACK-01 goal-backward proof of the result-consume ack split (gate OPEN):
+/// ORCH-RESULT-ACK-01 goal-backward proof of the result-consume ack split:
 /// <list type="bullet">
 ///   <item>an unknown <c>(workflowId, stepId)</c> result acks (no throw, no dispatch);</item>
 ///   <item>a completed step with no matching next step acks (no throw, no dispatch);</item>
-///   <item>a Completed result with a matching next step dispatches ONE straight-through continuation
-///   carrying the result's Guid EntryId + the inbound executionId (propagated unchanged);</item>
+///   <item>a Completed result with a matching next step dispatches ONE continuation to
+///   <c>queue:{nextProcessorId}</c> carrying the inbound execution lineage (Phase 71: via the L2-gated
+///   FORWARD pass, which mints a fresh per-slot newEntryId);</item>
 ///   <item>an injected infra fault on the broker <c>Send</c> propagates (does not ack-swallow).</item>
 /// </list>
 /// <para>
-/// Phase 43 (D-03/D-06e): the result path is L1-ONLY — the effect-first dedup gate (RETIRE-01) and the
-/// content-addressed manifest unbundle (RETIRE-02) are gone, so the consumer no longer takes an
-/// <c>IConnectionMultiplexer</c>. One <see cref="StepCompleted"/> = one item. (D-07: exercised via
-/// <see cref="StepCompletedConsumer"/>, the Completed arm of the TypedResultConsumer<T> family that
-/// replaced the retired ResultConsumer.)
+/// Phase 71: the result path is L2-gated — the consumer delegates to <see cref="Orchestrator.Recovery.OrchestratorResultPipeline"/>
+/// (gate <c>exist L2[messageId]</c> → FORWARD/RECOVERY/cleanup). (D-07: exercised via
+/// <see cref="StepCompletedConsumer"/>, the Completed arm of the TypedResultConsumer&lt;T&gt; family.)
 /// </para>
 /// </summary>
 public sealed class ResultAckTests
@@ -42,11 +41,9 @@ public sealed class ResultAckTests
         store.Upsert(workflowId, entry);
     }
 
-    private static StepCompletedConsumer Build(WorkflowL1Store store, IStepDispatcher dispatcher) =>
-        // Phase 43: L1-only — no IConnectionMultiplexer ctor param (the dedup gate + manifest read are retired).
-        // D-07: StepCompletedConsumer (Outcome=Completed) — the body that replaced the retired ResultConsumer.
-        new(store, new StepAdvancement(), dispatcher, OrchestratorTestStubs.Metrics(),
-            NullLogger<StepCompleted>.Instance);
+    private static StepCompletedConsumer Build(WorkflowL1Store store, ISendEndpointProvider send) =>
+        new(store, OrchestratorTestStubs.Pipeline(OrchestratorTestStubs.ForwardOkL2(out _), send),
+            OrchestratorTestStubs.Metrics(), NullLogger<StepCompleted>.Instance);
 
     // ----- R5: an id ABSENT from L1 acks cleanly, lifecycle-agnostic (no throw, no _error) -------
 
@@ -54,10 +51,10 @@ public sealed class ResultAckTests
     public async Task ResultForIdAbsentFromL1_AcksGracefully_NoThrow_NoDispatch()
     {
         var ct = TestContext.Current.CancellationToken;
-        var dispatcher = Substitute.For<IStepDispatcher>();
+        var send = new OrchestratorPipelineTestKit.CapturingSendProvider();
         var store = new WorkflowL1Store(); // empty — the id is absent from L1 regardless of lifecycle
 
-        var consumer = Build(store, dispatcher);
+        var consumer = Build(store, send);
         var result = new StepCompleted(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
@@ -66,9 +63,7 @@ public sealed class ResultAckTests
         // No throw (clean business-ack) — the message is consumed, not redelivered, not DLQ'd.
         await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
 
-        await dispatcher.DidNotReceive().DispatchAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        Assert.Empty(send.SentDispatch);
     }
 
     // ----- unknown (workflowId, stepId) -> ack (no throw, no dispatch) ---------------------------
@@ -77,21 +72,18 @@ public sealed class ResultAckTests
     public async Task UnknownWorkflowStep_Acks_NoThrow_NoDispatch()
     {
         var ct = TestContext.Current.CancellationToken;
-        var dispatcher = Substitute.For<IStepDispatcher>();
+        var send = new OrchestratorPipelineTestKit.CapturingSendProvider();
         var store = new WorkflowL1Store(); // empty — workflow absent
 
-        var consumer = Build(store, dispatcher);
+        var consumer = Build(store, send);
         var result = new StepCompleted(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
         };
 
-        // No throw (clean ack).
         await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
 
-        await dispatcher.DidNotReceive().DispatchAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        Assert.Empty(send.SentDispatch);
     }
 
     // ----- completed step with NO matching next step -> ack (no throw, no dispatch) --------------
@@ -100,7 +92,7 @@ public sealed class ResultAckTests
     public async Task NoMatchingNextStep_Acks_NoThrow_NoDispatch()
     {
         var ct = TestContext.Current.CancellationToken;
-        var dispatcher = Substitute.For<IStepDispatcher>();
+        var send = new OrchestratorPipelineTestKit.CapturingSendProvider();
 
         var workflowId = Guid.NewGuid();
         var completedStepId = Guid.NewGuid();
@@ -115,7 +107,7 @@ public sealed class ResultAckTests
         var store = new WorkflowL1Store();
         SeedWorkflow(store, workflowId, steps);
 
-        var consumer = Build(store, dispatcher);
+        var consumer = Build(store, send);
         var result = new StepCompleted(workflowId, completedStepId, Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
@@ -123,18 +115,16 @@ public sealed class ResultAckTests
 
         await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
 
-        await dispatcher.DidNotReceive().DispatchAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
-            Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>());
+        Assert.Empty(send.SentDispatch);
     }
 
-    // ----- straight-through: a matched next step dispatches ONE continuation (D-03) --------------
+    // ----- a matched next step dispatches ONE continuation (Phase 71: via the FORWARD pass) -------
 
     [Fact]
-    public async Task MatchedNextStep_DispatchesOneContinuation_StraightThrough()
+    public async Task MatchedNextStep_DispatchesOneContinuation()
     {
         var ct = TestContext.Current.CancellationToken;
-        var dispatcher = new RecordingDispatcher();
+        var send = new OrchestratorPipelineTestKit.CapturingSendProvider();
 
         var workflowId = Guid.NewGuid();
         var completedStepId = Guid.NewGuid();
@@ -149,9 +139,9 @@ public sealed class ResultAckTests
         var store = new WorkflowL1Store();
         SeedWorkflow(store, workflowId, steps);
 
-        var resultEntryId = Guid.NewGuid();   // the StepCompleted's Guid data key (D-06a)
+        var resultEntryId = Guid.NewGuid();
         var resultExecutionId = Guid.NewGuid();   // the inbound instance lineage — must propagate unchanged
-        var consumer = Build(store, dispatcher);
+        var consumer = Build(store, send);
         var result = new StepCompleted(workflowId, completedStepId, Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
@@ -161,14 +151,15 @@ public sealed class ResultAckTests
 
         await consumer.Consume(OrchestratorTestStubs.Context(result, ct));
 
-        // ONE continuation dispatched carrying the result's Guid EntryId + the matched successor's ids
-        // (straight-through — no dedup gate, no manifest unbundle).
-        var dispatched = Assert.Single(dispatcher.Calls);
-        Assert.Equal(workflowId, dispatched.WorkflowId);
-        Assert.Equal(nextStepId, dispatched.StepId);
-        Assert.Equal(nextProcessorId, dispatched.ProcessorId);
-        Assert.Equal(resultEntryId, dispatched.EntryId);
-        Assert.Equal(resultExecutionId, dispatched.ExecutionId); // propagated UNCHANGED (inbound lineage)
+        // ONE continuation dispatched to queue:{nextProcessorId} carrying the matched successor's ids + the
+        // inbound execution lineage (the per-slot newEntryId is minted fresh, not the inbound EntryId).
+        var (uri, dispatch) = Assert.Single(send.SentDispatch);
+        Assert.Equal($"queue:{nextProcessorId:D}", uri.ToString());
+        Assert.Equal(workflowId, dispatch.WorkflowId);
+        Assert.Equal(nextStepId, dispatch.StepId);
+        Assert.Equal(nextProcessorId, dispatch.ProcessorId);
+        Assert.Equal(resultExecutionId, dispatch.ExecutionId);
+        Assert.NotEqual(Guid.Empty, dispatch.EntryId);
     }
 
     // ----- injected infra fault on Send propagates (does not ack-swallow) ------------------------
@@ -177,11 +168,8 @@ public sealed class ResultAckTests
     public async Task InfraFaultOnSend_Propagates()
     {
         var ct = TestContext.Current.CancellationToken;
-        var dispatcher = Substitute.For<IStepDispatcher>();
-        dispatcher.DispatchAsync(
-                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<string>(),
-                Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<CancellationToken>())
-            .Returns<Task>(_ => throw new MassTransitException("stub: broker Send fault"));
+        // A send provider whose every Send throws — the pipeline's SendDispatch exhausts and PROPAGATES.
+        var send = new ThrowingSendProvider();
 
         var workflowId = Guid.NewGuid();
         var completedStepId = Guid.NewGuid();
@@ -195,7 +183,7 @@ public sealed class ResultAckTests
         var store = new WorkflowL1Store();
         SeedWorkflow(store, workflowId, steps);
 
-        var consumer = Build(store, dispatcher);
+        var consumer = Build(store, send);
         var result = new StepCompleted(workflowId, completedStepId, Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
@@ -207,23 +195,17 @@ public sealed class ResultAckTests
             () => consumer.Consume(OrchestratorTestStubs.Context(result, ct)));
     }
 
-    /// <summary>
-    /// A concrete recording <see cref="IStepDispatcher"/> — captures each <c>DispatchAsync</c> call's
-    /// args so the dispatch assertions are deterministic (avoids NSubstitute matcher fragility when the
-    /// same captured call is asserted with mixed concrete/Arg matchers). Phase 43: entryId is a Guid.
-    /// </summary>
-    private sealed class RecordingDispatcher : IStepDispatcher
+    /// <summary>An <see cref="ISendEndpointProvider"/> whose every Send throws a broker fault.</summary>
+    private sealed class ThrowingSendProvider : ISendEndpointProvider
     {
-        public sealed record Call(Guid WorkflowId, Guid StepId, Guid ProcessorId, string Payload,
-            Guid CorrelationId, Guid ExecutionId, Guid EntryId);
-
-        public List<Call> Calls { get; } = [];
-
-        public Task DispatchAsync(Guid workflowId, Guid stepId, Guid processorId, string payload,
-            Guid correlationId, Guid executionId, Guid entryId, CancellationToken ct)
+        public Task<ISendEndpoint> GetSendEndpoint(Uri address)
         {
-            Calls.Add(new Call(workflowId, stepId, processorId, payload, correlationId, executionId, entryId));
-            return Task.CompletedTask;
+            var endpoint = Substitute.For<ISendEndpoint>();
+            endpoint.Send(Arg.Any<object>(), Arg.Any<CancellationToken>())
+                .Returns<Task>(_ => throw new MassTransitException("stub: broker Send fault"));
+            return Task.FromResult(endpoint);
         }
+
+        public ConnectHandle ConnectSendObserver(ISendObserver observer) => throw new NotSupportedException();
     }
 }

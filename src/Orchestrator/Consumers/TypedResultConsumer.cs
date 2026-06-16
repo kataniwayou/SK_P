@@ -1,9 +1,9 @@
 using MassTransit;
 using Messaging.Contracts;
 using Microsoft.Extensions.Logging;
-using Orchestrator.Dispatch;
 using Orchestrator.L1;
 using Orchestrator.Observability;
+using Orchestrator.Recovery;
 
 namespace Orchestrator.Consumers;
 
@@ -11,11 +11,10 @@ namespace Orchestrator.Consumers;
 /// Generic per-item result-advancement base (ORCH-01 / D-07). Lifted verbatim from the retired
 /// straight-through <c>ResultConsumer</c> body: it consumes ONE typed <see cref="IStepResult"/>
 /// (<see cref="StepCompleted"/>/<see cref="StepFailed"/>/<see cref="StepCancelled"/>/<see cref="StepProcessing"/>)
-/// off the shared competing-consumer queue <c>orchestrator-result</c> and advances the workflow's DAG:
-/// it reads the completed step + each next step from L1 ONLY (no Redis/L2 read), matches each next
-/// step's entry condition against the per-type <see cref="Outcome"/> knob via
-/// <see cref="StepAdvancement"/>, and dispatches one continuation per match through
-/// <see cref="IStepDispatcher"/> to <c>queue:{nextStep.ProcessorId}</c>.
+/// off the shared competing-consumer queue <c>orchestrator-result</c> and advances the workflow's DAG.
+/// On an L1 hit it delegates to the L2-gated <see cref="OrchestratorResultPipeline"/>, which matches each
+/// next step's entry condition against the per-type <see cref="Outcome"/> knob via the orchestrator
+/// step-advancement helper and dispatches one continuation per match to <c>queue:{nextStep.ProcessorId}</c>.
 /// <para>
 /// <b>The ONLY per-type knob is <see cref="Outcome"/> (D-07):</b> routing is by message type via the
 /// abstract <see cref="StepOutcome"/> each sealed subclass returns — there is deliberately NO status
@@ -25,31 +24,31 @@ namespace Orchestrator.Consumers;
 /// the same record, land on the same queue, and are processed by the same <see cref="StepCompletedConsumer"/>.
 /// </para>
 /// <para>
-/// <b>L1-only, lifecycle-agnostic (24.1 / D-24.1-05):</b> there is no boot gate. Processors (and the
-/// Keeper INJECT path) send results freely at any time; L1 is the SOLE arbiter. An L1 hit advances; an
-/// L1 MISS is the DEFINED graceful outcome — log + return (ack), uniformly for unknown /
-/// stopped-drained / not-yet-hydrated ids — NEVER a throw, never a DLQ.
+/// <b>L1 guard + L2-gated pipeline (Phase 71 — reverses 24.1's L1-only posture):</b> there is no boot gate.
+/// Processors (and the Keeper INJECT path) send results freely at any time. An L1 MISS is the DEFINED
+/// graceful outcome — log + return (ack), uniformly for unknown / stopped-drained / not-yet-hydrated ids —
+/// NEVER a throw, never a DLQ. On an L1 hit the consume path delegates to the L2-gated
+/// <see cref="OrchestratorResultPipeline"/> (gate <c>exist L2[messageId]</c> → FORWARD / RECOVERY / cleanup),
+/// which now OWNS the <c>StepAdvancement.SelectNext</c> iteration + the downstream dispatch that the retired
+/// L1-only loop used to do inline.
 /// </para>
 /// <para>
-/// <b>Business-ack vs infra-throw split:</b> an unknown <c>(workflowId, stepId)</c> and a completed step
-/// with no matching next step are BUSINESS outcomes — a clean <c>return</c> (ack), never a throw.
-/// <see cref="StepAdvancement.SelectNext"/> is pure int comparison + dictionary lookup and cannot throw;
-/// a projection that fails to deserialize never lands in <c>wf.Steps</c> (it hits the ack path). The ONLY
-/// exception that escapes is an INFRA fault from the broker <c>Send</c> (there is no Redis read on this
-/// path) — it propagates to the definition's bounded retry -> <c>_error</c>.
+/// <b>Business-ack vs infra-throw split:</b> an unknown <c>(workflowId, stepId)</c> is a BUSINESS outcome —
+/// a clean <c>return</c> (ack), never a throw. A null <c>context.MessageId</c> is an INFRA fault → throw
+/// (broker redelivery), NOT a drop (A1). The pipeline's send-owners propagate a send-exhaust (throw → broker
+/// redelivery, no <c>_error</c> — the orchestrator-result endpoint carries no bus retry, Phase-53 D-01).
 /// </para>
 /// </summary>
 /// <typeparam name="TMessage">The typed step-result record this consumer advances on.</typeparam>
 public abstract class TypedResultConsumer<TMessage>(
     IWorkflowL1Store store,
-    StepAdvancement advancement,
-    IStepDispatcher dispatcher,
+    OrchestratorResultPipeline pipeline,
     OrchestratorMetrics metrics,
     ILogger<TMessage> logger) : IConsumer<TMessage>
     where TMessage : class, IStepResult
 {
-    /// <summary>The ONLY per-type knob (D-07): the outcome <see cref="StepAdvancement.SelectNext"/>
-    /// matches successors against. No status if/switch lives anywhere — each sealed subclass returns its
+    /// <summary>The ONLY per-type knob (D-07): the outcome the pipeline's step-advancement matches
+    /// successors against. No status if/switch lives anywhere — each sealed subclass returns its
     /// compile-time constant here.</summary>
     protected abstract StepOutcome Outcome { get; }
 
@@ -74,17 +73,16 @@ public abstract class TypedResultConsumer<TMessage>(
             return;
         }
 
-        // ---- Per-item advance by Outcome (D-03/D-06e/A4/D-07) ----
-        // One typed result = one item. SelectNext matches successors against the per-type Outcome knob (no
-        // status if/switch). For each matched successor, dispatch one continuation carrying this result's
-        // Guid EntryId + the inbound result's ExecutionId UNCHANGED — only stepId + ProcessorId change per
-        // successor; WorkflowId/CorrelationId/ExecutionId/EntryId all flow through, preserving the
-        // per-instance lineage from ENTRY through every continuation. No dedup, no manifest, no Redis. An
-        // infra Send fault propagates.
-        foreach (var (stepId, step) in advancement.SelectNext(Outcome, completed, wf.Steps))
-            await dispatcher.DispatchAsync(
-                m.WorkflowId, stepId, step.ProcessorId, step.Payload,
-                m.CorrelationId, m.ExecutionId, m.EntryId, context.CancellationToken);
-        // returns normally -> ACK. An infra fault from Send propagates -> Immediate(3) -> _error.
+        // A1 (Phase 71): context.MessageId is the gate key (the inbound result's broker MessageId). A null is
+        // an INFRA fault → throw (broker redelivery), NOT a silent drop.
+        if (context.MessageId is null)
+            throw new InvalidOperationException("result envelope missing MessageId");
+
+        // Phase 71 (reverses 24.1): delegate to the L2-gated pipeline. It runs the gate
+        // (exist L2[messageId]) then FORWARD (owning the SelectNext iteration + downstream dispatch) or
+        // RECOVERY or the gated cleanup tail. The per-type Outcome knob is threaded in unchanged. An infra
+        // send-exhaust inside the pipeline propagates → broker redelivery (the endpoint has no bus retry).
+        await pipeline.RunAsync(m, context.MessageId.Value, Outcome, completed, wf.Steps, context.CancellationToken);
+        // returns normally -> ACK.
     }
 }

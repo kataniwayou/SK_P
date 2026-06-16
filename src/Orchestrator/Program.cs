@@ -1,14 +1,17 @@
 using BaseConsole.Core.DependencyInjection;
 using MassTransit;
+using Messaging.Contracts.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
+using Orchestrator.Configuration;
 using Orchestrator.Consumers;
 using Orchestrator.Dispatch;
 using Orchestrator.Hydration;
 using Orchestrator.L1;
 using Orchestrator.Observability;
+using Orchestrator.Recovery;
 using Orchestrator.Scheduling;
 using OpenTelemetry.Metrics;   // ConfigureOpenTelemetryMeterProvider (via OpenTelemetry.Extensions.Hosting)
 using Quartz;
@@ -73,7 +76,15 @@ builder.Services.AddSingleton<IWorkflowL1Store, WorkflowL1Store>();
 builder.Services.AddSingleton<WorkflowScheduler>();
 builder.Services.AddSingleton<WorkflowLifecycle>();
 builder.Services.AddSingleton<IStepDispatcher, StepDispatcher>();          // Plan 03 dispatch single-owner (result + fire share it)
-builder.Services.AddSingleton<StepAdvancement>();                          // Plan 03 pure match helper (ResultConsumer dependency)
+builder.Services.AddSingleton<StepAdvancement>();                          // Plan 03 pure match helper (pipeline FORWARD dependency)
+
+// Phase 71 (ORCV-01..05): the L2-gated result-recovery pipeline + its options. The TypedResultConsumer<T>
+// family constructor-injects OrchestratorResultPipeline (reverses 24.1's L1-only result posture). RetryOptions
+// (the bounded RetryLoop budget) + OrchestratorRecoveryOptions (the data-TTL source for the atomic FORWARD
+// write) are bound from config — mirroring the keeper/processor "Retry"/TTL binding.
+builder.Services.Configure<RetryOptions>(builder.Configuration.GetSection("Retry"));
+builder.Services.Configure<OrchestratorRecoveryOptions>(builder.Configuration.GetSection("Recovery"));
+builder.Services.AddScoped<OrchestratorResultPipeline>();                   // scoped: it consumes the scoped ISendEndpointProvider (mirrors ProcessorPipeline)
 
 // METRIC-04: the code-owned "Orchestrator" meter + its two business counters. The holder is a
 // DI-singleton (IMeterFactory pattern); ConfigureOpenTelemetryMeterProvider additively attaches the

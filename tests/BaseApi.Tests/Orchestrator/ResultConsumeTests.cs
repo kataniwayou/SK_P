@@ -5,7 +5,6 @@ using Messaging.Contracts.Projections;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Orchestrator.Consumers;
-using Orchestrator.Dispatch;
 using Orchestrator.L1;
 using Xunit;
 
@@ -77,12 +76,13 @@ public sealed class ResultConsumeTests
     }
 
     /// <summary>
-    /// Builds a <see cref="StepCompletedConsumer"/> over the real harness-backed <see cref="StepDispatcher"/>.
-    /// Phase 43 (D-03/D-06e): the result path is L1-only — no Redis dedup gate, no manifest read. (D-07: the
-    /// Completed arm of the TypedResultConsumer<T> family; same body as the retired ResultConsumer.)
+    /// Builds a <see cref="StepCompletedConsumer"/> over a forward-OK pipeline whose downstream
+    /// <see cref="EntryStepDispatch"/> send is routed through the real harness bus (so the harness-bound
+    /// <see cref="CapturingDispatchConsumer"/> on <c>queue:{processorId}</c> captures it). Phase 71: the
+    /// result path is L2-gated — the consumer delegates to the FORWARD pass, which owns the dispatch.
     /// </summary>
     private static StepCompletedConsumer Build(WorkflowL1Store store, ISendEndpointProvider sendProvider) =>
-        new(store, new StepAdvancement(), new StepDispatcher(sendProvider, OrchestratorTestStubs.Metrics()),
+        new(store, OrchestratorTestStubs.Pipeline(OrchestratorTestStubs.ForwardOkL2(out _), sendProvider),
             OrchestratorTestStubs.Metrics(), NullLogger<StepCompleted>.Instance);
 
     // ----- ContinuationDispatch: one field-copied dispatch per matched next step -----------------
@@ -138,7 +138,8 @@ public sealed class ResultConsumeTests
             Assert.Equal(workflowId, msg.WorkflowId);            // copied from the result
             Assert.Equal(correlationId, msg.CorrelationId);
             Assert.Equal(executionId, msg.ExecutionId);          // propagated UNCHANGED (not regenerated)
-            Assert.Equal(resultEntryId, msg.EntryId);            // the result's Guid EntryId flows straight through
+            Assert.NotEqual(Guid.Empty, msg.EntryId);            // Phase 71: a minted per-slot newEntryId
+            Assert.NotEqual(resultEntryId, msg.EntryId);         // NOT the inbound origin (the FORWARD copy mints a new key)
             Assert.Equal(nextStepId, msg.StepId);                // taken from the next-step L1 projection
             Assert.Equal(nextProcessorId, msg.ProcessorId);
             Assert.Equal(nextPayload, msg.Payload);

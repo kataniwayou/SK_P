@@ -1,9 +1,8 @@
-using MassTransit;
 using Messaging.Contracts;
 using Microsoft.Extensions.Logging;
-using Orchestrator.Dispatch;
 using Orchestrator.L1;
 using Orchestrator.Observability;
+using Orchestrator.Recovery;
 
 namespace Orchestrator.Consumers;
 
@@ -16,11 +15,10 @@ namespace Orchestrator.Consumers;
 /// </summary>
 public sealed class StepCompletedConsumer(
     IWorkflowL1Store store,
-    StepAdvancement advancement,
-    IStepDispatcher dispatcher,
+    OrchestratorResultPipeline pipeline,
     OrchestratorMetrics metrics,
     ILogger<StepCompleted> logger)
-    : TypedResultConsumer<StepCompleted>(store, advancement, dispatcher, metrics, logger)
+    : TypedResultConsumer<StepCompleted>(store, pipeline, metrics, logger)
 {
     protected override StepOutcome Outcome => StepOutcome.Completed;
 }

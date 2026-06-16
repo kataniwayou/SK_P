@@ -1,8 +1,8 @@
 using Messaging.Contracts;
 using Microsoft.Extensions.Logging;
-using Orchestrator.Dispatch;
 using Orchestrator.L1;
 using Orchestrator.Observability;
+using Orchestrator.Recovery;
 
 namespace Orchestrator.Consumers;
 
@@ -13,11 +13,10 @@ namespace Orchestrator.Consumers;
 /// </summary>
 public sealed class StepCancelledConsumer(
     IWorkflowL1Store store,
-    StepAdvancement advancement,
-    IStepDispatcher dispatcher,
+    OrchestratorResultPipeline pipeline,
     OrchestratorMetrics metrics,
     ILogger<StepCancelled> logger)
-    : TypedResultConsumer<StepCancelled>(store, advancement, dispatcher, metrics, logger)
+    : TypedResultConsumer<StepCancelled>(store, pipeline, metrics, logger)
 {
     protected override StepOutcome Outcome => StepOutcome.Cancelled;
 }

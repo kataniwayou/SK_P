@@ -3,7 +3,6 @@ using Messaging.Contracts.Projections;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Orchestrator.Consumers;
-using Orchestrator.Dispatch;
 using Orchestrator.Hydration;
 using Orchestrator.L1;
 using Orchestrator.Scheduling;
@@ -144,21 +143,18 @@ public sealed class StopConsumerLifecycleTests
             await stop.Consume(OrchestratorTestStubs.Context(new StopOrchestration([workflowId]), ct));
             Assert.True(store.TryGet(workflowId, out _)); // L1 kept (drain)
 
-            // Drive a late StepCompleted for the stopped workflow's entry step through the ResultConsumer; it
-            // resolves in the kept L1 entry and dispatches the matching next step (D-03 straight-through).
-            var dispatcher = Substitute.For<IStepDispatcher>();
-            var advancement = new StepAdvancement();
+            // Drive a late StepCompleted for the stopped workflow's entry step through the result consumer; it
+            // resolves in the kept L1 entry and dispatches the matching next step. Phase 71: the result path is
+            // L2-gated — the consumer delegates to the FORWARD pass, which owns the downstream dispatch.
+            var send = new OrchestratorPipelineTestKit.CapturingSendProvider();
 
             var correlationId = Guid.NewGuid();
             var executionId = Guid.NewGuid();
             var resultEntryId = Guid.NewGuid();   // the StepCompleted's Guid data key (D-06a)
 
-            // Phase 43 (D-03/D-06e): the result path is L1-ONLY — no Redis dedup gate, no manifest read. The
-            // late result still fans out exactly one continuation carrying the result's Guid EntryId + a
-            // regenerated executionId. (D-07: StepCompletedConsumer, the Completed arm of the
-            // TypedResultConsumer<T> family that replaced the retired ResultConsumer.)
             var resultConsumer = new StepCompletedConsumer(
-                store, advancement, dispatcher, OrchestratorTestStubs.Metrics(), NullLogger<StepCompleted>.Instance);
+                store, OrchestratorTestStubs.Pipeline(OrchestratorTestStubs.ForwardOkL2(out _), send),
+                OrchestratorTestStubs.Metrics(), NullLogger<StepCompleted>.Instance);
 
             var result = new StepCompleted(workflowId, entryStepId, entryProcessorId)
             {
@@ -169,11 +165,16 @@ public sealed class StopConsumerLifecycleTests
 
             await resultConsumer.Consume(OrchestratorTestStubs.Context(result, ct));
 
-            // The continuation for the matching next step was dispatched (ids from result, step data from L1,
-            // EntryId = the result's Guid EntryId straight-through, executionId regenerated for lineage).
-            await dispatcher.Received(1).DispatchAsync(
-                workflowId, nextStepId, nextProcessorId, "{\"k\":1}",
-                correlationId, Arg.Any<Guid>(), resultEntryId, Arg.Any<CancellationToken>());
+            // The continuation for the matching next step was dispatched to queue:{nextProcessorId} (ids from
+            // result, step data from L1; the per-slot newEntryId is minted fresh by the FORWARD copy).
+            var (uri, dispatch) = Assert.Single(send.SentDispatch);
+            Assert.Equal($"queue:{nextProcessorId:D}", uri.ToString());
+            Assert.Equal(workflowId, dispatch.WorkflowId);
+            Assert.Equal(nextStepId, dispatch.StepId);
+            Assert.Equal(nextProcessorId, dispatch.ProcessorId);
+            Assert.Equal("{\"k\":1}", dispatch.Payload);
+            Assert.Equal(correlationId, dispatch.CorrelationId);
+            Assert.NotEqual(Guid.Empty, dispatch.EntryId);
         }
         finally
         {
