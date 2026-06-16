@@ -4,17 +4,18 @@ verified: 2026-06-16T10:00:00Z
 status: passed
 score: 14/14
 overrides_applied: 0
-human_verification:
-  - test: "Live-stack close-gate net-zero E2E proof"
+human_verification: []
+deferred_automated_check:
+  - test: "Live-stack close-gate net-zero E2E proof (AUTOMATED — no human verification)"
     expected: "OrchestratorResultPipeline gates on L2[messageId], FORWARD writes index+copy atomically, RECOVERY re-emits idempotently, Orchestrator consumers bind on keeper-recovery with no new queue — all proven under real RabbitMQ + Redis in the Docker stack with the net-zero sweep fixture."
-    why_human: "~31 E2E classes require a running broker (BrokerUnreachableException in this sandbox). This is a pre-existing environmental constraint documented in the phase environment_note. The hermetic fact suite fully covers the pipeline logic; the live-stack suite must run under the project's close-gate net-zero protocol before merging/deploying."
+    verification: "Machine-verified, NOT a human-UAT gate. Runs automatically under the project's close-gate net-zero protocol (triple-SHA `psql \\l` / `redis-cli --scan` / `rabbitmqctl list_queues` BEFORE==AFTER) and the v8.0.0 E2E harness (`SC2RecoveryPathsE2ETests`, Prometheus + Elasticsearch assertions). Deferred here only because this sandbox has no Docker broker (~31 E2E classes raise BrokerUnreachableException); the hermetic fact suite fully covers the pipeline logic. No human sign-off required."
 ---
 
 # Phase 71: Orchestrator Recovery Pipeline — Verification Report
 
 **Phase Goal:** The orchestrator's result-consume path gains the same `messageId`-indexed forward/recovery/keeper pipeline the processor has (canonical `ProcessorPipeline.cs` + spec §3–§8), reversing Phase 24.1's L1-only `TypedResultConsumer` by re-introducing L2 to the result path. Gate `exist L2[messageId]` once: absent→FORWARD, present→RECOVERY, gate-op exhaustion→REINJECT (no cleanup). FORWARD does ONE atomic op (index-slot HSET + whole-hash PEXPIRE + copy L2[origin entryId]→L2[new entryId] with data TTL), routes write-exhaust to a single OrchestratorInject, sends EntryStepDispatch, retires the slot, runs gated atomic two-key cleanup tail only if nothing escalated. RECOVERY re-emits idempotently (3-way per-slot). Each slot carries the full dispatch tuple (heterogeneous slots). Keeper contracts split by origin: KeeperInject/KeeperReinject rename to ProcessorInject/ProcessorReinject; OrchestratorInject/OrchestratorReinject added; KeeperDelete shared; two new consumers bind the existing keeper-recovery endpoint (no new queue). Delete invariant: keys deleted ONLY in the cleanup tail; OrchestratorInject/OrchestratorReinject never delete.
 **Verified:** 2026-06-16T10:00:00Z
-**Status:** passed (human verification pending for live-stack close-gate)
+**Status:** passed (live-stack close-gate is an AUTOMATED deferred check — machine-verified, no human verification required)
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
@@ -118,15 +119,15 @@ human_verification:
 
 Both anti-patterns are pre-existing design decisions and advisory-level findings from the code review (0 critical, 2 warnings). They do not prevent goal achievement.
 
-### Human Verification Required
+### Deferred Automated Check (NOT human verification)
 
-#### 1. Live-stack close-gate E2E proof
+#### 1. Live-stack close-gate E2E proof — AUTOMATED
 
 **Test:** Run the full close-gate net-zero protocol on the project's Docker stack (RabbitMQ + Redis). Execute `SC2RecoveryPathsE2ETests` and the orchestrator recovery scenario to confirm `OrchestratorResultPipeline` gates on `L2[messageId]`, FORWARD writes atomically, RECOVERY re-emits idempotently, and `OrchestratorInjectConsumer`/`OrchestratorReinjectConsumer` complete the keeper-recovery loop with no queue leak. The close-gate net-zero sweep fixture (BEFORE-dirty trap, clean keyspace, ~50min/run) applies.
 
 **Expected:** All E2E tests pass; the net-zero sweep shows no orphaned keys; `SC2RecoveryPathsE2ETests` passes under the renamed `ProcessorInject`/`ProcessorReinject` + new `Orchestrator*` types on the `keeper-recovery` queue (deployed with DRAINED queue per the T-71-01 mitigation).
 
-**Why human:** The sandbox has no Docker stack; ~31 E2E classes fail with `BrokerUnreachableException` regardless of code changes (pre-existing environment constraint). The hermetic suite fully covers the pipeline logic at 47+ facts (9 pipeline + 8 TypedResultConsumer + 4 contract + 5 invariant + 2+5 consumer + 6 KeeperContract + 8 ModelBContracts). The live-stack proof is the deploy-time gate, not a code defect.
+**Verification (no human sign-off):** Machine-verified — the close-gate net-zero protocol (triple-SHA `psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues` BEFORE==AFTER) and `SC2RecoveryPathsE2ETests` (Prometheus + Elasticsearch assertions) decide PASS/FAIL automatically, consistent with the project's "verified solely from metrics and logs, fully automated (no human verification)" stance. Deferred in THIS run only because the sandbox has no Docker broker (~31 E2E classes raise `BrokerUnreachableException` regardless of code changes); the hermetic suite already covers the pipeline logic at 47+ facts (9 pipeline + 8 TypedResultConsumer + 4 contract + 5 invariant + 2+5 consumer + 6 KeeperContract + 8 ModelBContracts). It is a deploy-time automated gate, not a code defect and not a human-UAT item.
 
 ### Gaps Summary
 

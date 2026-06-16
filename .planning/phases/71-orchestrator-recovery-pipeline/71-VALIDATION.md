@@ -70,9 +70,17 @@ validated: 2026-06-16
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Live close-gate net-zero proof of orchestrator recovery (real-stack fault injection) | (deferred — Future Requirements) | Requires the running compose stack + ~50min close-gate protocol; deferred to v8.0.0 7-scenario harness | Out of scope for this phase — phase proves recovery at the hermetic/unit level. `SC2RecoveryPathsE2ETests` (rename-updated in Plan 01) is the live E2E hook for the future milestone. |
+| (none) | — | — | No phase behavior requires human verification. |
 
-*All in-scope phase behaviors (ORCV-01..ORCV-07) have automated hermetic verification.*
+*All in-scope phase behaviors (ORCV-01..ORCV-07) have automated hermetic verification. The live-stack close-gate proof is also AUTOMATED (machine-verified via the net-zero close-gate protocol + `SC2RecoveryPathsE2ETests` Prometheus/ES assertions) — see "Deferred Automated Checks" below — it is NOT a human-UAT item.*
+
+---
+
+## Deferred Automated Checks
+
+| Check | Verification (automated) | Why deferred here |
+|-------|--------------------------|-------------------|
+| Live-stack close-gate net-zero E2E (real RabbitMQ + Redis fault injection) | Machine-verified, no human sign-off: triple-SHA net-zero close gate (`psql \l` / `redis-cli --scan` / `rabbitmqctl list_queues` BEFORE==AFTER) + `SC2RecoveryPathsE2ETests` (Prometheus + Elasticsearch assertions, rename-updated in Plan 01). | This sandbox has no Docker broker (~31 E2E classes raise `BrokerUnreachableException`). Runs under the project's standard close-gate protocol against the live compose stack; the hermetic fact suite already proves the pipeline logic. |
 
 ---
 
@@ -98,6 +106,6 @@ validated: 2026-06-16
 | PARTIAL | 0 |
 | MISSING (gaps) | 0 |
 | Gaps resolved this audit | 0 (none found) |
-| Escalated to manual-only | 1 (live close-gate E2E — pre-existing environmental deferral, not a coverage gap) |
+| Escalated to manual-only | 0 (live close-gate E2E is an AUTOMATED deferred check — machine-verified, no human verification; not a manual/UAT item) |
 
-**Method:** State-A audit of the executed phase. Fresh hermetic run confirmed 33 facts GREEN across the 6 new-code suites (`*OrchestratorResultPipeline*` 9, `*TypedResultConsumer*` 8, `*OrchestratorContract*` 4, `*OrchestratorInjectConsumer*` 2, `*OrchestratorReinjectConsumer*` 5, `*KeeperDeleteInvariant*` 5) with `dotnet build SK_P.sln` Debug+Release 0-warning. No gap-fill (gsd-nyquist-auditor) needed — every requirement already has a passing automated test. Map commands corrected `SK_P4.sln`→`SK_P.sln`. The single manual-only item (live-stack fault-injection close-gate) is a documented environmental deferral covered by `SC2RecoveryPathsE2ETests` under the project's net-zero close-gate protocol, not an automatable hermetic gap.
+**Method:** State-A audit of the executed phase. Fresh hermetic run confirmed 33 facts GREEN across the 6 new-code suites (`*OrchestratorResultPipeline*` 9, `*TypedResultConsumer*` 8, `*OrchestratorContract*` 4, `*OrchestratorInjectConsumer*` 2, `*OrchestratorReinjectConsumer*` 5, `*KeeperDeleteInvariant*` 5) with `dotnet build SK_P.sln` Debug+Release 0-warning. No gap-fill (gsd-nyquist-auditor) needed — every requirement already has a passing automated test. Map commands corrected `SK_P4.sln`→`SK_P.sln`. There are NO human-verification items: the live-stack fault-injection close-gate is itself automated (machine-verified via the net-zero close-gate protocol + `SC2RecoveryPathsE2ETests` Prometheus/ES assertions), deferred here only by the sandbox's missing Docker broker — see "Deferred Automated Checks".
