@@ -10,7 +10,7 @@ namespace BaseApi.Tests.Contracts;
 /// (UPDATE/CLEANUP deleted). Each implements the IKeeperRecoverable marker that exposes EXACTLY the
 /// partition 4-tuple (corr/wf/proc/exec) and deliberately NOT StepId. StepId rides as a plain property
 /// on each record (the 5-id base). REINJECT carries EntryId + Payload; DELETE carries EntryId; INJECT
-/// carries the A18 id-set EntryId + Data + DeleteEntryId (D-08).
+/// carries EntryId + Data (the source-delete field DeleteEntryId was dropped in Phase 70, KINJ-02).
 /// </summary>
 [Trait("Phase", "50")]
 public sealed class KeeperContractTests
@@ -64,7 +64,7 @@ public sealed class KeeperContractTests
     }
 
     [Fact]
-    public void KeeperInject_carries_the_A18_id_set_EntryId_Data_DeleteEntryId()
+    public void KeeperInject_carries_the_reduced_id_set_EntryId_Data()
     {
         // D-08: INJECT is forward-only — it carries its own data on the envelope (no composite read).
         var entryId = typeof(KeeperInject).GetProperty("EntryId");
@@ -75,8 +75,8 @@ public sealed class KeeperContractTests
         Assert.NotNull(data);
         Assert.Equal(typeof(string), data!.PropertyType);
 
-        var deleteEntryId = typeof(KeeperInject).GetProperty("DeleteEntryId");
-        Assert.NotNull(deleteEntryId);
-        Assert.Equal(typeof(Guid), deleteEntryId!.PropertyType);
+        // KINJ-02 negative guard: the source-delete field is gone — re-adding it breaks this fact (and every
+        // producer/consumer reference fails to compile).
+        Assert.Null(typeof(KeeperInject).GetProperty("DeleteEntryId"));
     }
 }
