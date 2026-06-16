@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
 current_plan: 3
-status: verifying
+status: milestone_complete
 stopped_at: Completed 71-04-PLAN.md
 last_updated: "2026-06-16T08:42:24.981Z"
 last_activity: 2026-06-16
 progress:
   total_phases: 30
-  completed_phases: 30
+  completed_phases: 31
   total_plans: 94
   completed_plans: 94
-  percent: 100
+  percent: 103
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-06-14 — v7.0.0 closed audit-override; 
 ## Current Position
 
 Milestone: v9.0.0 (Canonical Recovery: Orchestrator Alignment) — STARTED 2026-06-16. Goal: extend the Phase-69 canonical recovery-spec alignment to the orchestrator's result-consume path (give it the same `messageId`-indexed forward/recovery/keeper pipeline the processor has — reverses Phase 24.1's L1-only `TypedResultConsumer`), plus a small processor INJECT cleanup making the keeper delete-invariant uniform (DELETE the only deleting keeper state). Canonical pattern = `ProcessorPipeline.cs` + `processor-keeper-recovery-spec.md` §3–§8. Two phases: 70 (processor INJECT cleanup, small) → 71 (orchestrator recovery pipeline, large). Phases continue at **70**.
-Phase: 71 (Orchestrator Recovery Pipeline) — EXECUTING
+Phase: 71
 Plan: 4 of 4
-Current Plan: 3
-Status: Phase complete — ready for verification
+Current Plan: Not started
+Status: Milestone complete
 Last activity: 2026-06-16
 
 > Phase 71 plan 02 (Orchestrator keeper-recovery contracts) — ✅ COMPLETE 2026-06-16. Added the two origin-split contracts `OrchestratorInject` (5-id base + copy operands EntryId=newEntryId/OriginEntryId + dispatch tuple NextStepId/NextProcessorId/Payload) and `OrchestratorReinject` (5-id base + EntryId + StepOutcome discriminator + ErrorMessage/CancellationMessage union superset as discrete fields, not a polymorphic blob). Both sealed `IKeeperRecoverable` records so the existing SHA256-over-4-tuple `ReinjectConsumerDefinition.PartitionGuid` is origin-agnostic with NO helper change. `OrchestratorContractTests` 4/4 GREEN (IKeeperRecoverable assignability ×2, default-STJ round-trip of Outcome+union field, stable+origin-agnostic PartitionGuid); `Messaging.Contracts` builds 0-warning. Decisions: reused EntryId as newEntryId + added discrete OriginEntryId; reused existing StepOutcome enum (A5/D-07); discrete union fields (consumer rebuilds subtype via factory in 71-04). Commits `e55108f` (contracts), `5928966` (facts). Summary: `.planning/phases/71-orchestrator-recovery-pipeline/71-02-SUMMARY.md`.
@@ -735,7 +735,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 
 **Velocity:**
 
-- Total plans completed: 229
+- Total plans completed: 233
 - Average duration: —
 - Total execution time: —
 
@@ -809,6 +809,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | 68 | 2 | - | - |
 | 69 | 2 | - | - |
 | 70 | 2 | - | - |
+| 71 | 4 | - | - |
 
 **Recent Trend:**
 

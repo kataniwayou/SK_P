@@ -58,8 +58,8 @@
 **Plans**: 4 plans (3 waves)
 - [x] 71-01-PLAN.md — Rename Keeper*→Processor* contracts + consumers (isolated first plan) + D-10 WR-01 stub fix (completed 2026-06-16 — 4 files renamed, 129 refs across 27 files updated; TRAP 1/2 honored; SK_P.sln 0/0 Debug+Release; hermetic rename-touched facts GREEN; full live-stack suite deferred to Docker stack; commits 59bee41, 90a3f07)
 - [x] 71-02-PLAN.md — Add OrchestratorInject / OrchestratorReinject contracts (IKeeperRecoverable + StepOutcome discriminator) (completed 2026-06-16 — both sealed IKeeperRecoverable records; OrchestratorInject = copy operands (EntryId=newEntryId/OriginEntryId) + dispatch tuple (NextStepId/NextProcessorId/Payload), OrchestratorReinject = StepOutcome discriminator + ErrorMessage/CancellationMessage union superset as discrete fields; OrchestratorContractTests 4/4 GREEN incl. origin-agnostic PartitionGuid proving the 4-tuple helper needs no change; Messaging.Contracts 0-warning; commits e55108f, 5928966)
-- [ ] 71-03-PLAN.md — OrchestratorResultPipeline (gate / atomic FORWARD / 3-way RECOVERY / cleanup tail) + TypedResultConsumer seam
-- [ ] 71-04-PLAN.md — Orchestrator* keeper consumers + binder/Program.cs registration + D-09 delete-invariant facts
+- [x] 71-03-PLAN.md — OrchestratorResultPipeline (gate / atomic FORWARD / 3-way RECOVERY / cleanup tail) + TypedResultConsumer seam
+- [x] 71-04-PLAN.md — Orchestrator* keeper consumers + binder/Program.cs registration + D-09 delete-invariant facts
 
 ## ✅ v7.0.0 Per-Replica Processor Liveness & Self-Watchdog (CLOSED 2026-06-14 — audit-override; full record [milestones/v7.0.0-ROADMAP.md](milestones/v7.0.0-ROADMAP.md))
 
