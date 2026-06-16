@@ -8,11 +8,10 @@ using StackExchange.Redis;
 namespace Keeper.Recovery;
 
 /// <summary>KEEP-02: the Keeper INJECT state — the A18 forward-only body. The output data is in-hand on the
-/// envelope (no presence read), so INJECT performs the three ops in STRICT order (Pitfall 5 — never
-/// reorder; the source delete is the tail AFTER the confirmed send so a completed result is never lost by
-/// deleting the source before the send lands): (1) write <c>L2[m.EntryId]=m.Data</c>, (2) send a
-/// reconstructed <see cref="StepCompleted"/> to <c>queue:orchestrator-result</c> (A15), (3) delete
-/// <c>L2[m.DeleteEntryId]</c>. Every op goes through the RetryLoop <see cref="RecoveryConsumerBase{TMessage}.Guard"/>;
+/// envelope (no presence read), so INJECT is non-destructive and performs exactly TWO effects:
+/// (1) write <c>L2[m.EntryId]=m.Data</c>, then (2) send a reconstructed <see cref="StepCompleted"/> to
+/// <c>queue:orchestrator-result</c> (A15). INJECT deletes NO key — DELETE is the only keeper state that
+/// deletes (spec §8). Every op goes through the RetryLoop <see cref="RecoveryConsumerBase{TMessage}.Guard"/>;
 /// gating happens at the endpoint (D-04).</summary>
 public sealed class InjectConsumer(
     IConnectionMultiplexer redis, ISendEndpointProvider sendProvider,
@@ -35,8 +34,5 @@ public sealed class InjectConsumer(
         // (e.g. bus not yet fully started) routes through the bounded RetryLoop like every other op.
         var ep = await Guard(() => Send.GetSendEndpoint(new Uri($"queue:{OrchestratorQueues.Result}")), ct);
         await Guard(() => ep.Send(completed, CancellationToken.None), ct);   // IN-01 inner send
-
-        // 3) delete L2[deleteEntryId] (source cleanup tail — AFTER the confirmed send)
-        await Guard(() => Db.KeyDeleteAsync(L2ProjectionKeys.ExecutionData(m.DeleteEntryId)), ct);
     }
 }
