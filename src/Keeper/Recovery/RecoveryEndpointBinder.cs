@@ -60,10 +60,16 @@ public sealed class RecoveryEndpointBinder(
             cfg.UsePartitioner<ProcessorReinject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
             cfg.UsePartitioner<ProcessorInject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
             cfg.UsePartitioner<KeeperDelete>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
+            // ORCV-06 / D-08: the two origin-split ORCHESTRATOR recovery messages bind on the SAME endpoint,
+            // SAME partitioner instance, SAME origin-agnostic 4-tuple selector — no new queue.
+            cfg.UsePartitioner<OrchestratorReinject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
+            cfg.UsePartitioner<OrchestratorInject>(partition, p => ReinjectConsumerDefinition.PartitionGuid(p.Message));
 
             cfg.ConfigureConsumer<ProcessorReinjectConsumer>(ctx);
             cfg.ConfigureConsumer<ProcessorInjectConsumer>(ctx);
             cfg.ConfigureConsumer<DeleteConsumer>(ctx);
+            cfg.ConfigureConsumer<OrchestratorReinjectConsumer>(ctx);
+            cfg.ConfigureConsumer<OrchestratorInjectConsumer>(ctx);
         });
 
         await handle.Ready;                  // queue declared + consumers attached

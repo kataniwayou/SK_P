@@ -67,6 +67,10 @@ builder.Services.AddBaseConsoleMessaging(builder.Configuration, x =>
     x.AddConsumer<Keeper.Recovery.ProcessorReinjectConsumer>().ExcludeFromConfigureEndpoints();
     x.AddConsumer<Keeper.Recovery.ProcessorInjectConsumer>().ExcludeFromConfigureEndpoints();
     x.AddConsumer<Keeper.Recovery.DeleteConsumer>().ExcludeFromConfigureEndpoints();
+    // ORCV-06 / D-08 (Pitfall 6): the two origin-split orchestrator recovery consumers — DI-registered but
+    // EXCLUDED from auto endpoint config; the binder owns the keeper-recovery endpoint (no static+connect collision).
+    x.AddConsumer<Keeper.Recovery.OrchestratorReinjectConsumer>().ExcludeFromConfigureEndpoints();
+    x.AddConsumer<Keeper.Recovery.OrchestratorInjectConsumer>().ExcludeFromConfigureEndpoints();
 });
 
 // D-04 (OQ-1): the singleton holding the connected keeper-recovery handle (set by the binder after
