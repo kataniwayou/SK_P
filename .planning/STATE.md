@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v8.0.0
 milestone_name: E2E Resilience Proof
 current_plan: 3
-status: executing
-stopped_at: Completed 71-03-PLAN.md
-last_updated: "2026-06-16T08:35:03.919Z"
+status: verifying
+stopped_at: Completed 71-04-PLAN.md
+last_updated: "2026-06-16T08:42:24.981Z"
 last_activity: 2026-06-16
 progress:
   total_phases: 30
-  completed_phases: 29
+  completed_phases: 30
   total_plans: 94
-  completed_plans: 93
-  percent: 99
+  completed_plans: 94
+  percent: 100
 ---
 
 # Project State
@@ -30,7 +30,7 @@ Milestone: v9.0.0 (Canonical Recovery: Orchestrator Alignment) — STARTED 2026-
 Phase: 71 (Orchestrator Recovery Pipeline) — EXECUTING
 Plan: 4 of 4
 Current Plan: 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-16
 
 > Phase 71 plan 02 (Orchestrator keeper-recovery contracts) — ✅ COMPLETE 2026-06-16. Added the two origin-split contracts `OrchestratorInject` (5-id base + copy operands EntryId=newEntryId/OriginEntryId + dispatch tuple NextStepId/NextProcessorId/Payload) and `OrchestratorReinject` (5-id base + EntryId + StepOutcome discriminator + ErrorMessage/CancellationMessage union superset as discrete fields, not a polymorphic blob). Both sealed `IKeeperRecoverable` records so the existing SHA256-over-4-tuple `ReinjectConsumerDefinition.PartitionGuid` is origin-agnostic with NO helper change. `OrchestratorContractTests` 4/4 GREEN (IKeeperRecoverable assignability ×2, default-STJ round-trip of Outcome+union field, stable+origin-agnostic PartitionGuid); `Messaging.Contracts` builds 0-warning. Decisions: reused EntryId as newEntryId + added discrete OriginEntryId; reused existing StepOutcome enum (A5/D-07); discrete union fields (consumer rebuilds subtype via factory in 71-04). Commits `e55108f` (contracts), `5928966` (facts). Summary: `.planning/phases/71-orchestrator-recovery-pipeline/71-02-SUMMARY.md`.
@@ -706,7 +706,7 @@ Build order (locked): 25 (leaf contracts + WebApi responders) → 26 (BaseProces
 - Zero-warning build: Release = 0 Warning(s) / 0 Error(s); Debug = 0 Warning(s) / 0 Error(s).
 - Operator confirmation: "approved" — SUMMARY + STATE/ROADMAP/REQUIREMENTS finalized.
 
-Progress: [██████████] 99%
+Progress: [██████████] 100%
 
 ### Milestone Phases (v3.4.0)
 
@@ -1023,6 +1023,7 @@ Items acknowledged and deferred at v3.3.0 milestone close on 2026-05-29:
 | Phase 70 P02 | 26min | 3 tasks | 5 files |
 | Phase 71 P01 | 40min | 2 tasks | 23 files |
 | Phase 71 P03 | 45 | 3 tasks | 16 files |
+| Phase 71 P04 | 5min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -1481,6 +1482,9 @@ Recent decisions affecting current work:
 - 71-01: Renamed KeeperInject/KeeperReinject + consumers to Processor* (origin split); ReinjectConsumerDefinition + keeper_reinject_dropped metric labels left untouched (TRAP 1/2); D-10 5-arg StringSetAsync stub added to RecoveryTestKit.Db()
 - 71-03: OrchestratorResultPipeline mirrors ProcessorPipeline (D-01 independent class); FORWARD is ONE atomic Lua (D-02 JSON slot tuple + GET/SET origin->new copy), TTLs as ARGV with no RNG in Lua; the pipeline is the only orchestrator-side deleter (gated 2-key cleanup tail)
 - 71-03: wired the pipeline into TypedResultConsumer<T> with a context.MessageId null-guard (reverses Phase 24.1 L1-only); added OrchestratorRecoveryOptions as the orchestrator-side data-TTL source; pipeline registered Scoped
+- 71-04: OrchestratorInject dispatches the EntryStepDispatch even when the origin key is absent (forward-only no-write no-op) — INJECT deletes nothing, so an absent origin removes nothing and the forward pass still proceeds.
+- 71-04: OrchestratorReinject re-sends the result boxed as (object) so one Send overload carries every IStepResult subtype; CapturingSendProvider extended to capture the boxed-object Send (RESEARCH A6).
+- 71-04: Build/test verified against SK_P.sln (the plan's SK_P4.sln does not exist) — solution-file name corrected per the phase's LOCKED note.
 
 ### Roadmap Milestone Log
 
@@ -1586,8 +1590,8 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-16T08:35:03.900Z
-Stopped at: Completed 71-03-PLAN.md
+Last session: 2026-06-16T08:42:24.960Z
+Stopped at: Completed 71-04-PLAN.md
 Resume file: None
 
 **Completed Phase:** 28 (SourceHash Identity + Processor.Sample + E2E Closeout) — 4/4 plans — close gate exit 0 (395 facts GREEN ×3 + triple-SHA `psql \l`/`redis-cli --scan`/`rabbitmqctl list_queues` BEFORE==AFTER held); IDENT-01/02, SAMPLE-01/02, TEST-01/02 satisfied.
