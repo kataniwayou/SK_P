@@ -23,11 +23,16 @@ Give the orchestrator's result-consume path the same `messageId`-indexed forward
 
 ### Orchestrator Recovery Pipeline (ORCV) — Phase 71
 
-- [ ] **ORCV-01**: The orchestrator result-consume path gates on `exist L2[messageId]` (messageId = the inbound result's broker message id): absent → FORWARD, present → RECOVERY. A gate L2-op exhaustion routes to REINJECT and ends the round trip (no cleanup).
-- [ ] **ORCV-02**: FORWARD, per next step, performs ONE atomic op (index-slot `HSET` + whole-hash `PEXPIRE` + copy `L2[origin entryId] → L2[new entryId]` with the data TTL). An atomic-write exhaustion routes to a single `OrchestratorInject` (no silent drop).
-- [ ] **ORCV-03**: Each index slot value carries the full dispatch tuple `(nextStepId, nextProcessorId, payload, newEntryId)` so RECOVERY can reconstruct the heterogeneous per-slot dispatch (orchestrator slots are not homogeneous like the processor's).
-- [ ] **ORCV-04**: FORWARD sends `EntryStepDispatch` to `queue:{nextProcessorId}` then retires the slot to `guid.empty`; the cleanup tail (atomic two-key `DEL` of `L2[messageId]` + `L2[origin entryId]`) runs ONLY if no item escalated to the keeper this pass; a delete exhaustion routes to DELETE.
-- [ ] **ORCV-05**: RECOVERY re-emits idempotently — per slot a 3-way classification (data exists → re-send; clean not-exist → drop, no retire; L2 fault → leave slot intact); the tail REINJECTs if any slot faulted, else runs the atomic two-key delete. A redelivery re-sends the stable persisted entryIds and skips retired slots.
+- [x] **ORCV-01
+**: The orchestrator result-consume path gates on `exist L2[messageId]` (messageId = the inbound result's broker message id): absent → FORWARD, present → RECOVERY. A gate L2-op exhaustion routes to REINJECT and ends the round trip (no cleanup).
+- [x] **ORCV-02
+**: FORWARD, per next step, performs ONE atomic op (index-slot `HSET` + whole-hash `PEXPIRE` + copy `L2[origin entryId] → L2[new entryId]` with the data TTL). An atomic-write exhaustion routes to a single `OrchestratorInject` (no silent drop).
+- [x] **ORCV-03
+**: Each index slot value carries the full dispatch tuple `(nextStepId, nextProcessorId, payload, newEntryId)` so RECOVERY can reconstruct the heterogeneous per-slot dispatch (orchestrator slots are not homogeneous like the processor's).
+- [x] **ORCV-04
+**: FORWARD sends `EntryStepDispatch` to `queue:{nextProcessorId}` then retires the slot to `guid.empty`; the cleanup tail (atomic two-key `DEL` of `L2[messageId]` + `L2[origin entryId]`) runs ONLY if no item escalated to the keeper this pass; a delete exhaustion routes to DELETE.
+- [x] **ORCV-05
+**: RECOVERY re-emits idempotently — per slot a 3-way classification (data exists → re-send; clean not-exist → drop, no retire; L2 fault → leave slot intact); the tail REINJECTs if any slot faulted, else runs the atomic two-key delete. A redelivery re-sends the stable persisted entryIds and skips retired slots.
 - [x] **ORCV-06
 **: Keeper contracts are split by origin (route-by-type, no discriminator switch): `KeeperInject`/`KeeperReinject` are renamed `ProcessorInject`/`ProcessorReinject`, and `OrchestratorInject`/`OrchestratorReinject` are added; `KeeperDelete` stays shared. The two new consumers bind on the same `keeper-recovery` endpoint (same partitioner, health gate, and exhaustion posture, no new queue). `OrchestratorReinject` rebuilds the result (carrying the outcome to pick the `IStepResult` subtype) and re-injects to `queue:orchestrator-result`; `OrchestratorInject` completes the index+data copy and sends `EntryStepDispatch` downstream.
 - [ ] **ORCV-07**: The delete invariant holds orchestrator-side — keys are deleted ONLY in the cleanup tail (a forward exit where no item escalated, or the end of a recovery pass), completed out-of-band by DELETE on exhaust; `OrchestratorInject` and `OrchestratorReinject` never delete a key.
