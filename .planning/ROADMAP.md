@@ -55,7 +55,11 @@
   3. RECOVERY re-emits idempotently — per slot a 3-way classification (data exists → re-send; clean not-exist → drop, no retire; L2 fault → leave the slot intact); the tail REINJECTs if any slot faulted, else runs the atomic two-key `DEL` of `L2[messageId]` + `L2[origin entryId]`; a redelivery re-sends the stable persisted entryIds and skips retired slots (mirrors `ProcessorPipeline.RunRecoveryAsync`). (ORCV-05)
   4. Keeper contracts are split by origin (route-by-type, no discriminator switch): `KeeperInject`/`KeeperReinject` are renamed `ProcessorInject`/`ProcessorReinject`, `OrchestratorInject`/`OrchestratorReinject` are added, `KeeperDelete` stays shared; the two new consumers bind on the existing `keeper-recovery` endpoint (same partitioner/health-gate/exhaustion posture, no new queue) — `OrchestratorReinject` rebuilds the result (carrying the outcome to pick the `IStepResult` subtype) and re-injects to `queue:orchestrator-result`, `OrchestratorInject` completes the index+data copy and sends `EntryStepDispatch` downstream. (ORCV-06)
   5. The delete invariant holds orchestrator-side — keys are deleted ONLY in the cleanup tail (a forward exit where no item escalated, or the end of a recovery pass), completed out-of-band by DELETE on exhaust; `OrchestratorInject` and `OrchestratorReinject` never delete a key (negative-guard fact). (ORCV-04, ORCV-07)
-**Plans**: TBD
+**Plans**: 4 plans (3 waves)
+- [ ] 71-01-PLAN.md — Rename Keeper*→Processor* contracts + consumers (isolated first plan) + D-10 WR-01 stub fix
+- [ ] 71-02-PLAN.md — Add OrchestratorInject / OrchestratorReinject contracts (IKeeperRecoverable + StepOutcome discriminator)
+- [ ] 71-03-PLAN.md — OrchestratorResultPipeline (gate / atomic FORWARD / 3-way RECOVERY / cleanup tail) + TypedResultConsumer seam
+- [ ] 71-04-PLAN.md — Orchestrator* keeper consumers + binder/Program.cs registration + D-09 delete-invariant facts
 
 ## ✅ v7.0.0 Per-Replica Processor Liveness & Self-Watchdog (CLOSED 2026-06-14 — audit-override; full record [milestones/v7.0.0-ROADMAP.md](milestones/v7.0.0-ROADMAP.md))
 
