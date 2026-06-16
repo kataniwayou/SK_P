@@ -13,7 +13,7 @@ namespace BaseApi.Tests.Processor;
 /// <summary>
 /// PIPE-02/03 — the Pre stage of <see cref="ProcessorPipeline"/>: a Guid.Empty source step skips the L2
 /// read (empty validatedData, no end-delete); a Redis-faulting OR absent/empty L2 read (A2) after
-/// exhaustion routes to <see cref="KeeperReinject"/> and skips end-delete (the input is left intact for the
+/// exhaustion routes to <see cref="ProcessorReinject"/> and skips end-delete (the input is left intact for the
 /// keeper, T-44-08); an input-schema validation failure is a business <see cref="StepFailed"/> AND
 /// end-delete still runs.
 /// </summary>
@@ -39,7 +39,7 @@ public sealed class PipelinePreFacts
 
         Assert.True(processor.Invoked);                                   // ran with empty validatedData
         Assert.Equal(string.Empty, processor.LastInputData);
-        Assert.Empty(send.SentKeeper.OfType<KeeperReinject>());          // no REINJECT
+        Assert.Empty(send.SentKeeper.OfType<ProcessorReinject>());          // no REINJECT
         // A19/D-06: source-step DOES issue the array DEL (ExecutionData(Guid.Empty) is a harmless absent operand).
         await db.Received(1).KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
         // … and zero scalar deletes (atomicity heart).
@@ -59,7 +59,7 @@ public sealed class PipelinePreFacts
         await Build(redis, context, processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
 
-        Assert.Single(send.SentKeeper.OfType<KeeperReinject>());          // exactly one REINJECT
+        Assert.Single(send.SentKeeper.OfType<ProcessorReinject>());          // exactly one REINJECT
         Assert.False(processor.Invoked);                                 // never reached the In stage
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());    // no end-delete on REINJECT
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
@@ -78,7 +78,7 @@ public sealed class PipelinePreFacts
             DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
 
         // A2: absent/empty key unifies with a Redis fault → REINJECT (was a business StepFailed pre-Phase-44).
-        Assert.Single(send.SentKeeper.OfType<KeeperReinject>());
+        Assert.Single(send.SentKeeper.OfType<ProcessorReinject>());
         Assert.False(processor.Invoked);
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());

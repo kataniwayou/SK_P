@@ -17,9 +17,9 @@ namespace BaseApi.Tests.Keeper;
 /// <list type="bullet">
 ///   <item><description><c>DeleteConsumer</c> DOES delete — ONE atomic multi-key (<c>RedisKey[]</c>) DEL of
 ///   BOTH the data key and the allocation index (the positive half).</description></item>
-///   <item><description><c>InjectConsumer</c> does NOT delete — <c>DidNotReceive</c> on BOTH overloads,
+///   <item><description><c>ProcessorInjectConsumer</c> does NOT delete — <c>DidNotReceive</c> on BOTH overloads,
 ///   co-asserted with the captured <see cref="StepCompleted"/> send so a silent no-op cannot pass.</description></item>
-///   <item><description><c>ReinjectConsumer</c> does NOT delete — same negative guard, co-asserted with the
+///   <item><description><c>ProcessorReinjectConsumer</c> does NOT delete — same negative guard, co-asserted with the
 ///   captured <see cref="EntryStepDispatch"/> send (STRLEN stubbed present so its send path runs).</description></item>
 /// </list>
 /// CARVE-OUT (Pitfall 3): this fact NEVER instantiates <c>L2ProbeRecovery</c> and never enumerates
@@ -66,17 +66,17 @@ public sealed class KeeperDeleteInvariantFacts
         var db = RecoveryTestKit.Db();
         var send = new RecoveryTestKit.CapturingSendProvider();
 
-        var consumer = new InjectConsumer(
+        var consumer = new ProcessorInjectConsumer(
             RecoveryTestKit.Mux(db), send, RecoveryTestKit.Retry());
 
-        var m = new KeeperInject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        var m = new ProcessorInject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
             EntryId = Guid.NewGuid(),
             Data = "{\"out\":1}",
         };
-        var ctx = Substitute.For<ConsumeContext<KeeperInject>>();
+        var ctx = Substitute.For<ConsumeContext<ProcessorInject>>();
         ctx.Message.Returns(m);
         ctx.CancellationToken.Returns(ct);
 
@@ -99,23 +99,23 @@ public sealed class KeeperDeleteInvariantFacts
         var db = RecoveryTestKit.Db();
         var send = new RecoveryTestKit.CapturingSendProvider();
 
-        var m = new KeeperReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        var m = new ProcessorReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
             EntryId = Guid.NewGuid(),
             Payload = "{\"cfg\":7}",
         };
-        // ReinjectConsumer drops on STRLEN==0; stub present so its send path runs (else it no-ops and the
+        // ProcessorReinjectConsumer drops on STRLEN==0; stub present so its send path runs (else it no-ops and the
         // positive co-assertion below would fail).
         db.StringLengthAsync(L2ProjectionKeys.ExecutionData(m.EntryId), Arg.Any<CommandFlags>())
             .Returns(10L);   // present
 
-        var consumer = new ReinjectConsumer(
+        var consumer = new ProcessorReinjectConsumer(
             RecoveryTestKit.Mux(db), send, RecoveryTestKit.Retry(),
-            RecoveryTestKit.Metrics(), NullLogger<ReinjectConsumer>.Instance);
+            RecoveryTestKit.Metrics(), NullLogger<ProcessorReinjectConsumer>.Instance);
 
-        var ctx = Substitute.For<ConsumeContext<KeeperReinject>>();
+        var ctx = Substitute.For<ConsumeContext<ProcessorReinject>>();
         ctx.Message.Returns(m);
         ctx.CancellationToken.Returns(ct);
 

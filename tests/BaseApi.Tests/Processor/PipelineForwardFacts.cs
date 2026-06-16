@@ -14,9 +14,9 @@ namespace BaseApi.Tests.Processor;
 /// The A18 FORWARD pass of <see cref="ProcessorPipeline"/> (Phase 51/69 — proves FWD-01/02/03, ATOMIC-01,
 /// NODROP-01 hermetically):
 /// <list type="bullet">
-///   <item><description>FWD-01: existence-check exhaust → <see cref="KeeperReinject"/> AND the source is NEVER deleted (input intact).</description></item>
+///   <item><description>FWD-01: existence-check exhaust → <see cref="ProcessorReinject"/> AND the source is NEVER deleted (input intact).</description></item>
 ///   <item><description>ATOMIC-01: a completed item issues ONE atomic <c>ScriptEvaluateAsync</c> whose body HSETs the index slot BEFORE SET-ing the data key; the index/data TTLs ride as script ARGV (Phase-68 TEST-06 desync guard).</description></item>
-///   <item><description>NODROP-01 (Phase 69): an atomic-write exhaust → ONE <see cref="KeeperInject"/> carrying Data/EntryId — no silent DROP path remains (spec §10 bullet 1).</description></item>
+///   <item><description>NODROP-01 (Phase 69): an atomic-write exhaust → ONE <see cref="ProcessorInject"/> carrying Data/EntryId — no silent DROP path remains (spec §10 bullet 1).</description></item>
 ///   <item><description>FWD-02: mixed completed + business-failed items each land on the right channel.</description></item>
 ///   <item><description>FWD-03: the happy-path tail deletes the source <c>L2[entryId]</c>; a tail exhaust → <see cref="KeeperDelete"/>.</description></item>
 /// </list>
@@ -54,7 +54,7 @@ public sealed class PipelineForwardFacts
         await Build(mux, Ctx(), processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
-        Assert.Single(send.SentKeeper.OfType<KeeperReinject>());                       // exactly one REINJECT
+        Assert.Single(send.SentKeeper.OfType<ProcessorReinject>());                       // exactly one REINJECT
         Assert.False(processor.Invoked);                                               // never reached the In stage
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());                  // input intact — never deleted
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
@@ -144,7 +144,7 @@ public sealed class PipelineForwardFacts
 
         // spec §10: the atomic-write exhaust (former index- AND data-failure modes, now one write) → ONE INJECT
         // (was a silent DROP). NO drop path remains; the dropped item never completes.
-        var inj = Assert.Single(send.SentKeeper.OfType<KeeperInject>());
+        var inj = Assert.Single(send.SentKeeper.OfType<ProcessorInject>());
         Assert.NotEqual("", inj.Data);                                                 // raw-JSON output in-hand
         Assert.NotEqual(Guid.Empty, inj.EntryId);                                      // the allocation minted
         Assert.Empty(send.Sent.OfType<StepCompleted>());                              // dropped item never completes
@@ -164,7 +164,7 @@ public sealed class PipelineForwardFacts
 
         await Build(redis, Ctx(), processor, send).RunAsync(d, messageId, ct);
 
-        Assert.Single(send.SentKeeper.OfType<KeeperInject>());                  // the item escalated
+        Assert.Single(send.SentKeeper.OfType<ProcessorInject>());                  // the item escalated
         // GATE-01: an item escalated → the forward cleanup tail (atomic two-key DEL) MUST NOT run.
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
         Assert.Empty(send.SentKeeper.OfType<KeeperDelete>());                   // no tail → no DELETE escalation either

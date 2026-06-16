@@ -105,7 +105,7 @@ public sealed class PipelineEndDeleteFacts
         await Build(redis, context, processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId: Guid.NewGuid(), correlationId: Guid.NewGuid()), Guid.NewGuid(), ct);
 
-        Assert.Single(send.SentKeeper.OfType<KeeperReinject>());
+        Assert.Single(send.SentKeeper.OfType<ProcessorReinject>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());                  // NEVER deleted on REINJECT
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());  // GC-02: index survives

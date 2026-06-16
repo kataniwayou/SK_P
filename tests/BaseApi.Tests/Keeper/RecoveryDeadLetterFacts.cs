@@ -22,7 +22,7 @@ namespace BaseApi.Tests.Keeper;
 /// result endpoints: it carries NO bus <c>UseMessageRetry</c> and NO <c>ConfigureError</c>, so a
 /// Guard-exhaust throw falls out of <c>Consume</c> to broker nack-requeue. There is NO dead-letter tier at
 /// all — the consolidated <c>skp-dlq-1</c> queue was deleted (dead code), so nothing to dead-letter into.
-/// This wires the real <see cref="ReinjectConsumer"/> on an in-memory <see cref="ITestHarness"/> with a
+/// This wires the real <see cref="ProcessorReinjectConsumer"/> on an in-memory <see cref="ITestHarness"/> with a
 /// throwing L2, on the production-shaped BARE endpoint (no retry/error callback), and asserts the message
 /// faults (the nack-requeue shape).
 /// <para>
@@ -55,7 +55,7 @@ public sealed class RecoveryDeadLetterFacts
             .AddSingleton(Options.Create(new RecoveryOptions { PartitionCount = 8 }))
             .AddMassTransitTestHarness(x =>
             {
-                x.AddConsumer<ReinjectConsumer>();
+                x.AddConsumer<ProcessorReinjectConsumer>();
 
                 // NO AddConfigureEndpointsCallback wiring UseMessageRetry/ConfigureError — the production
                 // keeper-recovery binder is now BARE (symmetric with the exec path). A Guard-exhaust throw
@@ -74,7 +74,7 @@ public sealed class RecoveryDeadLetterFacts
         await harness.Start();
         try
         {
-            var msg = new KeeperReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+            var msg = new ProcessorReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
             {
                 CorrelationId = Guid.NewGuid(),
                 ExecutionId = Guid.NewGuid(),
@@ -87,12 +87,12 @@ public sealed class RecoveryDeadLetterFacts
             // (NOT a silent ack, NOT a drop — drops are the absent/empty STRLEN==0 case, D-06). The faulted
             // delivery falls through to broker nack-requeue (no in-process retry, no error transport, and
             // no dead-letter tier — skp-dlq-1 was deleted as dead code). The faulted consume IS the shape.
-            Assert.True(await harness.Consumed.Any<KeeperReinject>(f => f.Exception is not null, ct));
+            Assert.True(await harness.Consumed.Any<ProcessorReinject>(f => f.Exception is not null, ct));
         }
         finally { await harness.Stop(ct); }
     }
 
-    // ----- RESIL-03 (R3): at-least-once / no-collapse on duplicate KeeperReinject delivery ----------
+    // ----- RESIL-03 (R3): at-least-once / no-collapse on duplicate ProcessorReinject delivery ----------
 
     /// <summary>An L2 whose StringLengthAsync reports the recovered key PRESENT (non-zero) so REINJECT
     /// confirms the data and re-injects (the success path — the effect we prove reproduces).</summary>
@@ -107,7 +107,7 @@ public sealed class RecoveryDeadLetterFacts
 
     /// <summary>
     /// Phase 47 / RESIL-03: the REINJECT recovery path is at-least-once and carries NO dedup, so delivering
-    /// the SAME <see cref="KeeperReinject"/> (identical ids) TWICE into ONE <see cref="ReinjectConsumer"/>
+    /// the SAME <see cref="ProcessorReinject"/> (identical ids) TWICE into ONE <see cref="ProcessorReinjectConsumer"/>
     /// reproduces its re-injection effect TWICE — the reconstructed <see cref="EntryStepDispatch"/> is sent
     /// twice (Sent.Count == 2), no collapse, no throw.
     /// </summary>
@@ -118,12 +118,12 @@ public sealed class RecoveryDeadLetterFacts
         var ct = TestContext.Current.CancellationToken;
 
         var send = new RecoveryTestKit.CapturingSendProvider();
-        var consumer = new ReinjectConsumer(
+        var consumer = new ProcessorReinjectConsumer(
             PresentMux(), send,
             Options.Create(new RetryOptions { Limit = 1 }),
-            RecoveryTestKit.Metrics(), NullLogger<ReinjectConsumer>.Instance);
+            RecoveryTestKit.Metrics(), NullLogger<ProcessorReinjectConsumer>.Instance);
 
-        var msg = new KeeperReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        var msg = new ProcessorReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),

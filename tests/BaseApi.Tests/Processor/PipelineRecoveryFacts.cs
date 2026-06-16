@@ -15,7 +15,7 @@ namespace BaseApi.Tests.Processor;
 /// The A18 RECOVERY pass of <see cref="ProcessorPipeline"/> (Phase 51 — proves RECOV-01/02/03, SLOT-03, D-03
 /// hermetically). Reached only when <c>L2[messageId]</c> EXISTS (a redelivery):
 /// <list type="bullet">
-///   <item><description>RECOV-01: an HGETALL exhaust → <see cref="KeeperReinject"/> AND the source is NEVER deleted (input intact).</description></item>
+///   <item><description>RECOV-01: an HGETALL exhaust → <see cref="ProcessorReinject"/> AND the source is NEVER deleted (input intact).</description></item>
 ///   <item><description>RECOV-02: a mixed HASH (exists / clean-absent / fault) → exactly one re-sent <see cref="StepCompleted"/> + exactly one retire HashSet(Guid.Empty); the absent entry sends/retires nothing; the fault entry leaves its slot intact (no retire).</description></item>
 ///   <item><description>SLOT-03 send-before-retire: a completed entry retires its slot to Guid.Empty AFTER the re-send; a send-fail leaves the slot un-retired (no retire HashSet).</description></item>
 ///   <item><description>D-03: the re-sent <see cref="StepCompleted"/> carries a FRESH exec (≠ Guid.Empty and ≠ the inbound dispatch exec).</description></item>
@@ -56,7 +56,7 @@ public sealed class PipelineRecoveryFacts
         await Build(redis, Ctx(), NoopProcessor(), send).RunAsync(
             DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
-        Assert.Single(send.SentKeeper.OfType<KeeperReinject>());                       // HGETALL exhaust → one REINJECT
+        Assert.Single(send.SentKeeper.OfType<ProcessorReinject>());                       // HGETALL exhaust → one REINJECT
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());                  // input intact — never deleted
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());  // GC-02: index survives
@@ -88,7 +88,7 @@ public sealed class PipelineRecoveryFacts
             (RedisValue)Guid.Empty.ToString(), Arg.Any<When>(), Arg.Any<CommandFlags>());
 
         // RECOV-03 with-infra: the fault entry → REINJECT and the source is NOT deleted (mutual exclusion).
-        Assert.Single(send.SentKeeper.OfType<KeeperReinject>());
+        Assert.Single(send.SentKeeper.OfType<ProcessorReinject>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());  // GC-02: index survives — no array DEL
@@ -141,7 +141,7 @@ public sealed class PipelineRecoveryFacts
             Arg.Any<CommandFlags>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>());
-        Assert.Empty(send.SentKeeper.OfType<KeeperReinject>());
+        Assert.Empty(send.SentKeeper.OfType<ProcessorReinject>());
     }
 
     [Fact]

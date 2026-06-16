@@ -68,6 +68,13 @@ internal static class RecoveryTestKit
                 Arg.Any<RedisKey>(), Arg.Any<RedisValue>(), Arg.Any<TimeSpan?>(),
                 Arg.Any<bool>(), Arg.Any<When>(), Arg.Any<CommandFlags>())
             .Returns(true);
+        // D-10 / WR-01: SE.Redis 2.13.1 binds the production 2-arg StringSetAsync(key, data) call to the
+        // 5-arg Expiration/ValueCondition overload (the 6-arg overload above is dead) — stub it explicitly
+        // so the INJECT write path is observable rather than relying on NSubstitute default-return.
+        db.StringSetAsync(
+                Arg.Any<RedisKey>(), Arg.Any<RedisValue>(),
+                Arg.Any<Expiration>(), Arg.Any<ValueCondition>(), Arg.Any<CommandFlags>())
+            .Returns(true);
         db.KeyDeleteAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>()).Returns(true);
         db.KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>()).Returns(2L);   // A19: both-key DEL count removed
         return db;

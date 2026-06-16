@@ -14,7 +14,7 @@ namespace BaseApi.Tests.Processor;
 /// PIPE-06/07 — the Post stage of <see cref="ProcessorPipeline"/>: per completed item, write
 /// <c>L2[entryId]</c> with the bounded <c>ExecutionDataTtl</c> (CONFIG-02/D-17) → <see cref="StepCompleted"/>
 /// carrying the framework entryId + author executionId. N completed items → N results. A write-exhaust
-/// becomes failed(infra) → <see cref="KeeperInject"/> (no StepCompleted). A per-item business-failed
+/// becomes failed(infra) → <see cref="ProcessorInject"/> (no StepCompleted). A per-item business-failed
 /// (author Failed OR output-validation fail) → one <see cref="StepFailed"/> and does NOT abort the batch (A3).
 /// Phase-50 (D-01) removed the Model-B UPDATE/CLEANUP keeper sends + their composite backup key; the real
 /// A18 slot-array forward/recovery pass is proven in Phase 51.
@@ -84,7 +84,7 @@ public sealed class PipelinePostFacts
         var entryId = Guid.NewGuid();
         var messageId = Guid.NewGuid();
         // Phase-69 (NODROP-01): the forward-Post write is one atomic ScriptEvaluateAsync — an atomic-write
-        // exhaust is the sole keeper send (KeeperInject, the infra route), with NO StepCompleted for the item.
+        // exhaust is the sole keeper send (ProcessorInject, the infra route), with NO StepCompleted for the item.
         var redis = DispatchTestKit.AtomicWriteFaultL2(
             new Dictionary<string, string> { [L2ProjectionKeys.ExecutionData(entryId)] = Input }, out _);
         var processor = new DispatchTestKit.FakeProcessor(DispatchTestKit.Items("out"));
@@ -93,8 +93,8 @@ public sealed class PipelinePostFacts
         await Build(redis, Ctx(), processor, send).RunAsync(
             DispatchTestKit.Dispatch(entryId, Guid.NewGuid()), messageId, ct);
 
-        Assert.Single(send.SentKeeper.OfType<KeeperInject>());               // atomic-write exhaust → KeeperInject
-        Assert.Single(send.SentKeeper);                                       // KeeperInject is the only keeper send
+        Assert.Single(send.SentKeeper.OfType<ProcessorInject>());               // atomic-write exhaust → ProcessorInject
+        Assert.Single(send.SentKeeper);                                       // ProcessorInject is the only keeper send
         Assert.Empty(send.Sent.OfType<StepCompleted>());                     // NO StepCompleted for that item
     }
 

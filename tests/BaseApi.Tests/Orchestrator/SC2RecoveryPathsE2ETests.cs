@@ -22,22 +22,22 @@ namespace BaseApi.Tests.Orchestrator;
 /// (<see cref="KeeperQueues.Recovery"/> = the sole surviving Keeper queue, D-05). Sibling to
 /// <see cref="SampleRoundTripE2ETests"/> (SC1) — it REUSES that file's <c>RealStackWebAppFactory</c> host
 /// overrides + net-zero teardown discipline (cloned below) but, instead of driving the organic
-/// orchestrator → dispatch → processor round trip, it publishes <see cref="KeeperReinject"/> /
-/// <see cref="KeeperInject"/> / <see cref="KeeperDelete"/> straight at <c>queue:keeper-recovery</c> and
+/// orchestrator → dispatch → processor round trip, it publishes <see cref="ProcessorReinject"/> /
+/// <see cref="ProcessorInject"/> / <see cref="KeeperDelete"/> straight at <c>queue:keeper-recovery</c> and
 /// asserts each state's deterministic L2 / re-inject / orchestrator-advance / dead-letter effect.
 /// <para>
 /// The three direct-publish proofs (effects read from the production recovery consumers):
 /// </para>
 /// <list type="number">
-///   <item><b>REINJECT data-present</b> (<c>ReinjectConsumer</c>) — PRE-SEED <c>skp:data:{entryId}</c> so
+///   <item><b>REINJECT data-present</b> (<c>ProcessorReinjectConsumer</c>) — PRE-SEED <c>skp:data:{entryId}</c> so
 ///   STRLEN&gt;0 → the consumer re-injects a reconstructed <see cref="EntryStepDispatch"/> (carrying the
-///   author <see cref="KeeperReinject.Payload"/>) to <c>queue:{ProcessorId:D}</c>. Asserted on that
+///   author <see cref="ProcessorReinject.Payload"/>) to <c>queue:{ProcessorId:D}</c>. Asserted on that
 ///   origin-queue depth.</item>
-///   <item><b>REINJECT data-gone</b> (<c>ReinjectConsumer</c>) — do NOT seed the data key (STRLEN==0) →
+///   <item><b>REINJECT data-gone</b> (<c>ProcessorReinjectConsumer</c>) — do NOT seed the data key (STRLEN==0) →
 ///   Phase 52 (D-06) makes this a BY-DESIGN silent drop (no throw, no send, no dead-letter; increments
 ///   <c>keeper_reinject_dropped</c>). Asserted on the origin queue staying EMPTY (nothing re-injected) and
 ///   the DLQ depth NOT incrementing — A18 "accepted silent losses".</item>
-///   <item><b>INJECT</b> (<c>InjectConsumer</c>) — Phase 70 (KINJ-01) is non-destructive: write
+///   <item><b>INJECT</b> (<c>ProcessorInjectConsumer</c>) — Phase 70 (KINJ-01) is non-destructive: write
 ///   <c>L2[m.EntryId]=m.Data</c> + send a reconstructed <see cref="StepCompleted"/> to
 ///   <c>queue:orchestrator-result</c>, and delete NOTHING. Asserted on the data key being written.</item>
 ///   <item><b>DELETE</b> (<c>DeleteConsumer</c>, A19 both-key) — <see cref="KeeperDelete"/> now carries a
@@ -113,7 +113,7 @@ public sealed class SC2RecoveryPathsE2ETests
             await db.StringSetAsync(dataKey, "payload-bytes");
             factory.L2KeysToCleanup.Add(dataKey);
 
-            await endpoint.Send(new KeeperReinject(wfId, stepId, procId)
+            await endpoint.Send(new ProcessorReinject(wfId, stepId, procId)
             {
                 CorrelationId = Guid.NewGuid(),
                 ExecutionId = Guid.NewGuid(),
@@ -121,7 +121,7 @@ public sealed class SC2RecoveryPathsE2ETests
                 Payload = "step-config",
             }, ct);
 
-            // EFFECT: ReinjectConsumer re-injects a reconstructed EntryStepDispatch to the origin queue
+            // EFFECT: ProcessorReinjectConsumer re-injects a reconstructed EntryStepDispatch to the origin queue
             // queue:{ProcessorId:D} (same target a direct dispatch uses). Assert that origin queue's depth
             // climbs to >=1 on the live broker (no consumer is bound to this fresh procId queue, so the
             // re-injected message parks there observably). Register the broker queue for teardown cleanup.
@@ -145,7 +145,7 @@ public sealed class SC2RecoveryPathsE2ETests
             // Read the DLQ depth BEFORE so we can assert it does NOT increment (data-gone is a drop, D-06).
             var dlqBefore = await ReadQueueDepthAsync("skp-dlq-1", ct);
 
-            await endpoint.Send(new KeeperReinject(wfId, stepId, procId)
+            await endpoint.Send(new ProcessorReinject(wfId, stepId, procId)
             {
                 CorrelationId = Guid.NewGuid(),
                 ExecutionId = Guid.NewGuid(),
@@ -189,7 +189,7 @@ public sealed class SC2RecoveryPathsE2ETests
             var entryKey = L2ProjectionKeys.ExecutionData(entryId);
             factory.L2KeysToCleanup.Add(entryKey);
 
-            await endpoint.Send(new KeeperInject(wfId, stepId, procId)
+            await endpoint.Send(new ProcessorInject(wfId, stepId, procId)
             {
                 CorrelationId = corr,
                 ExecutionId = execId,
@@ -294,7 +294,7 @@ public sealed class SC2RecoveryPathsE2ETests
 
         var bus = factory.Services.GetRequiredService<IBus>();
         // Drive the recovery branch by dispatching to the processor's OWN queue (the same target a direct
-        // dispatch / ReinjectConsumer re-injection uses) — NOT keeper-recovery.
+        // dispatch / ProcessorReinjectConsumer re-injection uses) — NOT keeper-recovery.
         var dispatchEndpoint = await bus.GetSendEndpoint(new Uri($"queue:{procId:D}"));
 
         await using var mux = await ConnectionMultiplexer.ConnectAsync(HostRedis);

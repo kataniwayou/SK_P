@@ -23,18 +23,18 @@ public sealed class InjectConsumerFacts
         var ct = TestContext.Current.CancellationToken;
         var db = RecoveryTestKit.Db();
         var send = new RecoveryTestKit.CapturingSendProvider();
-        var consumer = new InjectConsumer(
+        var consumer = new ProcessorInjectConsumer(
             RecoveryTestKit.Mux(db), send,
             RecoveryTestKit.Retry());
 
-        var m = new KeeperInject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        var m = new ProcessorInject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
             EntryId = Guid.NewGuid(),
             Data = "{\"out\":1}",
         };
-        var ctx = Substitute.For<ConsumeContext<KeeperInject>>();
+        var ctx = Substitute.For<ConsumeContext<ProcessorInject>>();
         ctx.Message.Returns(m);
         ctx.CancellationToken.Returns(ct);
 

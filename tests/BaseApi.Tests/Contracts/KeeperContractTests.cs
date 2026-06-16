@@ -6,7 +6,7 @@ namespace BaseApi.Tests.Contracts;
 
 /// <summary>
 /// SC-3 (A18 / D-08/D-09): the THREE surviving Keeper-state records
-/// (KeeperReinject/KeeperInject/KeeperDelete) after the Phase-50 Model-B retirement
+/// (ProcessorReinject/ProcessorInject/KeeperDelete) after the Phase-50 Model-B retirement
 /// (UPDATE/CLEANUP deleted). Each implements the IKeeperRecoverable marker that exposes EXACTLY the
 /// partition 4-tuple (corr/wf/proc/exec) and deliberately NOT StepId. StepId rides as a plain property
 /// on each record (the 5-id base). REINJECT carries EntryId + Payload; DELETE carries EntryId; INJECT
@@ -17,7 +17,7 @@ public sealed class KeeperContractTests
 {
     private static readonly Type[] AllThree =
     {
-        typeof(KeeperReinject), typeof(KeeperInject), typeof(KeeperDelete),
+        typeof(ProcessorReinject), typeof(ProcessorInject), typeof(KeeperDelete),
     };
 
     [Fact]
@@ -49,10 +49,10 @@ public sealed class KeeperContractTests
     [Fact]
     public void KeeperReinject_carries_EntryId_and_Payload()
     {
-        Assert.NotNull(typeof(KeeperReinject).GetProperty("EntryId"));   // D-09
+        Assert.NotNull(typeof(ProcessorReinject).GetProperty("EntryId"));   // D-09
         // D-01: REINJECT carries Payload (string, init-only) so a recovered run reconstructs a
         // faithful EntryStepDispatch (the author's step config is not silently lost).
-        var payload = typeof(KeeperReinject).GetProperty("Payload");
+        var payload = typeof(ProcessorReinject).GetProperty("Payload");
         Assert.NotNull(payload);
         Assert.Equal(typeof(string), payload!.PropertyType);
     }
@@ -67,16 +67,16 @@ public sealed class KeeperContractTests
     public void KeeperInject_carries_the_reduced_id_set_EntryId_Data()
     {
         // D-08: INJECT is forward-only — it carries its own data on the envelope (no composite read).
-        var entryId = typeof(KeeperInject).GetProperty("EntryId");
+        var entryId = typeof(ProcessorInject).GetProperty("EntryId");
         Assert.NotNull(entryId);
         Assert.Equal(typeof(Guid), entryId!.PropertyType);
 
-        var data = typeof(KeeperInject).GetProperty("Data");
+        var data = typeof(ProcessorInject).GetProperty("Data");
         Assert.NotNull(data);
         Assert.Equal(typeof(string), data!.PropertyType);
 
         // KINJ-02 negative guard: the source-delete field is gone — re-adding it breaks this fact (and every
         // producer/consumer reference fails to compile).
-        Assert.Null(typeof(KeeperInject).GetProperty("DeleteEntryId"));
+        Assert.Null(typeof(ProcessorInject).GetProperty("DeleteEntryId"));
     }
 }

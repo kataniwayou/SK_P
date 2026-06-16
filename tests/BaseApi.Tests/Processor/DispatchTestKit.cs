@@ -81,7 +81,7 @@ internal static class DispatchTestKit
     /// <summary>
     /// A Redis multiplexer whose <c>StringGetAsync</c> resolves registered keys (PresentL2 shape) and
     /// whose <c>StringSetAsync</c> throws <see cref="RedisConnectionException"/> — the infra
-    /// output-write-fault case (Post → KeeperInject). <c>KeyDeleteAsync</c> is a no-op success (the
+    /// output-write-fault case (Post → ProcessorInject). <c>KeyDeleteAsync</c> is a no-op success (the
     /// end-delete on this path succeeds).
     /// </summary>
     public static IConnectionMultiplexer PresentReadWriteFaultL2(
@@ -253,7 +253,7 @@ internal static class DispatchTestKit
 
     /// <summary>
     /// A Redis multiplexer whose <c>StringGetAsync</c> THROWS <see cref="RedisConnectionException"/> for
-    /// every key (the Pre read-fault path) — the read loop exhausts → <c>KeeperReinject</c>. The mock db is
+    /// every key (the Pre read-fault path) — the read loop exhausts → <c>ProcessorReinject</c>. The mock db is
     /// returned so a fact can assert <c>db.DidNotReceive().KeyDeleteAsync(...)</c> (end-delete skipped).
     /// </summary>
     public static IConnectionMultiplexer ReadFaultL2(out IDatabase db)
@@ -272,7 +272,7 @@ internal static class DispatchTestKit
     /// <summary>
     /// A Redis multiplexer whose <c>StringGetAsync</c> returns <see cref="RedisValue.Null"/> for EVERY key
     /// (the A2 absent/empty Pre-read path) — the read closure's <c>IsNullOrEmpty</c> guard throws
-    /// <c>KeyAbsentException</c>, the loop exhausts, and the Pre routes to <c>KeeperReinject</c>.
+    /// <c>KeyAbsentException</c>, the loop exhausts, and the Pre routes to <c>ProcessorReinject</c>.
     /// <c>KeyDeleteAsync</c> is a no-op success (so a DidNotReceive assertion proves end-delete was skipped).
     /// </summary>
     public static IConnectionMultiplexer AbsentReadL2(out IDatabase db)
@@ -428,7 +428,7 @@ internal static class DispatchTestKit
 
     /// <summary>
     /// RECOV-01 recovery HGETALL-fault mux: <c>KeyExistsAsync(MessageIndex)</c> TRUE (→ recovery branch), but
-    /// <c>HashGetAllAsync(MessageIndex)</c> THROWS → the retry loop exhausts → <c>KeeperReinject</c> (no source
+    /// <c>HashGetAllAsync(MessageIndex)</c> THROWS → the retry loop exhausts → <c>ProcessorReinject</c> (no source
     /// delete). The mock <c>db</c> is returned so a fact can assert <c>DidNotReceive().KeyDeleteAsync(...)</c>.
     /// </summary>
     public static IConnectionMultiplexer RecoveryHGetAllFaultL2(Guid messageId, out IDatabase db)
@@ -536,7 +536,7 @@ internal static class DispatchTestKit
     /// asked to <c>Send</c>: an <see cref="IStepResult"/> lands in <see cref="Sent"/> (orchestrator results),
     /// an <see cref="IKeeperRecoverable"/> lands in <see cref="SentKeeper"/> (Keeper-state messages). Both
     /// lists are order-preserving so a fact can assert e.g. the relative order of
-    /// <c>SentKeeper.OfType&lt;KeeperInject&gt;()</c> vs <c>OfType&lt;KeeperDelete&gt;()</c>.
+    /// <c>SentKeeper.OfType&lt;ProcessorInject&gt;()</c> vs <c>OfType&lt;KeeperDelete&gt;()</c>.
     /// </summary>
     public sealed class CapturingSendProvider : ISendEndpointProvider
     {

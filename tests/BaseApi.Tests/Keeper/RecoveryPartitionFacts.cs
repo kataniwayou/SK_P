@@ -20,7 +20,7 @@ namespace BaseApi.Tests.Keeper;
 /// </summary>
 public sealed class RecoveryPartitionFacts
 {
-    private static KeeperReinject Reinject(Guid corr, Guid wf, Guid proc, Guid exec, Guid step) =>
+    private static ProcessorReinject Reinject(Guid corr, Guid wf, Guid proc, Guid exec, Guid step) =>
         new(wf, step, proc) { CorrelationId = corr, ExecutionId = exec, EntryId = NewGuid() };
 
     private static Guid NewGuid() => Guid.NewGuid();

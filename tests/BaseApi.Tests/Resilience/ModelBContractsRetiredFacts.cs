@@ -1,7 +1,7 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;      // [CallerFilePath] (RepoRoot source-scan anchor)
 using MassTransit;                          // IConsumer<> (5->3 reflection fact)
-using Messaging.Contracts;                  // KeeperInject (Contracts assembly anchor)
+using Messaging.Contracts;                  // ProcessorInject (Contracts assembly anchor)
 using Messaging.Contracts.Projections;      // L2ProjectionKeys (SC-2)
 using Xunit;
 
@@ -27,7 +27,7 @@ namespace BaseApi.Tests.Resilience;
 public sealed class ModelBContractsRetiredFacts
 {
     private static readonly Assembly Contracts =
-        typeof(global::Messaging.Contracts.KeeperInject).Assembly;
+        typeof(global::Messaging.Contracts.ProcessorInject).Assembly;
 
     private static readonly Assembly Keeper =
         typeof(global::Keeper.Health.BitHealthLoop).Assembly;
@@ -99,7 +99,7 @@ public sealed class ModelBContractsRetiredFacts
 
     /// <summary>
     /// FACT 5 (SC-2 / RETIRE-03) — REFLECTION. The 5-state Model-B recovery surface has collapsed to
-    /// EXACTLY the 3 A18 states: the Keeper assembly consumes IConsumer&lt;KeeperReinject/Inject/Delete&gt;
+    /// EXACTLY the 3 A18 states: the Keeper assembly consumes IConsumer&lt;ProcessorReinject/ProcessorInject/KeeperDelete&gt;
     /// and NO IConsumer&lt;KeeperUpdate/KeeperCleanup&gt;. Inherited closed-generic interface is reported
     /// by GetInterfaces() (RecoveryConsumerBase&lt;T&gt; : IConsumer&lt;T&gt;), no base-walk needed.
     /// </summary>
@@ -111,11 +111,11 @@ public sealed class ModelBContractsRetiredFacts
             .SelectMany(t => t.GetInterfaces())
             .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IConsumer<>))
             .Select(i => i.GetGenericArguments()[0].Name)
-            .Where(n => n is "KeeperReinject" or "KeeperInject" or "KeeperDelete"
+            .Where(n => n is "ProcessorReinject" or "ProcessorInject" or "KeeperDelete"
                      or "KeeperUpdate"   or "KeeperCleanup")
             .Distinct().OrderBy(n => n).ToArray();
 
-        Assert.Equal(new[] { "KeeperDelete", "KeeperInject", "KeeperReinject" }, consumed);
+        Assert.Equal(new[] { "KeeperDelete", "ProcessorInject", "ProcessorReinject" }, consumed);
     }
 
     /// <summary>

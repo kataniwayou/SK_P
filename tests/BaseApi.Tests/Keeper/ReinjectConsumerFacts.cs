@@ -19,9 +19,9 @@ namespace BaseApi.Tests.Keeper;
 /// </summary>
 public sealed class ReinjectConsumerFacts
 {
-    private static ConsumeContext<KeeperReinject> Ctx(KeeperReinject m, CancellationToken ct)
+    private static ConsumeContext<ProcessorReinject> Ctx(ProcessorReinject m, CancellationToken ct)
     {
-        var ctx = Substitute.For<ConsumeContext<KeeperReinject>>();
+        var ctx = Substitute.For<ConsumeContext<ProcessorReinject>>();
         ctx.Message.Returns(m);
         ctx.CancellationToken.Returns(ct);
         return ctx;
@@ -32,7 +32,7 @@ public sealed class ReinjectConsumerFacts
     public async Task Reinject_present_sends_EntryStepDispatch_with_Payload()
     {
         var ct = TestContext.Current.CancellationToken;
-        var m = new KeeperReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        var m = new ProcessorReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
@@ -45,10 +45,10 @@ public sealed class ReinjectConsumerFacts
             .Returns(10L);   // present
         var send = new RecoveryTestKit.CapturingSendProvider();
 
-        var consumer = new ReinjectConsumer(
+        var consumer = new ProcessorReinjectConsumer(
             RecoveryTestKit.Mux(db), send,
             RecoveryTestKit.Retry(),
-            RecoveryTestKit.Metrics(), NullLogger<ReinjectConsumer>.Instance);
+            RecoveryTestKit.Metrics(), NullLogger<ProcessorReinjectConsumer>.Instance);
 
         await consumer.Consume(Ctx(m, ct));
 
@@ -69,7 +69,7 @@ public sealed class ReinjectConsumerFacts
     public async Task Reinject_absent_drops_no_throw_no_send_and_increments_counter()
     {
         var ct = TestContext.Current.CancellationToken;
-        var m = new KeeperReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        var m = new ProcessorReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
         {
             CorrelationId = Guid.NewGuid(),
             ExecutionId = Guid.NewGuid(),
@@ -96,10 +96,10 @@ public sealed class ReinjectConsumerFacts
         listener.SetMeasurementEventCallback<long>((_, measurement, _, _) => Interlocked.Add(ref dropped, measurement));
         listener.Start();
 
-        var consumer = new ReinjectConsumer(
+        var consumer = new ProcessorReinjectConsumer(
             RecoveryTestKit.Mux(db), send,
             RecoveryTestKit.Retry(),
-            metrics, NullLogger<ReinjectConsumer>.Instance);
+            metrics, NullLogger<ProcessorReinjectConsumer>.Instance);
 
         await consumer.Consume(Ctx(m, ct));   // D-06: no throw
 
