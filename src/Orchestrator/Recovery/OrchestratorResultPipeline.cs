@@ -357,7 +357,11 @@ public sealed class OrchestratorResultPipeline(
         {
             CorrelationId       = m.CorrelationId,
             ExecutionId         = m.ExecutionId,
-            EntryId             = m.EntryId,
+            // WR-01: reset EntryId to Guid.Empty for every non-Completed subtype EXPLICITLY rather than
+            // relying on the inbound record's hard-default. Only a StepCompleted carries a real data key
+            // (its EntryId); Failed/Cancelled/Processing never reference EntryId orchestrator-side, so the
+            // coded reset makes the contract's "Guid.Empty on non-Completed" intent visible and refactor-safe.
+            EntryId             = m is StepCompleted ? m.EntryId : Guid.Empty,
             Outcome             = OutcomeOf(m),
             ErrorMessage        = (m as StepFailed)?.ErrorMessage,
             CancellationMessage = (m as StepCancelled)?.CancellationMessage,
