@@ -57,7 +57,7 @@
   5. The delete invariant holds orchestrator-side — keys are deleted ONLY in the cleanup tail (a forward exit where no item escalated, or the end of a recovery pass), completed out-of-band by DELETE on exhaust; `OrchestratorInject` and `OrchestratorReinject` never delete a key (negative-guard fact). (ORCV-04, ORCV-07)
 **Plans**: 4 plans (3 waves)
 - [x] 71-01-PLAN.md — Rename Keeper*→Processor* contracts + consumers (isolated first plan) + D-10 WR-01 stub fix (completed 2026-06-16 — 4 files renamed, 129 refs across 27 files updated; TRAP 1/2 honored; SK_P.sln 0/0 Debug+Release; hermetic rename-touched facts GREEN; full live-stack suite deferred to Docker stack; commits 59bee41, 90a3f07)
-- [ ] 71-02-PLAN.md — Add OrchestratorInject / OrchestratorReinject contracts (IKeeperRecoverable + StepOutcome discriminator)
+- [x] 71-02-PLAN.md — Add OrchestratorInject / OrchestratorReinject contracts (IKeeperRecoverable + StepOutcome discriminator) (completed 2026-06-16 — both sealed IKeeperRecoverable records; OrchestratorInject = copy operands (EntryId=newEntryId/OriginEntryId) + dispatch tuple (NextStepId/NextProcessorId/Payload), OrchestratorReinject = StepOutcome discriminator + ErrorMessage/CancellationMessage union superset as discrete fields; OrchestratorContractTests 4/4 GREEN incl. origin-agnostic PartitionGuid proving the 4-tuple helper needs no change; Messaging.Contracts 0-warning; commits e55108f, 5928966)
 - [ ] 71-03-PLAN.md — OrchestratorResultPipeline (gate / atomic FORWARD / 3-way RECOVERY / cleanup tail) + TypedResultConsumer seam
 - [ ] 71-04-PLAN.md — Orchestrator* keeper consumers + binder/Program.cs registration + D-09 delete-invariant facts
 

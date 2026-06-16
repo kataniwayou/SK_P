@@ -58,7 +58,7 @@ REQ-IDs are filled into phases by the roadmapper (Step 10). Every requirement ma
 | ORCV-03 | Phase 71 | Pending |
 | ORCV-04 | Phase 71 | Pending |
 | ORCV-05 | Phase 71 | Pending |
-| ORCV-06 | Phase 71 | Pending |
+| ORCV-06 | Phase 71 | In Progress (71-02: OrchestratorInject/OrchestratorReinject contracts added; consumer bind/rebuild/dispatch in 71-04) |
 | ORCV-07 | Phase 71 | Pending |
 
 **Coverage:** 10 requirements across 2 categories (KINJ, ORCV). Filled into phases by the roadmapper.
