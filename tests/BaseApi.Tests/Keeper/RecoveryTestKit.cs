@@ -94,6 +94,11 @@ internal static class RecoveryTestKit
                 .Returns(ci => { Sent.Add((address, ci[0]!)); return Task.CompletedTask; });
             endpoint.Send(Arg.Any<StepCompleted>(), Arg.Any<CancellationToken>())
                 .Returns(ci => { Sent.Add((address, ci[0]!)); return Task.CompletedTask; });
+            // RESEARCH A6: OrchestratorReinjectConsumer re-sends the reconstructed result boxed as object so a
+            // single Send overload carries every IStepResult subtype. Capture the boxed-object Send generically
+            // so StepFailed/StepCancelled/StepProcessing (and StepCompleted via the boxed path) are all recorded.
+            endpoint.Send(Arg.Any<object>(), Arg.Any<CancellationToken>())
+                .Returns(ci => { Sent.Add((address, ci[0]!)); return Task.CompletedTask; });
             return Task.FromResult(endpoint);
         }
 

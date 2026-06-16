@@ -130,4 +130,81 @@ public sealed class KeeperDeleteInvariantFacts
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(),   Arg.Any<CommandFlags>());
         await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
     }
+
+    [Fact]
+    [Trait("Phase", "71")]
+    public async Task OrchestratorInjectConsumer_never_deletes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var m = new OrchestratorInject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        {
+            CorrelationId = Guid.NewGuid(),
+            ExecutionId = Guid.NewGuid(),
+            EntryId = Guid.NewGuid(),
+            OriginEntryId = Guid.NewGuid(),
+            NextStepId = Guid.NewGuid(),
+            NextProcessorId = Guid.NewGuid(),
+            Payload = "{\"cfg\":7}",
+        };
+        // Origin key present so the copy runs and the dispatch send path is reached (else the positive
+        // co-assertion below would fail and the DidNotReceive could pass on a silent no-op).
+        var db = RecoveryTestKit.Db(new Dictionary<string, string>
+        {
+            [L2ProjectionKeys.ExecutionData(m.OriginEntryId)] = "{\"out\":1}",
+        });
+        var send = new RecoveryTestKit.CapturingSendProvider();
+
+        var consumer = new OrchestratorInjectConsumer(
+            RecoveryTestKit.Mux(db), send, RecoveryTestKit.Retry());
+
+        var ctx = Substitute.For<ConsumeContext<OrchestratorInject>>();
+        ctx.Message.Returns(m);
+        ctx.CancellationToken.Returns(ct);
+
+        await consumer.Consume(ctx);
+
+        // POSITIVE co-assertion: the body provably ran (one EntryStepDispatch sent) — so DidNotReceive
+        // cannot pass on a silent no-op.
+        var (_, msg) = Assert.Single(send.Sent);
+        Assert.IsType<EntryStepDispatch>(msg);
+
+        // NEGATIVE guard: orchestrator INJECT deletes nothing — BOTH overloads (Pitfall 2).
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(),   Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
+    }
+
+    [Fact]
+    [Trait("Phase", "71")]
+    public async Task OrchestratorReinjectConsumer_never_deletes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var db = RecoveryTestKit.Db();
+        var send = new RecoveryTestKit.CapturingSendProvider();
+
+        var m = new OrchestratorReinject(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid())
+        {
+            CorrelationId = Guid.NewGuid(),
+            ExecutionId = Guid.NewGuid(),
+            EntryId = Guid.NewGuid(),
+            Outcome = StepOutcome.Completed,   // Completed → StepCompleted re-inject (the positive co-assertion)
+        };
+
+        var consumer = new OrchestratorReinjectConsumer(
+            RecoveryTestKit.Mux(db), send, RecoveryTestKit.Retry());
+
+        var ctx = Substitute.For<ConsumeContext<OrchestratorReinject>>();
+        ctx.Message.Returns(m);
+        ctx.CancellationToken.Returns(ct);
+
+        await consumer.Consume(ctx);
+
+        // POSITIVE co-assertion: the outcome factory provably ran (one StepCompleted re-injected) — so
+        // DidNotReceive cannot pass on a silent no-op.
+        var (_, msg) = Assert.Single(send.Sent);
+        Assert.IsType<StepCompleted>(msg);
+
+        // NEGATIVE guard: orchestrator REINJECT deletes nothing — BOTH overloads (Pitfall 2).
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey>(),   Arg.Any<CommandFlags>());
+        await db.DidNotReceive().KeyDeleteAsync(Arg.Any<RedisKey[]>(), Arg.Any<CommandFlags>());
+    }
 }
