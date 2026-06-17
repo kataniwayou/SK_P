@@ -44,8 +44,8 @@
     "verdict": "Pass",
     "zeroMissing": true,
     "effectOnce": true,
-    "startedRuns": 18,
-    "completeRuns": 18,
+    "startedRuns": 16,
+    "completeRuns": 16,
     "harnessExit": 0,
     "class": "PASS"
   },
@@ -64,8 +64,8 @@
     "verdict": "Pass",
     "zeroMissing": true,
     "effectOnce": true,
-    "startedRuns": 18,
-    "completeRuns": 18,
+    "startedRuns": 16,
+    "completeRuns": 16,
     "harnessExit": 0,
     "class": "PASS"
   }
